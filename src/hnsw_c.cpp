@@ -16,19 +16,17 @@ struct HNSWIndex {
 extern "C" {
 #endif
 
-BFIndex *InitBFIndex() {
-    int d = 4;
-    size_t n = 100;
+BFIndex *InitBFIndex(size_t max_elements, int d) {
+
     auto space = new L2Space(d);  // We need to delete it in the end
-    auto *bf = new BruteforceSearch<float>(space, 2 * n);
+    auto *bf = new BruteforceSearch<float>(space, max_elements);
     return new BFIndex{bf};
 }
 
-HNSWIndex *InitHNSWIndex() {
-    int d = 4;
-    size_t n = 100;
+HNSWIndex *InitHNSWIndex(size_t max_elements, int d) {
+
     auto space = new L2Space(d); // We need to delete it in the end
-    auto *hnsw = new HierarchicalNSW<float>(space, 2 * n);
+    auto *hnsw = new HierarchicalNSW<float>(space, max_elements);
     return new HNSWIndex{hnsw};
 }
 

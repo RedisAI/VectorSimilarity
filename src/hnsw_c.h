@@ -14,9 +14,9 @@ typedef struct Vector {
 extern "C" {
 #endif
 
-BFIndex *InitBFIndex(void);
+BFIndex *InitBFIndex(size_t max_elements, int d);
 
-HNSWIndex *InitHNSWIndex(void);
+HNSWIndex *InitHNSWIndex(size_t max_elements, int d);
 
 bool AddVectorToBFIndex(BFIndex *index, const void* vector_data, size_t id);
 

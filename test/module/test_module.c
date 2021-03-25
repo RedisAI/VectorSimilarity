@@ -1,6 +1,7 @@
 #define REDISMODULE_MAIN
 #include "redismodule.h"
-#include <math.h>
+#include <stdlib.h>
+#include <time.h>
 #include "../../src/hnsw_c.h"
 
 int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -8,7 +9,7 @@ int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int a
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    HNSWIndex *index = InitHNSWIndex();
+    HNSWIndex *index = InitHNSWIndex(200, 4);
     if (GetHNSWIndexSize(index) != 0) {
         return RedisModule_ReplyWithSimpleString(ctx, "Init error");
     }
@@ -25,7 +26,7 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    HNSWIndex *index = InitHNSWIndex();
+    HNSWIndex *index = InitHNSWIndex(200, 4);
 
     for (float i = 0; i < 100; i++) {
         float f[4] = {i, i, i, i};
