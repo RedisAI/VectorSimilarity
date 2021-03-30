@@ -34,6 +34,10 @@ Vector *BFSearch(BFIndex *index, const void* query_data, size_t k);
 
 Vector *HNSWSearch(HNSWIndex *index, const void* query_data, size_t k);
 
+void SaveHNSWIndex(HNSWIndex *index, const char *path);
+
+void LoadHNSWIndex(HNSWIndex *index, const char *path, size_t max_elements);
+
 void RemoveBFIndex(BFIndex *index);
 
 void RemoveHNSWIndex(HNSWIndex *index);

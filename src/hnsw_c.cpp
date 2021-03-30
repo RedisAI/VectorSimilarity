@@ -7,9 +7,11 @@ using namespace hnswlib;
 
 struct BFIndex {
     BruteforceSearch<float>* bf;
+    L2Space* space;
 };
 struct HNSWIndex {
     HierarchicalNSW<float>* hnsw;
+    L2Space* space;
 };
 
 #ifdef __cplusplus
@@ -20,14 +22,14 @@ BFIndex *InitBFIndex(size_t max_elements, int d) {
 
     auto space = new L2Space(d);  // We need to delete it in the end
     auto *bf = new BruteforceSearch<float>(space, max_elements);
-    return new BFIndex{bf};
+    return new BFIndex{bf, space};
 }
 
 HNSWIndex *InitHNSWIndex(size_t max_elements, int d) {
 
     auto space = new L2Space(d); // We need to delete it in the end
     auto *hnsw = new HierarchicalNSW<float>(space, max_elements);
-    return new HNSWIndex{hnsw};
+    return new HNSWIndex{hnsw, space};
 }
 
 bool AddVectorToBFIndex(BFIndex *index, const void* vector_data, size_t id) {
@@ -94,14 +96,24 @@ Vector *HNSWSearch(HNSWIndex *index, const void* query_data, size_t k) {
     return results;
 }
 
+void SaveHNSWIndex(HNSWIndex *index, const char *path) {
+    index->hnsw->saveIndex(string(path));
+}
+
+void LoadHNSWIndex(HNSWIndex *index, const char *path, size_t max_elements) {
+    index->hnsw->loadIndex(string(path), index->space, max_elements);
+}
+
 void RemoveBFIndex(BFIndex *index) {
 
     delete index->bf;
+    delete index->space;
     delete index;
 }
 
 void RemoveHNSWIndex(HNSWIndex *index) {
     delete index->hnsw;
+    delete index->space;
     delete index;
 }
 
