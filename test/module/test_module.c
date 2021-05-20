@@ -97,13 +97,18 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     size_t n = 100000;
     int d = 128;
     HNSWIndex *index = InitHNSWIndex(n, d);
+    int k =11;
 
+    RedisModule_Log(ctx, "warning", "creating vectors");
+    float *vectors = RedisModule_Alloc(n*d*sizeof(float));
     for (size_t i = 0; i < n; i++) {
-        float num[128];
         for (size_t j = 0; j < d; j++) {
-            num[j] = i;
-            AddVectorToHNSWIndex(index, (const void *)num, i);
+            (vectors+ i*d)[j] = i;
         }
+    }
+    RedisModule_Log(ctx, "warning", "adding vectors to index");
+    for (size_t i = 0; i < n; i++) {
+        AddVectorToHNSWIndex(index, (const void *)(vectors+i*d), i);
     }
     if (GetHNSWIndexSize(index) != n) {
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
@@ -113,15 +118,18 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
         query[j] = 50;
     }
     const long long start = ustime();
-    Vector *res = HNSWSearch(index,  (const void *)query, 11);
+    Vector *res = HNSWSearch(index,  (const void *)query, k);
     const long long end = ustime();
-    printf("Total time: %llu\n", (end-start));
+    RedisModule_Log(ctx, "warning","Total time for %d-NN lookup : %llu microseconds\n", k, (end-start));
+    RedisModule_Free(vectors);
 
     for (int i=0; i<11; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
         int dist = res[i].dist;
         if ((diff_id != (i+1)/2) || (dist != (d*((i+1)/2)*((i+1)/2)))) {
+            RedisModule_Log(ctx, "warning","Search test fail");
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+
         }
     }
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
