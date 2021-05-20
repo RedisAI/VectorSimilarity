@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+src/CMakeFiles
+src/cmake_install.cmake
+src/CMakeCache.txt
+src/Makefile
+
+test/module/CMakeFiles
+test/module/cmake_install.cmake
+test/module/CMakeCache.txt
+test/module/Makefile
