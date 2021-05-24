@@ -135,6 +135,32 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
 }
 
+int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    if(argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+    HNSWIndex *index = InitHNSWIndex(200, 4);
+
+    for (size_t i = 0; i < 100; i++) {
+        float num = i/10;
+        float f[4] = {num, num, num, num};
+        AddVectorToHNSWIndex(index, (const void *)f, i);
+    }
+    if (GetHNSWIndexSize(index) != 100) {
+        return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
+    }
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    float query[4] = {4.9,4.95, 5.05, 5.1};
+    Vector *res = HNSWSearch(index,  (const void *)query, 10);
+    for (int i=0; i<10; i++) {
+        if (res[i].id < 50 || res[i].id >= 60 || res[i].dist > 1) {
+            return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+        }
+    }
+    return RedisModule_ReplyWithSimpleString(ctx, "OK");
+}
+
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     REDISMODULE_NOT_USED(argv);
     REDISMODULE_NOT_USED(argc);
@@ -162,6 +188,12 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         return REDISMODULE_ERR;
     if(
       RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_search_million", hnswlib_vector_search_million_test,
+        "",
+        0, 0, 0) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if(
+      RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_indexing_same_vector", hnswlib_indexing_same_vector,
         "",
         0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
