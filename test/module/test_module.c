@@ -5,20 +5,28 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
-#include "../../src/hnsw_c.h"
+#include "vecsim.h"
 
 int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     REDISMODULE_NOT_USED(argv);
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    HNSWIndex *index = InitHNSWIndex(200, 4);
-    if (GetHNSWIndexSize(index) != 0) {
+    AlgorithmParams params = {
+        .hnswParams = {
+            .initialSize = 200,
+            .M = 16,
+            .efConstuction = 200
+        },
+        .algorithmType = HNSW
+    };
+    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, 4);
+    if (VecSimIndex_IndexSize(index) != 0) {
         return RedisModule_ReplyWithSimpleString(ctx, "Init error");
     }
     float a[4] = {1.0, 1.0, 1.0, 1.0};
-    AddVectorToHNSWIndex(index, (const void *)a, 1);
-    if (GetHNSWIndexSize(index) != 1) {
+    VecSimIndex_AddVector(index, (const void *)a, 1);
+    if (VecSimIndex_IndexSize(index) != 1) {
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
     }
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
@@ -29,20 +37,28 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    HNSWIndex *index = InitHNSWIndex(200, 4);
+    AlgorithmParams params = {
+        .hnswParams = {
+            .initialSize = 200,
+            .M = 16,
+            .efConstuction = 200
+        },
+        .algorithmType = HNSW
+    };
+    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, 4);
 
     for (float i = 0; i < 100; i++) {
         float f[4] = {i, i, i, i};
-        AddVectorToHNSWIndex(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
-    if (GetHNSWIndexSize(index) != 100) {
+    if (VecSimIndex_IndexSize(index) != 100) {
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
     }
     float query[4] = {50, 50, 50, 50};
-    Vector *res = HNSWSearch(index,  (const void *)query, 11);
+    QueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 11);
     for (int i=0; i<11; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
-        int dist = res[i].dist;
+        int dist = res[i].score;
         if ((diff_id != (i+1)/2) || (dist != (4*((i+1)/2)*((i+1)/2)))) {
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
         }
@@ -51,33 +67,34 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
 }
 
 
-int hnswlib_index_save_load_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    REDISMODULE_NOT_USED(argv);
-    if(argc != 1) {
-        return RedisModule_WrongArity(ctx);
-    }
-    HNSWIndex *index = InitHNSWIndex(1000, 128);
+// int hnswlib_index_save_load_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+//     REDISMODULE_NOT_USED(argv);
+//     if(argc != 1) {
+//         return RedisModule_WrongArity(ctx);
+//     }
+    
+//     HNSWIndex *index = HNSWIndex_New(1000, 128);
 
-    for (size_t i = 0; i < 1000; i++) {
-        for (size_t j = 0; j < 128; j++) {
-            float f[4] = {i, i, i, i};
-            AddVectorToHNSWIndex(index, (const void *)f, i);
-        }
-    }
-    if (GetHNSWIndexSize(index) != 1000) {
-        return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
-    }
-    // The index is saved in the current directory from which redis is running.
-    char path [256];
-    SaveHNSWIndex(index, strcat(getcwd(path, sizeof(path)), "/index.ind"));
-    RemoveHNSWIndex(index);
-    HNSWIndex *loaded_index = InitHNSWIndex(2000, 128);
-    LoadHNSWIndex(loaded_index, path, 1000);
-    if (GetHNSWIndexSize(loaded_index) != 1000) {
-        return RedisModule_ReplyWithSimpleString(ctx, "Save/Load error");
-    }
-    return RedisModule_ReplyWithSimpleString(ctx, "OK");
-}
+//     for (size_t i = 0; i < 1000; i++) {
+//         for (size_t j = 0; j < 128; j++) {
+//             float f[4] = {i, i, i, i};
+//             HNSWIndex_AddVector(index, (const void *)f, i);
+//         }
+//     }
+//     if (GetHNSWIndexSize(index) != 1000) {
+//         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
+//     }
+//     // The index is saved in the current directory from which redis is running.
+//     char path [256];
+//     SaveHNSWIndex(index, strcat(getcwd(path, sizeof(path)), "/index.ind"));
+//     RemoveHNSWIndex(index);
+//     HNSWIndex *loaded_index = HNSWIndex_New(2000, 128);
+//     LoadHNSWIndex(loaded_index, path, 1000);
+//     if (GetHNSWIndexSize(loaded_index) != 1000) {
+//         return RedisModule_ReplyWithSimpleString(ctx, "Save/Load error");
+//     }
+//     return RedisModule_ReplyWithSimpleString(ctx, "OK");
+// }
 
 long long ustime(void) {
     struct timeval tv;
@@ -96,7 +113,15 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     }
     size_t n = 100000;
     int d = 128;
-    HNSWIndex *index = InitHNSWIndex(n, d);
+        AlgorithmParams params = {
+        .hnswParams = {
+            .initialSize = n,
+            .M = 16,
+            .efConstuction = 200
+        },
+        .algorithmType = HNSW
+    };
+    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, d);
     int k =11;
 
     RedisModule_Log(ctx, "warning", "creating vectors");
@@ -108,9 +133,9 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     }
     RedisModule_Log(ctx, "warning", "adding vectors to index");
     for (size_t i = 0; i < n; i++) {
-        AddVectorToHNSWIndex(index, (const void *)(vectors+i*d), i);
+        VecSimIndex_AddVector(index, (const void *)(vectors+i*d), i);
     }
-    if (GetHNSWIndexSize(index) != n) {
+    if (VecSimIndex_IndexSize(index) != n) {
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
     }
     float query[128];
@@ -118,14 +143,14 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
         query[j] = 50;
     }
     const long long start = ustime();
-    Vector *res = HNSWSearch(index,  (const void *)query, k);
+    QueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, k);
     const long long end = ustime();
     RedisModule_Log(ctx, "warning","Total time for %d-NN lookup : %llu microseconds\n", k, (end-start));
     RedisModule_Free(vectors);
 
     for (int i=0; i<11; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
-        int dist = res[i].dist;
+        int dist = res[i].score;
         if ((diff_id != (i+1)/2) || (dist != (d*((i+1)/2)*((i+1)/2)))) {
             RedisModule_Log(ctx, "warning","Search test fail");
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
@@ -140,21 +165,29 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    HNSWIndex *index = InitHNSWIndex(200, 4);
+        AlgorithmParams params = {
+        .hnswParams = {
+            .initialSize = 200,
+            .M = 16,
+            .efConstuction = 200
+        },
+        .algorithmType = HNSW
+    };
+    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, 4);
 
     for (size_t i = 0; i < 100; i++) {
         float num = i/10;
         float f[4] = {num, num, num, num};
-        AddVectorToHNSWIndex(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
-    if (GetHNSWIndexSize(index) != 100) {
+    if (VecSimIndex_IndexSize(index) != 100) {
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
     }
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9,4.95, 5.05, 5.1};
-    Vector *res = HNSWSearch(index,  (const void *)query, 10);
+    QueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
     for (int i=0; i<10; i++) {
-        if (res[i].id < 50 || res[i].id >= 60 || res[i].dist > 1) {
+        if (res[i].id < 50 || res[i].id >= 60 || res[i].score > 1) {
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
         }
     }
@@ -177,12 +210,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 
     if(
       RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_search", hnswlib_vector_search_test,
-        "",
-        0, 0, 0) == REDISMODULE_ERR)
-        return REDISMODULE_ERR;
-
-    if(
-      RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_save_load", hnswlib_index_save_load_test,
         "",
         0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
