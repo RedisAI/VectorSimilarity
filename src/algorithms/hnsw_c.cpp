@@ -75,7 +75,7 @@ VecSimIndex *HNSW_New(AlgorithmParams params, DISTANCE_METRIC distanceMetric, VE
 
     auto space = HNSW_CreateDistanceSpace(distanceMetric, vectorLen);
 
-    auto hnsw = HNSW_CreateIndex(vectorType, space, params.hnswParams.initialSize, params.hnswParams.M, params.hnswParams.efConstuction);
+    auto hnsw = HNSW_CreateIndex(vectorType, space, params.hnswParams.initialCapacity, params.hnswParams.M, params.hnswParams.efConstuction);
     VecSimIndex base = {
         .AddFn = HNSWIndex_AddVector, 
         .DeleteFn = HNSW_DeleteVector,

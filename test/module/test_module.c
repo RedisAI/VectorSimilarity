@@ -14,7 +14,7 @@ int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int a
     }
     AlgorithmParams params = {
         .hnswParams = {
-            .initialSize = 200,
+            .initialCapacity = 200,
             .M = 16,
             .efConstuction = 200
         },
@@ -39,7 +39,7 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     }
     AlgorithmParams params = {
         .hnswParams = {
-            .initialSize = 200,
+            .initialCapacity = 200,
             .M = 16,
             .efConstuction = 200
         },
@@ -115,7 +115,7 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     int d = 128;
         AlgorithmParams params = {
         .hnswParams = {
-            .initialSize = n,
+            .initialCapacity = n,
             .M = 16,
             .efConstuction = 200
         },
@@ -167,7 +167,7 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
     }
         AlgorithmParams params = {
         .hnswParams = {
-            .initialSize = 200,
+            .initialCapacity = 200,
             .M = 16,
             .efConstuction = 200
         },

@@ -19,13 +19,13 @@ typedef enum {
 } DISTANCE_METRIC;
 
 typedef struct {
-    size_t initialSize;
+    size_t initialCapacity;
     size_t M;
     size_t efConstuction;
 } HNSWParams;
 
 typedef struct {
-    size_t initialSize;
+    size_t initialCapacity;
 } BFParams;
 
 typedef struct {
