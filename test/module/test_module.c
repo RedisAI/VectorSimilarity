@@ -138,7 +138,7 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     if (VecSimIndex_IndexSize(index) != n) {
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
     }
-    float query[128];
+    float query[d];
     for (size_t j = 0; j < d; j++) {
         query[j] = 50;
     }
