@@ -5,7 +5,9 @@ project(VectorSimilarity)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../hnswlib)
+# for prefixes like 'hnswlib/hnswlib'
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
+# for prefixes like 'VectorSimilarity/src'
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 add_library(vector_similarity SHARED

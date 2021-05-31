@@ -66,9 +66,11 @@ typedef struct VecSimIndex {
 } VecSimIndex;
 
 VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen);
+
 void VecSimIndex_Free(VecSimIndex *index);
 
 int VecSimIndex_AddVector(VecSimIndex* index, const void* blob, size_t id);
+
 int VecSimIndex_DeleteVector(VecSimIndex* index, size_t id);
 
 size_t VecSimIndex_IndexSize(VecSimIndex* index);

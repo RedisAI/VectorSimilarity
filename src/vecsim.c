@@ -28,7 +28,7 @@ inline void VecSimIndex_Free(VecSimIndex *index) {
 
 // TODO
 
-inline VecSimQueryResult* VecSimIndex_DistnaceKQuery(VecSimIndex* index, const void* queryBlob, float distance) {
+inline VecSimQueryResult* VecSimIndex_DistnaceQuery(VecSimIndex* index, const void* queryBlob, float distance) {
     return index->DistanceQueryFn(index, queryBlob, distance);
 }
 
