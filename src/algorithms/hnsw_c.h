@@ -10,11 +10,7 @@
 extern "C" {
 #endif
 
-struct HNSWIndex {
-    VecSimIndex base;
-    void* hnsw;
-    void* space;
-};
+struct HNSWIndex;
 
 VecSimIndex* HNSW_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen);
 

@@ -9,6 +9,12 @@ using namespace hnswlib;
 extern "C" {
 #endif
 
+struct HNSWIndex {
+    VecSimIndex base;
+    void* hnsw;
+    void* space;
+};
+
 static SpaceInterface<float>* HNSW_CreateDistanceSpace(VecSimMetric metric, size_t dim) {
     if(metric == VecSimMetric_L2) {
         return new L2Space(dim);
