@@ -12,7 +12,7 @@ import paella
 
 #----------------------------------------------------------------------------------------------
 
-class RedisModuleRSSetup(paella.Setup):
+class VecSimSetup(paella.Setup):
     def __init__(self, nop=False):
         paella.Setup.__init__(self, nop)
 
@@ -49,5 +49,4 @@ parser = argparse.ArgumentParser(description='Set up system for build.')
 parser.add_argument('-n', '--nop', action="store_true", help='no operation')
 args = parser.parse_args()
 
-BB()
-RedisModuleRSSetup(nop = args.nop).setup()
+VecSimSetup(nop = args.nop).setup()
