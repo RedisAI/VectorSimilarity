@@ -82,6 +82,8 @@ VecSimIndex *HNSW_New(VecSimAlgoParams *params, VecSimMetric VecSimMetric, VecSi
         DeleteFn: HNSW_DeleteVector,
         SizeFn: HNSW_Size,
         TopKQueryFn: HNSW_TopKQuery,
+        DistanceQueryFn: NULL,
+        ClearDeletedFn: NULL,
         FreeFn: HNSW_Free
     };
 	
