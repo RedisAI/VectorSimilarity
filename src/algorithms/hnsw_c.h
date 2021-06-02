@@ -17,9 +17,11 @@ struct HNSWIndex {
 };
 
 VecSimIndex* HNSW_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen);
+
 void HNSW_Free(VecSimIndex *index);
 
 int HNSW_AddVector(VecSimIndex *index, const void* vector_data, size_t id);
+
 int HNSW_DeleteVector(VecSimIndex *index, size_t id);
 
 size_t HNSW_Size(VecSimIndex *index);
