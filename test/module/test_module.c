@@ -1,26 +1,29 @@
+
 #define REDISMODULE_MAIN
 #include "redismodule.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
-#include "vecsim.h"
+
+#include "VectorSimilarity/src/vecsim.h"
 
 int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     REDISMODULE_NOT_USED(argv);
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    AlgorithmParams params = {
+    VecSimAlgoParams params = {
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
             .efConstuction = 200
         },
-        .algorithmType = HNSW
+        .algorithmType = VecSimAlgo_HNSW
     };
-    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, 4);
+    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, 4);
     if (VecSimIndex_IndexSize(index) != 0) {
         return RedisModule_ReplyWithSimpleString(ctx, "Init error");
     }
@@ -37,15 +40,15 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    AlgorithmParams params = {
+    VecSimAlgoParams params = {
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
             .efConstuction = 200
         },
-        .algorithmType = HNSW
+        .algorithmType = VecSimAlgo_HNSW
     };
-    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, 4);
+    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, 4);
 
     for (float i = 0; i < 100; i++) {
         float f[4] = {i, i, i, i};
@@ -55,7 +58,7 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
         return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
     }
     float query[4] = {50, 50, 50, 50};
-    QueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 11);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 11);
     for (int i=0; i<11; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
         int dist = res[i].score;
@@ -113,15 +116,15 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     }
     size_t n = 100000;
     int d = 128;
-        AlgorithmParams params = {
+    VecSimAlgoParams params = {
         .hnswParams = {
             .initialCapacity = n,
             .M = 16,
             .efConstuction = 200
         },
-        .algorithmType = HNSW
+        .algorithmType = VecSimAlgo_HNSW
     };
-    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, d);
+    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, d);
     int k =11;
 
     RedisModule_Log(ctx, "warning", "creating vectors");
@@ -143,7 +146,7 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
         query[j] = 50;
     }
     const long long start = ustime();
-    QueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, k);
     const long long end = ustime();
     RedisModule_Log(ctx, "warning","Total time for %d-NN lookup : %llu microseconds\n", k, (end-start));
     RedisModule_Free(vectors);
@@ -165,15 +168,15 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-        AlgorithmParams params = {
+        VecSimAlgoParams params = {
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
             .efConstuction = 200
         },
-        .algorithmType = HNSW
+        .algorithmType = VecSimAlgo_HNSW
     };
-    VecSimIndex *index = VecSimIndex_New(params, L2, FLOAT32, 4);
+    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, 4);
 
     for (size_t i = 0; i < 100; i++) {
         float num = i/10;
@@ -185,7 +188,7 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
     }
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9,4.95, 5.05, 5.1};
-    QueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
     for (int i=0; i<10; i++) {
         if (res[i].id < 50 || res[i].id >= 60 || res[i].score > 1) {
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
