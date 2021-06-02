@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "VectorSimilarity/src/vecsim.h"
+#include "vecsim.h"
 
 #ifdef __cplusplus
 extern "C" {

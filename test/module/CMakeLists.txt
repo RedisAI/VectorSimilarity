@@ -4,9 +4,8 @@ cmake_policy(SET CMP0015 NEW)
 project(Vector_similarity_test_module C)
 message("PROJECT_SOURCE_DIR: ${PROJECT_SOURCE_DIR}")
 
-link_directories(${PROJECT_SOURCE_DIR}/../../src/)
 
-include_directories(${PROJECT_SOURCE_DIR}/../../..)
+include_directories(${PROJECT_SOURCE_DIR}/../../src)
 
 foreach(dir ${dirs})
     message(STATUS "dir='${dir}'")
