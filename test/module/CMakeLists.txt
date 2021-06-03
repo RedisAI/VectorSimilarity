@@ -16,5 +16,5 @@ add_library(testmod SHARED test_module.c)
 set_target_properties(testmod PROPERTIES PREFIX "")
 set_target_properties(testmod PROPERTIES SUFFIX ".so")
 
-add_subdirectory(${PROJECT_SOURCE_DIR}/../../VectorSimilarity VectorSimilarity)
+add_subdirectory(${PROJECT_SOURCE_DIR}/../../VecSim VectorSimilarity)
 target_link_libraries(testmod PUBLIC VectorSimilarity)
