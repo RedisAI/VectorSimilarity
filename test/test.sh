@@ -1,7 +1,7 @@
 #!/bin/bash
-cd ./module
-cmake -DCMAKE_BUILD_TYPE=Debug .
+cd ./module/build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
 make
 
-cd ../flow
-RLTest --module ../module/testmod.so --clear-logs
+cd ../../flow
+RLTest --module ../module/build/testmod.so --clear-logs

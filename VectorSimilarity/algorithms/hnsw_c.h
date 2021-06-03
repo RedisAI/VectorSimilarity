@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "vecsim.h"
+#include "include/vecsim.h"
 
 #ifdef __cplusplus
 extern "C" {

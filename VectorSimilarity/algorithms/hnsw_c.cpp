@@ -1,5 +1,6 @@
 
 #include "hnsw_c.h"
+#include <deque>
 #include "hnswlib/hnswlib/hnswalg.h"
 
 using namespace std;
