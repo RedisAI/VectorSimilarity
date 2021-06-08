@@ -8,7 +8,7 @@
 #include <string.h>
 #include <sys/time.h>
 
-#include "VecSim/include/vecsim.h"
+#include "VecSim/vecsim.h"
 
 int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     REDISMODULE_NOT_USED(argv);

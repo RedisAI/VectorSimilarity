@@ -1,6 +1,6 @@
 
-#include "include/vecsim.h"
-#include "algorithms/hnsw_c.h"
+#include "VecSim/vecsim.h"
+#include "VecSim/algorithms/hnsw_c.h"
 
 VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen) {
     return HNSW_New(params, metric, vectype, veclen);
