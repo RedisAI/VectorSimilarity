@@ -1,3 +1,5 @@
+[![CircleCI](https://circleci.com/gh/RedisLabsModules/VectorSimilarity/tree/main.svg?style=svg)](https://circleci.com/gh/RedisLabsModules/VectorSimilarity/tree/main)
+
 # VectorSimilarity
 
 This repo exposes C API for using hnswlib implemetation for vector similarity search.

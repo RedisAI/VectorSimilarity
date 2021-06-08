@@ -36,12 +36,12 @@
 **/CMakeCache.txt
 **/build
 
-VecSim/Makefile
+/build/
+/deps/readies/
+/test/module/build/
 
-test/module/Makefile
-test/module/VectorSimilarity
-
-test/flow/__pycache__
-test/flow/logs
+__pycache__/
+test/flow/logs/
 
 .vscode
+
