@@ -10,6 +10,7 @@ The API headres is available in hnsw_c.h file.
 ## Build
 
 ```
-cd opt
-./build.sh
+./deps/readies/bin/getpy3
+./sbin/system-setup.py
+make
 ```

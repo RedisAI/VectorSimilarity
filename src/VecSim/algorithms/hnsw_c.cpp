@@ -1,9 +1,8 @@
 
 #include "hnsw_c.h"
-#include "hnswlib/hnswlib/hnswalg.h"
-
 #include <deque>
 #include <memory>
+#include "hnswlib/hnswlib/hnswalg.h"
 
 using namespace std;
 using namespace hnswlib;
