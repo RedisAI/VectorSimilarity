@@ -12,12 +12,7 @@ struct HNSWIndex {
         size_t M = 16, size_t ef_construction = 200);
         
     VecSimIndex base;
-
-    unique_ptr<L2Space> l2_space;
-    unique_ptr<InnerProductSpace> ip_space;
-    SpaceInterface<float> *space;
-    // replace with the following once SpaceInterface gets virtual dtor
-    //unique_ptr<SpaceInterface<float>> space;
+    unique_ptr<SpaceInterface<float>> space;
     HierarchicalNSW<float> hnsw;
 };
 
@@ -94,11 +89,9 @@ VecSimIndex *HNSW_New(VecSimAlgoParams *params, VecSimMetric VecSimMetric, VecSi
 
 HNSWIndex::HNSWIndex(VecSimVecType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
         size_t M, size_t ef_construction) :
-            l2_space(metric == VecSimMetric_L2 ? new L2Space(dim) : NULL),
-            ip_space(metric == VecSimMetric_L2 ? NULL : new InnerProductSpace(dim)),
-            space(metric == VecSimMetric_L2 ? static_cast<SpaceInterface<float>*>(l2_space.get()) : 
-                static_cast<SpaceInterface<float>*>(ip_space.get())),
-            hnsw(space, max_elements, M, ef_construction)
+            space(metric == VecSimMetric_L2 ? static_cast<SpaceInterface<float>*>(new L2Space(dim)) : 
+                static_cast<SpaceInterface<float>*>(new InnerProductSpace(dim))),
+            hnsw(space.get(), max_elements, M, ef_construction)
 {
     base = VecSimIndex{
         AddFn: HNSWIndex_AddVector, 
