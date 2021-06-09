@@ -63,10 +63,7 @@ endif
 #----------------------------------------------------------------------------------------------
 
 test:
-	cd test/module
-	mkdir -p build
-	cd test/module/build; cmake ..
-	make -C test/module/build
+	./tests/test.sh
 
 .PHONY: test
 

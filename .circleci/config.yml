@@ -9,9 +9,16 @@ commands:
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
             FORCE=1 ./deps/readies/bin/getpy3
 
-  build-steps:
+  checkout-all:
     steps:
       - checkout
+      - run:
+          name: Checkout submodules
+          command: git submodule update --init --recursive
+
+  build-steps:
+    steps:
+      - checkout-all
       - setup-automation
       - run:
           name: Get prerequisites
