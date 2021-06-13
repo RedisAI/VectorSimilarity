@@ -2,8 +2,8 @@
 #include "VecSim/vecsim.h"
 #include "VecSim/algorithms/hnsw_c.h"
 
-VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen) {
-    return HNSW_New(params, metric, vectype, veclen);
+VecSimIndex* VecSimIndex_New(VecSimParams *params) {
+    return HNSW_New(params);
 }
 
 inline int VecSimIndex_AddVector(VecSimIndex* index, const void* blob, size_t id) {
@@ -28,7 +28,7 @@ inline void VecSimIndex_Free(VecSimIndex *index) {
 
 // TODO
 
-inline VecSimQueryResult* VecSimIndex_DistnaceQuery(VecSimIndex* index, const void* queryBlob, float distance) {
+inline VecSimQueryResult* VecSimIndex_DistanceQuery(VecSimIndex* index, const void* queryBlob, float distance) {
     return index->DistanceQueryFn(index, queryBlob, distance);
 }
 

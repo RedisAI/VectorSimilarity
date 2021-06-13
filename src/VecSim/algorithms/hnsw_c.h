@@ -12,7 +12,7 @@ extern "C" {
 
 struct HNSWIndex;
 
-VecSimIndex* HNSW_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen);
+VecSimIndex* HNSW_New(VecSimParams *params);
 
 void HNSW_Free(VecSimIndex *index);
 
@@ -26,7 +26,7 @@ VecSimQueryResult* HNSW_TopKQuery(VecSimIndex* index, const void* queryBlob, siz
 
 // TODO
 
-VecSimQueryResult* HNSW_DistnaceQuery(VecSimIndex* index, const void* queryBlob, float distance);
+VecSimQueryResult* HNSW_DistanceQuery(VecSimIndex* index, const void* queryBlob, float distance);
 
 void HNSW_ClearDeleted(VecSimIndex* index);
 

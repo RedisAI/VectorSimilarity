@@ -8,7 +8,7 @@ using namespace std;
 using namespace hnswlib;
 
 struct HNSWIndex {
-    HNSWIndex(VecSimVecType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
+    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
         size_t M = 16, size_t ef_construction = 200);
         
     VecSimIndex base;
@@ -73,10 +73,10 @@ void HNSW_Free(VecSimIndex *index) {
     }
 }
 
-VecSimIndex *HNSW_New(VecSimAlgoParams *params, VecSimMetric VecSimMetric, VecSimVecType vectype, size_t vectorLen) {
+VecSimIndex *HNSW_New(VecSimParams *params) {
     try {
-        auto p = new HNSWIndex(vectype, VecSimMetric, vectorLen, params->hnswParams.
-            initialCapacity, params->hnswParams.M, params->hnswParams.efConstuction);
+        auto p = new HNSWIndex(params->type, params->metric, params->size, params->hnswParams.
+            initialCapacity, params->hnswParams.M, params->hnswParams.efConstruction);
         return &p->base;
     } catch (...) {
         return NULL;
@@ -87,7 +87,7 @@ VecSimIndex *HNSW_New(VecSimAlgoParams *params, VecSimMetric VecSimMetric, VecSi
 }
 #endif
 
-HNSWIndex::HNSWIndex(VecSimVecType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
+HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
         size_t M, size_t ef_construction) :
             space(metric == VecSimMetric_L2 ? static_cast<SpaceInterface<float>*>(new L2Space(dim)) : 
                 static_cast<SpaceInterface<float>*>(new InnerProductSpace(dim))),
