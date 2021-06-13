@@ -15,7 +15,7 @@ int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int a
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    VecSimAlgoParams params = {
+    VecSimParams params = {
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
@@ -43,7 +43,7 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-    VecSimAlgoParams params = {
+    VecSimParams params = {
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
@@ -122,7 +122,7 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     }
     size_t n = 100000;
     int d = 128;
-    VecSimAlgoParams params = {
+    VecSimParams params = {
         .hnswParams = {
             .initialCapacity = n,
             .M = 16,
@@ -177,7 +177,7 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
     if(argc != 1) {
         return RedisModule_WrongArity(ctx);
     }
-        VecSimAlgoParams params = {
+        VecSimParams params = {
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,

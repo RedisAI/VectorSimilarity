@@ -39,7 +39,7 @@ typedef struct {
     size_t size;
     VecSimMetric metric;
     VecSimAlgo algo;
-} VecSimAlgoParams;
+} VecSimParams;
 
 
 typedef struct {
@@ -49,7 +49,7 @@ typedef struct {
 
 typedef struct VecSimIndex VecSimIndex;
 
-typedef VecSimIndex* (*Index_New)(VecSimAlgoParams *params);
+typedef VecSimIndex* (*Index_New)(VecSimParams *params);
 typedef int (*Index_AddVector)(VecSimIndex* index, const void* blob, size_t id);
 typedef int (*Index_DeleteVector) (VecSimIndex* index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex* index);
@@ -68,7 +68,7 @@ typedef struct VecSimIndex {
     Index_Free FreeFn;
 } VecSimIndex;
 
-VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params);
+VecSimIndex* VecSimIndex_New(VecSimParams *params);
 
 void VecSimIndex_Free(VecSimIndex *index);
 

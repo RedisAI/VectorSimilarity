@@ -2,7 +2,7 @@
 #include "VecSim/vecsim.h"
 #include "VecSim/algorithms/hnsw_c.h"
 
-VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params) {
+VecSimIndex* VecSimIndex_New(VecSimParams *params) {
     return HNSW_New(params);
 }
 
