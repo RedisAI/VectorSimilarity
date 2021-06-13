@@ -23,7 +23,7 @@ int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int a
         },
         .algo = VecSimAlgo_HNSW,
         .metric = VecSimMetric_L2,
-        .type = VecSimVecType_FLOAT32,
+        .type = VecSimType_FLOAT32,
         .size = 4
     };
     VecSimIndex *index = VecSimIndex_New(&params);
@@ -51,7 +51,7 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
         },
         .algo = VecSimAlgo_HNSW,
         .metric = VecSimMetric_L2,
-        .type = VecSimVecType_FLOAT32,
+        .type = VecSimType_FLOAT32,
         .size = 4
     };
     VecSimIndex *index = VecSimIndex_New(&params);
@@ -130,7 +130,7 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
         },
         .algo = VecSimAlgo_HNSW,
         .metric = VecSimMetric_L2,
-        .type = VecSimVecType_FLOAT32,
+        .type = VecSimType_FLOAT32,
         .size = d
     };
     VecSimIndex *index = VecSimIndex_New(&params);
@@ -185,7 +185,7 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
         },
         .algo = VecSimAlgo_HNSW,
         .metric = VecSimMetric_L2,
-        .type = VecSimVecType_FLOAT32,
+        .type = VecSimType_FLOAT32,
         .size = 4
     };
     VecSimIndex *index = VecSimIndex_New(&params);

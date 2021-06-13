@@ -8,7 +8,7 @@ using namespace std;
 using namespace hnswlib;
 
 struct HNSWIndex {
-    HNSWIndex(VecSimVecType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
+    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
         size_t M = 16, size_t ef_construction = 200);
         
     VecSimIndex base;
@@ -87,7 +87,7 @@ VecSimIndex *HNSW_New(VecSimParams *params) {
 }
 #endif
 
-HNSWIndex::HNSWIndex(VecSimVecType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
+HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
         size_t M, size_t ef_construction) :
             space(metric == VecSimMetric_L2 ? static_cast<SpaceInterface<float>*>(new L2Space(dim)) : 
                 static_cast<SpaceInterface<float>*>(new InnerProductSpace(dim))),

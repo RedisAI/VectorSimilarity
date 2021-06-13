@@ -8,11 +8,11 @@ extern "C" {
 #endif
 
 typedef enum {
-    VecSimVecType_FLOAT32,
-    VecSimVecType_FLOAT64,
-    VecSimVecType_INT32,
-    VecSimVecType_INT64
-} VecSimVecType;
+    VecSimType_FLOAT32,
+    VecSimType_FLOAT64,
+    VecSimType_INT32,
+    VecSimType_INT64
+} VecSimType;
 
 typedef enum {
     VecSimAlgo_BF,
@@ -35,7 +35,7 @@ typedef struct {
             size_t initialCapacity;
         } bfParams;
     };
-    VecSimVecType type;
+    VecSimType type;
     size_t size;
     VecSimMetric metric;
     VecSimAlgo algo;
