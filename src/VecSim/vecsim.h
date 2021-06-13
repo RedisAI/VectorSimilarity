@@ -29,13 +29,16 @@ typedef struct {
         struct {
             size_t initialCapacity;
             size_t M;
-            size_t efConstuction;
+            size_t efConstruction;
         } hnswParams;
         struct {
             size_t initialCapacity;
         } bfParams;
     };
-    VecSimAlgo algorithmType;
+    VecSimVecType type;
+    size_t size;
+    VecSimMetric metric;
+    VecSimAlgo algo;
 } VecSimAlgoParams;
 
 
@@ -46,13 +49,13 @@ typedef struct {
 
 typedef struct VecSimIndex VecSimIndex;
 
-typedef VecSimIndex* (*Index_New)(VecSimAlgoParams *params, VecSimMetric distanceMetric, VecSimVecType vectorType, size_t vectorLen);
+typedef VecSimIndex* (*Index_New)(VecSimAlgoParams *params);
 typedef int (*Index_AddVector)(VecSimIndex* index, const void* blob, size_t id);
 typedef int (*Index_DeleteVector) (VecSimIndex* index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex* index);
 typedef VecSimQueryResult* (*Index_TopKQuery)(VecSimIndex* index, const void* queryBlob, size_t k);
 typedef void (*Index_Free)(VecSimIndex *index);
-typedef VecSimQueryResult* (*Index_DistnaceQuery)(VecSimIndex* index, const void* queryBlob, float distance);
+typedef VecSimQueryResult* (*Index_DistanceQuery)(VecSimIndex* index, const void* queryBlob, float distance);
 typedef void (*Index_ClearDeleted)(VecSimIndex* index);
 
 typedef struct VecSimIndex {
@@ -60,12 +63,12 @@ typedef struct VecSimIndex {
     Index_DeleteVector DeleteFn;
     Index_IndexSize SizeFn;
     Index_TopKQuery TopKQueryFn;
-    Index_DistnaceQuery DistanceQueryFn;
+    Index_DistanceQuery DistanceQueryFn;
     Index_ClearDeleted ClearDeletedFn;
     Index_Free FreeFn;
 } VecSimIndex;
 
-VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params, VecSimMetric metric, VecSimVecType vectype, size_t veclen);
+VecSimIndex* VecSimIndex_New(VecSimAlgoParams *params);
 
 void VecSimIndex_Free(VecSimIndex *index);
 
@@ -79,7 +82,7 @@ VecSimQueryResult* VecSimIndex_TopKQuery(VecSimIndex* index, const void* queryBl
 
 // TODO
 
-VecSimQueryResult* VecSimIndex_DistnaceQuery(VecSimIndex* index, const void* queryBlob, float distance);
+VecSimQueryResult* VecSimIndex_DistanceQuery(VecSimIndex* index, const void* queryBlob, float distance);
 
 void VecSimIndex_ClearDeleted(VecSimIndex* index);
 

@@ -19,11 +19,14 @@ int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int a
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
-            .efConstuction = 200
+            .efConstruction = 200
         },
-        .algorithmType = VecSimAlgo_HNSW
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimVecType_FLOAT32,
+        .size = 4
     };
-    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, 4);
+    VecSimIndex *index = VecSimIndex_New(&params);
     if (VecSimIndex_IndexSize(index) != 0) {
         return RedisModule_ReplyWithSimpleString(ctx, "Init error");
     }
@@ -44,11 +47,14 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
-            .efConstuction = 200
+            .efConstruction = 200
         },
-        .algorithmType = VecSimAlgo_HNSW
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimVecType_FLOAT32,
+        .size = 4
     };
-    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, 4);
+    VecSimIndex *index = VecSimIndex_New(&params);
 
     for (float i = 0; i < 100; i++) {
         float f[4] = {i, i, i, i};
@@ -120,11 +126,14 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
         .hnswParams = {
             .initialCapacity = n,
             .M = 16,
-            .efConstuction = 200
+            .efConstruction = 200
         },
-        .algorithmType = VecSimAlgo_HNSW
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimVecType_FLOAT32,
+        .size = d
     };
-    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, d);
+    VecSimIndex *index = VecSimIndex_New(&params);
     int k =11;
 
     RedisModule_Log(ctx, "warning", "creating vectors");
@@ -172,11 +181,14 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
         .hnswParams = {
             .initialCapacity = 200,
             .M = 16,
-            .efConstuction = 200
+            .efConstruction = 200
         },
-        .algorithmType = VecSimAlgo_HNSW
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimVecType_FLOAT32,
+        .size = 4
     };
-    VecSimIndex *index = VecSimIndex_New(&params, VecSimMetric_L2, VecSimVecType_FLOAT32, 4);
+    VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < 100; i++) {
         float num = i/10;

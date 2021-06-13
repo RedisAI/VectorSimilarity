@@ -73,10 +73,10 @@ void HNSW_Free(VecSimIndex *index) {
     }
 }
 
-VecSimIndex *HNSW_New(VecSimAlgoParams *params, VecSimMetric VecSimMetric, VecSimVecType vectype, size_t vectorLen) {
+VecSimIndex *HNSW_New(VecSimAlgoParams *params) {
     try {
-        auto p = new HNSWIndex(vectype, VecSimMetric, vectorLen, params->hnswParams.
-            initialCapacity, params->hnswParams.M, params->hnswParams.efConstuction);
+        auto p = new HNSWIndex(params->type, params->metric, params->size, params->hnswParams.
+            initialCapacity, params->hnswParams.M, params->hnswParams.efConstruction);
         return &p->base;
     } catch (...) {
         return NULL;
