@@ -24,6 +24,9 @@ int HNSWIndex_AddVector(VecSimIndex *index, const void* vector_data, size_t id) 
     try {
         auto idx = reinterpret_cast<HNSWIndex*>(index);
         auto &hnsw = idx->hnsw;
+        if(hnsw.cur_element_count == hnsw.max_elements_) {
+            hnsw.resizeIndex(hnsw.max_elements_*2);
+        }
         hnsw.addPoint(vector_data, id);
         return true;
     } catch (...) {
