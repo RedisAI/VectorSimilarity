@@ -36,3 +36,8 @@ def test_llapi_hnswlib_reindexing_same_vector_different_id(env):
     con = env.getConnection()
     res = con.execute_command("vec_sim_test.hnswlib_reindexing_same_vector_different_id")
     env.assertEquals(res, "OK")
+
+def test_llapi_hnswlib_sanity_rinsert_1280(env):
+    con = env.getConnection()
+    res = con.execute_command("vec_sim_test.hnswlib_sanity_rinsert_1280")
+    env.assertEquals(res, "OK")
