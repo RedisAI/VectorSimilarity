@@ -16,3 +16,23 @@ def test_llapi_hnswlib_search(env):
     con = env.getConnection()
     res = con.execute_command("vec_sim_test.hnswlib_search")
     env.assertEquals(res, "OK")
+
+def test_llapi_hnswlib_search_million(env):
+    con = env.getConnection()
+    res = con.execute_command("vec_sim_test.hnswlib_search_million")
+    env.assertEquals(res, "OK")
+
+def test_llapi_hnswlib_indexing_same_vector(env):
+    con = env.getConnection()
+    res = con.execute_command("vec_sim_test.hnswlib_indexing_same_vector")
+    env.assertEquals(res, "OK")
+
+def test_llapi_hnswlib_reindexing_same_vector(env):
+    con = env.getConnection()
+    res = con.execute_command("vec_sim_test.hnswlib_reindexing_same_vector")
+    env.assertEquals(res, "OK")
+
+def test_llapi_hnswlib_reindexing_same_vector_different_id(env):
+    con = env.getConnection()
+    res = con.execute_command("vec_sim_test.hnswlib_reindexing_same_vector_different_id")
+    env.assertEquals(res, "OK")
