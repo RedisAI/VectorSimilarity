@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
-
+#include <stdbool.h>
 #include "VecSim/vecsim.h"
 
 int hnswlib_vector_add_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -209,6 +209,218 @@ int hnswlib_indexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, 
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
 }
 
+int hnswlib_reindexing_same_vector(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    if(argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+        VecSimParams params = {
+        .hnswParams = {
+            .initialCapacity = 200,
+            .M = 16,
+            .efConstruction = 200
+        },
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimType_FLOAT32,
+        .size = 4
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < 100; i++) {
+        float num = i/10;
+        float f[4] = {num, num, num, num};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    if (VecSimIndex_IndexSize(index) != 100) {
+        return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
+    }
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    float query[4] = {4.9,4.95, 5.05, 5.1};
+    size_t ids[100] = {0};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
+    for (int i=0; i<10; i++) {
+        if (res[i].id < 50 || res[i].id >= 60 || res[i].score > 1) {
+            return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+        }
+        ids[res[i].id] = res[i].id;
+    }
+    for(size_t i=50; i <60; i++) {
+        if(ids[i] != i) {
+            char* err;
+            asprintf(&err, "Missing expected id %d", i);
+            return RedisModule_ReplyWithSimpleString(ctx, err);
+        }
+        ids[i] = 0;
+    }
+
+    for (size_t i = 0; i < 100; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+
+    for (size_t i = 0; i < 100; i++) {
+        float num = i/10;
+        float f[4] = {num, num, num, num};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    if (VecSimIndex_IndexSize(index) != 100) {
+        return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
+    }
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
+    for (int i=0; i<10; i++) {
+        if (res[i].id < 50 || res[i].id >= 60 || res[i].score > 1) {
+            return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+        }
+        ids[res[i].id] = res[i].id;
+    }
+    for(size_t i=50; i <60; i++) {
+        if(ids[i] != i) {
+            char* err;
+            asprintf(&err, "Missing expected id %d", i);
+            return RedisModule_ReplyWithSimpleString(ctx, err);
+        }
+        ids[i] = 0;
+    }
+
+    return RedisModule_ReplyWithSimpleString(ctx, "OK");
+}
+
+
+int hnswlib_reindexing_same_vector_different_id(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    if(argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+        VecSimParams params = {
+        .hnswParams = {
+            .initialCapacity = 200,
+            .M = 16,
+            .efConstruction = 200
+        },
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimType_FLOAT32,
+        .size = 4
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < 100; i++) {
+        float num = i/10;
+        float f[4] = {num, num, num, num};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    if (VecSimIndex_IndexSize(index) != 100) {
+        return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
+    }
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    float query[4] = {4.9,4.95, 5.05, 5.1};
+    size_t ids[100] = {0};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
+    for (int i=0; i<10; i++) {
+        if (res[i].id < 50 || res[i].id >= 60 || res[i].score > 1) {
+            return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+        }
+        ids[res[i].id] = res[i].id;
+    }
+    for(size_t i=50; i <60; i++) {
+        if(ids[i] != i) {
+            char* err;
+            asprintf(&err, "Missing expected id %d", i);
+            return RedisModule_ReplyWithSimpleString(ctx, err);
+        }
+        ids[i] = 0;
+    }
+
+    for (size_t i = 0; i < 100; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+
+    for (size_t i = 0; i < 100; i++) {
+        float num = i/10;
+        float f[4] = {num, num, num, num};
+        VecSimIndex_AddVector(index, (const void *)f, i+10);
+    }
+    // Until we have actual delete, HNSW index size is only increasing, even after mark delete.
+    if (VecSimIndex_IndexSize(index) != 110) {
+        char* err;
+        asprintf(&err, "Vector add error, index size is %d", VecSimIndex_IndexSize(index));
+        return RedisModule_ReplyWithSimpleString(ctx, err);
+    }
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    res = VecSimIndex_TopKQuery(index,  (const void *)query, 10);
+    for (int i=0; i<10; i++) {
+        if (res[i].id < 60 || res[i].id >= 70 || res[i].score > 1) {
+            return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+        }
+        ids[res[i].id] = res[i].id;
+    }
+    for(size_t i=60; i <70; i++) {
+        if(ids[i] != i) {
+            char* err;
+            asprintf(&err, "Missing expected id %d", i);
+            return RedisModule_ReplyWithSimpleString(ctx, err);
+        }
+        ids[i] = 0;
+    }
+
+    return RedisModule_ReplyWithSimpleString(ctx, "OK");
+}
+
+int sanity_rinsert_1280(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    if(argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    size_t n = 5;
+    int d = 1280;
+    VecSimParams params = {
+        .hnswParams = {
+            .initialCapacity = n,
+            .M = 16,
+            .efConstruction = 200
+        },
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimType_FLOAT32,
+        .size = d
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+    int k =5;
+
+    float *vectors = RedisModule_Alloc(n*d*sizeof(float));
+    for(int try = 1; try<=3; try++) {
+        RedisModule_Log(ctx, "warning", "creating vectors try %d out of 3", try);
+        for (size_t i = 0; i < n; i++) {
+            for (size_t j = 0; j < d; j++) {
+                (vectors+ i*d)[j] = (float)rand()/(float)(RAND_MAX/100);
+            }
+        }
+        RedisModule_Log(ctx, "warning", "adding vectors to index try %d out of 3", try);
+        for (size_t i = 0; i < n; i++) {
+            VecSimIndex_AddVector(index, (const void *)(vectors+i*d), i*try);
+        }
+        VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)(vectors+3*d), k);
+        size_t ids[5] = {0};
+        for (int i=0; i<k; i++) {
+          ids[res[i].id/try] = res[i].id/try;
+        }
+        for(size_t i=0; i <k; i++) {
+            if(ids[i] != i) {
+                char* err;
+                asprintf(&err, "Missing expected id %d", i);
+                return RedisModule_ReplyWithSimpleString(ctx, err);
+            }
+            ids[i] = 0;
+        }
+        for (size_t i = 0; i < n; i++) {
+            VecSimIndex_DeleteVector(index, i*try);
+        }
+    }
+    return RedisModule_ReplyWithSimpleString(ctx, "OK");
+}
+
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     REDISMODULE_NOT_USED(argv);
     REDISMODULE_NOT_USED(argc);
@@ -236,6 +448,24 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 
     if(
       RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_indexing_same_vector", hnswlib_indexing_same_vector,
+        "",
+        0, 0, 0) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if(
+      RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_reindexing_same_vector", hnswlib_reindexing_same_vector,
+        "",
+        0, 0, 0) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if(
+      RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_reindexing_same_vector_different_id", hnswlib_reindexing_same_vector_different_id,
+        "",
+        0, 0, 0) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    if(
+      RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_sanity_rinsert_1280", sanity_rinsert_1280,
         "",
         0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
