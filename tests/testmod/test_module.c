@@ -66,9 +66,7 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     float query[4] = {50, 50, 50, 50};
     VecSimQueryResult *res = VecSimIndex_TopKQuery(index,  (const void *)query, 11);
     for (int i=0; i<11; i++) {
-        int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
-        int dist = res[i].score;
-        if ((diff_id != (i+1)/2) || (dist != (4*((i+1)/2)*((i+1)/2)))) {
+        if (res[i].id != 45 + i) {
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
         }
     }
@@ -161,12 +159,9 @@ int hnswlib_vector_search_million_test(RedisModuleCtx *ctx, RedisModuleString **
     RedisModule_Free(vectors);
 
     for (int i=0; i<11; i++) {
-        int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
-        int dist = res[i].score;
-        if ((diff_id != (i+1)/2) || (dist != (d*((i+1)/2)*((i+1)/2)))) {
+        if (res[i].id != 45 + i) {
             RedisModule_Log(ctx, "warning","Search test fail");
             return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
-
         }
     }
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
@@ -405,6 +400,7 @@ int sanity_rinsert_1280(RedisModuleCtx *ctx, RedisModuleString **argv, int argc)
         size_t ids[5] = {0};
         for (int i=0; i<k; i++) {
           ids[res[i].id/try] = res[i].id/try;
+          RedisModule_Log(ctx, "warning", "id %ld score %f", res[i].id, res[i].score);
         }
         for(size_t i=0; i <k; i++) {
             if(ids[i] != i) {
