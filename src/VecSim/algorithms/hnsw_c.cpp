@@ -9,9 +9,9 @@ using namespace std;
 using namespace hnswlib;
 
 struct HNSWIndex {
-    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
-              size_t M = 16, size_t ef_construction = 200);
-
+    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
+        size_t M = 16, size_t ef_construction = 200, size_t ef_runtime=200);
+        
     VecSimIndex base;
     unique_ptr<SpaceInterface<float>> space;
     HierarchicalNSW<float> hnsw;
@@ -80,9 +80,8 @@ void HNSW_Free(VecSimIndex *index) {
 
 VecSimIndex *HNSW_New(VecSimParams *params) {
     try {
-        auto p = new HNSWIndex(params->type, params->metric, params->size,
-                               params->hnswParams.initialCapacity, params->hnswParams.M,
-                               params->hnswParams.efConstruction);
+        auto p = new HNSWIndex(params->type, params->metric, params->size, params->hnswParams.
+            initialCapacity, params->hnswParams.M, params->hnswParams.efConstruction, params->hnswParams.efRuntime ? params->hnswParams.efRuntime: 200);
         return &p->base;
     } catch (...) {
         return NULL;
@@ -93,12 +92,13 @@ VecSimIndex *HNSW_New(VecSimParams *params) {
 }
 #endif
 
-HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
-                     size_t M, size_t ef_construction)
-    : space(metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(dim))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(dim))),
-      hnsw(space.get(), max_elements, M, ef_construction) {
+HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
+        size_t M, size_t ef_construction, size_t ef_runtime) :
+            space(metric == VecSimMetric_L2 ? static_cast<SpaceInterface<float>*>(new L2Space(dim)) : 
+                static_cast<SpaceInterface<float>*>(new InnerProductSpace(dim))),
+            hnsw(space.get(), max_elements, M, ef_construction)
+{
+    hnsw.setEf(ef_runtime);
     base = VecSimIndex{
         AddFn : HNSWIndex_AddVector,
         DeleteFn : HNSW_DeleteVector,

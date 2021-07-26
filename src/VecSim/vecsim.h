@@ -24,6 +24,7 @@ typedef struct {
             size_t initialCapacity;
             size_t M;
             size_t efConstruction;
+            size_t efRuntime;
         } hnswParams;
         struct {
             size_t initialCapacity;
