@@ -75,6 +75,41 @@ int hnswlib_vector_search_test(RedisModuleCtx *ctx, RedisModuleString **argv, in
     return RedisModule_ReplyWithSimpleString(ctx, "OK");
 }
 
+int hnswlib_vector_search_by_id_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    if(argc != 1) {
+        return RedisModule_WrongArity(ctx);
+    }
+    VecSimParams params = {
+        .hnswParams = {
+            .initialCapacity = 200,
+            .M = 16,
+            .efConstruction = 200
+        },
+        .algo = VecSimAlgo_HNSW,
+        .metric = VecSimMetric_L2,
+        .type = VecSimType_FLOAT32,
+        .size = 4
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (float i = 0; i < 100; i++) {
+        float f[4] = {i, i, i, i};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    if (VecSimIndex_IndexSize(index) != 100) {
+        return RedisModule_ReplyWithSimpleString(ctx, "Vector add error");
+    }
+    float query[4] = {50, 50, 50, 50};
+    VecSimQueryResult *res = VecSimIndex_TopKQueryByID(index,  (const void *)query, 11);
+    for (int i=0; i<11; i++) {
+        if (res[i].id != (i + 45) ) {
+            return RedisModule_ReplyWithSimpleString(ctx, "Search test fail");
+        }
+    }
+    return RedisModule_ReplyWithSimpleString(ctx, "OK");
+}
+
 
 // int hnswlib_index_save_load_test(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 //     REDISMODULE_NOT_USED(argv);
@@ -440,6 +475,12 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         "",
         0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
+    if(
+      RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_search_order_by_id", hnswlib_vector_search_by_id_test,
+        "",
+        0, 0, 0) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
     if(
       RedisModule_CreateCommand(ctx, "vec_sim_test.hnswlib_search_million", hnswlib_vector_search_million_test,
         "",

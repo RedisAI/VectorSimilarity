@@ -42,6 +42,7 @@
 
 __pycache__/
 test/flow/logs/
+tests/flow/logs/
 
 .vscode
 
