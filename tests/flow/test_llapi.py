@@ -17,6 +17,11 @@ def test_llapi_hnswlib_search(env):
     res = con.execute_command("vec_sim_test.hnswlib_search")
     env.assertEquals(res, "OK")
 
+def test_llapi_hnswlib_search_order_by_id(env):
+    con = env.getConnection()
+    res = con.execute_command("vec_sim_test.hnswlib_search_order_by_id")
+    env.assertEquals(res, "OK")
+
 def test_llapi_hnswlib_search_million(env):
     con = env.getConnection()
     res = con.execute_command("vec_sim_test.hnswlib_search_million")
