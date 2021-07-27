@@ -3,6 +3,7 @@
 #include <deque>
 #include <memory>
 #include "hnswlib/hnswlib/hnswalg.h"
+#include "VecSim/utils/arr_cpp.h"
 
 using namespace std;
 using namespace hnswlib;
@@ -57,7 +58,7 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void* query_data, si
         auto &hnsw = idx->hnsw;
         typedef priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
-        auto *results = (VecSimQueryResult *) calloc(k, sizeof(VecSimQueryResult));
+        VecSimQueryResult * results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = k - 1; i >= 0; --i) {
             results[i] = VecSimQueryResult{knn_res->top().second, knn_res->top().first};
             knn_res->pop();
