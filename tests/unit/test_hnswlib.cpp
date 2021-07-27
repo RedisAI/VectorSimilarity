@@ -1,7 +1,14 @@
 #include "gtest/gtest.h"
 #include "VecSim/vecsim.h"
 class HNSWLibTest :public ::testing::Test {
-    
+    protected:
+        HNSWLibTest() {}
+
+        ~HNSWLibTest() override {}
+
+        void SetUp() override {}
+
+        void TearDown() override {}
 };
 
 TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
