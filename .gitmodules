@@ -1,6 +1,3 @@
 [submodule "deps/hnswlib"]
 	path = deps/hnswlib
 	url = https://github.com/nmslib/hnswlib.git
-[submodule "tests/deps/googletest"]
-	path = tests/deps/googletest
-	url = https://github.com/google/googletest.git
