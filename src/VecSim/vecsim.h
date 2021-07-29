@@ -81,6 +81,22 @@ typedef struct {
     // size_t memory;
 } VecSimIndexInfo;
 typedef struct {
+    union {
+        struct {
+            VecSimType type;
+            size_t indexSize;
+            size_t M;
+            size_t efConstruction;
+            size_t efRuntime;
+            size_t levels;
+        } hnswInfo;
+    };
+    size_t d;
+    VecSimAlgo algo;
+    // TODO:
+    // size_t memory;
+} VecSimIndexInfo;
+typedef struct {
     size_t id;
     float score;
 } VecSimQueryResult;
