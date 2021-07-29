@@ -34,9 +34,9 @@ typedef struct {
     union {
         struct {
             size_t initialCapacity; // Initial size of HNSW graph.
-            size_t M;
-            size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
+            size_t M;               // Number of allowed edges per node in graph.
+            size_t efConstruction;  // EF parameter for HNSW graph accuracy/latency for indexing.
+            size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
         } hnswParams;
         struct {
             size_t initialCapacity;
@@ -58,8 +58,6 @@ typedef struct {
             size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
         } hnswRuntimeParams;
     };
-    VecSimAlgo algo; // Algorithm being used.
-    bool executed;   // Indication to submitter that the query executed with the given parameters.
 } VecSimQueryParams;
 
 /**

@@ -62,7 +62,6 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
         size_t originalEF = hnsw.ef_;
 
         if (queryParams) {
-            assert(queryParams->algo == VecSimAlgo_HNSWLIB);
             if (queryParams->hnswRuntimeParams.efRuntime != 0) {
                 hnsw.setEf(queryParams->hnswRuntimeParams.efRuntime);
             }
@@ -78,9 +77,8 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
         }
         // Restore efRuntime
         hnsw.setEf(originalEF);
-        if (queryParams) {
-            queryParams->executed = true;
-        }
+        assert(hnsw.ef_ == originalEF);
+
         return results;
     } catch (...) {
         return NULL;
