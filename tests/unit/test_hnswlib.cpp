@@ -283,6 +283,56 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
     VecSimIndex_Free(index);
 }
 
+TEST_F(HNSWLibTest, test_hnsw_info) {
+    size_t n = 100;
+    size_t d = 128;
+
+    // Build with default args
+    VecSimParams params = {
+        hnswParams : {
+            initialCapacity : n,
+
+        },
+        type : VecSimType_FLOAT32,
+        size : d,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_HNSW,
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_HNSW);
+    ASSERT_EQ(info.d, d);
+    // Default args
+    ASSERT_EQ(info.hnswInfo.efConstruction, 200);
+    ASSERT_EQ(info.hnswInfo.M, 16);
+    ASSERT_EQ(info.hnswInfo.efRuntime, 10);
+    VecSimIndex_Free(index);
+
+    d = 1280;
+    params = {
+        hnswParams : {
+            initialCapacity : n,
+            M: 200,
+            efConstruction: 1000,
+            efRuntime: 500
+
+        },
+        type : VecSimType_FLOAT32,
+        size : d,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_HNSW,
+    };
+    index = VecSimIndex_New(&params);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_HNSW);
+    ASSERT_EQ(info.d, d);
+    // User args
+    ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
+    ASSERT_EQ(info.hnswInfo.M, 200);
+    ASSERT_EQ(info.hnswInfo.efRuntime, 500);
+}
+
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
