@@ -10,9 +10,3 @@ mkdir -p unit/build
 (cd unit/build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make)
 (cd unit/build &&./test_hnswlib)
 
-# cd $HERE
-# mkdir -p testmod/build
-# (cd testmod/build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make)
-
-# cd flow
-# python3 -m RLTest --module $HERE/testmod/build/testmod.so --clear-logs
