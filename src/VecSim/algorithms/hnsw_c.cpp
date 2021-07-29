@@ -10,7 +10,8 @@ using namespace hnswlib;
 
 struct HNSWIndex {
     HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
-              size_t M = 16, size_t ef_construction = 200, size_t ef_runtime = 10);
+              size_t M = HNSW_DEFAULT_M, size_t ef_construction = HNSW_DEFAULT_EF_C,
+              size_t ef_runtime = HNSW_DEFAULT_EF_RT);
 
     VecSimIndex base;
     unique_ptr<SpaceInterface<float>> space;
@@ -61,7 +62,7 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
         size_t originalEF = hnsw.ef_;
 
         if (queryParams) {
-            assert(queryParams->algo == VecSimAlgo_HNSW);
+            assert(queryParams->algo == VecSimAlgo_HNSWLIB);
             if (queryParams->hnswRuntimeParams.efRuntime != 0) {
                 hnsw.setEf(queryParams->hnswRuntimeParams.efRuntime);
             }
@@ -77,6 +78,9 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
         }
         // Restore efRuntime
         hnsw.setEf(originalEF);
+        if (queryParams) {
+            queryParams->executed = true;
+        }
         return results;
     } catch (...) {
         return NULL;
@@ -95,9 +99,10 @@ VecSimIndex *HNSW_New(VecSimParams *params) {
     try {
         auto p = new HNSWIndex(
             params->type, params->metric, params->size, params->hnswParams.initialCapacity,
-            params->hnswParams.M ? params->hnswParams.M : 16,
-            params->hnswParams.efConstruction ? params->hnswParams.efConstruction : 200,
-            params->hnswParams.efRuntime ? params->hnswParams.efRuntime : 10);
+            params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
+            params->hnswParams.efConstruction ? params->hnswParams.efConstruction
+                                              : HNSW_DEFAULT_EF_C,
+            params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
         return &p->base;
     } catch (...) {
         return NULL;
@@ -109,13 +114,13 @@ VecSimIndexInfo HNSW_Info(VecSimIndex *index) {
     auto &hnsw = idx->hnsw;
 
     VecSimIndexInfo info;
-    info.algo = VecSimAlgo_HNSW;
+    info.algo = VecSimAlgo_HNSWLIB;
     info.d = *((size_t *)idx->space.get()->get_dist_func_param());
+    info.type = VecSimType_FLOAT32;
     info.hnswInfo.M = hnsw.M_;
     info.hnswInfo.efConstruction = hnsw.ef_construction_;
     info.hnswInfo.efRuntime = hnsw.ef_;
     info.hnswInfo.indexSize = hnsw.cur_element_count;
-    info.hnswInfo.type = VecSimType_FLOAT32;
     info.hnswInfo.levels = hnsw.maxlevel_;
     return info;
 }

@@ -7,6 +7,12 @@
 extern "C" {
 #endif
 
+// HNSW default parameters
+#define HNSW_DEFAULT_M     16
+#define HNSW_DEFAULT_EF_C  200
+#define HNSW_DEFAULT_EF_RT 10
+
+// Datatypes for indexing.
 typedef enum {
     VecSimType_FLOAT32,
     VecSimType_FLOAT64,
@@ -14,50 +20,65 @@ typedef enum {
     VecSimType_INT64
 } VecSimType;
 
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSW } VecSimAlgo;
+// Algorithm type/library.
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 
+// Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP } VecSimMetric;
 
+/**
+ * @brief Index initialization parameters.
+ *
+ */
 typedef struct {
     union {
         struct {
-            size_t initialCapacity;
+            size_t initialCapacity; // Initial size of HNSW graph.
             size_t M;
-            size_t efConstruction;
-            size_t efRuntime;
+            size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
+            size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
         } hnswParams;
         struct {
             size_t initialCapacity;
         } bfParams;
     };
-    VecSimType type;
-    size_t size;
-    VecSimMetric metric;
-    VecSimAlgo algo;
+    VecSimType type;     // Datatype to index.
+    size_t size;         // Vector size (dimension).
+    VecSimMetric metric; // Distance metric to use in the index.
+    VecSimAlgo algo;     // Algorithm to use.
 } VecSimParams;
 
+/**
+ * @brief Query Runtime parameters.
+ *
+ */
 typedef struct {
     union {
         struct {
-            size_t efRuntime;
+            size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
         } hnswRuntimeParams;
     };
-    VecSimAlgo algo;
+    VecSimAlgo algo; // Algorithm being used.
+    bool executed;   // Indication to submitter that the query executed with the given parameters.
 } VecSimQueryParams;
 
+/**
+ * @brief Index information. Mainly used for debug/testing.
+ *
+ */
 typedef struct {
     union {
         struct {
-            VecSimType type;
-            size_t indexSize;
-            size_t M;
-            size_t efConstruction;
-            size_t efRuntime;
-            size_t levels;
+            size_t indexSize;      // Current count of vectors.
+            size_t M;              // Number of allowed edges per node in graph.
+            size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
+            size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
+            size_t levels;         // Number of graph levels.
         } hnswInfo;
     };
-    size_t d;
-    VecSimAlgo algo;
+    VecSimType type; // Datatype the index holds.
+    size_t d;        // Vector size (dimension).
+    VecSimAlgo algo; // Algorithm being used.
     // TODO:
     // size_t memory;
 } VecSimIndexInfo;
