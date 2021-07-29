@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#define DEBUG
 #include "VecSim/vecsim.h"
 class HNSWLibTest : public ::testing::Test {
   protected:
