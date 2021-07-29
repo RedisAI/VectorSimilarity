@@ -90,6 +90,10 @@ VecSimQueryResult* VecSimIndex_DistanceQuery(VecSimIndex* index, const void* que
 
 void VecSimIndex_ClearDeleted(VecSimIndex* index);
 
+size_t VecSimQueryResult_Len(VecSimQueryResult*);
+
+void VecSimQueryResult_Free(VecSimQueryResult*);
+ 
 #ifdef __cplusplus
 }
 #endif
