@@ -1,5 +1,5 @@
 
-#include "hnsw_c.h"
+#include "hnswlib_c.h"
 #include <deque>
 #include <memory>
 #include "VecSim/utils/arr_cpp.h"
@@ -36,7 +36,7 @@ int HNSWIndex_AddVector(VecSimIndex *index, const void *vector_data, size_t id) 
     }
 }
 
-int HNSW_DeleteVector(VecSimIndex *index, size_t id) {
+int HNSWLIB_DeleteVector(VecSimIndex *index, size_t id) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -47,14 +47,14 @@ int HNSW_DeleteVector(VecSimIndex *index, size_t id) {
     }
 }
 
-size_t HNSW_Size(VecSimIndex *index) {
+size_t HNSWLIB_Size(VecSimIndex *index) {
     auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
     return hnsw.cur_element_count;
 }
 
-VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                  VecSimQueryParams *queryParams) {
+VecSimQueryResult *HNSWLIB_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
+                                     VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -85,7 +85,7 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
     }
 }
 
-void HNSW_Free(VecSimIndex *index) {
+void HNSWLIB_Free(VecSimIndex *index) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         delete idx;
@@ -93,7 +93,7 @@ void HNSW_Free(VecSimIndex *index) {
     }
 }
 
-VecSimIndex *HNSW_New(const VecSimParams *params) {
+VecSimIndex *HNSWLIB_New(const VecSimParams *params) {
     try {
         auto p = new HNSWIndex(
             params->type, params->metric, params->size, params->hnswParams.initialCapacity,
@@ -136,12 +136,12 @@ HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t
     hnsw.setEf(ef_runtime);
     base = VecSimIndex{
         AddFn : HNSWIndex_AddVector,
-        DeleteFn : HNSW_DeleteVector,
-        SizeFn : HNSW_Size,
-        TopKQueryFn : HNSW_TopKQuery,
+        DeleteFn : HNSWLIB_DeleteVector,
+        SizeFn : HNSWLIB_Size,
+        TopKQueryFn : HNSWLIB_TopKQuery,
         DistanceQueryFn : NULL,
         ClearDeletedFn : NULL,
-        FreeFn : HNSW_Free,
+        FreeFn : HNSWLIB_Free,
         InfoFn : HNSW_Info
     };
 }
