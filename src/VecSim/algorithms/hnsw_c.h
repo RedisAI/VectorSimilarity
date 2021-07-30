@@ -12,7 +12,7 @@ extern "C" {
 
 struct HNSWIndex;
 
-VecSimIndex* HNSW_New(const VecSimParams *params);
+VecSimIndex *HNSW_New(const VecSimParams *params);
 
 void HNSW_Free(VecSimIndex *index);
 

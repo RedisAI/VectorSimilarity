@@ -45,4 +45,5 @@ test/flow/logs/
 tests/flow/logs/
 
 .vscode
+**/.ipynb_checkpoints
 
