@@ -93,7 +93,7 @@ void HNSW_Free(VecSimIndex *index) {
     }
 }
 
-VecSimIndex *HNSW_New(VecSimParams *params) {
+VecSimIndex *HNSW_New(const VecSimParams *params) {
     try {
         auto p = new HNSWIndex(
             params->type, params->metric, params->size, params->hnswParams.initialCapacity,

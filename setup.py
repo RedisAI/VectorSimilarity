@@ -23,8 +23,12 @@ if bindings_dir in os.path.basename(os.getcwd()):
     source_files = ['./bindings.cpp']
     include_dirs.extend(['../deps/', '../VecSim'])
 else:
-    source_files = ['./python_bindings/bindings.cpp']
-    include_dirs.extend(['./deps/', './VecSim'])
+    source_files = [
+        './src/python_bindings/bindings.cpp',
+        './src/VecSim/vecsim.cpp',
+        './src/VecSim/algorithms/hnsw_c.cpp'
+    ]
+    include_dirs.extend(['./src', "./deps"])
 
 libraries = []
 extra_objects = []
@@ -32,7 +36,7 @@ extra_objects = []
 
 ext_modules = [
     Extension(
-        'redislabs_vecsim',
+        'VecSim',
         source_files,
         include_dirs=include_dirs,
         libraries=libraries,
@@ -58,15 +62,12 @@ def has_flag(compiler, flagname):
 
 
 def cpp_flag(compiler):
-    """Return the -std=c++[11/14] compiler flag.
-    The c++14 is prefered over c++11 (when it is available).
+    """Return the -std=c++[17] compiler flag.
     """
-    if has_flag(compiler, '-std=c++14'):
-        return '-std=c++14'
-    elif has_flag(compiler, '-std=c++11'):
-        return '-std=c++11'
+    if has_flag(compiler, '-std=c++17'):
+        return '-std=c++17'
     else:
-        raise RuntimeError('Unsupported compiler -- at least C++11 support '
+        raise RuntimeError('Unsupported compiler -- C++17 support '
                            'is needed!')
 
 
@@ -106,7 +107,7 @@ class BuildExt(build_ext):
         build_ext.build_extensions(self)
 
 setup(
-    name='redislabs_vecsim',
+    name='VecSim',
     version=__version__,
     description='redis labs vector similarity library',
     author='Redis Labs CTO team',

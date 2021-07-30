@@ -31,16 +31,18 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP } VecSimMetric;
  *
  */
 typedef struct {
+    size_t initialCapacity;
+    size_t M;
+    size_t efConstruction;
+} HNSWParams;
+
+typedef struct {
+    size_t initialCapacity;
+} BFParams;
+typedef struct {
     union {
-        struct {
-            size_t initialCapacity; // Initial size of HNSW graph.
-            size_t M;               // Number of allowed edges per node in graph.
-            size_t efConstruction;  // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
-        } hnswParams;
-        struct {
-            size_t initialCapacity;
-        } bfParams;
+        HNSWParams hnswParams;
+        BFParams bfParams;
     };
     VecSimType type;     // Datatype to index.
     size_t size;         // Vector size (dimension).
@@ -103,10 +105,11 @@ typedef struct {
 
 typedef struct VecSimIndex VecSimIndex;
 
-typedef VecSimIndex *(*Index_New)(VecSimParams *params);
-typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
-typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
-typedef size_t (*Index_IndexSize)(VecSimIndex *index);
+typedef VecSimIndex* (*Index_New)(const VecSimParams *params);
+typedef int (*Index_AddVector)(VecSimIndex* index, const void* blob, size_t id);
+typedef int (*Index_DeleteVector) (VecSimIndex* index, size_t id);
+typedef size_t (*Index_IndexSize)(VecSimIndex* index);
+typedef VecSimQueryResult* (*Index_TopKQuery)(VecSimIndex* index, const void* queryBlob, size_t k);
 typedef void (*Index_Free)(VecSimIndex *index);
 typedef VecSimQueryResult *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k,
                                               VecSimQueryParams *queryParams);
@@ -128,7 +131,7 @@ typedef struct VecSimIndex {
     Index_Info InfoFn;
 } VecSimIndex;
 
-VecSimIndex *VecSimIndex_New(VecSimParams *params);
+VecSimIndex* VecSimIndex_New(const VecSimParams *params);
 
 void VecSimIndex_Free(VecSimIndex *index);
 
