@@ -34,6 +34,7 @@ typedef struct {
     size_t initialCapacity;
     size_t M;
     size_t efConstruction;
+    size_t efRuntime;
 } HNSWParams;
 
 typedef struct {
@@ -109,7 +110,6 @@ typedef VecSimIndex* (*Index_New)(const VecSimParams *params);
 typedef int (*Index_AddVector)(VecSimIndex* index, const void* blob, size_t id);
 typedef int (*Index_DeleteVector) (VecSimIndex* index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex* index);
-typedef VecSimQueryResult* (*Index_TopKQuery)(VecSimIndex* index, const void* queryBlob, size_t k);
 typedef void (*Index_Free)(VecSimIndex *index);
 typedef VecSimQueryResult *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k,
                                               VecSimQueryParams *queryParams);

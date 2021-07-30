@@ -26,7 +26,7 @@ class PyVecSimIndex {
         }
         size_t *data_numpy_l = new size_t[k];
         float* data_numpy_d = new float[k];
-        for (int i = 0; i < k; i++) {
+        for (size_t i = 0; i < k; i++) {
             data_numpy_d[i] = res[i].score;
             data_numpy_l[i] = res[i].id;
         }
@@ -63,7 +63,7 @@ class PyVecSimIndex {
 
 PYBIND11_MODULE(VecSim, m) {
     py::enum_<VecSimAlgo>(m, "VecSimAlgo")
-    .value("VecSimAlgo_HNSW", VecSimAlgo_HNSW)
+    .value("VecSimAlgo_HNSWLIB", VecSimAlgo_HNSWLIB)
     .value("VecSimAlgo_BF", VecSimAlgo_BF)
     .export_values();
 
@@ -83,7 +83,8 @@ PYBIND11_MODULE(VecSim, m) {
     .def(py::init())
     .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
     .def_readwrite("M", &HNSWParams::M)
-    .def_readwrite("efConstruction", &HNSWParams::efConstruction);
+    .def_readwrite("efConstruction", &HNSWParams::efConstruction)
+    .def_readwrite("efRuntime", &HNSWParams::efRuntime);
 
     py::class_<VecSimParams>(m, "VecSimParams")
     .def(py::init())
