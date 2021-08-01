@@ -22,11 +22,13 @@ int HNSW_DeleteVector(VecSimIndex *index, size_t id);
 
 size_t HNSW_Size(VecSimIndex *index);
 
-VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k);
+VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+                                  VecSimQueryParams *queryParams);
 
 // TODO
 
-VecSimQueryResult *HNSW_DistanceQuery(VecSimIndex *index, const void *queryBlob, float distance);
+VecSimQueryResult *HNSW_DistanceQuery(VecSimIndex *index, const void *queryBlob, float distance,
+                                      VecSimQueryParams queryParams);
 
 void HNSW_ClearDeleted(VecSimIndex *index);
 
