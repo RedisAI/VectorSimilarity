@@ -74,3 +74,9 @@ platform:
 ifeq ($(PUBLISH),1)
 	@make -C build/platforms publish
 endif
+
+format:
+	./clang-format-all.sh
+
+lint:
+	./clang-check-all.sh

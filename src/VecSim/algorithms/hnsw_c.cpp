@@ -9,9 +9,9 @@ using namespace std;
 using namespace hnswlib;
 
 struct HNSWIndex {
-    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
-        size_t M = 16, size_t ef_construction = 200);
-        
+    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
+              size_t M = 16, size_t ef_construction = 200);
+
     VecSimIndex base;
     unique_ptr<SpaceInterface<float>> space;
     HierarchicalNSW<float> hnsw;
@@ -21,12 +21,12 @@ struct HNSWIndex {
 extern "C" {
 #endif
 
-int HNSWIndex_AddVector(VecSimIndex *index, const void* vector_data, size_t id) {
+int HNSWIndex_AddVector(VecSimIndex *index, const void *vector_data, size_t id) {
     try {
-        auto idx = reinterpret_cast<HNSWIndex*>(index);
+        auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
-        if(hnsw.cur_element_count == hnsw.max_elements_) {
-            hnsw.resizeIndex(hnsw.max_elements_*2);
+        if (hnsw.cur_element_count == hnsw.max_elements_) {
+            hnsw.resizeIndex(hnsw.max_elements_ * 2);
         }
         hnsw.addPoint(vector_data, id);
         return true;
@@ -37,7 +37,7 @@ int HNSWIndex_AddVector(VecSimIndex *index, const void* vector_data, size_t id) 
 
 int HNSW_DeleteVector(VecSimIndex *index, size_t id) {
     try {
-        auto idx = reinterpret_cast<HNSWIndex*>(index);
+        auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
         hnsw.markDelete(id);
         return true;
@@ -47,18 +47,19 @@ int HNSW_DeleteVector(VecSimIndex *index, size_t id) {
 }
 
 size_t HNSW_Size(VecSimIndex *index) {
-    auto idx = reinterpret_cast<HNSWIndex*>(index);
+    auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
     return hnsw.cur_element_count;
 }
 
-VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void* query_data, size_t k) {
+VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, size_t k) {
     try {
-        auto idx = reinterpret_cast<HNSWIndex*>(index);
+        auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
         typedef priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
-        VecSimQueryResult * results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
+        VecSimQueryResult *results =
+            array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = k - 1; i >= 0; --i) {
             results[i] = VecSimQueryResult{knn_res->top().second, knn_res->top().first};
             knn_res->pop();
@@ -71,7 +72,7 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void* query_data, si
 
 void HNSW_Free(VecSimIndex *index) {
     try {
-        auto idx = reinterpret_cast<HNSWIndex*>(index);
+        auto idx = reinterpret_cast<HNSWIndex *>(index);
         delete idx;
     } catch (...) {
     }
@@ -79,8 +80,9 @@ void HNSW_Free(VecSimIndex *index) {
 
 VecSimIndex *HNSW_New(VecSimParams *params) {
     try {
-        auto p = new HNSWIndex(params->type, params->metric, params->size, params->hnswParams.
-            initialCapacity, params->hnswParams.M, params->hnswParams.efConstruction);
+        auto p = new HNSWIndex(params->type, params->metric, params->size,
+                               params->hnswParams.initialCapacity, params->hnswParams.M,
+                               params->hnswParams.efConstruction);
         return &p->base;
     } catch (...) {
         return NULL;
@@ -91,19 +93,19 @@ VecSimIndex *HNSW_New(VecSimParams *params) {
 }
 #endif
 
-HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, 
-        size_t M, size_t ef_construction) :
-            space(metric == VecSimMetric_L2 ? static_cast<SpaceInterface<float>*>(new L2Space(dim)) : 
-                static_cast<SpaceInterface<float>*>(new InnerProductSpace(dim))),
-            hnsw(space.get(), max_elements, M, ef_construction)
-{
+HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
+                     size_t M, size_t ef_construction)
+    : space(metric == VecSimMetric_L2
+                ? static_cast<SpaceInterface<float> *>(new L2Space(dim))
+                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(dim))),
+      hnsw(space.get(), max_elements, M, ef_construction) {
     base = VecSimIndex{
-        AddFn: HNSWIndex_AddVector, 
-        DeleteFn: HNSW_DeleteVector,
-        SizeFn: HNSW_Size,
-        TopKQueryFn: HNSW_TopKQuery,
-        DistanceQueryFn: NULL,
-        ClearDeletedFn: NULL,
-        FreeFn: HNSW_Free
+        AddFn : HNSWIndex_AddVector,
+        DeleteFn : HNSW_DeleteVector,
+        SizeFn : HNSW_Size,
+        TopKQueryFn : HNSW_TopKQuery,
+        DistanceQueryFn : NULL,
+        ClearDeletedFn : NULL,
+        FreeFn : HNSW_Free
     };
 }
