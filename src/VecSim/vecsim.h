@@ -80,6 +80,7 @@ typedef struct {
     // TODO:
     // size_t memory;
 } VecSimIndexInfo;
+
 typedef struct {
     size_t id;
     float score;
