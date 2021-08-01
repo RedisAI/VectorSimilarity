@@ -83,22 +83,7 @@ typedef struct {
     // TODO:
     // size_t memory;
 } VecSimIndexInfo;
-typedef struct {
-    union {
-        struct {
-            size_t indexSize;      // Current count of vectors.
-            size_t M;              // Number of allowed edges per node in graph.
-            size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
-            size_t levels;         // Number of graph levels.
-        } hnswInfo;
-    };
-    VecSimType type; // Datatype the index holds.
-    size_t d;        // Vector size (dimension).
-    VecSimAlgo algo; // Algorithm being used.
-    // TODO:
-    // size_t memory;
-} VecSimIndexInfo;
+
 typedef struct {
     size_t id;
     float score;
