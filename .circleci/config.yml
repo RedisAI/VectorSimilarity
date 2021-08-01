@@ -24,6 +24,9 @@ commands:
           name: Get prerequisites
           command: ./sbin/system-setup.py
       - run:
+          name: lint
+          command: bash -l -c "make lint"
+      - run:
           name: Build
           command: bash -l -c "make build"
       - run:

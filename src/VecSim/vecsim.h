@@ -14,15 +14,9 @@ typedef enum {
     VecSimType_INT64
 } VecSimType;
 
-typedef enum {
-    VecSimAlgo_BF,
-    VecSimAlgo_HNSW
-} VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSW } VecSimAlgo;
 
-typedef enum {
-    VecSimMetric_L2,
-    VecSimMetric_IP
-} VecSimMetric;
+typedef enum { VecSimMetric_L2, VecSimMetric_IP } VecSimMetric;
 
 typedef struct {
     union {
@@ -41,7 +35,6 @@ typedef struct {
     VecSimAlgo algo;
 } VecSimParams;
 
-
 typedef struct {
     size_t id;
     float score;
@@ -49,16 +42,18 @@ typedef struct {
 
 typedef struct VecSimIndex VecSimIndex;
 
-typedef VecSimIndex* (*Index_New)(VecSimParams *params);
-typedef int (*Index_AddVector)(VecSimIndex* index, const void* blob, size_t id);
-typedef int (*Index_DeleteVector) (VecSimIndex* index, size_t id);
-typedef size_t (*Index_IndexSize)(VecSimIndex* index);
-typedef VecSimQueryResult* (*Index_TopKQuery)(VecSimIndex* index, const void* queryBlob, size_t k);
+typedef VecSimIndex *(*Index_New)(VecSimParams *params);
+typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
+typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
+typedef size_t (*Index_IndexSize)(VecSimIndex *index);
+typedef VecSimQueryResult *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k);
 typedef void (*Index_Free)(VecSimIndex *index);
-typedef VecSimQueryResult* (*Index_TopKQuery)(VecSimIndex* index, const void* queryBlob, size_t k);
-typedef VecSimQueryResult* (*Index_TopKQueryByID)(VecSimIndex* index, const void* queryBlob, size_t k);
-typedef VecSimQueryResult* (*Index_DistanceQuery)(VecSimIndex* index, const void* queryBlob, float distance);
-typedef void (*Index_ClearDeleted)(VecSimIndex* index);
+typedef VecSimQueryResult *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k);
+typedef VecSimQueryResult *(*Index_TopKQueryByID)(VecSimIndex *index, const void *queryBlob,
+                                                  size_t k);
+typedef VecSimQueryResult *(*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
+                                                  float distance);
+typedef void (*Index_ClearDeleted)(VecSimIndex *index);
 
 typedef struct VecSimIndex {
     Index_AddVector AddFn;
@@ -70,30 +65,31 @@ typedef struct VecSimIndex {
     Index_Free FreeFn;
 } VecSimIndex;
 
-VecSimIndex* VecSimIndex_New(VecSimParams *params);
+VecSimIndex *VecSimIndex_New(VecSimParams *params);
 
 void VecSimIndex_Free(VecSimIndex *index);
 
-int VecSimIndex_AddVector(VecSimIndex* index, const void* blob, size_t id);
+int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 
-int VecSimIndex_DeleteVector(VecSimIndex* index, size_t id);
+int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
-size_t VecSimIndex_IndexSize(VecSimIndex* index);
+size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
-VecSimQueryResult* VecSimIndex_TopKQuery(VecSimIndex* index, const void* queryBlob, size_t k);
+VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k);
 
-VecSimQueryResult* VecSimIndex_TopKQueryByID(VecSimIndex* index, const void* queryBlob, size_t k);
+VecSimQueryResult *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob, size_t k);
 
 // TODO
 
-VecSimQueryResult* VecSimIndex_DistanceQuery(VecSimIndex* index, const void* queryBlob, float distance);
+VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+                                             float distance);
 
-void VecSimIndex_ClearDeleted(VecSimIndex* index);
+void VecSimIndex_ClearDeleted(VecSimIndex *index);
 
-size_t VecSimQueryResult_Len(VecSimQueryResult*);
+size_t VecSimQueryResult_Len(VecSimQueryResult *);
 
-void VecSimQueryResult_Free(VecSimQueryResult*);
- 
+void VecSimQueryResult_Free(VecSimQueryResult *);
+
 #ifdef __cplusplus
 }
 #endif
