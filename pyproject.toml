@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "VecSim"
+version = "0.0.1"
+description = "Python library around collection of vector similarity algorithms"
+build = "build.py"
+
+authors = ["RedisLabs CTO Team <oss@redislabs.com>"]
+license = "BSD-3-Clause"
+
+classifiers = [
+    'Topic :: Database',
+    'Programming Language :: Python',
+    'Intended Audience :: Developers',
+    'Programming Language :: Python :: 3.9',
+    'License :: OSI Approved :: BSD License',
+    'Development Status :: 5 - Production/Stable'
+]
+
+
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "^1.21.1"
+
+[tool.poetry.dev-dependencies]
+flake8 = "^3.9.2"
+bandit = "^1.7.0"
+tox = "^3.24.1"
+tox-poetry = "^0.4.0"
+vulture = "^2.3"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
