@@ -124,15 +124,15 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                         VecSimQueryParams *queryParams = NULL);
+                                         VecSimQueryParams *queryParams);
 
 VecSimQueryResult *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams = NULL);
+                                             VecSimQueryParams *queryParams);
 
 // TODO
 
 VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                             float distance, VecSimQueryParams *queryParams = NULL);
+                                             float distance, VecSimQueryParams *queryParams);
 
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
 
