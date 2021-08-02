@@ -47,7 +47,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
@@ -76,7 +76,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 100);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         ASSERT_EQ(res[i].id, (i + 45));
@@ -108,7 +108,7 @@ TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -141,7 +141,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
     size_t ids[n] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -165,7 +165,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-    res = VecSimIndex_TopKQuery(index, (const void *)query, 10);
+    res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -203,7 +203,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
     size_t ids[100] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, 10);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -228,7 +228,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 10);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-    res = VecSimIndex_TopKQuery(index, (const void *)query, 10);
+    res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 60 && res[i].id < 70 && res[i].score <= 1);
         ids[res[i].id] = res[i].id;
@@ -265,7 +265,8 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
         for (size_t i = 0; i < n; i++) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
         }
-        VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k);
+        VecSimQueryResult *res =
+            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, NULL);
         ASSERT_EQ(VecSimQueryResult_Len(res), k);
         size_t ids[5] = {0};
         for (int i = 0; i < k; i++) {
@@ -358,7 +359,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
@@ -417,7 +418,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
