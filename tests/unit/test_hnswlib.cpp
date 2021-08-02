@@ -265,7 +265,8 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
         for (size_t i = 0; i < n; i++) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
         }
-        VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, NULL);
+        VecSimQueryResult *res =
+            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, NULL);
         ASSERT_EQ(VecSimQueryResult_Len(res), k);
         size_t ids[5] = {0};
         for (int i = 0; i < k; i++) {
