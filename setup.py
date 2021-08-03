@@ -23,10 +23,11 @@ if bindings_dir in os.path.basename(os.getcwd()):
     source_files = ['./bindings.cpp']
     include_dirs.extend(['../deps/', '../VecSim'])
 else:
+    import os
     source_files = [
-        './src/python_bindings/bindings.cpp',
-        './src/VecSim/vecsim.cpp',
-        './src/VecSim/algorithms/hnsw_c.cpp'
+        'src/python_bindings/bindings.cpp',
+        'src/VecSim/vecsim.cpp',
+        'src/VecSim/algorithms/hnswlib_c.cpp'
     ]
     include_dirs.extend(['./src', "./deps"])
 
