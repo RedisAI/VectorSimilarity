@@ -44,8 +44,28 @@ struct BruteForceIndex {
     size_t vectorBlockSize;
 };
 
-extern "C" VecSimIndex *BruteForce_New(VecSimParams *params) {
+static VectorBlock* VectorBlock_new(size_t vectorCount, size_t vectorDim) {
+    VectorBlock* vectorBlock = (VectorBlock*)calloc(1, sizeof(VectorBlock) + vectorCount*vectorDim);
+    vectorBlock->members = (VectorBlockMember**)calloc(vectorCount, sizeof(VectorBlockMember*));
+    return vectorBlock;
+}
 
+static void VectorBlock_Delete(VectorBlock* vectorBlock) {
+    if(!vectorBlock) {
+        return;
+    }
+
+    delete vectorBlock->members;
+    delete vectorBlock;
+}
+
+extern "C" VecSimIndex *BruteForce_New(VecSimParams *params) {
+        try {
+        auto p = new BruteForceIndex(params->type, params->metric, params->size, params->bfParams.initialCapacity);
+        return &p->base;
+    } catch (...) {
+        return NULL;
+    }
 }
 
 extern "C" void BruteForce_Free(VecSimIndex *index) {
@@ -63,22 +83,6 @@ static void BruteForce_UpdateVector(BruteForceIndex* bfIndex, idType id, const v
     // Update vector data in the block.
     float* destinaion =  vectorBlock->vectors + (index* bfIndex->dim);
     memcpy(destinaion, vector_data, bfIndex->dim);
-}
-
-
-static VectorBlock* VectorBlock_new(size_t vectorCount, size_t vectorDim) {
-    VectorBlock* vectorBlock = (VectorBlock*)calloc(1, sizeof(VectorBlock) + vectorCount*vectorDim);
-    vectorBlock->members = (VectorBlockMember**)calloc(vectorCount, sizeof(VectorBlockMember*));
-    return vectorBlock;
-}
-
-static void VectorBlock_Delete(VectorBlock* vectorBlock) {
-    if(!vectorBlock) {
-        return;
-    }
-
-    delete vectorBlock->members;
-    delete vectorBlock;
 }
 
 static void VectorBlock_AddVector(VectorBlock* vectorBlock, VectorBlockMember* vectorBlockMember, const void* vectorData, size_t vectorDim) {
@@ -143,11 +147,11 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     bfIndex->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
     VectorBlock_AddVector(vectorBlock, vectorBlockMember, vector_data, bfIndex->dim);
+    return true;
 }
 
 extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
-    VectorBlockMember* vectorBlockMember;
     idType id;
     auto optionalId = bfIndex->labelToIdLookup.find(label);
     if(optionalId==bfIndex->labelToIdLookup.end()) {
@@ -198,7 +202,10 @@ extern "C" size_t BruteForce_Size(VecSimIndex *index) {
 }
 
 extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                  VecSimQueryParams *queryParams);
+                                  VecSimQueryParams *queryParams) {
+                                      
+
+}
 
 extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index);
 
