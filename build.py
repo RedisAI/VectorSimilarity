@@ -111,5 +111,6 @@ class BuildExt(build_ext):
 def build(setup_kwargs):
     setup_kwargs.update(
         {"ext_modules": ext_modules,
-         "cmdclass": {"build_ext": BuildExt}}
+         "cmdclass": dict(build_ext=BuildExt),
+         "zip_safe": False,
     )

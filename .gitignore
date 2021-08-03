@@ -46,4 +46,5 @@ tests/flow/logs/
 
 .vscode
 **/.ipynb_checkpoints
-
+*.egg*
+dist/**
