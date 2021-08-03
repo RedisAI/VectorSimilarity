@@ -1,3 +1,6 @@
 [submodule "deps/hnswlib"]
 	path = deps/hnswlib
 	url = https://github.com/nmslib/hnswlib.git
+[submodule "deps/OpenBLAS"]
+	path = deps/OpenBLAS
+	url = https://github.com/xianyi/OpenBLAS.git

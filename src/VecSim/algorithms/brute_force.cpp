@@ -51,8 +51,7 @@ extern "C" VecSimIndex *BruteForce_New(VecSimParams *params) {
 extern "C" void BruteForce_Free(VecSimIndex *index) {
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
     for (auto& vectorBlock : bfIndex->vectorBlocks) {
-        delete vectorBlock->vectors;
-        delete[] vectorBlock->vectors;
+        VectorBlock_Delete(vectorBlock);
     }
 }
 
@@ -115,23 +114,31 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
             id = bfIndex->count++;
         }
     }
+
+    // See if new id is bigger than current vector count. Needs to resize the index.
     if(id > bfIndex->idToVectorBlockMemberMapping.size()) {
         bfIndex->idToVectorBlockMemberMapping.resize(bfIndex->count*2);
     }
 
+    // Get vector block to store the vector in.
     VectorBlock* vectorBlock;
     if (bfIndex->vectorBlocks.size() == 0){
+        // No vector blocks, create new one.
         vectorBlock = new VectorBlock();
         bfIndex->vectorBlocks.push_back(vectorBlock);
     }
     else {
+        // Get the last vector block.
        vectorBlock = bfIndex->vectorBlocks[bfIndex->vectorBlocks.size() - 1];
        if(vectorBlock->size == bfIndex->vectorBlockSize) {
+           // Last vector block is full, create a new one.
            vectorBlock = VectorBlock_new(bfIndex->vectorBlockSize, bfIndex->dim);
            bfIndex->vectorBlocks.push_back(vectorBlock);
        }
 
     }
+
+    // Create vector block membership.
     VectorBlockMember* vectorBlockMember = new VectorBlockMember();
     bfIndex->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
@@ -165,14 +172,23 @@ extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
     float* destination = vectorBlock->vectors+(vectorIndex*vectorDim);
     float* origin = lastVectorBlock->vectors+(lastVectorBlockMember->index*vectorDim);
     memmove(destination, origin, sizeof(float)*vectorDim );
+    lastVectorBlock->size--;
 
+    // Delete the vector block membeship
     delete vectorBlockMember;
     bfIndex->idToVectorBlockMemberMapping[id] = NULL;
+    // Add deleted id to reusable ids.
     bfIndex->deletedIds.emplace(id);
 
-    if(lastVectorBlock->size == 0)
+    // If the last vector block is emtpy;
+    if(lastVectorBlock->size == 0) {
+        VectorBlock_Delete(lastVectorBlock);
+        bfIndex->vectorBlocks.pop_back();
+    }
 
-
+    // Reduce index size.
+    bfIndex->count--;
+    return true;
 
 }
 

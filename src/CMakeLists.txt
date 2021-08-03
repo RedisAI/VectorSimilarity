@@ -20,8 +20,11 @@ set(VECSIM_LIBTYPE SHARED)
 endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
+    VecSim/algorithms/brute_force.cpp
     VecSim/algorithms/hnsw_c.cpp
     VecSim/vecsim.cpp)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../deps/OpenBLAS ${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
