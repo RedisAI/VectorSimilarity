@@ -1,5 +1,6 @@
 from distutils.command.build_ext import build_ext
 import sys
+import os
 import numpy as np
 import pybind11
 import setuptools
@@ -21,7 +22,7 @@ else:
     source_files = [
         './src/python_bindings/bindings.cpp',
         './src/VecSim/vecsim.cpp',
-        './src/VecSim/algorithms/hnsw_c.cpp'
+        './src/VecSim/algorithms/hnswlib_c.cpp'
     ]
     include_dirs.extend(['./src', "./deps"])
 
@@ -113,4 +114,5 @@ def build(setup_kwargs):
         {"ext_modules": ext_modules,
          "cmdclass": dict(build_ext=BuildExt),
          "zip_safe": False,
+        }
     )

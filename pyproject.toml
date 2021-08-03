@@ -5,7 +5,7 @@ description = "Python library around collection of vector similarity algorithms"
 build = "build.py"
 
 packages = [
-    { include = 'src/VecSim'}
+    { include = 'src'}
 ]
 
 authors = ["RedisLabs CTO Team <oss@redislabs.com>"]
@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.6"
 numpy = "^1.21.1"
 pybind11 = "^2.7.0"
 
