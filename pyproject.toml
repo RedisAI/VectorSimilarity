@@ -31,6 +31,7 @@ bandit = "^1.7.0"
 tox = "^3.24.1"
 tox-poetry = "^0.4.0"
 vulture = "^2.3"
+hnswlib = "^0.5.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "wheel", "numpy", "pybind11"]
