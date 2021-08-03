@@ -22,8 +22,8 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.6"
-numpy = "^1.21.1"
 pybind11 = "^2.7.0"
+numpy = "1.19.1"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^3.9.2"
