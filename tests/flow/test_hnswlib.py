@@ -1,4 +1,4 @@
-from vecsim import *
+from VecSim import *
 import numpy as np
 import hnswlib
 from  numpy.testing import assert_array_equal
