@@ -26,3 +26,5 @@ pip install poetry
 poetry install
 poetry build
 ```
+
+After building the wheel, if you want to use the package you built, you will need to manually execute a *pip install dist/<package>.whl*. Remember to replace <package> with the complete package name.
