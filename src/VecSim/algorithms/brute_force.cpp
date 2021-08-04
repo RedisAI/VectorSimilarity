@@ -3,6 +3,10 @@
 #include <set>
 #include <vector>
 #include <cstring>
+#include <queue>
+#include "OpenBLAS/cblas.h"
+#include <limits>
+#include "utils/arr_cpp.h"
 
 using namespace std;
 
@@ -42,6 +46,13 @@ struct BruteForceIndex {
     std::set<idType> deletedIds;
     std::vector<VectorBlock*> vectorBlocks;
     size_t vectorBlockSize;
+};
+
+struct CompareByFirst {
+    constexpr bool operator()(std::pair<float, labelType> const &a,
+                                std::pair<float, labelType> const &b) const noexcept {
+        return a.first < b.first;
+    }
 };
 
 static VectorBlock* VectorBlock_new(size_t vectorCount, size_t vectorDim) {
@@ -203,8 +214,41 @@ extern "C" size_t BruteForce_Size(VecSimIndex *index) {
 
 extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
                                   VecSimQueryParams *queryParams) {
-                                      
 
+        BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
+        float scores[bfIndex->vectorBlockSize];
+        size_t dim = bfIndex->dim;
+        float lowerBound = std::numeric_limits<float>::max();
+        std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>, CompareByFirst> knn_res;
+        for(auto vectorBlock : bfIndex->vectorBlocks) {
+            cblas_sgemv(CblasRowMajor, CblasNoTrans, vectorBlock->size, dim, 1, vectorBlock->vectors,  dim, (const float *)queryBlob, 1 , 0 , scores, 1);
+            for(int i =0; i < MIN(vectorBlock->size, k); i++) {
+                size_t max_index = cblas_isamax(vectorBlock->size, scores, 1);
+                if(knn_res.size()<k) {
+                    labelType label = vectorBlock->members[max_index]->label;
+                    knn_res.emplace(scores[max_index], label);
+                    scores[max_index] = std::numeric_limits<float>::min();
+                }
+                else {
+                    if(scores[max_index] >= lowerBound) {
+                        break;
+                    }
+                    else {
+                        labelType label = vectorBlock->members[max_index]->label;
+                        knn_res.emplace(scores[max_index], label);
+                        scores[max_index] = std::numeric_limits<float>::min();
+                        knn_res.pop();
+                        lowerBound = knn_res.top().first;
+                    }
+                }
+            }
+        }
+     VecSimQueryResult *results =
+            array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
+        for (int i = knn_res.size() - 1; i >= 0; --i) {
+            results[i] = VecSimQueryResult{knn_res.top().second, knn_res.top().first};
+            knn_res.pop();
+        }
 }
 
 extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index);
