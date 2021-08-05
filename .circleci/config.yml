@@ -22,11 +22,6 @@ commands:
       - setup-automation
 
       - run:
-          name: install tox dependencies
-          command: |
-            pip install -r .circleci/circle_requirements.txt
-
-      - run:
           name: Get prerequisites
           command: ./sbin/system-setup.py
       - run:
@@ -39,16 +34,22 @@ commands:
           name: Unit Test
           command: bash -l -c "make test"
       - run:
-          name: build sdist and wheels
+          name: install tox dependencies
+          command: pip install -r .circleci/circle_requirements.txt
+      - run:
+          name: poetry install
           command: |
+            python --version
             poetry config virtualenvs.create false
             poetry install --quiet
+      - run:
+          name: build sdist and wheels
+          command: |
             poetry build
       - run:
           name: Tox Run
           command: |
             tox
-
 
 jobs:
   build-ubuntu:
