@@ -15,6 +15,9 @@ classifiers = [
     'Topic :: Database',
     'Programming Language :: Python',
     'Intended Audience :: Developers',
+    'Programming Language :: Python :: 3.6',
+    'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'License :: OSI Approved :: BSD License',
     'Development Status :: 3 - Alpha',
@@ -26,12 +29,10 @@ pybind11 = "^2.7.0"
 numpy = "1.19.1"
 
 [tool.poetry.dev-dependencies]
-flake8 = "^3.9.2"
-bandit = "^1.7.0"
 tox = "^3.24.1"
 tox-poetry = "^0.4.0"
-vulture = "^2.3"
 hnswlib = "^0.5.2"
+pytest = "^6.2.4"
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "wheel"]

@@ -36,13 +36,17 @@ commands:
           name: Build
           command: bash -l -c "make build"
       - run:
-          name: Test
+          name: Unit Test
           command: bash -l -c "make test"
-
       - run:
           name: build sdist and wheels
           command: |
             poetry build
+      - run:
+          name: Tox Run
+          command: |
+            tox
+
 
 jobs:
   build-ubuntu:
