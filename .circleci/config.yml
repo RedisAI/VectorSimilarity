@@ -7,7 +7,6 @@ commands:
           name: Setup automation and install dependencies
           command: |
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
-            FORCE=1 ./deps/readies/bin/getpy3
 
   checkout-all:
     steps:
@@ -23,7 +22,9 @@ commands:
 
       - run:
           name: Get prerequisites
-          command: ./sbin/system-setup.py
+          command: |
+            sudo apt remove -y python2
+            sudo ./sbin/system-setup.py
       - run:
           name: lint
           command: bash -l -c "make lint"
@@ -35,13 +36,12 @@ commands:
           command: bash -l -c "make test"
       - run:
           name: install tox dependencies
-          command: pip install -r .circleci/circle_requirements.txt
+          command: python -m pip install -r .circleci/circle_requirements.txt
       - run:
           name: poetry install
           command: |
             python --version
-            poetry config virtualenvs.create false
-            poetry install --quiet
+            poetry install
       - run:
           name: build sdist and wheels
           command: |
@@ -54,7 +54,7 @@ commands:
 jobs:
   build-ubuntu:
     docker:
-      - image: redisfab/rmbuilder:6.2.3-x64-bionic
+      - image: circleci/python:3.8
     steps:
       - build-steps
 
