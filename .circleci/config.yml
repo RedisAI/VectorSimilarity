@@ -41,6 +41,7 @@ commands:
       - run:
           name: build sdist and wheels
           command: |
+            poetry install
             poetry build
       - run:
           name: Tox Run
