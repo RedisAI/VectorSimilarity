@@ -24,12 +24,11 @@ class VecSimSetup(paella.Setup):
         self.install("git")
 
         self.run("%s/bin/enable-utf8" % READIES)
-        self.run("%s/bin/getclang" % READIES)
         self.run("%s/bin/getcmake" % READIES)
 
     def debian_compat(self):
         self.run("%s/bin/getgcc --modern" % READIES)
-        self.install("python3-dev")
+        self.install("python3-dev clang-format")
 
     def redhat_compat(self):
         self.install("redhat-lsb-core")
@@ -44,6 +43,7 @@ class VecSimSetup(paella.Setup):
 
     def common_last(self):
         self.run("python3 %s/bin/getrmpytools" % READIES)
+        self.run("%s/bin/getclang" % READIES)
 
 #----------------------------------------------------------------------------------------------
 

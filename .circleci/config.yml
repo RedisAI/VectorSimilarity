@@ -25,6 +25,7 @@ commands:
           command: |
             sudo apt remove -y python2
             sudo ./sbin/system-setup.py
+            sudo apt autoremove -y
       - run:
           name: lint
           command: bash -l -c "make lint"
