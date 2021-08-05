@@ -28,6 +28,7 @@ class VecSimSetup(paella.Setup):
 
     def debian_compat(self):
         self.run("%s/bin/getgcc --modern" % READIES)
+        self.install("python3-dev")
 
     def redhat_compat(self):
         self.install("redhat-lsb-core")
@@ -41,7 +42,7 @@ class VecSimSetup(paella.Setup):
         self.run("%s/bin/getgcc --modern" % READIES)
 
     def common_last(self):
-        self.run("python3 %s/bin/getrmpytools" % READIES) 
+        self.run("python3 %s/bin/getrmpytools" % READIES)
 
 #----------------------------------------------------------------------------------------------
 
