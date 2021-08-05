@@ -24,6 +24,7 @@ class VecSimSetup(paella.Setup):
         self.install("git")
 
         self.run("%s/bin/enable-utf8" % READIES)
+        self.run("%s/bin/getclang" % READIES)
         self.run("%s/bin/getcmake" % READIES)
 
     def debian_compat(self):
