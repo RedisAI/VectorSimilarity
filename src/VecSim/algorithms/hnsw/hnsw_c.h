@@ -1,9 +1,7 @@
 
 #pragma once
 
-#include <stdlib.h>
-#include <stdbool.h>
-
+#include <cstdlib>
 #include "VecSim/vecsim.h"
 
 #ifdef __cplusplus

@@ -1,9 +1,11 @@
-
-#include "hnsw_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_c.h"
 #include <deque>
 #include <memory>
+#include <cassert>
 #include "VecSim/utils/arr_cpp.h"
-#include "hnswlib/hnswlib/hnswalg.h"
+#include "VecSim/algorithms/hnsw/hnsw_impl.h"
+#include "VecSim/spaces/L2.h"
+#include "VecSim/spaces/internal_product.h"
 
 using namespace std;
 using namespace hnswlib;
@@ -26,8 +28,8 @@ int HNSWIndex_AddVector(VecSimIndex *index, const void *vector_data, size_t id) 
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
-        if (hnsw.cur_element_count == hnsw.max_elements_) {
-            hnsw.resizeIndex(hnsw.max_elements_ * 2);
+        if (hnsw.getIndexSize() == hnsw.getIndexCapacity()) {
+            hnsw.resizeIndex(hnsw.getIndexCapacity() * 2);
         }
         hnsw.addPoint(vector_data, id);
         return true;
@@ -37,20 +39,15 @@ int HNSWIndex_AddVector(VecSimIndex *index, const void *vector_data, size_t id) 
 }
 
 int HNSW_DeleteVector(VecSimIndex *index, size_t id) {
-    try {
-        auto idx = reinterpret_cast<HNSWIndex *>(index);
-        auto &hnsw = idx->hnsw;
-        hnsw.markDelete(id);
-        return true;
-    } catch (...) {
-        return false;
-    }
+    auto idx = reinterpret_cast<HNSWIndex *>(index);
+    auto &hnsw = idx->hnsw;
+    return hnsw.removePoint(id);
 }
 
 size_t HNSW_Size(VecSimIndex *index) {
     auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
-    return hnsw.cur_element_count;
+    return hnsw.getIndexSize();
 }
 
 VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
@@ -59,7 +56,7 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
         // Get original efRuntime and store it.
-        size_t originalEF = hnsw.ef_;
+        size_t originalEF = hnsw.getEf();
 
         if (queryParams) {
             if (queryParams->hnswRuntimeParams.efRuntime != 0) {
@@ -69,15 +66,14 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
 
         typedef priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
-        VecSimQueryResult *results =
-            array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
-        for (int i = k - 1; i >= 0; --i) {
+        auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
+        for (size_t i = k - 1; i >= 0; --i) {
             results[i] = VecSimQueryResult{knn_res->top().second, knn_res->top().first};
             knn_res->pop();
         }
         // Restore efRuntime
         hnsw.setEf(originalEF);
-        assert(hnsw.ef_ == originalEF);
+        assert(hnsw.getEf() == originalEF);
 
         return results;
     } catch (...) {
@@ -113,13 +109,13 @@ VecSimIndexInfo HNSW_Info(VecSimIndex *index) {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
-    info.d = *((size_t *)idx->space.get()->get_dist_func_param());
+    info.d = *((size_t *)idx->space->get_data_dim());
     info.type = VecSimType_FLOAT32;
-    info.hnswInfo.M = hnsw.M_;
-    info.hnswInfo.efConstruction = hnsw.ef_construction_;
-    info.hnswInfo.efRuntime = hnsw.ef_;
-    info.hnswInfo.indexSize = hnsw.cur_element_count;
-    info.hnswInfo.levels = hnsw.maxlevel_;
+    info.hnswInfo.M = hnsw.getM();
+    info.hnswInfo.efConstruction = hnsw.getEfConstruction();
+    info.hnswInfo.efRuntime = hnsw.getEf();
+    info.hnswInfo.indexSize = hnsw.getIndexSize();
+    info.hnswInfo.levels = hnsw.getMaxLevel();
     return info;
 }
 

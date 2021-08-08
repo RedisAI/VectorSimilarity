@@ -1,6 +1,6 @@
 
 #include "VecSim/vecsim.h"
-#include "VecSim/algorithms/hnsw_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_c.h"
 #include "VecSim/utils/arr_cpp.h"
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {

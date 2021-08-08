@@ -1,10 +1,10 @@
 #include "internal_product.h"
 
 static float InnerProduct(const void *pVect1, const void *pVect2, const void *qty_ptr) {
-    size_t qty = *((size_t *) qty_ptr);
+    size_t qty = *((size_t *)qty_ptr);
     float res = 0;
     for (unsigned i = 0; i < qty; i++) {
-        res += ((float *) pVect1)[i] * ((float *) pVect2)[i];
+        res += ((float *)pVect1)[i] * ((float *)pVect2)[i];
     }
     return (1.0f - res);
 }
@@ -12,12 +12,11 @@ static float InnerProduct(const void *pVect1, const void *pVect2, const void *qt
 #if defined(USE_AVX)
 
 // Favor using AVX if available.
-static float
-InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+static float InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN32 TmpRes[8];
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
 
     size_t qty16 = qty / 16;
     size_t qty4 = qty / 4;
@@ -42,7 +41,8 @@ InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_p
     }
 
     __m128 v1, v2;
-    __m128 sum_prod = _mm_add_ps(_mm256_extractf128_ps(sum256, 0), _mm256_extractf128_ps(sum256, 1));
+    __m128 sum_prod =
+        _mm_add_ps(_mm256_extractf128_ps(sum256, 0), _mm256_extractf128_ps(sum256, 1));
 
     while (pVect1 < pEnd2) {
         v1 = _mm_loadu_ps(pVect1);
@@ -53,18 +53,18 @@ InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_p
     }
 
     _mm_store_ps(TmpRes, sum_prod);
-    float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];;
+    float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
+    ;
     return 1.0f - sum;
 }
 
 #elif defined(USE_SSE)
 
-static float
-InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+static float InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN32 TmpRes[8];
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
 
     size_t qty16 = qty / 16;
     size_t qty4 = qty / 4;
@@ -119,15 +119,13 @@ InnerProductSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_p
 
 #if defined(USE_AVX)
 
-static float
-InnerProductSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+static float InnerProductSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN32 TmpRes[8];
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
 
     size_t qty16 = qty / 16;
-
 
     const float *pEnd1 = pVect1 + 16 * qty16;
 
@@ -150,19 +148,19 @@ InnerProductSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_
     }
 
     _mm256_store_ps(TmpRes, sum256);
-    float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] + TmpRes[7];
+    float sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
+                TmpRes[7];
 
     return 1.0f - sum;
 }
 
 #elif defined(USE_SSE)
 
-static float
-InnerProductSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+static float InnerProductSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN32 TmpRes[8];
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
 
     size_t qty16 = qty / 16;
 
@@ -205,27 +203,29 @@ InnerProductSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_
 #endif
 
 #if defined(USE_SSE) || defined(USE_AVX)
-static float InnerProductSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    size_t qty = *((size_t *) qty_ptr);
+static float InnerProductSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v,
+                                            const void *qty_ptr) {
+    size_t qty = *((size_t *)qty_ptr);
     size_t qty16 = qty >> 4 << 4;
     float res = InnerProductSIMD16Ext(pVect1v, pVect2v, &qty16);
-    float *pVect1 = (float *) pVect1v + qty16;
-    float *pVect2 = (float *) pVect2v + qty16;
+    float *pVect1 = (float *)pVect1v + qty16;
+    float *pVect2 = (float *)pVect2v + qty16;
 
     size_t qty_left = qty - qty16;
     float res_tail = InnerProduct(pVect1, pVect2, &qty_left);
     return res + res_tail - 1.0f;
 }
 
-static float InnerProductSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    size_t qty = *((size_t *) qty_ptr);
+static float InnerProductSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v,
+                                           const void *qty_ptr) {
+    size_t qty = *((size_t *)qty_ptr);
     size_t qty4 = qty >> 2 << 2;
 
     float res = InnerProductSIMD4Ext(pVect1v, pVect2v, &qty4);
     size_t qty_left = qty - qty4;
 
-    float *pVect1 = (float *) pVect1v + qty4;
-    float *pVect2 = (float *) pVect2v + qty4;
+    float *pVect1 = (float *)pVect1v + qty4;
+    float *pVect2 = (float *)pVect2v + qty4;
     float res_tail = InnerProduct(pVect1, pVect2, &qty_left);
 
     return res + res_tail - 1.0f;
@@ -248,16 +248,10 @@ InnerProductSpace::InnerProductSpace(size_t dim) {
     data_size_ = dim * sizeof(float);
 }
 
-size_t InnerProductSpace::get_data_size() const{
-    return data_size_;
-}
+size_t InnerProductSpace::get_data_size() const { return data_size_; }
 
-DISTFUNC<float> InnerProductSpace::get_dist_func() const{
-    return fstdistfunc_;
-}
+DISTFUNC<float> InnerProductSpace::get_dist_func() const { return fstdistfunc_; }
 
-void *InnerProductSpace::get_data_dim() {
-    return &dim_;
-}
+void *InnerProductSpace::get_data_dim() { return &dim_; }
 
 InnerProductSpace::~InnerProductSpace() = default;

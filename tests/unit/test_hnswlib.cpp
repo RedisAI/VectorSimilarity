@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vecsim.h"
+
 class HNSWLibTest : public ::testing::Test {
   protected:
     HNSWLibTest() {}
@@ -12,13 +13,11 @@ class HNSWLibTest : public ::testing::Test {
 };
 
 TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
-    VecSimParams params = {
-        hnswParams : {initialCapacity : 200, M : 16, efConstruction : 200},
-        type : VecSimType_FLOAT32,
-        size : 4,
-        metric : VecSimMetric_L2,
-        algo : VecSimAlgo_HNSWLIB
-    };
+    VecSimParams params = {.hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
+                           .type = VecSimType_FLOAT32,
+                           .size = 4,
+                           .metric = VecSimMetric_L2,
+                           .algo = VecSimAlgo_HNSWLIB};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -30,11 +29,11 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
 
 TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
     VecSimParams params = {
-        hnswParams : {initialCapacity : 200, M : 16, efConstruction : 200},
-        type : VecSimType_FLOAT32,
-        size : 4,
-        metric : VecSimMetric_L2,
-        algo : VecSimAlgo_HNSWLIB,
+        .hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
+        .type = VecSimType_FLOAT32,
+        .size = 4,
+        .metric = VecSimMetric_L2,
+        .algo = VecSimAlgo_HNSWLIB,
     };
     size_t n = 100;
     size_t k = 11;
@@ -400,12 +399,14 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     size_t efRuntime = 500;
     // Build with default args
     VecSimParams params = {
-        hnswParams :
-            {initialCapacity : n, M : M, efConstruction : efConstruction, efRuntime : efRuntime},
-        type : VecSimType_FLOAT32,
-        size : d,
-        metric : VecSimMetric_L2,
-        algo : VecSimAlgo_HNSWLIB,
+        .hnswParams = {.initialCapacity = n,
+                       .M = M,
+                       .efConstruction = efConstruction,
+                       .efRuntime = efRuntime},
+        .type = VecSimType_FLOAT32,
+        .size = d,
+        .metric = VecSimMetric_L2,
+        .algo = VecSimAlgo_HNSWLIB,
     };
 
     size_t k = 11;
@@ -433,7 +434,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
 
     // Run same query again, set efRuntime to 300
-    VecSimQueryParams queryParams = {hnswRuntimeParams : {efRuntime : 300}};
+    VecSimQueryParams queryParams = {.hnswRuntimeParams = {.efRuntime = 300}};
     res = VecSimIndex_TopKQuery(index, (const void *)query, k, &queryParams);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {

@@ -2,9 +2,9 @@
 #include "L2.h"
 
 static float L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
 
     float res = 0;
     for (size_t i = 0; i < qty; i++) {
@@ -20,9 +20,9 @@ static float L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr
 
 // Favor using AVX if available.
 static float L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
     float PORTABLE_ALIGN32 TmpRes[8];
     size_t qty16 = qty >> 4;
 
@@ -48,15 +48,16 @@ static float L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void
     }
 
     _mm256_store_ps(TmpRes, sum);
-    return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] + TmpRes[7];
+    return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
+           TmpRes[7];
 }
 
 #elif defined(USE_SSE)
 
 static float L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
     float PORTABLE_ALIGN32 TmpRes[8];
     size_t qty16 = qty >> 4;
 
@@ -102,13 +103,13 @@ static float L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void
 #endif
 
 #if defined(USE_SSE) || defined(USE_AVX)
-static float
-L2SqrSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    size_t qty = *((size_t *) qty_ptr);
+static float L2SqrSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v,
+                                     const void *qty_ptr) {
+    size_t qty = *((size_t *)qty_ptr);
     size_t qty16 = qty >> 4 << 4;
     float res = L2SqrSIMD16Ext(pVect1v, pVect2v, &qty16);
-    float *pVect1 = (float *) pVect1v + qty16;
-    float *pVect2 = (float *) pVect2v + qty16;
+    float *pVect1 = (float *)pVect1v + qty16;
+    float *pVect2 = (float *)pVect2v + qty16;
 
     size_t qty_left = qty - qty16;
     float res_tail = L2Sqr(pVect1, pVect2, &qty_left);
@@ -116,15 +117,12 @@ L2SqrSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qt
 }
 #endif
 
-
 #ifdef USE_SSE
-static float
-L2SqrSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+static float L2SqrSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN32 TmpRes[8];
-    float *pVect1 = (float *) pVect1v;
-    float *pVect2 = (float *) pVect2v;
-    size_t qty = *((size_t *) qty_ptr);
-
+    float *pVect1 = (float *)pVect1v;
+    float *pVect2 = (float *)pVect2v;
+    size_t qty = *((size_t *)qty_ptr);
 
     size_t qty4 = qty >> 2;
 
@@ -145,16 +143,15 @@ L2SqrSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
 }
 
-static float
-L2SqrSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    size_t qty = *((size_t *) qty_ptr);
+static float L2SqrSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    size_t qty = *((size_t *)qty_ptr);
     size_t qty4 = qty >> 2 << 2;
 
     float res = L2SqrSIMD4Ext(pVect1v, pVect2v, &qty4);
     size_t qty_left = qty - qty4;
 
-    float *pVect1 = (float *) pVect1v + qty4;
-    float *pVect2 = (float *) pVect2v + qty4;
+    float *pVect1 = (float *)pVect1v + qty4;
+    float *pVect2 = (float *)pVect2v + qty4;
     float res_tail = L2Sqr(pVect1, pVect2, &qty_left);
 
     return (res + res_tail);
@@ -177,16 +174,10 @@ L2Space::L2Space(size_t dim) {
     data_size_ = dim * sizeof(float);
 }
 
-size_t L2Space::get_data_size() const {
-    return data_size_;
-}
+size_t L2Space::get_data_size() const { return data_size_; }
 
-DISTFUNC<float> L2Space::get_dist_func() const {
-    return fstdistfunc_;
-}
+DISTFUNC<float> L2Space::get_dist_func() const { return fstdistfunc_; }
 
-void *L2Space::get_data_dim() {
-    return &dim_;
-}
+void *L2Space::get_data_dim() { return &dim_; }
 
 L2Space::~L2Space() = default;

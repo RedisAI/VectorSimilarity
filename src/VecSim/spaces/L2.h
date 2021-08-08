@@ -9,10 +9,10 @@ class L2Space : public SpaceInterface<float> {
     size_t dim_;
 
   public:
-    L2Space(size_t dim);
-    ~L2Space();
+    explicit L2Space(size_t dim);
+    ~L2Space() override;
 
-    size_t get_data_size() const;
-    DISTFUNC<float> get_dist_func() const;
-    void *get_data_dim();
+    size_t get_data_size() const override;
+    DISTFUNC<float> get_dist_func() const override;
+    void *get_data_dim() override;
 };
