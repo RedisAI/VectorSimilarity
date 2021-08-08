@@ -21,7 +21,9 @@ endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/hnsw_c.cpp
-    VecSim/vecsim.cpp)
+    VecSim/vecsim.cpp
+        VecSim/spaces/internal_product.cpp
+        VecSim/spaces/L2.cpp)
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
