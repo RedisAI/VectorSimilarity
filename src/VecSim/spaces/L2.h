@@ -17,4 +17,4 @@ class L2Space : public SpaceInterface<float> {
     DISTFUNC<float> get_dist_func() const override;
     void *get_data_dim() override;
 };
-}
+} // namespace hnswlib

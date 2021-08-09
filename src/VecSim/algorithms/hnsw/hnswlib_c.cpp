@@ -51,7 +51,7 @@ size_t HNSWLib_Size(VecSimIndex *index) {
 }
 
 VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                  VecSimQueryParams *queryParams) {
+                                     VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -130,14 +130,12 @@ HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t
                 : static_cast<SpaceInterface<float> *>(new InnerProductSpace(dim))),
       hnsw(space.get(), max_elements, M, ef_construction) {
     hnsw.setEf(ef_runtime);
-    base = VecSimIndex{
-        .AddFn =  HNSWLib_AddVector,
-        .DeleteFn =  HNSWLib_DeleteVector,
-        .SizeFn =  HNSWLib_Size,
-        .TopKQueryFn =  HNSWLib_TopKQuery,
-        .DistanceQueryFn =  NULL,
-        .ClearDeletedFn =  NULL,
-        .FreeFn =  HNSWLib_Free,
-        .InfoFn =  HNSWLib_Info
-    };
+    base = VecSimIndex{.AddFn = HNSWLib_AddVector,
+                       .DeleteFn = HNSWLib_DeleteVector,
+                       .SizeFn = HNSWLib_Size,
+                       .TopKQueryFn = HNSWLib_TopKQuery,
+                       .DistanceQueryFn = NULL,
+                       .ClearDeletedFn = NULL,
+                       .FreeFn = HNSWLib_Free,
+                       .InfoFn = HNSWLib_Info};
 }

@@ -18,4 +18,4 @@ class InnerProductSpace : public SpaceInterface<float> {
     DISTFUNC<float> get_dist_func() const;
     void *get_data_dim();
 };
-}
+} // namespace hnswlib

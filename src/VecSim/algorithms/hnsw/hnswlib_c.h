@@ -21,12 +21,12 @@ int HNSWLib_DeleteVector(VecSimIndex *index, size_t id);
 size_t HNSWLib_Size(VecSimIndex *index);
 
 VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                  VecSimQueryParams *queryParams);
+                                     VecSimQueryParams *queryParams);
 
 // TODO
 
 VecSimQueryResult *HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob, float distance,
-                                      VecSimQueryParams queryParams);
+                                         VecSimQueryParams queryParams);
 
 #ifdef __cplusplus
 }

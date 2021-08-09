@@ -64,7 +64,8 @@ template <typename dist_t> int HierarchicalNSW<dist_t>::getRandomLevel(double re
 }
 
 template <typename dist_t>
-std::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id, int level) const{
+std::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
+                                                                 int level) const {
     if (level == 0) {
         return reinterpret_cast<std::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
@@ -99,7 +100,8 @@ linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(tableint internal_id, int
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(tableint internal_id, int level) const {
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(tableint internal_id,
+                                                                int level) const {
     return level == 0 ? get_linklist0(internal_id) : get_linklist(internal_id, level);
 }
 

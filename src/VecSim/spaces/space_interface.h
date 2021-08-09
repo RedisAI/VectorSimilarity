@@ -36,4 +36,4 @@ template <typename TYPE> class SpaceInterface {
 
     virtual ~SpaceInterface() = default;
 };
-}
+} // namespace hnswlib
