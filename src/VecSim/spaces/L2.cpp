@@ -158,6 +158,8 @@ static float L2SqrSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, co
 }
 #endif
 
+using namespace hnswlib;
+
 L2Space::L2Space(size_t dim) {
     fstdistfunc_ = L2Sqr;
 #if defined(USE_SSE) || defined(USE_AVX)

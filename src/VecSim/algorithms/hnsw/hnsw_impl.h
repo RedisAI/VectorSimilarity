@@ -1,3 +1,5 @@
+#pragma once
+
 #include <queue>
 #include <random>
 #include <unordered_map>
@@ -74,24 +76,24 @@ template <typename dist_t> class HierarchicalNSW {
     DISTFUNC<dist_t> fstdistfunc_;
     void *dist_func_param_;
 
-    labeltype getExternalLabel(tableint internal_id);
+    labeltype getExternalLabel(tableint internal_id) const;
     void setExternalLabel(tableint internal_id, labeltype label);
-    labeltype *getExternalLabelPtr(tableint internal_id);
-    char *getDataByInternalId(tableint internal_id);
+    labeltype *getExternalLabelPtr(tableint internal_id) const;
+    char *getDataByInternalId(tableint internal_id) const;
     int getRandomLevel(double reverse_size);
-    std::set<tableint> *getIncomingEdgesPtr(tableint internal_id, int level);
+    std::set<tableint> *getIncomingEdgesPtr(tableint internal_id, int level) const;
     void setIncomingEdgesPtr(tableint internal_id, int level, void *set_ptr);
-    linklistsizeint *get_linklist0(tableint internal_id);
-    linklistsizeint *get_linklist(tableint internal_id, int level);
-    linklistsizeint *get_linklist_at_level(tableint internal_id, int level);
-    unsigned short int getListCount(const linklistsizeint *ptr);
+    linklistsizeint *get_linklist0(tableint internal_id) const;
+    linklistsizeint *get_linklist(tableint internal_id, int level) const;
+    linklistsizeint *get_linklist_at_level(tableint internal_id, int level) const;
+    unsigned short int getListCount(const linklistsizeint *ptr) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, CandidatesQueue<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
                           const std::set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
     CandidatesQueue<dist_t> searchLayer(tableint ep_id, const void *data_point, int layer,
-                                        size_t ef);
+                                        size_t ef) const;
     void getNeighborsByHeuristic2(CandidatesQueue<dist_t> &top_candidates, size_t M);
     tableint mutuallyConnectNewElement(tableint cur_c, CandidatesQueue<dist_t> &top_candidates,
                                        int level);

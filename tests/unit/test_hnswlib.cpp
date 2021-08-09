@@ -223,8 +223,8 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
         float f[4] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i + 10);
     }
-    // Until we have actual delete, HNSW index size is only increasing, even after mark delete.
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 10);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);

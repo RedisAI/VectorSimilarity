@@ -1,7 +1,8 @@
+
 #include "hnsw_impl.h"
 #include <iostream>
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 #include <sys/resource.h>
 
 using namespace hnswlib;
@@ -31,7 +32,7 @@ template <typename dist_t> size_t HierarchicalNSW<dist_t>::getM() const { return
 template <typename dist_t> size_t HierarchicalNSW<dist_t>::getMaxLevel() const { return maxlevel_; }
 
 template <typename dist_t>
-labeltype HierarchicalNSW<dist_t>::getExternalLabel(tableint internal_id) {
+labeltype HierarchicalNSW<dist_t>::getExternalLabel(tableint internal_id) const {
     labeltype return_label;
     memcpy(&return_label,
            (data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_),
@@ -46,13 +47,13 @@ void HierarchicalNSW<dist_t>::setExternalLabel(tableint internal_id, labeltype l
 }
 
 template <typename dist_t>
-labeltype *HierarchicalNSW<dist_t>::getExternalLabelPtr(tableint internal_id) {
+labeltype *HierarchicalNSW<dist_t>::getExternalLabelPtr(tableint internal_id) const {
     return (labeltype *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                          label_offset_);
 }
 
 template <typename dist_t>
-char *HierarchicalNSW<dist_t>::getDataByInternalId(tableint internal_id) {
+char *HierarchicalNSW<dist_t>::getDataByInternalId(tableint internal_id) const {
     return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
@@ -63,7 +64,7 @@ template <typename dist_t> int HierarchicalNSW<dist_t>::getRandomLevel(double re
 }
 
 template <typename dist_t>
-std::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id, int level) {
+std::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id, int level) const{
     if (level == 0) {
         return reinterpret_cast<std::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
@@ -87,23 +88,23 @@ void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, int leve
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(tableint internal_id) {
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(tableint internal_id) const {
     return (linklistsizeint *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                                offsetLevel0_);
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(tableint internal_id, int level) {
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(tableint internal_id, int level) const {
     return (linklistsizeint *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_);
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(tableint internal_id, int level) {
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(tableint internal_id, int level) const {
     return level == 0 ? get_linklist0(internal_id) : get_linklist(internal_id, level);
 }
 
 template <typename dist_t>
-unsigned short int HierarchicalNSW<dist_t>::getListCount(const linklistsizeint *ptr) {
+unsigned short int HierarchicalNSW<dist_t>::getListCount(const linklistsizeint *ptr) const {
     return *((unsigned short int *)ptr);
 }
 
@@ -149,7 +150,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 
 template <typename dist_t>
 CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point,
-                                                             int layer, size_t ef) {
+                                                             int layer, size_t ef) const {
     VisitedList *vl = visited_list_pool_->getFreeVisitedList();
     vl_type *visited_array = vl->mass;
     vl_type visited_array_tag = vl->curV;
@@ -487,7 +488,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 
     data_size_ = s->get_data_size();
     fstdistfunc_ = s->get_dist_func();
-    dist_func_param_ = s->get_dist_func_param();
+    dist_func_param_ = s->get_data_dim();
 
     cur_element_count = 0;
     visited_list_pool_ = new VisitedListPool(1, (int)max_elements);
@@ -885,3 +886,5 @@ template <typename dist_t> void HierarchicalNSW<dist_t>::checkIntegrity() {
               << std::endl;
     std::cout << "integrity ok\n";
 }
+
+template class HierarchicalNSW<float>;

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include "space_interface.h"
 
+namespace hnswlib {
 class InnerProductSpace : public SpaceInterface<float> {
 
     DISTFUNC<float> fstdistfunc_;
@@ -17,3 +18,4 @@ class InnerProductSpace : public SpaceInterface<float> {
     DISTFUNC<float> get_dist_func() const;
     void *get_data_dim();
 };
+}
