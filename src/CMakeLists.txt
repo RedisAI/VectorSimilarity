@@ -20,7 +20,7 @@ set(VECSIM_LIBTYPE SHARED)
 endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
-    VecSim/algorithms/hnsw/hnsw_c.cpp
+    VecSim/algorithms/hnsw/hnswlib_c.cpp
     VecSim/algorithms/hnsw/hnsw_impl.cpp
     VecSim/vecsim.cpp
     VecSim/spaces/internal_product.cpp

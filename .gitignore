@@ -45,4 +45,8 @@ test/flow/logs/
 tests/flow/logs/
 
 .vscode
-
+**/.ipynb_checkpoints
+*.egg*
+dist/**
+setup.py
+poetry.lock

@@ -1,4 +1,4 @@
-#include "VecSim/algorithms/hnsw/hnsw_c.h"
+#include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include <deque>
 #include <memory>
 #include <cassert>
@@ -24,7 +24,7 @@ struct HNSWIndex {
 extern "C" {
 #endif
 
-int HNSWIndex_AddVector(VecSimIndex *index, const void *vector_data, size_t id) {
+int HNSWLib_AddVector(VecSimIndex *index, const void *vector_data, size_t id) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -38,19 +38,19 @@ int HNSWIndex_AddVector(VecSimIndex *index, const void *vector_data, size_t id) 
     }
 }
 
-int HNSW_DeleteVector(VecSimIndex *index, size_t id) {
+int HNSWLib_DeleteVector(VecSimIndex *index, size_t id) {
     auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
     return hnsw.removePoint(id);
 }
 
-size_t HNSW_Size(VecSimIndex *index) {
+size_t HNSWLib_Size(VecSimIndex *index) {
     auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
     return hnsw.getIndexSize();
 }
 
-VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
+VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
                                   VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
@@ -81,7 +81,7 @@ VecSimQueryResult *HNSW_TopKQuery(VecSimIndex *index, const void *query_data, si
     }
 }
 
-void HNSW_Free(VecSimIndex *index) {
+void HNSWLib_Free(VecSimIndex *index) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         delete idx;
@@ -89,7 +89,7 @@ void HNSW_Free(VecSimIndex *index) {
     }
 }
 
-VecSimIndex *HNSW_New(VecSimParams *params) {
+VecSimIndex *HNSWLib_New(const VecSimParams *params) {
     try {
         auto p = new HNSWIndex(
             params->type, params->metric, params->size, params->hnswParams.initialCapacity,
@@ -103,7 +103,7 @@ VecSimIndex *HNSW_New(VecSimParams *params) {
     }
 }
 
-VecSimIndexInfo HNSW_Info(VecSimIndex *index) {
+VecSimIndexInfo HNSWLib_Info(VecSimIndex *index) {
     auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
 
@@ -131,13 +131,13 @@ HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t
       hnsw(space.get(), max_elements, M, ef_construction) {
     hnsw.setEf(ef_runtime);
     base = VecSimIndex{
-        AddFn : HNSWIndex_AddVector,
-        DeleteFn : HNSW_DeleteVector,
-        SizeFn : HNSW_Size,
-        TopKQueryFn : HNSW_TopKQuery,
-        DistanceQueryFn : NULL,
-        ClearDeletedFn : NULL,
-        FreeFn : HNSW_Free,
-        InfoFn : HNSW_Info
+        .AddFn =  HNSWLib_AddVector,
+        .DeleteFn =  HNSWLib_DeleteVector,
+        .SizeFn =  HNSWLib_Size,
+        .TopKQueryFn =  HNSWLib_TopKQuery,
+        .DistanceQueryFn =  NULL,
+        .ClearDeletedFn =  NULL,
+        .FreeFn =  HNSWLib_Free,
+        .InfoFn =  HNSWLib_Info
     };
 }

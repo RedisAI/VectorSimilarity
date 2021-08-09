@@ -1,13 +1,13 @@
 
 #include "VecSim/vecsim.h"
-#include "VecSim/algorithms/hnsw/hnsw_c.h"
+#include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     return res1->id > res2->id ? 1 : res1->id < res2->id ? -1 : 0;
 }
 
-extern "C" VecSimIndex *VecSimIndex_New(VecSimParams *params) { return HNSW_New(params); }
+extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) { return HNSWLib_New(params); }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
     return index->AddFn(index, blob, id);
@@ -42,8 +42,6 @@ extern "C" VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, cons
                                                         VecSimQueryParams *queryParams) {
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
-
-extern "C" void VecSimIndex_ClearDeleted(VecSimIndex *index) { index->ClearDeletedFn(index); }
 
 extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult *result) { return array_len(result); }
 
