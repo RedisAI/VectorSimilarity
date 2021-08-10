@@ -5,6 +5,7 @@
 #include <cstring>
 #include <queue>
 #include "cblas.h"
+#include "lapack.h"
 #include <limits>
 #include "VecSim/utils/arr_cpp.h"
 
@@ -29,6 +30,21 @@ struct VectorBlock {
     float vectors[];
 };
 
+typedef void (*DistanceCalculateFunction)(size_t dim, VectorBlock* vectorBlock, const void* queryBlob, float* scores);
+
+void BruteForceIndex_InternalProduct(size_t dim, VectorBlock* vectorBlock, const void* queryBlob, float* scores){
+    cblas_sgemv(CblasRowMajor, CblasNoTrans, vectorBlock->size, dim, 1, vectorBlock->vectors,  dim, (const float *)queryBlob, 1 , 0 , scores, 1);
+}
+
+void BruteForceIndex_L2(size_t dim, VectorBlock* vectorBlock, const void* queryBlob, float* scores){
+    float tmp_vector[dim];
+    for(size_t i = 0; i < vectorBlock->size; i++) {
+        cblas_scopy(dim, vectorBlock->vectors+(i*dim), 1, tmp_vector, 1);
+        cblas_saxpy(dim, -1.0f, (const float*) queryBlob, 1, tmp_vector, 1 );
+        scores[i] = cblas_sdot(dim, tmp_vector, 1, tmp_vector, 1);
+    }
+}
+
 struct BruteForceIndex {
     BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements);
 
@@ -46,6 +62,8 @@ struct BruteForceIndex {
     std::set<idType> deletedIds;
     std::vector<VectorBlock*> vectorBlocks;
     size_t vectorBlockSize;
+
+    DistanceCalculateFunction distanceCalculationFunction;
 };
 
 struct CompareByFirst {
@@ -124,6 +142,7 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
         if(bfIndex->deletedIds.size()!=0) {
             id = *bfIndex->deletedIds.begin();
             bfIndex->deletedIds.erase(bfIndex->deletedIds.begin());
+            bfIndex->count++;
         }
         else {
             id = bfIndex->count++;
@@ -139,7 +158,7 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     VectorBlock* vectorBlock;
     if (bfIndex->vectorBlocks.size() == 0){
         // No vector blocks, create new one.
-        vectorBlock = new VectorBlock();
+        vectorBlock = VectorBlock_new(bfIndex->vectorBlockSize, bfIndex->dim);
         bfIndex->vectorBlocks.push_back(vectorBlock);
     }
     else {
@@ -158,6 +177,7 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     bfIndex->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
     VectorBlock_AddVector(vectorBlock, vectorBlockMember, vector_data, bfIndex->dim);
+    bfIndex->labelToIdLookup[label]=id;
     return true;
 }
 
@@ -194,6 +214,7 @@ extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
     bfIndex->idToVectorBlockMemberMapping[id] = NULL;
     // Add deleted id to reusable ids.
     bfIndex->deletedIds.emplace(id);
+    bfIndex->labelToIdLookup.erase(label);
 
     // If the last vector block is emtpy;
     if(lastVectorBlock->size == 0) {
@@ -218,27 +239,27 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
         BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
         float scores[bfIndex->vectorBlockSize];
         size_t dim = bfIndex->dim;
-        float lowerBound = std::numeric_limits<float>::max();
+        float upperBound = std::numeric_limits<float>::min();
         std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>, CompareByFirst> knn_res;
         for(auto vectorBlock : bfIndex->vectorBlocks) {
-            cblas_sgemv(CblasRowMajor, CblasNoTrans, vectorBlock->size, dim, 1, vectorBlock->vectors,  dim, (const float *)queryBlob, 1 , 0 , scores, 1);
+            bfIndex->distanceCalculationFunction(dim, vectorBlock, queryBlob, scores);
             for(int i =0; i < MIN(vectorBlock->size, k); i++) {
-                size_t max_index = cblas_isamax(vectorBlock->size, scores, 1);
+                size_t min_index = cblas_ismin(vectorBlock->size, scores, 1);
                 if(knn_res.size()<k) {
-                    labelType label = vectorBlock->members[max_index]->label;
-                    knn_res.emplace(scores[max_index], label);
-                    scores[max_index] = std::numeric_limits<float>::min();
+                    labelType label = vectorBlock->members[min_index]->label;
+                    knn_res.emplace(scores[min_index], label);
+                    scores[min_index] = std::numeric_limits<float>::max();
                 }
                 else {
-                    if(scores[max_index] >= lowerBound) {
+                    if(scores[min_index] <= upperBound) {
                         break;
                     }
                     else {
-                        labelType label = vectorBlock->members[max_index]->label;
-                        knn_res.emplace(scores[max_index], label);
-                        scores[max_index] = std::numeric_limits<float>::min();
+                        labelType label = vectorBlock->members[min_index]->label;
+                        knn_res.emplace(scores[min_index], label);
+                        scores[min_index] = std::numeric_limits<float>::max();
                         knn_res.pop();
-                        lowerBound = knn_res.top().first;
+                        upperBound = knn_res.top().first;
                     }
                 }
             }
@@ -283,4 +304,9 @@ metric(metric), vecType(vecType), dim(dim), vectorBlockSize(1024*1024) {
         InfoFn : BruteForce_Info
     };
     this->idToVectorBlockMemberMapping.resize(max_elements);
+    if(this->metric == VecSimMetric_IP) {
+        this->distanceCalculationFunction = BruteForceIndex_InternalProduct;
+    } else if(this->metric == VecSimMetric_L2) {
+        this->distanceCalculationFunction = BruteForceIndex_L2;
+    }
 }
