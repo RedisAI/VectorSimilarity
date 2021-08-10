@@ -3,7 +3,7 @@
 #include <memory>
 #include <cassert>
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/hnsw/hnsw_impl.h"
+#include "VecSim/algorithms/hnsw/hnswlib.h"
 #include "VecSim/spaces/L2.h"
 #include "VecSim/spaces/internal_product.h"
 
@@ -50,6 +50,12 @@ size_t HNSWLib_Size(VecSimIndex *index) {
     return hnsw.getIndexSize();
 }
 
+void HNSWLib_SetQueryParam(VecSimIndex *index, size_t ef) {
+    auto idx = reinterpret_cast<HNSWIndex *>(index);
+    auto &hnsw = idx->hnsw;
+    hnsw.setEf(ef);
+}
+
 VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
                                      VecSimQueryParams *queryParams) {
     try {
@@ -63,7 +69,6 @@ VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data,
                 hnsw.setEf(queryParams->hnswRuntimeParams.efRuntime);
             }
         }
-
         typedef priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
         auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());

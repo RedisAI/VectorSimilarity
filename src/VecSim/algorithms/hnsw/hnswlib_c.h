@@ -20,6 +20,8 @@ int HNSWLib_DeleteVector(VecSimIndex *index, size_t id);
 
 size_t HNSWLib_Size(VecSimIndex *index);
 
+void HNSWLib_SetQueryParam(VecSimIndex *index, size_t ef);
+
 VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams);
 

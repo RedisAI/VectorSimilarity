@@ -21,7 +21,6 @@ endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/hnsw/hnswlib_c.cpp
-    VecSim/algorithms/hnsw/hnsw_impl.cpp
     VecSim/vecsim.cpp
     VecSim/spaces/internal_product.cpp
     VecSim/spaces/L2.cpp)

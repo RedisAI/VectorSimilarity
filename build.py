@@ -22,7 +22,9 @@ else:
     source_files = [
         './src/python_bindings/bindings.cpp',
         './src/VecSim/vecsim.cpp',
-        './src/VecSim/algorithms/hnswlib_c.cpp'
+        './src/VecSim/algorithms/hnsw/hnswlib_c.cpp',
+        './src/VecSim/spaces/L2.cpp',
+        './src/VecSim/spaces/internal_product.cpp'
     ]
     include_dirs.extend(['./src', "./deps"])
 
