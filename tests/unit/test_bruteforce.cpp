@@ -14,7 +14,7 @@ class BruteForceTest : public ::testing::Test {
 
 TEST_F(BruteForceTest, brute_force_vector_add_test) {
     VecSimParams params = {
-        hnswParams : {initialCapacity : 200, M : 16, efConstruction : 200},
+        bfParams : {initialCapacity : 200},
         type : VecSimType_FLOAT32,
         size : 4,
         metric : VecSimMetric_IP,
@@ -26,5 +26,37 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
     float a[4] = {1.0, 1.0, 1.0, 1.0};
     VecSimIndex_AddVector(index, (const void *)a, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, brute_force_vector_search_test) {
+    VecSimParams params = {
+        bfParams : {initialCapacity : 200},
+        type : VecSimType_FLOAT32,
+        size : 4,
+        metric : VecSimMetric_IP,
+        algo : VecSimAlgo_BF
+    };
+    size_t n = 100;
+    size_t k = 11;
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (float i = 0; i < n; i++) {
+        float f[4] = {i, i, i, i};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[4] = {50, 50, 50, 50};
+    size_t ids[55] = {0};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    for (int i = 0; i < k; i++) {
+        ids[res[i].id] = res[i].id;
+    }
+    for(size_t i = 46; i < 55; i++) {
+        ASSERT_EQ(i, ids[i]);
+    }
+    VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
 }

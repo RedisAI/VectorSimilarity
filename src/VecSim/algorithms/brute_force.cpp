@@ -4,9 +4,9 @@
 #include <vector>
 #include <cstring>
 #include <queue>
-#include "OpenBLAS/cblas.h"
+#include "cblas.h"
 #include <limits>
-#include "utils/arr_cpp.h"
+#include "VecSim/utils/arr_cpp.h"
 
 using namespace std;
 
@@ -249,9 +249,18 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
             results[i] = VecSimQueryResult{knn_res.top().second, knn_res.top().first};
             knn_res.pop();
         }
+    return results;
 }
 
-extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index);
+extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
+    auto idx = reinterpret_cast<BruteForceIndex *>(index);
+
+    VecSimIndexInfo info;
+    info.algo = VecSimAlgo_BF;
+    info.d = idx->dim;
+    info.type = VecSimType_FLOAT32;
+    return info;
+}
 
 // TODO
 
