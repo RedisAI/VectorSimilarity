@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 
-VecSimIndex *BruteForce_New(VecSimParams *params);
+VecSimIndex *BruteForce_New(const VecSimParams *params);
 
 void BruteForce_Free(VecSimIndex *index);
 

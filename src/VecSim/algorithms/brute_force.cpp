@@ -88,7 +88,7 @@ static void VectorBlock_Delete(VectorBlock* vectorBlock) {
     delete vectorBlock;
 }
 
-extern "C" VecSimIndex *BruteForce_New(VecSimParams *params) {
+extern "C" VecSimIndex *BruteForce_New(const VecSimParams *params) {
         try {
         auto p = new BruteForceIndex(params->type, params->metric, params->size, params->bfParams.initialCapacity);
         return &p->base;

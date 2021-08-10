@@ -8,9 +8,9 @@ int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult 
     return res1->id > res2->id ? 1 : res1->id < res2->id ? -1 : 0;
 }
 
-extern "C" VecSimIndex *VecSimIndex_New(VecSimParams *params) { 
+extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) { 
     if(params->algo == VecSimAlgo_HNSWLIB) {
-        return HNSW_New(params); 
+        return HNSWLIB_New(params); 
     }
     return BruteForce_New(params);
 }
