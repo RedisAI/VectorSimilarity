@@ -53,9 +53,9 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
-        std::cout<<res[i].id<<std::endl;
+        std::cout << res[i].id << std::endl;
     }
-    for(size_t i = 0; i < k; i++) {
+    for (size_t i = 0; i < k; i++) {
         ASSERT_EQ(i, ids[i]);
     }
     VecSimQueryResult_Free(res);
@@ -151,7 +151,6 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
     VecSimIndex_Free(index);
 }
 
-
 TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     VecSimParams params = {
         bfParams : {initialCapacity : 200},
@@ -192,7 +191,6 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
 
     for (size_t i = 0; i < n; i++) {
         float num = i / 10;
@@ -261,7 +259,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
         float f[4] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i + 10);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n );
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
