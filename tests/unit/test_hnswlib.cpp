@@ -450,8 +450,3 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
 
     VecSimIndex_Free(index);
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
