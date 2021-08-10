@@ -22,7 +22,7 @@ endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force.cpp
-    VecSim/algorithms/hnsw_c.cpp
+    VecSim/algorithms/hnswlib_c.cpp
     VecSim/vecsim.cpp)
 
 

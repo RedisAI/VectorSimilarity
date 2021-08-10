@@ -1,7 +1,7 @@
 
 #include "VecSim/vecsim.h"
-#include "VecSim/algorithms/hnsw_c.h"
 #include "VecSim/algorithms/brute_force.h"
+#include "VecSim/algorithms/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
