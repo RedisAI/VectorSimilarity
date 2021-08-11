@@ -8,10 +8,10 @@ extern "C" {
 #endif
 
 // HNSW default parameters
-#define HNSW_DEFAULT_M     16
-#define HNSW_DEFAULT_EF_C  200
-#define HNSW_DEFAULT_EF_RT 10
-#define BF_DEFAULT_BLOCK_SIZE 1024*1024
+#define HNSW_DEFAULT_M        16
+#define HNSW_DEFAULT_EF_C     200
+#define HNSW_DEFAULT_EF_RT    10
+#define BF_DEFAULT_BLOCK_SIZE 1024 * 1024
 
 // Datatypes for indexing.
 typedef enum {
@@ -79,8 +79,8 @@ typedef struct {
             size_t levels;         // Number of graph levels.
         } hnswInfo;
         struct {
-            size_t indexSize;   // Current count of vectors.
-            size_t blockSize;   // Brute force algorithm vector block (mini matrix) size
+            size_t indexSize; // Current count of vectors.
+            size_t blockSize; // Brute force algorithm vector block (mini matrix) size
         } bfInfo;
     };
     VecSimType type; // Datatype the index holds.

@@ -23,15 +23,15 @@ struct VectorBlockMember {
     labelType label;
 };
 
- struct VectorBlock {
-    VectorBlock( size_t blockSize, size_t vectorSize) {
+struct VectorBlock {
+    VectorBlock(size_t blockSize, size_t vectorSize) {
         this->size = 0;
-        this->members = new VectorBlockMember*[blockSize];
+        this->members = new VectorBlockMember *[blockSize];
         this->vectors = new float[blockSize * vectorSize];
     }
     size_t size;
     VectorBlockMember **members;
-    float* vectors;
+    float *vectors;
 
     ~VectorBlock() {
         delete[] members;
@@ -59,7 +59,8 @@ void BruteForceIndex_L2(size_t dim, VectorBlock *vectorBlock, const void *queryB
 }
 
 struct BruteForceIndex {
-    BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, size_t blockSize);
+    BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
+                    size_t blockSize);
 
     // Meta data
     VecSimIndex base;
@@ -85,12 +86,11 @@ struct CompareByFirst {
     }
 };
 
-
 extern "C" VecSimIndex *BruteForce_New(const VecSimParams *params) {
     try {
-        auto p = new BruteForceIndex(params->type, params->metric, params->size,
-                                     params->bfParams.initialCapacity,
-                                     params->bfParams.blockSize ? params->bfParams.blockSize : BF_DEFAULT_BLOCK_SIZE);
+        auto p = new BruteForceIndex(
+            params->type, params->metric, params->size, params->bfParams.initialCapacity,
+            params->bfParams.blockSize ? params->bfParams.blockSize : BF_DEFAULT_BLOCK_SIZE);
         return &p->base;
     } catch (...) {
         return NULL;

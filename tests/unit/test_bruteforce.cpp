@@ -344,8 +344,8 @@ TEST_F(BruteForceTest, test_bf_info) {
     params = {
         bfParams : {
             initialCapacity : n,
-            blockSize:1
-            
+            blockSize : 1
+
         },
         type : VecSimType_FLOAT32,
         size : d,
@@ -360,7 +360,6 @@ TEST_F(BruteForceTest, test_bf_info) {
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
 }
-
 
 TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     VecSimParams params = {
