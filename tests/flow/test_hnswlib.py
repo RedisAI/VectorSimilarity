@@ -1,8 +1,8 @@
 from VecSim import *
 import numpy as np
 import hnswlib
-from numpy.testing import assert_array_equal
 from scipy import spatial
+from  numpy.testing import assert_allclose
 
 
 # compare results with the original version of hnswlib - do not use elements deletion.
@@ -45,8 +45,8 @@ def test_sanity_hnswlib_index():
     for vector in query_data:
             hnswlib_labels, hnswlib_distances = p.knn_query(vector, k=10)
             redis_labels, redis_distances = index.knn_query(vector, 10)
-            assert_array_equal(hnswlib_labels, redis_labels)
-            assert_array_equal(hnswlib_distances, redis_distances)
+            assert_allclose(hnswlib_labels, redis_labels)
+            assert_allclose(hnswlib_distances, redis_distances)
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
