@@ -32,3 +32,5 @@ if(NOT VECSIM_STATIC)
 endif()
 
 add_subdirectory(../deps/OpenBLAS OpenBLAS)
+target_link_libraries(VectorSimilarity ${OpenBLAS_LIB})
+
