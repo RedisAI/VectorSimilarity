@@ -53,7 +53,6 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
-        std::cout << res[i].id << std::endl;
     }
     for (size_t i = 0; i < k; i++) {
         ASSERT_EQ(i, ids[i]);
@@ -315,5 +314,117 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
         }
         VecSimQueryResult_Free(res);
     }
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, test_bf_info) {
+    size_t n = 100;
+    size_t d = 128;
+
+    // Build with default args
+    VecSimParams params = {
+        bfParams : {
+            initialCapacity : n,
+        },
+        type : VecSimType_FLOAT32,
+        size : d,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_BF,
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.d, d);
+    // Default args
+    ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    VecSimIndex_Free(index);
+
+    d = 1280;
+    params = {
+        bfParams : {
+            initialCapacity : n,
+            blockSize:1
+            
+        },
+        type : VecSimType_FLOAT32,
+        size : d,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_HNSWLIB,
+    };
+    index = VecSimIndex_New(&params);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
+    ASSERT_EQ(info.d, d);
+    // User args
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
+    ASSERT_EQ(info.bfInfo.indexSize, 0);
+}
+
+
+TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
+    VecSimParams params = {
+        bfParams : {initialCapacity : 200, blockSize : 1},
+        type : VecSimType_FLOAT32,
+        size : 4,
+        metric : VecSimMetric_IP,
+        algo : VecSimAlgo_BF
+    };
+    size_t n = 100;
+    size_t k = 11;
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
+
+    for (float i = 0; i < n; i++) {
+        float f[4] = {i, i, i, i};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[4] = {50, 50, 50, 50};
+    size_t ids[100] = {0};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    for (int i = 0; i < k; i++) {
+        ids[res[i].id] = res[i].id;
+    }
+    for (size_t i = 0; i < k; i++) {
+        ASSERT_EQ(i, ids[i]);
+    }
+    VecSimQueryResult_Free(res);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, brute_force_vector_search_test_blocksize_1) {
+    VecSimParams params = {
+        bfParams : {initialCapacity : 200, blockSize : 1},
+        type : VecSimType_FLOAT32,
+        size : 4,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_BF
+    };
+    size_t n = 100;
+    size_t k = 11;
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
+    for (float i = 0; i < n; i++) {
+        float f[4] = {i, i, i, i};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[4] = {50, 50, 50, 50};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    for (int i = 0; i < k; i++) {
+        int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
+        int dist = res[i].score;
+        ASSERT_TRUE(((diff_id == (i + 1) / 2)) && (dist == (4 * ((i + 1) / 2) * ((i + 1) / 2))));
+    }
+    VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
 }

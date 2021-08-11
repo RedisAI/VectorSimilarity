@@ -4,8 +4,7 @@
 #include <vector>
 #include <cstring>
 #include <queue>
-#include "cblas.h"
-#include "lapack.h"
+#include "OpenBLAS/cblas.h"
 #include <limits>
 #include "VecSim/utils/arr_cpp.h"
 
@@ -24,10 +23,20 @@ struct VectorBlockMember {
     labelType label;
 };
 
-struct VectorBlock {
+ struct VectorBlock {
+    VectorBlock( size_t blockSize, size_t vectorSize) {
+        this->size = 0;
+        this->members = new VectorBlockMember*[blockSize];
+        this->vectors = new float[blockSize * vectorSize];
+    }
     size_t size;
     VectorBlockMember **members;
-    float vectors[];
+    float* vectors;
+
+    ~VectorBlock() {
+        delete[] members;
+        delete[] vectors;
+    }
 };
 
 typedef void (*DistanceCalculateFunction)(size_t dim, VectorBlock *vectorBlock,
@@ -50,7 +59,7 @@ void BruteForceIndex_L2(size_t dim, VectorBlock *vectorBlock, const void *queryB
 }
 
 struct BruteForceIndex {
-    BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements);
+    BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements, size_t blockSize);
 
     // Meta data
     VecSimIndex base;
@@ -76,26 +85,12 @@ struct CompareByFirst {
     }
 };
 
-static VectorBlock *VectorBlock_new(size_t vectorCount, size_t vectorDim) {
-    VectorBlock *vectorBlock =
-        (VectorBlock *)calloc(1, sizeof(VectorBlock) + vectorCount * vectorDim);
-    vectorBlock->members = (VectorBlockMember **)calloc(vectorCount, sizeof(VectorBlockMember *));
-    return vectorBlock;
-}
-
-static void VectorBlock_Delete(VectorBlock *vectorBlock) {
-    if (!vectorBlock) {
-        return;
-    }
-
-    delete vectorBlock->members;
-    delete vectorBlock;
-}
 
 extern "C" VecSimIndex *BruteForce_New(const VecSimParams *params) {
     try {
         auto p = new BruteForceIndex(params->type, params->metric, params->size,
-                                     params->bfParams.initialCapacity);
+                                     params->bfParams.initialCapacity,
+                                     params->bfParams.blockSize ? params->bfParams.blockSize : BF_DEFAULT_BLOCK_SIZE);
         return &p->base;
     } catch (...) {
         return NULL;
@@ -105,7 +100,7 @@ extern "C" VecSimIndex *BruteForce_New(const VecSimParams *params) {
 extern "C" void BruteForce_Free(VecSimIndex *index) {
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
     for (auto &vectorBlock : bfIndex->vectorBlocks) {
-        VectorBlock_Delete(vectorBlock);
+        delete vectorBlock;
     }
 }
 
@@ -135,7 +130,7 @@ static void VectorBlock_AddVector(VectorBlock *vectorBlock, VectorBlockMember *v
 extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data, size_t label) {
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
 
-    idType id;
+    idType id = 0;
     bool update = false;
     auto optionalID = bfIndex->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
@@ -163,14 +158,14 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     VectorBlock *vectorBlock;
     if (bfIndex->vectorBlocks.size() == 0) {
         // No vector blocks, create new one.
-        vectorBlock = VectorBlock_new(bfIndex->vectorBlockSize, bfIndex->dim);
+        vectorBlock = new VectorBlock(bfIndex->vectorBlockSize, bfIndex->dim);
         bfIndex->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
         vectorBlock = bfIndex->vectorBlocks[bfIndex->vectorBlocks.size() - 1];
         if (vectorBlock->size == bfIndex->vectorBlockSize) {
             // Last vector block is full, create a new one.
-            vectorBlock = VectorBlock_new(bfIndex->vectorBlockSize, bfIndex->dim);
+            vectorBlock = new VectorBlock(bfIndex->vectorBlockSize, bfIndex->dim);
             bfIndex->vectorBlocks.push_back(vectorBlock);
         }
     }
@@ -180,7 +175,7 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     bfIndex->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
     VectorBlock_AddVector(vectorBlock, vectorBlockMember, vector_data, bfIndex->dim);
-    bfIndex->labelToIdLookup[label] = id;
+    bfIndex->labelToIdLookup.emplace(label, id);
     return true;
 }
 
@@ -211,7 +206,7 @@ extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
     memmove(destination, origin, sizeof(float) * vectorDim);
     lastVectorBlock->size--;
 
-    // Delete the vector block membeship
+    // Delete the vector block membership
     delete vectorBlockMember;
     bfIndex->idToVectorBlockMemberMapping[id] = NULL;
     // Add deleted id to reusable ids.
@@ -220,7 +215,7 @@ extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
 
     // If the last vector block is emtpy;
     if (lastVectorBlock->size == 0) {
-        VectorBlock_Delete(lastVectorBlock);
+        delete lastVectorBlock;
         bfIndex->vectorBlocks.pop_back();
     }
 
@@ -238,7 +233,7 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
                                                    size_t k, VecSimQueryParams *queryParams) {
 
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
-    float scores[bfIndex->vectorBlockSize];
+    float scores[bfIndex->vectorBlockSize] = {0};
     size_t dim = bfIndex->dim;
     float upperBound = std::numeric_limits<float>::min();
     std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>,
@@ -252,8 +247,9 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
                 labelType label = vectorBlock->members[min_index]->label;
                 knn_res.emplace(scores[min_index], label);
                 scores[min_index] = std::numeric_limits<float>::max();
+                upperBound = knn_res.top().first;
             } else {
-                if (scores[min_index] <= upperBound) {
+                if (scores[min_index] >= upperBound) {
                     break;
                 } else {
                     labelType label = vectorBlock->members[min_index]->label;
@@ -280,6 +276,8 @@ extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
     info.algo = VecSimAlgo_BF;
     info.d = idx->dim;
     info.type = VecSimType_FLOAT32;
+    info.bfInfo.indexSize = idx->count;
+    info.bfInfo.blockSize = idx->vectorBlockSize;
     return info;
 }
 
@@ -292,9 +290,9 @@ extern "C" VecSimQueryResult *BruteForce_DistanceQuery(VecSimIndex *index, const
 extern "C" void BruteForce_ClearDeleted(VecSimIndex *index);
 
 BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim,
-                                 size_t max_elements)
-    : metric(metric), vecType(vecType), dim(dim), vectorBlockSize(1024 * 1024) {
-    base = VecSimIndex{
+                                 size_t max_elements, size_t blockSize)
+    : metric(metric), vecType(vecType), dim(dim), vectorBlockSize(blockSize) {
+    this->base = VecSimIndex{
         AddFn : BruteForce_AddVector,
         DeleteFn : BruteForce_DeleteVector,
         SizeFn : BruteForce_Size,

@@ -10,7 +10,10 @@ option(VECSIM_STATIC "Build as static library" OFF)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps_build/include)
+add_subdirectory(../deps/OpenBLAS OpenBLAS)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
+
+
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
 
@@ -25,8 +28,8 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/hnswlib_c.cpp
     VecSim/vecsim.cpp)
 
+target_link_libraries(VectorSimilarity openblas)
 
-target_link_libraries(VectorSimilarity ${CMAKE_CURRENT_SOURCE_DIR}/../deps_build/lib/libopenblas.so) 
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
