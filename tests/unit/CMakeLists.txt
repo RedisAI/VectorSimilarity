@@ -1,13 +1,19 @@
 project(VectorSimilarity_UnitTest)
 
-
 set(CMAKE_CXX_STANDARD 14)
+
+if(NOT DEFINED root)
+	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
+	set(binroot ${root}/build)
+endif()
+message("VectorSimilarity_UnitTest: " ${binroot})
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-
 include(FetchContent)
+
 FetchContent_Declare(
   googletest
   # Specify the commit you depend on and update it regularly.
@@ -19,21 +25,23 @@ FetchContent_MakeAvailable(googletest)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-include_directories(${PROJECT_SOURCE_DIR}/../../src)
-add_subdirectory(${PROJECT_SOURCE_DIR}/../../src VectorSimilarity)
+
+include_directories(${root}/src)
+
+add_subdirectory(${root}/src ${binroot}/VectorSimilarity)
+
 enable_testing()
-# Now simply link against gtest or gtest_main as needed. Eg
+
 add_executable(test_hnswlib test_hnswlib.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp)
 
 target_link_libraries(test_hnswlib gtest_main)
 target_link_libraries(test_bruteforce gtest_main)
-# add_test(NAME test_hnswlib COMMAND test_hnswlib)
-# add_test(NAME test_bruteforce COMMAND test_bruteforce)
 
 target_link_libraries(test_hnswlib PUBLIC VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC VectorSimilarity)
 
 include(GoogleTest)
+
 gtest_discover_tests(test_hnswlib)
 gtest_discover_tests(test_bruteforce)

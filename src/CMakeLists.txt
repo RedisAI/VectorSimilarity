@@ -5,13 +5,19 @@ project(VectorSimilarity)
 
 set(CMAKE_CXX_STANDARD 14)
 
+if(NOT DEFINED root)
+	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/.. ABSOLUTE)
+	set(binroot ${root}/build)
+endif()
+message("VectorSimilarity: " ${binroot})
+
 option(VECSIM_STATIC "Build as static library" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps/OpenBLAS)
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
+include_directories(${root}/deps)
+include_directories(${root}/deps/OpenBLAS)
+include_directories(${binroot}/OpenBLAS)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
 
@@ -31,6 +37,5 @@ if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
 
-add_subdirectory(../deps/OpenBLAS OpenBLAS)
-target_link_libraries(VectorSimilarity ${OpenBLAS_LIB})
-
+add_subdirectory(${root}/deps/OpenBLAS ${binroot}/OpenBLAS)
+target_link_libraries(VectorSimilarity ${binroot}/OpenBLAS/lib/libopenblas.a)
