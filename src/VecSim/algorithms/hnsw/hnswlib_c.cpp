@@ -50,7 +50,7 @@ size_t HNSWLib_Size(VecSimIndex *index) {
     return hnsw.getIndexSize();
 }
 
-void HNSWLib_SetQueryParam(VecSimIndex *index, size_t ef) {
+void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
     auto idx = reinterpret_cast<HNSWIndex *>(index);
     auto &hnsw = idx->hnsw;
     hnsw.setEf(ef);

@@ -8,6 +8,8 @@ namespace py = pybind11;
 
 class PyVecSimIndex {
   public:
+    PyVecSimIndex() {}
+
     PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
 
     void addVector(py::object input, size_t id) {
@@ -49,15 +51,13 @@ class PyVecSimIndex {
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
-    VecSimIndex *getIndex() { return index; }
-
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
-  private:
+  protected:
     VecSimIndex *index;
 };
 
-class PyHNSWLibIndex {
+class PyHNSWLibIndex : public PyVecSimIndex {
   public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params, const VecSimType type, size_t dim,
                    const VecSimMetric metric) {
@@ -66,26 +66,11 @@ class PyHNSWLibIndex {
                                .size = dim,
                                .metric = metric,
                                .algo = VecSimAlgo_HNSWLIB};
-        hnsw_index = new PyVecSimIndex(params);
+        this->index = VecSimIndex_New(&params);
     }
     ~PyHNSWLibIndex() {}
 
-    void addVector(py::object input, size_t id) { hnsw_index->addVector(input, id); }
-
-    void deleteVector(size_t id) { hnsw_index->deleteVector(id); }
-
-    py::object knn(py::object input, size_t k, size_t ef) {
-        VecSimQueryParams queryParams = {.hnswRuntimeParams = {.efRuntime = ef}};
-        return hnsw_index->knn(input, k, &queryParams);
-    }
-
-    size_t indexSize() { return hnsw_index->indexSize(); }
-
-    // This function is unique for hnsw_index pointer only
-    void setDefaultEf(size_t ef) { HNSWLib_SetQueryParam(hnsw_index->getIndex(), ef); }
-
-  private:
-    PyVecSimIndex *hnsw_index;
+    void setDefaultEf(size_t ef) { HNSWLib_SetQueryRuntimeEf(index, ef); }
 };
 
 PYBIND11_MODULE(VecSim, m) {
@@ -129,7 +114,7 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("params"))
         .def("add_vector", &PyVecSimIndex::addVector)
         .def("delete_vector", &PyVecSimIndex::deleteVector)
-        .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("id"),
+        .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize);
 
@@ -140,7 +125,8 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"))
         .def("add_vector", &PyHNSWLibIndex::addVector)
         .def("delete_vector", &PyHNSWLibIndex::deleteVector)
-        .def("knn_query", &PyHNSWLibIndex::knn, py::arg("vector"), py::arg("id"), py::arg("ef") = 0)
+        .def("knn_query", &PyHNSWLibIndex::knn, py::arg("vector"), py::arg("k"),
+             py::arg("query_param") = nullptr)
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
         .def("index_size", &PyHNSWLibIndex::indexSize);
 }
