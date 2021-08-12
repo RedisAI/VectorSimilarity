@@ -57,7 +57,7 @@ jobs:
   build-ubuntu:
     machine:
       enabled: true
-      image: cimg/base:2020.01
+      image: ubuntu-2004:202010-01
     steps:
       - build-steps
 
