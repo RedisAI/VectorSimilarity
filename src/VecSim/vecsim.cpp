@@ -1,7 +1,7 @@
 
 #include "VecSim/vecsim.h"
 #include "VecSim/algorithms/brute_force.h"
-#include "VecSim/algorithms/hnswlib_c.h"
+#include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
@@ -10,7 +10,7 @@ int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult 
 
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     if (params->algo == VecSimAlgo_HNSWLIB) {
-        return HNSWLIB_New(params);
+        return HNSWLib_New(params);
     }
     return BruteForce_New(params);
 }
@@ -48,8 +48,6 @@ extern "C" VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, cons
                                                         VecSimQueryParams *queryParams) {
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
-
-extern "C" void VecSimIndex_ClearDeleted(VecSimIndex *index) { index->ClearDeletedFn(index); }
 
 extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult *result) { return array_len(result); }
 

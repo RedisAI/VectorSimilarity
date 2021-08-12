@@ -2,11 +2,14 @@
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include "VecSim/vecsim.h"
+#include "VecSim/algorithms/hnsw/hnswlib_c.h"
 
 namespace py = pybind11;
 
 class PyVecSimIndex {
   public:
+    PyVecSimIndex() {}
+
     PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
 
     void addVector(py::object input, size_t id) {
@@ -15,10 +18,12 @@ class PyVecSimIndex {
         VecSimIndex_AddVector(index, (void *)vector_data, id);
     }
 
-    py::object knn(py::object input, size_t k) {
+    void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
+
+    py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         float *vector_data = (float *)items.data(0);
-        VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (void *)vector_data, k, NULL);
+        VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contigious 2D array. Probably "
                                      "ef or M is too small");
@@ -48,8 +53,24 @@ class PyVecSimIndex {
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
-  private:
+  protected:
     VecSimIndex *index;
+};
+
+class PyHNSWLibIndex : public PyVecSimIndex {
+  public:
+    PyHNSWLibIndex(const HNSWParams &hnsw_params, const VecSimType type, size_t dim,
+                   const VecSimMetric metric) {
+        VecSimParams params = {.hnswParams = hnsw_params,
+                               .type = type,
+                               .size = dim,
+                               .metric = metric,
+                               .algo = VecSimAlgo_HNSWLIB};
+        this->index = VecSimIndex_New(&params);
+    }
+    ~PyHNSWLibIndex() {}
+
+    void setDefaultEf(size_t ef) { HNSWLib_SetQueryRuntimeEf(index, ef); }
 };
 
 PYBIND11_MODULE(VecSim, m) {
@@ -86,10 +107,26 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("hnswParams", &VecSimParams::hnswParams)
         .def_readwrite("bfParams", &VecSimParams::bfParams);
 
+    py::class_<VecSimQueryParams>(m, "VecSimQueryParams").def(py::init());
+
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
         .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
              py::arg("params"))
         .def("add_vector", &PyVecSimIndex::addVector)
-        .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("id"))
+        .def("delete_vector", &PyVecSimIndex::deleteVector)
+        .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
+             py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize);
+
+    py::class_<PyHNSWLibIndex>(m, "HNSWIndex")
+        .def(py::init(
+                 [](const HNSWParams &params, const VecSimType type, size_t dim,
+                    VecSimMetric metric) { return new PyHNSWLibIndex(params, type, dim, metric); }),
+             py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"))
+        .def("add_vector", &PyHNSWLibIndex::addVector)
+        .def("delete_vector", &PyHNSWLibIndex::deleteVector)
+        .def("knn_query", &PyHNSWLibIndex::knn, py::arg("vector"), py::arg("k"),
+             py::arg("query_param") = nullptr)
+        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
+        .def("index_size", &PyHNSWLibIndex::indexSize);
 }
