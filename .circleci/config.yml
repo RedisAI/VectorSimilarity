@@ -4,9 +4,10 @@ commands:
   setup-automation:
     steps:
       - run:
-          name: Setup automation and install dependencies
+          name: Setup automation
           command: |
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
+            sudo ./deps/readies/bin/getpy3
 
   checkout-all:
     steps:
@@ -37,7 +38,7 @@ commands:
           command: bash -l -c "make test"
       - run:
           name: install tox dependencies
-          command: python -m pip install -r .circleci/circle_requirements.txt
+          command: python3 -m pip install -r .circleci/circle_requirements.txt
       - run:
           name: poetry install
           command: |
@@ -54,8 +55,9 @@ commands:
 
 jobs:
   build-ubuntu:
-    docker:
-      - image: circleci/python:3.8
+    machine:
+      enabled: true
+      image: cimg/base:2020.01
     steps:
       - build-steps
 
