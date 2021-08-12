@@ -58,6 +58,7 @@ jobs:
     machine:
       enabled: true
       image: ubuntu-2004:202010-01
+      resource_class: xlarge
     steps:
       - build-steps
 
