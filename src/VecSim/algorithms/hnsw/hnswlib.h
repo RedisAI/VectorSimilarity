@@ -73,14 +73,13 @@ template <typename dist_t> class HierarchicalNSW {
     std::vector<int> element_levels_;
     std::set<tableint> available_ids;
     std::unordered_map<labeltype, tableint> label_lookup_;
-    VisitedList *visited_list_;
+    VisitedListPool *visited_list_pool_;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     std::mutex global;
     std::mutex cur_element_count_guard_;
     std::vector<std::mutex> link_list_locks_;
-    VisitedListPool *visited_list_pool_;
 #endif
 
     // callback for computing distance between two points in the underline space.
@@ -277,11 +276,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 template <typename dist_t>
 CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point,
                                                              int layer, size_t ef) const {
-#ifdef ENABLE_PARALLELIZATION
     VisitedList *vl = visited_list_pool_->getFreeVisitedList();
-#else
-    VisitedList *vl = visited_list_;
-#endif
     vl_type *visited_array = vl->mass;
     vl_type visited_array_tag = vl->curV;
 
@@ -344,9 +339,7 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
         }
     }
 #ifdef ENABLE_PARALLELIZATION
-    visited_list_pool_->releaseVisitedList(vl);
-#else
-    visited_list_->reset();
+    visited_list_pool_->returnVisitedListToPool(vl);
 #endif
     return top_candidates;
 }
@@ -625,12 +618,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     dist_func_param_ = s->get_data_dim();
 
     cur_element_count = 0;
-#ifdef ENABLE_PARALLELIZATION
     visited_list_pool_ = new VisitedListPool(1, (int)max_elements);
-#else
-    visited_list_ = new VisitedList((int)max_elements);
-    visited_list_->reset();
-#endif
+
     // initializations for special treatment of the first node
     enterpoint_node_ = -1;
     maxlevel_ = -1;
@@ -677,11 +666,7 @@ template <typename dist_t> HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     }
     free(linkLists_);
     free(data_level0_memory_);
-#ifdef ENABLE_PARALLELIZATION
     delete visited_list_pool_;
-#else
-    delete visited_list_;
-#endif
 }
 
 /**
@@ -691,14 +676,8 @@ template <typename dist_t> void HierarchicalNSW<dist_t>::resizeIndex(size_t new_
     if (new_max_elements < cur_element_count)
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
-#ifdef ENABLE_PARALLELIZATION
     delete visited_list_pool_;
     visited_list_pool_ = new VisitedListPool(1, (int)new_max_elements);
-#else
-    delete visited_list_;
-    visited_list_ = new VisitedList(int(new_max_elements));
-    visited_list_->reset();
-#endif
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);

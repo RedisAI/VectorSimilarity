@@ -47,21 +47,25 @@ class VisitedListPool {
     }
 
     VisitedList *getFreeVisitedList() {
-        VisitedList *rez;
+        VisitedList *vl;
+#ifdef ENABLE_PARALLELIZATION
         {
             std::unique_lock<std::mutex> lock(poolguard);
-            if (pool.size() > 0) {
-                rez = pool.front();
+            if (!pool.empty()) {
+                vl = pool.front();
                 pool.pop_front();
             } else {
-                rez = new VisitedList(numelements);
+                vl = new VisitedList(numelements);
             }
         }
-        rez->reset();
-        return rez;
+#else
+        vl = pool.front();
+#endif
+        vl->reset();
+        return vl;
     };
 
-    void releaseVisitedList(VisitedList *vl) {
+    void returnVisitedListToPool(VisitedList *vl) {
         std::unique_lock<std::mutex> lock(poolguard);
         pool.push_front(vl);
     };
