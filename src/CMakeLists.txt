@@ -20,8 +20,10 @@ set(VECSIM_LIBTYPE SHARED)
 endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
-    VecSim/algorithms/hnswlib_c.cpp
-    VecSim/vecsim.cpp)
+    VecSim/algorithms/hnsw/hnswlib_c.cpp
+    VecSim/vecsim.cpp
+    VecSim/spaces/internal_product.cpp
+    VecSim/spaces/L2.cpp)
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")

@@ -1,7 +1,6 @@
-
 #pragma once
 
-#include <stdlib.h>
+#include <cstdlib>
 
 #ifdef __cplusplus
 extern "C" {
@@ -138,8 +137,6 @@ VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *que
                                              float distance, VecSimQueryParams *queryParams);
 
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
-
-void VecSimIndex_ClearDeleted(VecSimIndex *index);
 
 size_t VecSimQueryResult_Len(VecSimQueryResult *);
 
