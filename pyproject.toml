@@ -2,7 +2,7 @@
 name = "VecSim"
 version = "0.0.1"
 description = "Python library around collection of vector similarity algorithms"
-build = "setup.py"
+#build = "setup.py"
 
 packages = [
     { include = 'src'}
@@ -25,15 +25,15 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.6"
-pybind11 = "^2.7.0"
-numpy = "1.19.1"
 
 [tool.poetry.dev-dependencies]
+numpy = "1.19.1"
 tox = "^3.24.1"
 tox-poetry = "^0.4.0"
 hnswlib = "^0.5.2"
 pytest = "^6.2.4"
 scipy = "^1.5.4"
+pybind11 = {path = "deps/pybind11"}
 
 
 [build-system]
