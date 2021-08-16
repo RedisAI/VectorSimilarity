@@ -246,11 +246,11 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
     size_t k = 5;
 
     VecSimParams params = {
-        .hnswParams =  {.initialCapacity =  n, .M =  16, .efConstruction =  200},
-        .type =  VecSimType_FLOAT32,
-        .size =  d,
-        .metric =  VecSimMetric_L2,
-        .algo =  VecSimAlgo_HNSWLIB,
+        .hnswParams = {.initialCapacity = n, .M = 16, .efConstruction = 200},
+        .type = VecSimType_FLOAT32,
+        .size = d,
+        .metric = VecSimMetric_L2,
+        .algo = VecSimAlgo_HNSWLIB,
     };
     VecSimIndex *index = VecSimIndex_New(&params);
 
