@@ -67,7 +67,7 @@ template <typename dist_t> class HierarchicalNSW {
     int maxlevel_;
 
     // Index data structures
-    tableint enterpoint_node_;
+    int enterpoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
     std::vector<int> element_levels_;
@@ -618,6 +618,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     dist_func_param_ = s->get_data_dim();
 
     cur_element_count = 0;
+    max_id = 0;
     visited_list_pool_ = new VisitedListPool(1, (int)max_elements);
 
     // initializations for special treatment of the first node
@@ -654,7 +655,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 }
 
 template <typename dist_t> HierarchicalNSW<dist_t>::~HierarchicalNSW() {
-    for (tableint id = 0; id < max_id; id++) {
+    for (tableint id = 0; id < cur_element_count; id++) {
         if (available_ids.find(id) != available_ids.end()) {
             continue;
         }
@@ -828,7 +829,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     if (element_max_level <= maxlevelcopy)
         entry_point_lock.unlock();
 #endif
-    tableint currObj = enterpoint_node_;
+    int currObj = enterpoint_node_;
 
     memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
