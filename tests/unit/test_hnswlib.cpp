@@ -246,15 +246,15 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
     size_t k = 5;
 
     VecSimParams params = {
-        hnswParams : {initialCapacity : n, M : 16, efConstruction : 200},
-        type : VecSimType_FLOAT32,
-        size : d,
-        metric : VecSimMetric_L2,
-        algo : VecSimAlgo_HNSWLIB,
+        .hnswParams =  {.initialCapacity =  n, .M =  16, .efConstruction =  200},
+        .type =  VecSimType_FLOAT32,
+        .size =  d,
+        .metric =  VecSimMetric_L2,
+        .algo =  VecSimAlgo_HNSWLIB,
     };
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    float *vectors = (float *)malloc(n * d * sizeof(float));
+    auto *vectors = (float *)malloc(n * d * sizeof(float));
     for (size_t iter = 1; iter <= 3; iter++) {
         for (size_t i = 0; i < n; i++) {
             for (size_t j = 0; j < d; j++) {
@@ -265,7 +265,7 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
         }
         VecSimQueryResult *res =
-            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, NULL);
+            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, nullptr);
         ASSERT_EQ(VecSimQueryResult_Len(res), k);
         size_t ids[5] = {0};
         for (int i = 0; i < k; i++) {
@@ -280,6 +280,7 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
         }
         VecSimQueryResult_Free(res);
     }
+    free(vectors);
     VecSimIndex_Free(index);
 }
 
@@ -330,6 +331,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
+    VecSimIndex_Free(index);
 }
 
 TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
