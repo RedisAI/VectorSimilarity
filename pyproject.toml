@@ -37,10 +37,5 @@ pybind11 = {path = "deps/pybind11"}
 
 
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel",
-    "ninja; sys_platform != 'win32' and platform_machine != 'arm64'",
-    "cmake>=3.12",
-]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
