@@ -63,7 +63,7 @@ template <typename dist_t> class HierarchicalNSW {
 
     // Index state
     size_t cur_element_count;
-    size_t max_id;
+    int max_id;
     int maxlevel_;
 
     // Index data structures
@@ -618,7 +618,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     dist_func_param_ = s->get_data_dim();
 
     cur_element_count = 0;
-    max_id = 0;
+    max_id = -1;
     visited_list_pool_ = new VisitedListPool(1, (int)max_elements);
 
     // initializations for special treatment of the first node
@@ -655,7 +655,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 }
 
 template <typename dist_t> HierarchicalNSW<dist_t>::~HierarchicalNSW() {
-    for (tableint id = 0; id < cur_element_count; id++) {
+    for (int id = 0; id <= max_id; id++) {
         if (available_ids.find(id) != available_ids.end()) {
             continue;
         }
