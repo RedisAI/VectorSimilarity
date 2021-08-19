@@ -53,7 +53,8 @@ commands:
           name: poetry install
           command: |
             python --version
-            poetry install -vv || { rm -rf .poetry_cache/virtualenvs/*; poetry install -vv; }
+            rm -rf /home/circleci/.cache/pypoetry/virtualenvs
+            poetry install
 
       - run:
           name: build sdist and wheels
