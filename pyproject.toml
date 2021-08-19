@@ -2,7 +2,7 @@
 name = "VecSim"
 version = "0.0.1"
 description = "Python library around collection of vector similarity algorithms"
-#build = "setup.py"
+build = "setup.py"
 
 packages = [
     { include = 'src'}
