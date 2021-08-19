@@ -45,8 +45,8 @@ def test_sanity_hnswlib_index():
     for vector in query_data:
             hnswlib_labels, hnswlib_distances = p.knn_query(vector, k=10)
             redis_labels, redis_distances = index.knn_query(vector, 10)
-            assert_allclose(hnswlib_labels, redis_labels)
-            assert_allclose(hnswlib_distances, redis_distances)
+            assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
+            assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
