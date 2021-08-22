@@ -1,0 +1,7 @@
+project(VecSim LANGUAGES CXX)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../deps/pybind11 pybind11)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ VectorSimilarity)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
+pybind11_add_module(VecSim bindings.cpp)
+target_link_libraries(VecSim VectorSimilarity)
+add_dependencies(VecSim VectorSimilarity)

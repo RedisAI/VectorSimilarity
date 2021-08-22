@@ -48,5 +48,4 @@ tests/flow/logs/
 **/.ipynb_checkpoints
 *.egg*
 dist/**
-setup.py
 poetry.lock

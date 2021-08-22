@@ -21,21 +21,31 @@ commands:
       - checkout-all
       - setup-automation
 
+      - restore_cache: # Download and cache dependencies
+          keys:
+          - v1-dependencies-{{ checksum "pyproject.toml" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
       - run:
           name: Get prerequisites
           command: |
             sudo apt remove -y python2
             sudo ./sbin/system-setup.py
             sudo apt autoremove -y
+
       - run:
           name: lint
           command: bash -l -c "make lint"
+
       - run:
           name: Build
           command: bash -l -c "make build"
+
       - run:
           name: Unit Test
           command: bash -l -c "make test"
+
       - run:
           name: install tox dependencies
           command: python3 -m pip install -r .circleci/circle_requirements.txt
@@ -44,14 +54,23 @@ commands:
           command: |
             python --version
             poetry install
+
       - run:
           name: build sdist and wheels
           command: |
             poetry build
+
       - run:
           name: Tox Run
           command: |
             tox
+
+      - save_cache:
+          paths:
+            - ./.tox
+            - ~/.cache/pip
+            - ~/.cache/pypoetry
+          key: v1-dependencies-{{ checksum "pyproject.toml" }}
 
 jobs:
   build-ubuntu:
