@@ -54,6 +54,7 @@ commands:
           command: |
             python --version
             poetry install
+          no_output_timeout: 30m
 
       - run:
           name: build sdist and wheels
