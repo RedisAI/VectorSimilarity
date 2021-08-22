@@ -8,5 +8,5 @@ READIES=$ROOT/deps/readies
 cd $HERE
 mkdir -p unit/build
 (cd unit/build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make)
-(cd unit/build && GTEST_COLOR=1 ctest -V) 
+(cd unit/build && GTEST_COLOR=1 ctest --output-on-failure) 
 

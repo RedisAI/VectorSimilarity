@@ -10,6 +10,9 @@ option(VECSIM_STATIC "Build as static library" OFF)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps)
+
+# open blas
+set(USE_THREAD 0)
 add_subdirectory(../deps/OpenBLAS OpenBLAS)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
 
