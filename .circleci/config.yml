@@ -7,7 +7,6 @@ commands:
           name: Setup automation
           command: |
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
-            sudo ./deps/readies/bin/getpy3
 
   checkout-all:
     steps:
@@ -73,12 +72,16 @@ commands:
             - ~/.cache/pypoetry
           key: v1-dependencies-{{ checksum "pyproject.toml" }}
 
+# jobs:
+#   build-ubuntu:
+#     machine:
+#       enabled: true
+#       image: ubuntu-2004:202010-01
+#       resource_class: xlarge
 jobs:
   build-ubuntu:
-    machine:
-      enabled: true
-      image: ubuntu-2004:202010-01
-      resource_class: xlarge
+    docker:
+      - image: circleci/python:3.8
     steps:
       - build-steps
 
