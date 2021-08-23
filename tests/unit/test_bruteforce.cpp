@@ -54,7 +54,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
     }
-    for (size_t i = 0; i < k; i++) {
+    for (size_t i = n - 1; i > n - 1 - k; i--) {
         ASSERT_EQ(i, ids[i]);
     }
     VecSimQueryResult_Free(res);
@@ -389,7 +389,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
     }
-    for (size_t i = 0; i < k; i++) {
+    for (size_t i = n - 1; i > n - 1 - k; i--) {
         ASSERT_EQ(i, ids[i]);
     }
     VecSimQueryResult_Free(res);

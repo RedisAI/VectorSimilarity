@@ -44,8 +44,10 @@ typedef void (*DistanceCalculateFunction)(size_t dim, VectorBlock *vectorBlock,
 
 void BruteForceIndex_InternalProduct(size_t dim, VectorBlock *vectorBlock, const void *queryBlob,
                                      float *scores) {
-    cblas_sgemv(CblasRowMajor, CblasNoTrans, vectorBlock->size, dim, 1, vectorBlock->vectors, dim,
-                (const float *)queryBlob, 1, 0, scores, 1);
+
+    // Calculate AxV internal product into tmp_scores.
+    cblas_sgemv(CblasRowMajor, CblasNoTrans, vectorBlock->size, dim, -1, vectorBlock->vectors, dim,
+                (const float *)queryBlob, 1, 1, scores, 1);
 }
 
 void BruteForceIndex_L2(size_t dim, VectorBlock *vectorBlock, const void *queryBlob,
@@ -64,9 +66,6 @@ struct BruteForceIndex {
 
     // Meta data
     VecSimIndex base;
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
     // TODO: support cosine, angular
 
     idType count;
@@ -110,8 +109,8 @@ static void BruteForce_UpdateVector(BruteForceIndex *bfIndex, idType id, const v
     VectorBlock *vectorBlock = vectorBlockMember->block;
     size_t index = vectorBlockMember->index;
     // Update vector data in the block.
-    float *destinaion = vectorBlock->vectors + (index * bfIndex->dim);
-    memcpy(destinaion, vector_data, bfIndex->dim);
+    float *destinaion = vectorBlock->vectors + (index * bfIndex->base.dim);
+    memcpy(destinaion, vector_data, bfIndex->base.dim);
 }
 
 static void VectorBlock_AddVector(VectorBlock *vectorBlock, VectorBlockMember *vectorBlockMember,
@@ -158,14 +157,14 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     VectorBlock *vectorBlock;
     if (bfIndex->vectorBlocks.size() == 0) {
         // No vector blocks, create new one.
-        vectorBlock = new VectorBlock(bfIndex->vectorBlockSize, bfIndex->dim);
+        vectorBlock = new VectorBlock(bfIndex->vectorBlockSize, bfIndex->base.dim);
         bfIndex->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
         vectorBlock = bfIndex->vectorBlocks[bfIndex->vectorBlocks.size() - 1];
         if (vectorBlock->size == bfIndex->vectorBlockSize) {
             // Last vector block is full, create a new one.
-            vectorBlock = new VectorBlock(bfIndex->vectorBlockSize, bfIndex->dim);
+            vectorBlock = new VectorBlock(bfIndex->vectorBlockSize, bfIndex->base.dim);
             bfIndex->vectorBlocks.push_back(vectorBlock);
         }
     }
@@ -174,7 +173,7 @@ extern "C" int BruteForce_AddVector(VecSimIndex *index, const void *vector_data,
     VectorBlockMember *vectorBlockMember = new VectorBlockMember();
     bfIndex->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
-    VectorBlock_AddVector(vectorBlock, vectorBlockMember, vector_data, bfIndex->dim);
+    VectorBlock_AddVector(vectorBlock, vectorBlockMember, vector_data, bfIndex->base.dim);
     bfIndex->labelToIdLookup.emplace(label, id);
     return true;
 }
@@ -190,7 +189,7 @@ extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
         id = optionalId->second;
     }
 
-    size_t vectorDim = bfIndex->dim;
+    size_t vectorDim = bfIndex->base.dim;
     // Get the vector block, and vector block member of the vector to be deleted.
     VectorBlockMember *vectorBlockMember = bfIndex->idToVectorBlockMemberMapping[id];
     VectorBlock *vectorBlock = vectorBlockMember->block;
@@ -233,13 +232,14 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
                                                    size_t k, VecSimQueryParams *queryParams) {
 
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
-    float scores[bfIndex->vectorBlockSize] = {0};
-    size_t dim = bfIndex->dim;
+    size_t dim = bfIndex->base.dim;
     float upperBound = std::numeric_limits<float>::min();
     std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>,
                         CompareByFirst>
         knn_res;
     for (auto vectorBlock : bfIndex->vectorBlocks) {
+        float scores[bfIndex->vectorBlockSize];
+        std::fill_n(scores, bfIndex->vectorBlockSize, 1.0);
         bfIndex->distanceCalculationFunction(dim, vectorBlock, queryBlob, scores);
         for (int i = 0; i < MIN(vectorBlock->size, k); i++) {
             size_t min_index = cblas_ismin(vectorBlock->size, scores, 1);
@@ -274,8 +274,9 @@ extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
-    info.d = idx->dim;
-    info.type = VecSimType_FLOAT32;
+    info.d = index->dim;
+    info.type = index->vecType;
+    info.metric = index->metric;
     info.bfInfo.indexSize = idx->count;
     info.bfInfo.blockSize = idx->vectorBlockSize;
     return info;
@@ -291,7 +292,7 @@ extern "C" void BruteForce_ClearDeleted(VecSimIndex *index);
 
 BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim,
                                  size_t max_elements, size_t blockSize)
-    : metric(metric), vecType(vecType), dim(dim), vectorBlockSize(blockSize) {
+    : vectorBlockSize(blockSize) {
     this->base = VecSimIndex{
         AddFn : BruteForce_AddVector,
         DeleteFn : BruteForce_DeleteVector,
@@ -300,12 +301,15 @@ BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t
         DistanceQueryFn : NULL,
         ClearDeletedFn : NULL,
         FreeFn : BruteForce_Free,
-        InfoFn : BruteForce_Info
+        InfoFn : BruteForce_Info,
+        dim : dim,
+        vecType : vectype,
+        metric : metric
     };
     this->idToVectorBlockMemberMapping.resize(max_elements);
-    if (this->metric == VecSimMetric_IP) {
+    if (this->base.metric == VecSimMetric_IP || this->base.metric == VecSimMetric_Cosine) {
         this->distanceCalculationFunction = BruteForceIndex_InternalProduct;
-    } else if (this->metric == VecSimMetric_L2) {
+    } else if (this->base.metric == VecSimMetric_L2) {
         this->distanceCalculationFunction = BruteForceIndex_L2;
     }
 }

@@ -24,7 +24,7 @@ typedef enum {
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 
 // Distance metric
-typedef enum { VecSimMetric_L2, VecSimMetric_IP } VecSimMetric;
+typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
 /**
  * @brief Index initialization parameters.
@@ -82,9 +82,10 @@ typedef struct {
             size_t blockSize; // Brute force algorithm vector block (mini matrix) size
         } bfInfo;
     };
-    VecSimType type; // Datatype the index holds.
-    size_t d;        // Vector size (dimension).
-    VecSimAlgo algo; // Algorithm being used.
+    VecSimType type;     // Datatype the index holds.
+    size_t d;            // Vector size (dimension).
+    VecSimAlgo algo;     // Algorithm being used.
+    VecSimMetric metric; // Index distance metric
     // TODO:
     // size_t memory;
 } VecSimIndexInfo;
@@ -119,6 +120,9 @@ typedef struct VecSimIndex {
     Index_ClearDeleted ClearDeletedFn;
     Index_Free FreeFn;
     Index_Info InfoFn;
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
 } VecSimIndex;
 
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);

@@ -31,7 +31,8 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/hnsw/hnswlib_c.cpp
     VecSim/vecsim.cpp
     VecSim/spaces/internal_product.cpp
-    VecSim/spaces/L2.cpp)
+    VecSim/spaces/L2.cpp
+    VecSim/utils/vec_utils.cpp)
 
 target_link_libraries(VectorSimilarity openblas)
 

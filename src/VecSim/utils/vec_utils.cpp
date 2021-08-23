@@ -1,14 +1,8 @@
 #include "vec_utils.h"
 #include "OpenBLAS/cblas.h"
 
-void cpu_float_vector_normalize(float *x, int dim) {
-    int step = 1;
-    float norm = 1.0f / snrm2(&dim, x, &step);
-    sscal(&dim, &norm, x, &step);
-}
-
-float cpu_l2(float *x, float *y, int dim) {
-    int step = 1;
-    float xMinusY[dim];
-    saxpby scopy(&dim, y, &step, s)
+void float_vector_normalize(float *x, int dim) {
+    float norm = cblas_snrm2(dim, x, 1);
+    norm = norm == 0.0 ? 0 : 1.0f / norm;
+    cblas_sscal(dim, norm, x, 1);
 }
