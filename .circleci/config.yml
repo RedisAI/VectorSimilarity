@@ -75,6 +75,7 @@ commands:
 jobs:
   build-ubuntu:
     docker:
+      resource_class: large
       - image: circleci/python:3.8
     steps:
       - build-steps
