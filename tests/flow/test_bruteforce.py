@@ -8,7 +8,7 @@ import time
 
 def test_bf():
     dim = 128
-    num_elements = 100
+    num_elements = 1000000
     num_queries = 10
     k=10
 
