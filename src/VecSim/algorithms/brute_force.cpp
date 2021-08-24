@@ -35,6 +35,9 @@ struct VectorBlock {
     float *vectors;
 
     ~VectorBlock() {
+        for (size_t i = 0; i < this->size; i++) {
+            delete members[i];
+        }
         delete[] members;
         delete[] vectors;
     }
@@ -314,5 +317,4 @@ BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t
     } else if (this->base.metric == VecSimMetric_L2) {
         this->distanceCalculationFunction = BruteForceIndex_L2;
     }
-    std::cout << "block size is: " << this->vectorBlockSize << std::endl;
 }

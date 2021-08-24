@@ -314,6 +314,7 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
         }
         VecSimQueryResult_Free(res);
     }
+    free(vectors);
     VecSimIndex_Free(index);
 }
 
@@ -350,15 +351,16 @@ TEST_F(BruteForceTest, test_bf_info) {
         type : VecSimType_FLOAT32,
         size : d,
         metric : VecSimMetric_L2,
-        algo : VecSimAlgo_HNSWLIB,
+        algo : VecSimAlgo_BF,
     };
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.d, d);
     // User args
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
+    VecSimIndex_Free(index);
 }
 
 TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
