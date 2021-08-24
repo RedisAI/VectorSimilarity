@@ -34,6 +34,7 @@ class PyVecSimIndex {
             data_numpy_d[i] = res[i].score;
             data_numpy_l[i] = res[i].id;
         }
+        VecSimQueryResult_Free(res);
         py::capsule free_when_done_l(data_numpy_l, [](void *f) { delete[] f; });
         py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
         return py::make_tuple(
@@ -68,7 +69,6 @@ class PyHNSWLibIndex : public PyVecSimIndex {
                                .algo = VecSimAlgo_HNSWLIB};
         this->index = VecSimIndex_New(&params);
     }
-    ~PyHNSWLibIndex() {}
 
     void setDefaultEf(size_t ef) { HNSWLib_SetQueryRuntimeEf(index, ef); }
 };
@@ -84,7 +84,6 @@ class PyBFIndex : public PyVecSimIndex {
                                .algo = VecSimAlgo_BF};
         this->index = VecSimIndex_New(&params);
     }
-    ~PyBFIndex() {}
 };
 
 PYBIND11_MODULE(VecSim, m) {

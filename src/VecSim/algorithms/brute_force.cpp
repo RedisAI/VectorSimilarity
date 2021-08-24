@@ -7,6 +7,7 @@
 #include "OpenBLAS/cblas.h"
 #include <limits>
 #include "VecSim/utils/arr_cpp.h"
+#include <iostream>
 
 using namespace std;
 
@@ -101,6 +102,7 @@ extern "C" void BruteForce_Free(VecSimIndex *index) {
     for (auto &vectorBlock : bfIndex->vectorBlocks) {
         delete vectorBlock;
     }
+    delete bfIndex;
 }
 
 static void BruteForce_UpdateVector(BruteForceIndex *bfIndex, idType id, const void *vector_data) {
@@ -292,7 +294,7 @@ extern "C" void BruteForce_ClearDeleted(VecSimIndex *index);
 
 BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim,
                                  size_t max_elements, size_t blockSize)
-    : vectorBlockSize(blockSize) {
+    : vectorBlockSize(blockSize), count(0) {
     this->base = VecSimIndex{
         AddFn : BruteForce_AddVector,
         DeleteFn : BruteForce_DeleteVector,
@@ -312,4 +314,5 @@ BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t
     } else if (this->base.metric == VecSimMetric_L2) {
         this->distanceCalculationFunction = BruteForceIndex_L2;
     }
+    std::cout << "block size is: " << this->vectorBlockSize << std::endl;
 }
