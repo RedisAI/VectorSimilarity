@@ -80,6 +80,7 @@ commands:
 #       resource_class: xlarge
 jobs:
   build-ubuntu:
+    resource_class: large
     docker:
       - image: circleci/python:3.8
     steps:
