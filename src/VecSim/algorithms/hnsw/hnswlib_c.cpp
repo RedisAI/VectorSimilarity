@@ -114,8 +114,9 @@ VecSimIndexInfo HNSWLib_Info(VecSimIndex *index) {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
-    info.d = *((size_t *)idx->space->get_data_dim());
-    info.type = VecSimType_FLOAT32;
+    info.d = index->dim;
+    info.type = index->vecType;
+    info.metric = index->metric;
     info.hnswInfo.M = hnsw.getM();
     info.hnswInfo.efConstruction = hnsw.getEfConstruction();
     info.hnswInfo.efRuntime = hnsw.getEf();
@@ -142,5 +143,8 @@ HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t
                        .DistanceQueryFn = NULL,
                        .ClearDeletedFn = NULL,
                        .FreeFn = HNSWLib_Free,
-                       .InfoFn = HNSWLib_Info};
+                       .InfoFn = HNSWLib_Info,
+                       .dim = dim,
+                       .vecType = vectype,
+                       .metric = metric};
 }

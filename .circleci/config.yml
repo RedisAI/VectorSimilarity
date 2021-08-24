@@ -4,7 +4,7 @@ commands:
   setup-automation:
     steps:
       - run:
-          name: Setup automation and install dependencies
+          name: Setup automation
           command: |
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
 
@@ -47,13 +47,13 @@ commands:
 
       - run:
           name: install tox dependencies
-          command: python -m pip install -r .circleci/circle_requirements.txt
-
+          command: python3 -m pip install -r .circleci/circle_requirements.txt
       - run:
           name: poetry install
           command: |
             python --version
             poetry install
+          no_output_timeout: 30m
 
       - run:
           name: build sdist and wheels
@@ -72,8 +72,15 @@ commands:
             - ~/.cache/pypoetry
           key: v1-dependencies-{{ checksum "pyproject.toml" }}
 
+# jobs:
+#   build-ubuntu:
+#     machine:
+#       enabled: true
+#       image: ubuntu-2004:202010-01
+#       resource_class: xlarge
 jobs:
   build-ubuntu:
+    resource_class: large
     docker:
       - image: circleci/python:3.8
     steps:

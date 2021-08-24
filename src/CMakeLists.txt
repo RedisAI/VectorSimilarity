@@ -11,6 +11,13 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps)
 
+# open blas
+set(USE_THREAD 0)
+add_subdirectory(../deps/OpenBLAS OpenBLAS)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
+
+
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
 
 if(VECSIM_STATIC)
@@ -20,10 +27,15 @@ set(VECSIM_LIBTYPE SHARED)
 endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
+    VecSim/algorithms/brute_force.cpp
     VecSim/algorithms/hnsw/hnswlib_c.cpp
     VecSim/vecsim.cpp
     VecSim/spaces/internal_product.cpp
-    VecSim/spaces/L2.cpp)
+    VecSim/spaces/L2.cpp
+    VecSim/utils/vec_utils.cpp)
+
+target_link_libraries(VectorSimilarity openblas)
+
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
