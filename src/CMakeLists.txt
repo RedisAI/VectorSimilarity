@@ -8,22 +8,19 @@ set(CMAKE_CXX_STANDARD 14)
 option(VECSIM_STATIC "Build as static library" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps)
-
-# open blas
-set(USE_THREAD 0)
-add_subdirectory(../deps/OpenBLAS OpenBLAS)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
 
+# openblas
+set(USE_THREAD 0)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../deps/OpenBLAS OpenBLAS)
 
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC")
 
 if(VECSIM_STATIC)
-set(VECSIM_LIBTYPE STATIC)
+	set(VECSIM_LIBTYPE STATIC)
 else()
-set(VECSIM_LIBTYPE SHARED)
+	set(VECSIM_LIBTYPE SHARED)
 endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
@@ -36,9 +33,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 
 target_link_libraries(VectorSimilarity openblas)
 
-
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
-
