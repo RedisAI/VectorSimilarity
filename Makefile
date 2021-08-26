@@ -18,6 +18,8 @@ make all           # build all libraries and packages
 
 make test          # run tests
 
+make benchmark	   # run microbenchmarks
+
 make platform      # build for specific Linux distribution
   OSNICK=nick        # Linux distribution to build for
   REDIS_VER=ver      # use Redis version `ver`
@@ -66,6 +68,16 @@ test:
 	./tests/test.sh
 
 .PHONY: test
+
+#----------------------------------------------------------------------------------------------
+
+
+#----------------------------------------------------------------------------------------------
+
+benchmark:
+	./tests/benchmarks.sh
+
+.PHONY: benchmark
 
 #----------------------------------------------------------------------------------------------
 
