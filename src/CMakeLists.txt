@@ -13,6 +13,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/OpenBLAS)
 
 # openblas
 set(USE_THREAD 0)
+set(DYNAMIC_ARCH 1)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../deps/OpenBLAS OpenBLAS)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC")
