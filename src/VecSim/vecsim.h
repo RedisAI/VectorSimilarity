@@ -95,8 +95,6 @@ typedef struct {
     float score;
 } VecSimQueryResult;
 
-typedef struct VecSimIndex VecSimIndex;
-
 typedef VecSimIndex *(*Index_New)(const VecSimParams *params);
 typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
 typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
