@@ -42,3 +42,6 @@ add_executable(mklbench mkl_bench.cpp)
 target_link_libraries(mklbench benchmark::benchmark)
 target_link_libraries(mklbench $ENV{MKLROOT}/lib/intel64/libmkl_intel_ilp64.a $ENV{MKLROOT}/lib/intel64/libmkl_sequential.a $ENV{MKLROOT}/lib/intel64/libmkl_core.a m dl)
 
+add_executable(native_avx512_bf_bench native_avx512_bf_bench.cpp)
+target_link_libraries(native_avx512_bf_bench benchmark::benchmark)
+
