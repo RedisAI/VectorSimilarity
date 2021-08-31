@@ -95,19 +95,7 @@ typedef struct {
     float score;
 } VecSimQueryResult;
 
-typedef struct VecSimIndex {
-    Index_AddVector AddFn;
-    Index_DeleteVector DeleteFn;
-    Index_IndexSize SizeFn;
-    Index_TopKQuery TopKQueryFn;
-    Index_DistanceQuery DistanceQueryFn;
-    Index_ClearDeleted ClearDeletedFn;
-    Index_Free FreeFn;
-    Index_Info InfoFn;
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
-} VecSimIndex;
+typedef struct VecSimIndex VecSimIndex;
 
 typedef VecSimIndex *(*Index_New)(const VecSimParams *params);
 typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
@@ -122,6 +110,20 @@ typedef VecSimQueryResult *(*Index_DistanceQuery)(VecSimIndex *index, const void
                                                   float distance, VecSimQueryParams *queryParams);
 typedef void (*Index_ClearDeleted)(VecSimIndex *index);
 typedef VecSimIndexInfo (*Index_Info)(VecSimIndex *index);
+
+struct VecSimIndex {
+    Index_AddVector AddFn;
+    Index_DeleteVector DeleteFn;
+    Index_IndexSize SizeFn;
+    Index_TopKQuery TopKQueryFn;
+    Index_DistanceQuery DistanceQueryFn;
+    Index_ClearDeleted ClearDeletedFn;
+    Index_Free FreeFn;
+    Index_Info InfoFn;
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
+};
 
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
