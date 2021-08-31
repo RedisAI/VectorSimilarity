@@ -46,3 +46,6 @@ add_compile_options(-march=native)
 add_executable(native_avx512_bf_bench native_avx512_bf_bench.cpp)
 target_link_libraries(native_avx512_bf_bench benchmark::benchmark)
 
+add_executable(native_avx2_bf_bench native_avx2_bf_bench.cpp)
+target_link_libraries(native_avx2_bf_bench benchmark::benchmark)
+

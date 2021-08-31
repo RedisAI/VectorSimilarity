@@ -11,4 +11,5 @@ mkdir -p benchmarks/build
 (cd benchmarks/build && ./openblasbench) 
 (cd benchmarks/build && ./mklbench) 
 (cd benchmarks/build && ./native_avx512_bf_bench) 
+(cd benchmarks/build && ./native_avx2_bf_bench) 
 
