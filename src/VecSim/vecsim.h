@@ -111,7 +111,7 @@ typedef VecSimQueryResult *(*Index_DistanceQuery)(VecSimIndex *index, const void
 typedef void (*Index_ClearDeleted)(VecSimIndex *index);
 typedef VecSimIndexInfo (*Index_Info)(VecSimIndex *index);
 
-typedef struct VecSimIndex {
+struct VecSimIndex {
     Index_AddVector AddFn;
     Index_DeleteVector DeleteFn;
     Index_IndexSize SizeFn;
@@ -123,7 +123,7 @@ typedef struct VecSimIndex {
     size_t dim;
     VecSimType vecType;
     VecSimMetric metric;
-} VecSimIndex;
+};
 
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
