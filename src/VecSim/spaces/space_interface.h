@@ -23,7 +23,6 @@
 #endif
 #endif
 
-namespace hnswlib {
 template <typename TYPE> using DISTFUNC = TYPE (*)(const void *, const void *, const void *);
 
 template <typename TYPE> class SpaceInterface {
@@ -36,4 +35,3 @@ template <typename TYPE> class SpaceInterface {
 
     virtual ~SpaceInterface() = default;
 };
-} // namespace hnswlib
