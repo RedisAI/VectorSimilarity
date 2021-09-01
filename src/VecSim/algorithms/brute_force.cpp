@@ -118,6 +118,22 @@ static void BruteForce_UpdateVector(BruteForceIndex *bfIndex, idType id, const v
     memcpy(destinaion, vector_data, bfIndex->base.dim);
 }
 
+static size_t BruteForce_IndexOfMin(float *scores, size_t n) {
+    float max_float = std::numeric_limits<float>::max();
+    float inf = numeric_limits<float>::infinity();
+    float min = std::numeric_limits<float>::max();
+    size_t min_index = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (scores[i] == max_float)
+            continue;
+        if (scores[i] < min || scores[i] == inf) {
+            min = scores[i];
+            min_index = i;
+        }
+    }
+    return min_index;
+}
+
 static void VectorBlock_AddVector(VectorBlock *vectorBlock, VectorBlockMember *vectorBlockMember,
                                   const void *vectorData, size_t vectorDim) {
     // Mutual point both structs on each other.
@@ -247,7 +263,7 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
         std::fill_n(scores, bfIndex->vectorBlockSize, 1.0);
         bfIndex->distanceCalculationFunction(dim, vectorBlock, queryBlob, scores);
         for (int i = 0; i < MIN(vectorBlock->size, k); i++) {
-            size_t min_index = cblas_ismin(vectorBlock->size, scores, 1);
+            size_t min_index = BruteForce_IndexOfMin(scores, vectorBlock->size);
             if (knn_res.size() < k) {
                 labelType label = vectorBlock->members[min_index]->label;
                 knn_res.emplace(scores[min_index], label);
