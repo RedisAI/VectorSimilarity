@@ -7,7 +7,7 @@
 #include <queue>
 #include <limits>
 #include "VecSim/spaces/space_interface.h"
-#include "VecSim/spaces/L2.h"
+#include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/internal_product.h"
 #include "VecSim/utils/arr_cpp.h"
 #include <iostream>

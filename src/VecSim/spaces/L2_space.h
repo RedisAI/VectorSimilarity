@@ -1,6 +1,6 @@
 #pragma once
 
-#include "space_interface.h"
+#include "VecSim/spaces/space_interface.h"
 
 class L2Space : public SpaceInterface<float> {
 
