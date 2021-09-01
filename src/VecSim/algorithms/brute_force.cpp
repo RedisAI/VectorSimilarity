@@ -1,11 +1,14 @@
 #include "brute_force.h"
 #include <unordered_map>
+#include <memory>
 #include <set>
 #include <vector>
 #include <cstring>
 #include <queue>
-#include "OpenBLAS/cblas.h"
 #include <limits>
+#include "VecSim/spaces/space_interface.h"
+#include "VecSim/spaces/L2.h"
+#include "VecSim/spaces/internal_product.h"
 #include "VecSim/utils/arr_cpp.h"
 #include <iostream>
 
@@ -42,28 +45,6 @@ struct VectorBlock {
         delete[] vectors;
     }
 };
-
-typedef void (*DistanceCalculateFunction)(size_t dim, VectorBlock *vectorBlock,
-                                          const void *queryBlob, float *scores);
-
-void BruteForceIndex_InternalProduct(size_t dim, VectorBlock *vectorBlock, const void *queryBlob,
-                                     float *scores) {
-
-    // Calculate AxV internal product into tmp_scores.
-    cblas_sgemv(CblasRowMajor, CblasNoTrans, vectorBlock->size, dim, -1, vectorBlock->vectors, dim,
-                (const float *)queryBlob, 1, 1, scores, 1);
-}
-
-void BruteForceIndex_L2(size_t dim, VectorBlock *vectorBlock, const void *queryBlob,
-                        float *scores) {
-    float tmp_vector[dim];
-    for (size_t i = 0; i < vectorBlock->size; i++) {
-        cblas_scopy(dim, vectorBlock->vectors + (i * dim), 1, tmp_vector, 1);
-        cblas_saxpy(dim, -1.0f, (const float *)queryBlob, 1, tmp_vector, 1);
-        scores[i] = cblas_sdot(dim, tmp_vector, 1, tmp_vector, 1);
-    }
-}
-
 struct BruteForceIndex {
     BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
                     size_t blockSize);
@@ -78,8 +59,8 @@ struct BruteForceIndex {
     std::set<idType> deletedIds;
     std::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
-
-    DistanceCalculateFunction distanceCalculationFunction;
+    unique_ptr<SpaceInterface<float>> space;
+    DISTFUNC<float> dist_func;
 };
 
 struct CompareByFirst {
@@ -116,6 +97,22 @@ static void BruteForce_UpdateVector(BruteForceIndex *bfIndex, idType id, const v
     // Update vector data in the block.
     float *destinaion = vectorBlock->vectors + (index * bfIndex->base.dim);
     memcpy(destinaion, vector_data, bfIndex->base.dim);
+}
+
+static size_t BruteForce_IndexOfMin(float *scores, size_t n) {
+    float max_float = std::numeric_limits<float>::max();
+    float inf = numeric_limits<float>::infinity();
+    float min = std::numeric_limits<float>::max();
+    size_t min_index = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (scores[i] == max_float)
+            continue;
+        if (scores[i] < min || scores[i] == inf) {
+            min = scores[i];
+            min_index = i;
+        }
+    }
+    return min_index;
 }
 
 static void VectorBlock_AddVector(VectorBlock *vectorBlock, VectorBlockMember *vectorBlockMember,
@@ -244,10 +241,12 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
         knn_res;
     for (auto vectorBlock : bfIndex->vectorBlocks) {
         float scores[bfIndex->vectorBlockSize];
-        std::fill_n(scores, bfIndex->vectorBlockSize, 1.0);
-        bfIndex->distanceCalculationFunction(dim, vectorBlock, queryBlob, scores);
-        for (int i = 0; i < MIN(vectorBlock->size, k); i++) {
-            size_t min_index = cblas_ismin(vectorBlock->size, scores, 1);
+        for (size_t i = 0; i < vectorBlock->size; i++) {
+            scores[i] = bfIndex->dist_func(vectorBlock->vectors + (i * dim), queryBlob, &dim);
+        }
+        size_t vec_count = MIN(vectorBlock->size, k);
+        for (int i = 0; i < vec_count; i++) {
+            size_t min_index = BruteForce_IndexOfMin(scores, vectorBlock->size);
             if (knn_res.size() < k) {
                 labelType label = vectorBlock->members[min_index]->label;
                 knn_res.emplace(scores[min_index], label);
@@ -297,7 +296,10 @@ extern "C" void BruteForce_ClearDeleted(VecSimIndex *index);
 
 BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t dim,
                                  size_t max_elements, size_t blockSize)
-    : vectorBlockSize(blockSize), count(0) {
+    : vectorBlockSize(blockSize), count(0),
+      space(metric == VecSimMetric_L2
+                ? static_cast<SpaceInterface<float> *>(new L2Space(dim))
+                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(dim))) {
     this->base = VecSimIndex{
         AddFn : BruteForce_AddVector,
         DeleteFn : BruteForce_DeleteVector,
@@ -312,9 +314,5 @@ BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t
         metric : metric
     };
     this->idToVectorBlockMemberMapping.resize(max_elements);
-    if (this->base.metric == VecSimMetric_IP || this->base.metric == VecSimMetric_Cosine) {
-        this->distanceCalculationFunction = BruteForceIndex_InternalProduct;
-    } else if (this->base.metric == VecSimMetric_L2) {
-        this->distanceCalculationFunction = BruteForceIndex_L2;
-    }
+    this->dist_func = this->space.get()->get_dist_func();
 }

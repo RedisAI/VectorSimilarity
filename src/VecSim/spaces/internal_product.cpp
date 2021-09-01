@@ -232,7 +232,6 @@ static float InnerProductSIMD4ExtResiduals(const void *pVect1v, const void *pVec
 }
 #endif
 
-
 InnerProductSpace::InnerProductSpace(size_t dim) {
     fstdistfunc_ = InnerProduct;
 #if defined(USE_AVX) || defined(USE_SSE)
