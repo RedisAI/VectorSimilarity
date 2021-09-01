@@ -454,7 +454,6 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     VecSimIndex_Free(index);
 }
 
-
 TEST_F(HNSWLibTest, hnsw_search_emptied_index) {
     VecSimParams params = {
         bfParams : {initialCapacity : 200},
@@ -467,7 +466,7 @@ TEST_F(HNSWLibTest, hnsw_search_emptied_index) {
     size_t k = 11;
     VecSimIndex *index = VecSimIndex_New(&params);
 
-   for (float i = 0; i < n; i++) {
+    for (float i = 0; i < n; i++) {
         float f[4] = {i, i, i, i};
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
