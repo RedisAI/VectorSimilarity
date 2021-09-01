@@ -430,7 +430,6 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_blocksize_1) {
     VecSimIndex_Free(index);
 }
 
-
 TEST_F(BruteForceTest, brute_force_search_emptied_index) {
     VecSimParams params = {
         bfParams : {initialCapacity : 200},
