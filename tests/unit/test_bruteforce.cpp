@@ -430,7 +430,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_blocksize_1) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, brute_force_search_emptied_index) {
+TEST_F(BruteForceTest, brute_force_search_empty_index) {
     VecSimParams params = {
         bfParams : {initialCapacity : 200},
         type : VecSimType_FLOAT32,
@@ -441,6 +441,12 @@ TEST_F(BruteForceTest, brute_force_search_emptied_index) {
     size_t n = 100;
     size_t k = 11;
     VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float query[4] = {50, 50, 50, 50};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
 
     for (float i = 0; i < n; i++) {
         float f[4] = {i, i, i, i};
@@ -454,29 +460,7 @@ TEST_F(BruteForceTest, brute_force_search_emptied_index) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
-    VecSimIndex_Free(index);
-}
-
-TEST_F(BruteForceTest, brute_force_search_empty_index) {
-    VecSimParams params = {
-        bfParams : {initialCapacity : 200},
-        type : VecSimType_FLOAT32,
-        size : 4,
-        metric : VecSimMetric_L2,
-        algo : VecSimAlgo_BF
-    };
-    size_t n = 100;
-    size_t k = 11;
-    VecSimIndex *index = VecSimIndex_New(&params);
-
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
