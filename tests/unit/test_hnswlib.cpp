@@ -453,3 +453,37 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, hnsw_search_empty_index) {
+    VecSimParams params = {
+        bfParams : {initialCapacity : 200},
+        type : VecSimType_FLOAT32,
+        size : 4,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_HNSWLIB
+    };
+    size_t n = 100;
+    size_t k = 11;
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    float query[4] = {50, 50, 50, 50};
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
+    for (float i = 0; i < n; i++) {
+        float f[4] = {i, i, i, i};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    for (float i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+    VecSimIndex_Free(index);
+}
