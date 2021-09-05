@@ -489,8 +489,9 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
 }
 
 TEST_F(HNSWLibTest, hnsw_inf_score) {
-        /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will yield "inf" result.
-        */
+    /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
+     * yield "inf" result.
+     */
     VecSimParams params = {
         hnswParams : {initialCapacity : 4},
         type : VecSimType_FLOAT32,

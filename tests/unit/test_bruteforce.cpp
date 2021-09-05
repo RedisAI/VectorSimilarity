@@ -467,7 +467,8 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
 }
 
 TEST_F(BruteForceTest, brute_force_test_inf_score) {
-    /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will yield "inf" result.
+    /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
+     * yield "inf" result.
      */
     VecSimParams params = {
         bfParams : {initialCapacity : 4},
