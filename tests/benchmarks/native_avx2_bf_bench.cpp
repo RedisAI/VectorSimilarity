@@ -17,7 +17,6 @@
 #define PORTABLE_ALIGN32 __declspec(align(32))
 #endif
 
-#define USE_AVX512
 #include <immintrin.h>
 
 size_t dim = 128;
