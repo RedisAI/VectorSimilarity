@@ -99,22 +99,6 @@ static void BruteForce_UpdateVector(BruteForceIndex *bfIndex, idType id, const v
     memcpy(destinaion, vector_data, bfIndex->base.dim);
 }
 
-static size_t BruteForce_IndexOfMin(float *scores, size_t n) {
-    float max_float = std::numeric_limits<float>::max();
-    float inf = numeric_limits<float>::infinity();
-    float min = std::numeric_limits<float>::max();
-    size_t min_index = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (scores[i] == max_float)
-            continue;
-        if (scores[i] < min || scores[i] == inf) {
-            min = scores[i];
-            min_index = i;
-        }
-    }
-    return min_index;
-}
-
 static void VectorBlock_AddVector(VectorBlock *vectorBlock, VectorBlockMember *vectorBlockMember,
                                   const void *vectorData, size_t vectorDim) {
     // Mutual point both structs on each other.
@@ -244,21 +228,19 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
         for (size_t i = 0; i < vectorBlock->size; i++) {
             scores[i] = bfIndex->dist_func(vectorBlock->vectors + (i * dim), queryBlob, &dim);
         }
-        size_t vec_count = MIN(vectorBlock->size, k);
+        size_t vec_count = vectorBlock->size;
         for (int i = 0; i < vec_count; i++) {
-            size_t min_index = BruteForce_IndexOfMin(scores, vectorBlock->size);
+
             if (knn_res.size() < k) {
-                labelType label = vectorBlock->members[min_index]->label;
-                knn_res.emplace(scores[min_index], label);
-                scores[min_index] = std::numeric_limits<float>::max();
+                labelType label = vectorBlock->members[i]->label;
+                knn_res.emplace(scores[i], label);
                 upperBound = knn_res.top().first;
             } else {
-                if (scores[min_index] >= upperBound) {
-                    break;
+                if (scores[i] >= upperBound) {
+                    continue;
                 } else {
-                    labelType label = vectorBlock->members[min_index]->label;
-                    knn_res.emplace(scores[min_index], label);
-                    scores[min_index] = std::numeric_limits<float>::max();
+                    labelType label = vectorBlock->members[i]->label;
+                    knn_res.emplace(scores[i], label);
                     knn_res.pop();
                     upperBound = knn_res.top().first;
                 }

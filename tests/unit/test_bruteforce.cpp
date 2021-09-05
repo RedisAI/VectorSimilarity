@@ -488,8 +488,7 @@ TEST_F(BruteForceTest, brute_force_test_RS_integration_test) {
     ASSERT_EQ(VecSimQueryResult_Len(res), 4);
     ASSERT_EQ(1, res[0].id);
     ASSERT_EQ(3, res[1].id);
-    ASSERT_EQ(2, res[2].id);
-    ASSERT_EQ(4, res[3].id);
+    ASSERT_TRUE((2 == res[2].id && 4 == res[3].id) || (4 == res[2].id && 2 == res[3].id));
 
     VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
