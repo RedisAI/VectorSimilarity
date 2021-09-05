@@ -13,7 +13,7 @@
 
 #include "visited_list_pool.h"
 #include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/internal_product.h"
+#include "VecSim/spaces/IP_space.h"
 #include "VecSim//spaces/space_interface.h"
 #include "VecSim/utils/arr_cpp.h"
 
