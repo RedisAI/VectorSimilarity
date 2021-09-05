@@ -466,7 +466,10 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, brute_force_test_RS_integration_test) {
+TEST_F(BruteForceTest, brute_force_test_inf_score) {
+    /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
+     * yield "inf" result.
+     */
     VecSimParams params = {
         bfParams : {initialCapacity : 4},
         type : VecSimType_FLOAT32,

@@ -488,9 +488,12 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_test_RS_integration_test) {
+TEST_F(HNSWLibTest, hnsw_inf_score) {
+    /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
+     * yield "inf" result.
+     */
     VecSimParams params = {
-        bfParams : {initialCapacity : 4},
+        hnswParams : {initialCapacity : 4},
         type : VecSimType_FLOAT32,
         size : 2,
         metric : VecSimMetric_L2,
