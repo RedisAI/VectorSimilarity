@@ -53,7 +53,6 @@ float InnerProductSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, const v
     __m256 sum256 = _mm256_set1_ps(0);
 
     while (pVect1 < pEnd1) {
-        //_mm_prefetch((char*)(pVect2 + 16), _MM_HINT_T0);
 
         __m256 v1 = _mm256_loadu_ps(pVect1);
         pVect1 += 8;

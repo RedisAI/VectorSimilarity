@@ -15,7 +15,6 @@ float L2SqrSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, const void *q
     __m128 sum = _mm_set1_ps(0);
 
     while (pVect1 < pEnd1) {
-        //_mm_prefetch((char*)(pVect2 + 16), _MM_HINT_T0);
         v1 = _mm_loadu_ps(pVect1);
         pVect1 += 4;
         v2 = _mm_loadu_ps(pVect2);

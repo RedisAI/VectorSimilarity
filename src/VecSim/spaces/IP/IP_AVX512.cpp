@@ -17,7 +17,6 @@ float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, con
     __m512 sum512 = _mm512_set1_ps(0);
 
     while (pVect1 < pEnd1) {
-        //_mm_prefetch((char*)(pVect2 + 16), _MM_HINT_T0);
 
         __m512 v1 = _mm512_loadu_ps(pVect1);
         pVect1 += 16;
