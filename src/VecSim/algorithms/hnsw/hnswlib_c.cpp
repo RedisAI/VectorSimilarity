@@ -4,8 +4,8 @@
 #include <cassert>
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/hnswlib.h"
-#include "VecSim/spaces/L2.h"
-#include "VecSim/spaces/internal_product.h"
+#include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/IP_space.h"
 
 using namespace std;
 using namespace hnswlib;

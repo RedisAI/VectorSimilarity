@@ -487,3 +487,35 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, hnsw_inf_score) {
+    /* In this test the 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
+     * yield "inf" result.
+     */
+    VecSimParams params = {
+        hnswParams : {initialCapacity : 4},
+        type : VecSimType_FLOAT32,
+        size : 2,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_HNSWLIB
+    };
+    size_t n = 4;
+    size_t k = 4;
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    VecSimIndex_AddVector(index, "abcdefgh", 1);
+    VecSimIndex_AddVector(index, "abcdefgg", 2);
+    VecSimIndex_AddVector(index, "aacdefgh", 3);
+    VecSimIndex_AddVector(index, "abbdefgh", 4);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
+
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, "abcdefgh", k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 4);
+    ASSERT_EQ(1, res[0].id);
+    ASSERT_EQ(3, res[1].id);
+    ASSERT_EQ(2, res[2].id);
+    ASSERT_EQ(4, res[3].id);
+
+    VecSimQueryResult_Free(res);
+    VecSimIndex_Free(index);
+}
