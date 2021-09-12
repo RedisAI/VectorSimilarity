@@ -1,7 +1,6 @@
 #include "L2_AVX512.h"
 #include "L2.h"
 #include "VecSim/spaces/space_includes.h"
-#ifdef __AVX512F__
 
 float L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float *pVect1 = (float *)pVect1v;
@@ -45,5 +44,3 @@ float L2SqrSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
     float res_tail = L2Sqr(pVect1, pVect2, &qty_left);
     return (res + res_tail);
 }
-
-#endif
