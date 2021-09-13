@@ -1,5 +1,6 @@
+
 #include "vec_utils.h"
-#include "math.h"
+#include <math.h>
 
 void float_vector_normalize(float *x, size_t dim) {
     float sum = 0;

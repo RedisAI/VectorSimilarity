@@ -1,13 +1,15 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
+
 #include "VecSim/vecsim.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
+
+#include "pybind11/pybind11.h"
+#include "pybind11/numpy.h"
+#include "pybind11/stl.h"
 
 namespace py = pybind11;
 
 class PyVecSimIndex {
-  public:
+public:
     PyVecSimIndex() {}
 
     PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
@@ -54,12 +56,12 @@ class PyVecSimIndex {
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
-  protected:
+protected:
     VecSimIndex *index;
 };
 
 class PyHNSWLibIndex : public PyVecSimIndex {
-  public:
+public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params, const VecSimType type, size_t dim,
                    const VecSimMetric metric) {
         VecSimParams params = {.hnswParams = hnsw_params,
@@ -74,7 +76,7 @@ class PyHNSWLibIndex : public PyVecSimIndex {
 };
 
 class PyBFIndex : public PyVecSimIndex {
-  public:
+public:
     PyBFIndex(const BFParams &bf_params, const VecSimType type, size_t dim,
               const VecSimMetric metric) {
         VecSimParams params = {.bfParams = bf_params,

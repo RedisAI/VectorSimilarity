@@ -1,14 +1,22 @@
 cmake_minimum_required(VERSION 3.10)
 cmake_policy(SET CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+
 project(VectorSimilarity)
 
 set(CMAKE_CXX_STANDARD 14)
 
+if(NOT DEFINED root)
+	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/.. ABSOLUTE)
+	set(binroot ${root}/build)
+endif()
+message("VectorSimilarity: " ${binroot})
+
 option(VECSIM_STATIC "Build as static library" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../deps)
+
+include_directories(${root}/deps)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC")
 
@@ -29,6 +37,9 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/utils/vec_utils.cpp)
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
+
+install(TARGETS VectorSimilarity
+    DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")

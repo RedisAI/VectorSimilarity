@@ -1,7 +1,9 @@
+
 #include "IP_SSE.h"
-#include "stdlib.h"
 #include "IP.h"
 #include "VecSim/spaces/space_includes.h"
+
+#include <stdlib.h>
 
 float InnerProductSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN32 TmpRes[8];

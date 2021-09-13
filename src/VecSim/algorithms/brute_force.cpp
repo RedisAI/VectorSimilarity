@@ -1,15 +1,17 @@
+
 #include "brute_force.h"
-#include <unordered_map>
-#include <memory>
-#include <set>
-#include <vector>
-#include <cstring>
-#include <queue>
-#include <limits>
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/utils/arr_cpp.h"
+
+#include <memory>
+#include <set>
+#include <vector>
+#include <unordered_map>
+#include <cstring>
+#include <queue>
+#include <limits>
 #include <iostream>
 
 using namespace std;

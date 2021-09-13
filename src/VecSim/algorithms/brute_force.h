@@ -1,4 +1,5 @@
 #pragma once
+
 #include "VecSim/vecsim.h"
 
 #ifdef __cplusplus

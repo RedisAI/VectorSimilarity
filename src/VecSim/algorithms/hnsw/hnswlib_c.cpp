@@ -1,11 +1,12 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
-#include <deque>
-#include <memory>
-#include <cassert>
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/hnswlib.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
+
+#include <deque>
+#include <memory>
+#include <cassert>
 
 using namespace std;
 using namespace hnswlib;

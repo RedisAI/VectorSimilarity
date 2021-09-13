@@ -1,5 +1,11 @@
 #pragma once
 
+#include "visited_list_pool.h"
+#include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim//spaces/space_interface.h"
+#include "VecSim/utils/arr_cpp.h"
+
 #include <set>
 #include <deque>
 #include <memory>
@@ -11,20 +17,16 @@
 #include <unordered_map>
 #include <sys/resource.h>
 
-#include "visited_list_pool.h"
-#include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/IP_space.h"
-#include "VecSim//spaces/space_interface.h"
-#include "VecSim/utils/arr_cpp.h"
+namespace hnswlib {
 
 using namespace std;
 
-namespace hnswlib {
 typedef size_t labeltype;
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
 
-template <typename dist_t> struct CompareByFirst {
+template <typename dist_t>
+struct CompareByFirst {
     constexpr bool operator()(pair<dist_t, tableint> const &a,
                               pair<dist_t, tableint> const &b) const noexcept {
         return a.first < b.first;
@@ -35,7 +37,8 @@ template <typename dist_t>
 using CandidatesQueue = priority_queue<pair<dist_t, tableint>, std::vector<pair<dist_t, tableint>>,
                                        CompareByFirst<dist_t>>;
 
-template <typename dist_t> class HierarchicalNSW {
+template <typename dist_t>
+class HierarchicalNSW {
 
     // Index build parameters
     size_t max_elements_;
@@ -111,7 +114,7 @@ template <typename dist_t> class HierarchicalNSW {
                                       tableint *neighbours_list,
                                       tableint *neighbour_neighbours_list, int level);
 
-  public:
+public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100);
     ~HierarchicalNSW();
@@ -134,25 +137,40 @@ template <typename dist_t> class HierarchicalNSW {
  * getters and setters of index data
  */
 
-template <typename dist_t> void HierarchicalNSW<dist_t>::setEf(size_t ef) { ef_ = ef; }
+template <typename dist_t>
+void HierarchicalNSW<dist_t>::setEf(size_t ef) {
+    ef_ = ef;
+}
 
-template <typename dist_t> size_t HierarchicalNSW<dist_t>::getEf() const { return ef_; }
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getEf() const {
+    return ef_;
+}
 
-template <typename dist_t> size_t HierarchicalNSW<dist_t>::getIndexSize() const {
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getIndexSize() const {
     return cur_element_count;
 }
 
-template <typename dist_t> size_t HierarchicalNSW<dist_t>::getIndexCapacity() const {
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getIndexCapacity() const {
     return max_elements_;
 }
 
-template <typename dist_t> size_t HierarchicalNSW<dist_t>::getEfConstruction() const {
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getEfConstruction() const {
     return ef_construction_;
 }
 
-template <typename dist_t> size_t HierarchicalNSW<dist_t>::getM() const { return M_; }
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getM() const {
+    return M_;
+}
 
-template <typename dist_t> size_t HierarchicalNSW<dist_t>::getMaxLevel() const { return maxlevel_; }
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
+    return maxlevel_;
+}
 
 template <typename dist_t>
 labeltype HierarchicalNSW<dist_t>::getExternalLabel(tableint internal_id) const {
@@ -180,7 +198,8 @@ char *HierarchicalNSW<dist_t>::getDataByInternalId(tableint internal_id) const {
     return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
-template <typename dist_t> int HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
+template <typename dist_t>
+int HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(level_generator_)) * reverse_size;
     return (int)r;
@@ -654,7 +673,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     incoming_links_offset = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
 }
 
-template <typename dist_t> HierarchicalNSW<dist_t>::~HierarchicalNSW() {
+template <typename dist_t>
+HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     for (int id = 0; id <= max_id; id++) {
         if (available_ids.find(id) != available_ids.end()) {
             continue;
@@ -673,7 +693,8 @@ template <typename dist_t> HierarchicalNSW<dist_t>::~HierarchicalNSW() {
 /**
  * Index API functions
  */
-template <typename dist_t> void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
+template <typename dist_t>
+void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     if (new_max_elements < cur_element_count)
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
@@ -699,7 +720,8 @@ template <typename dist_t> void HierarchicalNSW<dist_t>::resizeIndex(size_t new_
     max_elements_ = new_max_elements;
 }
 
-template <typename dist_t> bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
+template <typename dist_t>
+bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // check that the label actually exists in the graph, and update the number of elements.
     tableint element_internal_id;
     if (label_lookup_.find(label) == label_lookup_.end()) {
@@ -957,7 +979,8 @@ priority_queue<pair<dist_t, labeltype>> HierarchicalNSW<dist_t>::searchKnn(const
     return result;
 }
 
-template <typename dist_t> void HierarchicalNSW<dist_t>::checkIntegrity() {
+template <typename dist_t>
+void HierarchicalNSW<dist_t>::checkIntegrity() {
 
     struct rusage self_ru {};
     getrusage(RUSAGE_SELF, &self_ru);
@@ -1011,4 +1034,5 @@ template <typename dist_t> void HierarchicalNSW<dist_t>::checkIntegrity() {
               << std::endl;
     std::cout << "integrity ok\n";
 }
+
 } // namespace hnswlib

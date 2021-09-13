@@ -45,9 +45,13 @@ all: build
 
 #----------------------------------------------------------------------------------------------
 
+ifeq ($(VERBOSE),1)
+CMAKE_FLAGS+=-DCMAKE_VERBOSE_MAKEFILE=on
+endif
+
 build:
 	mkdir -p build
-	cd build; cmake ../src
+	cd build; cmake $(CMAKE_FLAGS) ../src
 	-touch build/Makefile
 	make -C build
 

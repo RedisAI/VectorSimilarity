@@ -1,13 +1,15 @@
 #pragma once
 
 #include <mutex>
+#include <deque>
 #include <string.h>
 
 namespace hnswlib {
+
 typedef unsigned short int vl_type;
 
 class VisitedList {
-  public:
+public:
     vl_type curV;
     vl_type *mass;
     unsigned int numelements;
@@ -39,7 +41,7 @@ class VisitedListPool {
     std::mutex poolguard;
     int numelements;
 
-  public:
+public:
     VisitedListPool(int initmaxpools, int numelements1) {
         numelements = numelements1;
         for (int i = 0; i < initmaxpools; i++)
@@ -78,4 +80,5 @@ class VisitedListPool {
         }
     };
 };
+
 } // namespace hnswlib

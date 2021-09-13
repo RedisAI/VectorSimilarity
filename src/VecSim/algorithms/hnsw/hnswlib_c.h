@@ -1,8 +1,9 @@
 
 #pragma once
 
-#include <cstdlib>
 #include "VecSim/vecsim.h"
+
+#include <cstdlib>
 
 #ifdef __cplusplus
 extern "C" {

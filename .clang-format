@@ -4,3 +4,6 @@ SortIncludes: false
 AlignEscapedNewlinesLeft: false
 AlignConsecutiveMacros: true
 SpacesBeforeTrailingComments: 1
+AlwaysBreakTemplateDeclarations: true
+SpaceAfterTemplateKeyword: true
+AccessModifierOffset: -4

@@ -2,7 +2,7 @@
 #include "VecSim/vecsim.h"
 
 class HNSWLibTest : public ::testing::Test {
-  protected:
+protected:
     HNSWLibTest() {}
 
     ~HNSWLibTest() override {}
