@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <deque>
 #include <string.h>
 
 namespace hnswlib {
