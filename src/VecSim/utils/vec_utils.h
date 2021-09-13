@@ -1,7 +1,5 @@
 #pragma once
 
-float* cpu_float_vector_normalize(float* x, size_t dim);
+#include "stdlib.h"
 
-float* 
-
-
+void float_vector_normalize(float *x, size_t dim);

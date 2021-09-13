@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
-cmake_policy(SET CMP0015 NEW)
+cmake_policy(SET CMP0077 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 project(VectorSimilarity)
 
@@ -16,26 +17,28 @@ option(VECSIM_STATIC "Build as static library" OFF)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 include_directories(${root}/deps)
-include_directories(${root}/deps/OpenBLAS)
-include_directories(${binroot}/OpenBLAS)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC")
 
 if(VECSIM_STATIC)
-set(VECSIM_LIBTYPE STATIC)
+	set(VECSIM_LIBTYPE STATIC)
 else()
-set(VECSIM_LIBTYPE SHARED)
+	set(VECSIM_LIBTYPE SHARED)
 endif()
+
+add_subdirectory(VecSim/spaces)
+
+add_compile_options(-march=native)
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force.cpp
-    VecSim/algorithms/hnsw_c.cpp
-    VecSim/vecsim.cpp)
+    VecSim/algorithms/hnsw/hnswlib_c.cpp
+    VecSim/vecsim.cpp
+    VecSim/utils/vec_utils.cpp)
+
+target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
-
-add_subdirectory(${root}/deps/OpenBLAS ${binroot}/OpenBLAS)
-target_link_libraries(VectorSimilarity ${binroot}/OpenBLAS/lib/libopenblas.a)

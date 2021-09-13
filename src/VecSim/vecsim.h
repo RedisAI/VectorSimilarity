@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <stdlib.h>
@@ -8,9 +7,10 @@ extern "C" {
 #endif
 
 // HNSW default parameters
-#define HNSW_DEFAULT_M     16
-#define HNSW_DEFAULT_EF_C  200
-#define HNSW_DEFAULT_EF_RT 10
+#define HNSW_DEFAULT_M        16
+#define HNSW_DEFAULT_EF_C     200
+#define HNSW_DEFAULT_EF_RT    10
+#define BF_DEFAULT_BLOCK_SIZE 1024 * 1024
 
 // Datatypes for indexing.
 typedef enum {
@@ -24,23 +24,27 @@ typedef enum {
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 
 // Distance metric
-typedef enum { VecSimMetric_L2, VecSimMetric_IP } VecSimMetric;
+typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
 /**
  * @brief Index initialization parameters.
  *
  */
 typedef struct {
+    size_t initialCapacity;
+    size_t M;
+    size_t efConstruction;
+    size_t efRuntime;
+} HNSWParams;
+
+typedef struct {
+    size_t initialCapacity;
+    size_t blockSize;
+} BFParams;
+typedef struct {
     union {
-        struct {
-            size_t initialCapacity; // Initial size of HNSW graph.
-            size_t M;               // Number of allowed edges per node in graph.
-            size_t efConstruction;  // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
-        } hnswParams;
-        struct {
-            size_t initialCapacity;
-        } bfParams;
+        HNSWParams hnswParams;
+        BFParams bfParams;
     };
     VecSimType type;     // Datatype to index.
     size_t size;         // Vector size (dimension).
@@ -73,10 +77,15 @@ typedef struct {
             size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
             size_t levels;         // Number of graph levels.
         } hnswInfo;
+        struct {
+            size_t indexSize; // Current count of vectors.
+            size_t blockSize; // Brute force algorithm vector block (mini matrix) size
+        } bfInfo;
     };
-    VecSimType type; // Datatype the index holds.
-    size_t d;        // Vector size (dimension).
-    VecSimAlgo algo; // Algorithm being used.
+    VecSimType type;     // Datatype the index holds.
+    size_t d;            // Vector size (dimension).
+    VecSimAlgo algo;     // Algorithm being used.
+    VecSimMetric metric; // Index distance metric
     // TODO:
     // size_t memory;
 } VecSimIndexInfo;
@@ -88,7 +97,7 @@ typedef struct {
 
 typedef struct VecSimIndex VecSimIndex;
 
-typedef VecSimIndex *(*Index_New)(VecSimParams *params);
+typedef VecSimIndex *(*Index_New)(const VecSimParams *params);
 typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
 typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex *index);
@@ -102,7 +111,7 @@ typedef VecSimQueryResult *(*Index_DistanceQuery)(VecSimIndex *index, const void
 typedef void (*Index_ClearDeleted)(VecSimIndex *index);
 typedef VecSimIndexInfo (*Index_Info)(VecSimIndex *index);
 
-typedef struct VecSimIndex {
+struct VecSimIndex {
     Index_AddVector AddFn;
     Index_DeleteVector DeleteFn;
     Index_IndexSize SizeFn;
@@ -111,9 +120,12 @@ typedef struct VecSimIndex {
     Index_ClearDeleted ClearDeletedFn;
     Index_Free FreeFn;
     Index_Info InfoFn;
-} VecSimIndex;
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
+};
 
-VecSimIndex *VecSimIndex_New(VecSimParams *params);
+VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
 void VecSimIndex_Free(VecSimIndex *index);
 
@@ -135,8 +147,6 @@ VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *que
                                              float distance, VecSimQueryParams *queryParams);
 
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
-
-void VecSimIndex_ClearDeleted(VecSimIndex *index);
 
 size_t VecSimQueryResult_Len(VecSimQueryResult *);
 

@@ -14,7 +14,7 @@ template <typename T> array_hdr_t<T> *array_hdr(T *arr) {
 }
 
 template <typename T> T *array_new_sz(int32_t cap, size_t len) {
-    array_hdr_t<T> *hdr = (array_hdr_t<T> *)malloc(sizeof(array_hdr_t<T>) + cap * sizeof(T));
+    auto *hdr = (array_hdr_t<T> *)malloc(sizeof(array_hdr_t<T>) + cap * sizeof(T));
     hdr->cap = cap;
     hdr->len = len;
     return hdr->buf;
@@ -47,5 +47,5 @@ template <typename T> size_t array_len(T *arr) { return arr ? array_hdr(arr)->le
 
 template <typename T> void array_free(T *arr) {
     array_hdr_t<T> *arr_hdr = array_hdr(arr);
-    delete arr_hdr;
+    free(arr_hdr);
 }

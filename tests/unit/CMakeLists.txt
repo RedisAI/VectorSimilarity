@@ -12,6 +12,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -32,16 +33,19 @@ add_subdirectory(${root}/src ${binroot}/VectorSimilarity)
 
 enable_testing()
 
+# Now simply link against gtest or gtest_main as needed. Eg
 add_executable(test_hnswlib test_hnswlib.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp)
 
 target_link_libraries(test_hnswlib gtest_main)
 target_link_libraries(test_bruteforce gtest_main)
 
+# add_test(NAME test_hnswlib COMMAND test_hnswlib)
+# add_test(NAME test_bruteforce COMMAND test_bruteforce)
+
 target_link_libraries(test_hnswlib PUBLIC VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC VectorSimilarity)
 
 include(GoogleTest)
-
 gtest_discover_tests(test_hnswlib)
 gtest_discover_tests(test_bruteforce)
