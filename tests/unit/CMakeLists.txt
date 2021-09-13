@@ -41,14 +41,11 @@ enable_testing()
 add_executable(test_hnswlib test_hnswlib.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp)
 
-target_link_libraries(test_hnswlib gtest_main)
-target_link_libraries(test_bruteforce gtest_main)
-
 # add_test(NAME test_hnswlib COMMAND test_hnswlib)
 # add_test(NAME test_bruteforce COMMAND test_bruteforce)
 
-target_link_libraries(test_hnswlib PUBLIC VectorSimilarity)
-target_link_libraries(test_bruteforce PUBLIC VectorSimilarity)
+target_link_libraries(test_hnswlib PUBLIC gtest_main VectorSimilarity)
+target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
 
 include(GoogleTest)
 gtest_discover_tests(test_hnswlib)

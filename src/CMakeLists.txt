@@ -38,6 +38,9 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
+install(TARGETS VectorSimilarity
+    DESTINATION ${CMAKE_INSTALL_PREFIX})
+
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
