@@ -18,24 +18,17 @@ else()
 	set(VECSIM_LIBTYPE SHARED)
 endif()
 
+add_subdirectory(VecSim/spaces)
+
 add_compile_options(-march=native)
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force.cpp
     VecSim/algorithms/hnsw/hnswlib_c.cpp
     VecSim/vecsim.cpp
-    VecSim/spaces/space_aux.cpp
-    VecSim/spaces/L2_space.cpp
-    VecSim/spaces/L2/L2.cpp
-    VecSim/spaces/L2/L2_SSE.cpp
-    VecSim/spaces/L2/L2_AVX.cpp
-    VecSim/spaces/L2/L2_AVX512.cpp
-    VecSim/spaces/IP_space.cpp
-    VecSim/spaces/IP/IP.cpp
-    VecSim/spaces/IP/IP_SSE.cpp
-    VecSim/spaces/IP/IP_AVX.cpp
-    VecSim/spaces/IP/IP_AVX512.cpp
     VecSim/utils/vec_utils.cpp)
+
+target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "")

@@ -10,24 +10,18 @@ L2Space::L2Space(size_t dim) {
     fstdistfunc_ = L2Sqr;
     Arch_Optimization arch_opt = getArchitectureOptimization();
     if (arch_opt == ARCH_OPT_AVX512) {
-#ifdef __AVX512F__
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_AVX512;
         } else {
             fstdistfunc_ = L2SqrSIMD16ExtResiduals_AVX512;
         }
-#endif
-
     } else if (arch_opt == ARCH_OPT_AVX) {
-#ifdef __AVX__
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_AVX;
         } else {
             fstdistfunc_ = L2SqrSIMD16ExtResiduals_AVX;
         }
-#endif
     } else if (arch_opt == ARCH_OPT_SSE) {
-#ifdef __SSE__
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_SSE;
         } else if (dim % 4 == 0) {
@@ -37,7 +31,6 @@ L2Space::L2Space(size_t dim) {
         } else if (dim > 4) {
             fstdistfunc_ = L2SqrSIMD4ExtResiduals_SSE;
         }
-#endif
     }
     dim_ = dim;
     data_size_ = dim * sizeof(float);
