@@ -51,7 +51,7 @@ endif
 
 build:
 	mkdir -p build
-	cd build; cmake -DTARGET_CORE=SKYLAKEX $(CMAKE_FLAGS) ../src
+	cd build; cmake $(CMAKE_FLAGS) ../src
 	-touch build/Makefile
 	make -C build
 
