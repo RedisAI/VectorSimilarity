@@ -1,5 +1,6 @@
+
 #include "L2.h"
-#include "stdlib.h"
+#include <stdlib.h>
 
 float L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float *pVect1 = (float *)pVect1v;
@@ -13,5 +14,5 @@ float L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
         pVect2++;
         res += t * t;
     }
-    return (res);
+    return res;
 }

@@ -1,8 +1,10 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
+
 #include "VecSim/vecsim.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
+
+#include "pybind11/pybind11.h"
+#include "pybind11/numpy.h"
+#include "pybind11/stl.h"
 
 namespace py = pybind11;
 
