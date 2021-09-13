@@ -2,7 +2,7 @@
 #include "VecSim/vecsim.h"
 
 class BruteForceTest : public ::testing::Test {
-  protected:
+protected:
     BruteForceTest() {}
 
     ~BruteForceTest() override {}

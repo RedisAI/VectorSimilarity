@@ -8,7 +8,7 @@ class L2Space : public SpaceInterface<float> {
     size_t data_size_;
     size_t dim_;
 
-  public:
+public:
     explicit L2Space(size_t dim);
     ~L2Space() override;
 

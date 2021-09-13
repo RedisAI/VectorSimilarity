@@ -114,7 +114,7 @@ class HierarchicalNSW {
                                       tableint *neighbours_list,
                                       tableint *neighbour_neighbours_list, int level);
 
-  public:
+public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100);
     ~HierarchicalNSW();
@@ -138,10 +138,14 @@ class HierarchicalNSW {
  */
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::setEf(size_t ef) { ef_ = ef; }
+void HierarchicalNSW<dist_t>::setEf(size_t ef) {
+    ef_ = ef;
+}
 
 template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEf() const { return ef_; }
+size_t HierarchicalNSW<dist_t>::getEf() const {
+    return ef_;
+}
 
 template <typename dist_t>
 size_t HierarchicalNSW<dist_t>::getIndexSize() const {
@@ -159,10 +163,14 @@ size_t HierarchicalNSW<dist_t>::getEfConstruction() const {
 }
 
 template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getM() const { return M_; }
+size_t HierarchicalNSW<dist_t>::getM() const {
+    return M_;
+}
 
 template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getMaxLevel() const { return maxlevel_; }
+size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
+    return maxlevel_;
+}
 
 template <typename dist_t>
 labeltype HierarchicalNSW<dist_t>::getExternalLabel(tableint internal_id) const {
