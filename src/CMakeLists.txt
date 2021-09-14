@@ -14,9 +14,7 @@ message("VectorSimilarity: " ${binroot})
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
-if (NOT DEFINED VECSIM_ARCH)
-set(VECSIM_ARCH "native")
-endif()
+message("VectorSimilarity VECSIM_ARCH: " ${VECSIM_ARCH})
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 

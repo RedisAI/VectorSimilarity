@@ -6,6 +6,11 @@ set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 set(CMAKE_CXX_STANDARD 14)
 
+if (NOT DEFINED VECSIM_ARCH)
+set(VECSIM_ARCH "x86_64-v4")
+endif()
+message("VecSim/UnitTest VECSIM_ARCH: " ${VECSIM_ARCH})
+
 if(NOT DEFINED root)
 	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 	set(binroot ${root}/build)
