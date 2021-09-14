@@ -3,7 +3,7 @@ cmake_policy(SET CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 if (NOT DEFINED VECSIM_ARCH)
-set(VECSIM_ARCH "x86_64-v4")
+set(VECSIM_ARCH "x86-64-v4")
 endif()
 message("VecSim/spaces VECSIM_ARCH: " ${VECSIM_ARCH})
 
