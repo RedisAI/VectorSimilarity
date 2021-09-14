@@ -2,13 +2,11 @@ cmake_minimum_required(VERSION 3.10)
 cmake_policy(SET CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
-option(VECSIM_ARCH_NATIVE "Build for native architecture" OFF)
-
-if(VECSIM_ARCH_NATIVE)
-	add_compile_options(-march=native)
-else()
-	add_compile_options(-march=x86-64-v4)
+if (NOT DEFINED VECSIM_ARCH)
+set(VECSIM_ARCH "native")
 endif()
+
+add_compile_options(-march=${VECSIM_ARCH})
 
 add_library(VectorSimilaritySpaces STATIC
     space_aux.cpp
