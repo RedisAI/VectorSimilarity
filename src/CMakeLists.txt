@@ -13,7 +13,10 @@ endif()
 message("VectorSimilarity: " ${binroot})
 
 option(VECSIM_STATIC "Build as static library" OFF)
-option(VECSIM_ARCH_NATIVE "Build for native architecture" OFF)
+
+if (NOT VECSIM_ARCH)
+set(VECSIM_ARCH "native")
+endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
