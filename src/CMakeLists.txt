@@ -14,7 +14,7 @@ message("VectorSimilarity: " ${binroot})
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
-if (NOT VECSIM_ARCH)
+if (NOT DEFINED VECSIM_ARCH)
 set(VECSIM_ARCH "native")
 endif()
 
