@@ -546,7 +546,7 @@ TEST_F(HNSWLibTest, hnsw_delete_non_empty_reused_index) {
         for (size_t i = 0; i < n; i++) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i);
         }
-            ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
         VecSimQueryResult *res =
             VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, nullptr);
