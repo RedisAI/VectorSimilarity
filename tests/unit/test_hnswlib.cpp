@@ -519,3 +519,40 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
     VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, hnsw_delete_non_empty_reused_index) {
+    size_t n = 4;
+    size_t k = 4;
+    size_t d = 2;
+    VecSimParams params = {
+        hnswParams : {initialCapacity : n},
+        type : VecSimType_FLOAT32,
+        size : d,
+        metric : VecSimMetric_L2,
+        algo : VecSimAlgo_HNSWLIB
+    };
+    VecSimIndex *index = VecSimIndex_New(&params);
+    auto *vectors = (float *)malloc(n * d * sizeof(float));
+    for (size_t iter = 0; iter < 3; iter++) {
+        for (size_t i = 0; i < n; i++) {
+            VecSimIndex_DeleteVector(index, i);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+        for (size_t i = 0; i < n; i++) {
+            for (size_t j = 0; j < d; j++) {
+                (vectors + i * d)[j] = (float)rand() / (float)(RAND_MAX / 100);
+            }
+        }
+        for (size_t i = 0; i < n; i++) {
+            VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i);
+        }
+            ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        VecSimQueryResult *res =
+            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, nullptr);
+        ASSERT_EQ(VecSimQueryResult_Len(res), k);
+        VecSimQueryResult_Free(res);
+    }
+    free(vectors);
+    VecSimIndex_Free(index);
+}
