@@ -8,9 +8,11 @@ set(CMAKE_CXX_STANDARD 14)
 
 if(NOT DEFINED root)
 	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/.. ABSOLUTE)
+endif()
+if(NOT DEFINED binroot)
 	set(binroot ${root}/build)
 endif()
-message("VectorSimilarity: " ${binroot})
+message("VectorSimilarity binroot: " ${binroot})
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
