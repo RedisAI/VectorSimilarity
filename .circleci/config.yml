@@ -46,6 +46,10 @@ commands:
           command: bash -l -c "make test"
 
       - run:
+          name: Valgrind
+          command: bash -l -c "make valgrind"
+
+      - run:
           name: install tox dependencies
           command: python3 -m pip install -r .circleci/circle_requirements.txt
       - run:

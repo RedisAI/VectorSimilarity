@@ -18,6 +18,8 @@ make all           # build all libraries and packages
 
 make test          # run tests
 
+make valgrind		   # run valgrind
+
 make platform      # build for specific Linux distribution
   OSNICK=nick        # Linux distribution to build for
   REDIS_VER=ver      # use Redis version `ver`
@@ -70,6 +72,13 @@ test:
 	./tests/test.sh
 
 .PHONY: test
+
+#----------------------------------------------------------------------------------------------
+
+valgrind:
+	./tests/valgrind.sh
+
+.PHONY: valgrind
 
 #----------------------------------------------------------------------------------------------
 
