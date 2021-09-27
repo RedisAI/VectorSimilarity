@@ -49,7 +49,8 @@ extern "C" VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const vo
 extern "C" VecSimQueryResult *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
                                                         size_t k, VecSimQueryParams *queryParams) {
     VecSimQueryResult *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
-    qsort(results, k, sizeof(*results), (__compar_fn_t)cmpVecSimQueryResult);
+    qsort(results, VecSimQueryResult_Len(results), sizeof(*results),
+          (__compar_fn_t)cmpVecSimQueryResult);
     return results;
 }
 
