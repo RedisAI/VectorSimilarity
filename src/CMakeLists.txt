@@ -32,7 +32,7 @@ endif()
 
 add_subdirectory(VecSim/spaces)
 
-add_compile_options(-march=native)
+add_compile_options(-march=x86-64)
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force.cpp
