@@ -8,9 +8,50 @@ include $(ROOT)/deps/readies/mk/main
 
 #----------------------------------------------------------------------------------------------
 
+ifneq ($(VG),)
+VALGRIND=$(VG)
+endif
+
+ifeq ($(VALGRIND),1)
+override DEBUG ?= 1
+endif
+
+ifneq ($(SAN),)
+override DEBUG ?= 1
+export ASAN_OPTIONS=detect_odr_violation=0
+
+ifeq ($(SAN),mem)
+CMAKE_SAN=-DUSE_MSAN=ON
+export SAN=memory
+
+else ifeq ($(SAN),memory)
+CMAKE_SAN=-DUSE_MSAN=ON
+export SAN=memory
+
+else ifeq ($(SAN),addr)
+CMAKE_SAN=-DUSE_ASAN=ON
+export SAN=address
+
+else ifeq ($(SAN),address)
+CMAKE_SAN=-DUSE_ASAN=ON
+export SAN=address
+
+else ifeq ($(SAN),leak)
+else ifeq ($(SAN),thread)
+else
+$(error SAN=mem|addr|leak|thread)
+endif
+
+endif # SAN
+
+#----------------------------------------------------------------------------------------------
+
 define HELP
 make build
   DEBUG=1          # build debug variant
+  VERBOSE=1        # print detailed build info
+  VG|VALGRIND=1    # build for Valgrind
+  SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
@@ -47,21 +88,31 @@ all: build
 
 #----------------------------------------------------------------------------------------------
 
+ifeq ($(DEBUG),1)
+CMAKE_BUILD_TYPE=DEBUG
+else
+CMAKE_BUILD_TYPE=RelWithDebInfo
+endif
+CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+
 ifeq ($(VERBOSE),1)
-CMAKE_FLAGS+=-DCMAKE_VERBOSE_MAKEFILE=on
+CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=on
 endif
 
+CMAKE_FLAGS += $(CMAKE_SAN)
+
 build:
-	mkdir -p build
-	cd build; cmake $(CMAKE_FLAGS) ../src
-	-touch build/Makefile
-	make -C build
+	@mkdir -p build
+	@cd build; cmake $(CMAKE_FLAGS) ../src
+	@-touch build/Makefile
+	@make -C build
 
 clean:
 ifneq ($(ALL),1)
-	make -C build clean
+	@make -C build clean
+	@make -C tests/unit/build clean
 else
-	rm -rf build
+	@rm -rf build tests/unit/build
 endif
 
 .PHONY: build clean
@@ -69,14 +120,16 @@ endif
 #----------------------------------------------------------------------------------------------
 
 test:
-	./tests/test.sh
+	@mkdir -p tests/unit/build
+	@cd tests/unit/build && cmake $(CMAKE_FLAGS) .. && make
+	@cd tests/unit/build && GTEST_COLOR=1 ctest --output-on-failure
 
 .PHONY: test
 
 #----------------------------------------------------------------------------------------------
 
 valgrind:
-	./tests/valgrind.sh
+	@./tests/valgrind.sh
 
 .PHONY: valgrind
 
@@ -89,7 +142,7 @@ ifeq ($(PUBLISH),1)
 endif
 
 format:
-	./clang-format-all.sh
+	@./sbin/clang-format-all.sh
 
 lint:
-	./clang-check-all.sh
+	@./sbin/clang-check-all.sh

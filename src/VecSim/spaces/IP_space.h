@@ -1,7 +1,9 @@
 #pragma once
 
-#include <cstdlib>
 #include "space_interface.h"
+
+#include <cstdlib>
+#include <stddef.h>
 
 class InnerProductSpace : public SpaceInterface<float> {
 

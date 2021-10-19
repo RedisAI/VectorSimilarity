@@ -285,17 +285,17 @@ BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t
                 ? static_cast<SpaceInterface<float> *>(new L2Space(dim))
                 : static_cast<SpaceInterface<float> *>(new InnerProductSpace(dim))) {
     this->base = VecSimIndex{
-        AddFn : BruteForce_AddVector,
-        DeleteFn : BruteForce_DeleteVector,
-        SizeFn : BruteForce_Size,
-        TopKQueryFn : BruteForce_TopKQuery,
-        DistanceQueryFn : NULL,
-        ClearDeletedFn : NULL,
-        FreeFn : BruteForce_Free,
-        InfoFn : BruteForce_Info,
-        dim : dim,
-        vecType : vectype,
-        metric : metric
+        .AddFn = BruteForce_AddVector,
+        .DeleteFn = BruteForce_DeleteVector,
+        .SizeFn = BruteForce_Size,
+        .TopKQueryFn = BruteForce_TopKQuery,
+        .DistanceQueryFn = NULL,
+        .ClearDeletedFn = NULL,
+        .FreeFn = BruteForce_Free,
+        .InfoFn = BruteForce_Info,
+        .dim = dim,
+        .vecType = vectype,
+        .metric = metric
     };
     this->idToVectorBlockMemberMapping.resize(max_elements);
     this->dist_func = this->space.get()->get_dist_func();

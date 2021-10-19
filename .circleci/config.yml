@@ -76,20 +76,33 @@ commands:
             - ~/.cache/pypoetry
           key: v1-dependencies-{{ checksum "pyproject.toml" }}
 
-# jobs:
-#   build-ubuntu:
-#     machine:
-#       enabled: true
-#       image: ubuntu-2004:202010-01
-#       resource_class: xlarge
+#----------------------------------------------------------------------------------------------------------------------------------
+
 jobs:
   build-ubuntu:
     resource_class: large
     docker:
       - image: circleci/python:3.8
+#     machine:
+#       enabled: true
+#       image: ubuntu-2004:202010-01
+#       resource_class: xlarge
     steps:
       - build-steps
 
+  sanitize:
+    docker:
+      - image: redisfab/clang:13-x64-bullseye
+    parameters:
+      san-type:
+        type: string
+    steps:
+      - checkout-all
+      - run:
+          name: Run & build tests
+          command: bash -l -c "make SAN=<<parameters.san-type>> build test"
+
+#----------------------------------------------------------------------------------------------------------------------------------
 
 on-any-branch: &on-any-branch
   filters:
@@ -149,6 +162,7 @@ on-integ-and-version-tags: &on-integ-and-version-tags
     tags:
       only: /^v[0-9].*/
 
+#----------------------------------------------------------------------------------------------------------------------------------
 
 workflows:
   version: 2
@@ -156,4 +170,10 @@ workflows:
   default_flow:
     jobs:
       - build-ubuntu:
+          <<: *on-any-branch
+      - sanitize:
+          name: sanitize-<< matrix.san-type >>
+          matrix:
+            parameters:
+              san-type: [address, memory]
           <<: *on-any-branch

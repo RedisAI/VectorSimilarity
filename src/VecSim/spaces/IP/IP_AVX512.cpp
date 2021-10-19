@@ -5,6 +5,8 @@
 
 #include <stdlib.h>
 
+#ifndef __clang__
+
 float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN64 TmpRes[16];
     float *pVect1 = (float *)pVect1v;
@@ -45,3 +47,15 @@ float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVe
     float res_tail = InnerProduct(pVect1, pVect2, &qty_left);
     return res + res_tail - 1.0f;
 }
+
+#else 
+
+float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
+
+float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
+
+#endif // __clang__

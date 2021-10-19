@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.10)
 cmake_policy(SET CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
+#if(NOT DEFINED root)
+#	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/../../.. ABSOLUTE)
+#endif()
+#message("VecSim/spaces: " ${root})
+#
+#if (USE_ASAN OR USE_MSAN)
+#	include(${root}/cmake/clang-sanitizers.cmake)
+#endif()
+
 if (NOT DEFINED VECSIM_ARCH)
 set(VECSIM_ARCH "x86-64-v4")
 endif()
