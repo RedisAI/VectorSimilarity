@@ -33,9 +33,9 @@ commands:
             sudo ./sbin/system-setup.py
             sudo apt autoremove -y
 
-      - run:
-          name: lint
-          command: bash -l -c "make lint"
+#      - run:
+#          name: lint
+#          command: bash -l -c "make lint"
 
       - run:
           name: Build
