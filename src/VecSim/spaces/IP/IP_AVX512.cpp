@@ -50,12 +50,16 @@ float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVe
 
 #else 
 
+float InnerProductSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr);
+float InnerProductSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr);
+
+
 float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    return 0;
+    return InnerProductSIMD16ExtResiduals_AVX(pVect1v, pVect2v, qty_ptr);
 }
 
 float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    return 0;
+    return InnerProductSIMD4ExtResiduals_AVX(pVect1v, pVect2v, qty_ptr);
 }
 
 #endif // __clang__

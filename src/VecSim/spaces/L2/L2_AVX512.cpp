@@ -50,12 +50,15 @@ float L2SqrSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
 
 #else
 
+float L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr);
+float L2SqrSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr);
+
 float L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-	return 0;
+	return L2SqrSIMD16Ext_AVX(pVect1v, pVect2v, qty_ptr);
 }
 
 float L2SqrSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-	return 0;
+	return L2SqrSIMD16ExtResiduals_AVX(pVect1v, pVect2v, qty_ptr);
 }
 
 #endif // !__clang__
