@@ -249,9 +249,9 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
             }
         }
     }
-    VecSimQueryResult *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
+    VecSimQueryResults *results = array_new_len<VecSimQueryResults>(knn_res.size(), knn_res.size());
     for (int i = knn_res.size() - 1; i >= 0; --i) {
-        results[i] = VecSimQueryResult{knn_res.top().second, knn_res.top().first};
+        results[i] = VecSimQueryResults_Item{knn_res.top().second, knn_res.top().first};
         knn_res.pop();
     }
     return results;

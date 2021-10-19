@@ -49,8 +49,8 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
 
     float query[4] = {50, 50, 50, 50};
     size_t ids[100] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
     }

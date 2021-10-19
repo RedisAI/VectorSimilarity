@@ -20,9 +20,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
     if (index->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
-        float normelized_blob[index->dim];
-        memcpy(normelized_blob, blob, index->dim * sizeof(float));
-        float_vector_normalize(normelized_blob, index->dim);
+        float normalized_blob[index->dim];
+        memcpy(normalized_blob, blob, index->dim * sizeof(float));
+        float_vector_normalize(normalized_blob, index->dim);
         return index->AddFn(index, normelized_blob, id);
     }
     return index->AddFn(index, blob, id);
@@ -34,7 +34,7 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->SizeFn(index); }
 
-extern "C" VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResults *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
                                                     size_t k, VecSimQueryParams *queryParams) {
     if (index->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
@@ -46,10 +46,10 @@ extern "C" VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const vo
     return index->TopKQueryFn(index, queryBlob, k, queryParams);
 }
 
-extern "C" VecSimQueryResult *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResults *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
                                                         size_t k, VecSimQueryParams *queryParams) {
     VecSimQueryResult *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
-    qsort(results, VecSimQueryResult_Len(results), sizeof(*results),
+    qsort(results, VecSimQueryResults_Len(results), sizeof(*results),
           (__compar_fn_t)cmpVecSimQueryResult);
     return results;
 }
@@ -60,12 +60,12 @@ extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->
 
 // TODO
 
-extern "C" VecSimQueryResult *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResults *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
                                                         float distance,
                                                         VecSimQueryParams *queryParams) {
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
 
-extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult *result) { return array_len(result); }
+extern "C" size_t VecSimQueryResults_Len(VecSimQueryResult *result) { return array_len(result); }
 
-extern "C" void VecSimQueryResult_Free(VecSimQueryResult *result) { array_free(result); }
+extern "C" void VecSimQueryResults_Free(VecSimQueryResult *result) { array_free(result); }
