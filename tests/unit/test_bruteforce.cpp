@@ -12,6 +12,19 @@ protected:
     void TearDown() override {}
 };
 
+static void runTopKTest(VecSimIndex *index, const void *query, size_t k, const std::function<void (int, float, int)> ResCB) {
+    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
+    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
+    for (int i = 0; i < k; i++) {
+        int id = VecSimQueryResults_GetId(iterator);
+        float score = VecSimQueryResults_GetScore(iterator);
+        ResCB(id, score, i);
+        iterator = VecSimQueryResults_IteratorNext(iterator);
+    }
+    ASSERT_EQ(iterator, nullptr);
+}
+
 TEST_F(BruteForceTest, brute_force_vector_add_test) {
     VecSimParams params = {
         bfParams : {initialCapacity : 200},
@@ -49,15 +62,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
 
     float query[4] = {50, 50, 50, 50};
     size_t ids[100] = {0};
-    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResults_Len(res), k);
-    for (int i = 0; i < k; i++) {
-        ids[res[i].id] = res[i].id;
-    }
+    auto save_id = [&](int id, float score, size_t i) {ids[i] = id;};
+    runTopKTest(index, query, k, save_id);
     for (size_t i = n - 1; i > n - 1 - k; i--) {
         ASSERT_EQ(i, ids[i]);
     }
-    VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -80,14 +89,18 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
+    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
     for (int i = 0; i < k; i++) {
-        int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
-        int dist = res[i].score;
+        int id = VecSimQueryResults_GetId(iterator);
+        int diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
+        int dist = (int)VecSimQueryResults_GetScore(iterator);
         ASSERT_TRUE(((diff_id == (i + 1) / 2)) && (dist == (4 * ((i + 1) / 2) * ((i + 1) / 2))));
+        iterator = VecSimQueryResults_IteratorNext(iterator);
     }
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(iterator, nullptr);
+    VecSimQueryResults_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -109,12 +122,15 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 100);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResults *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
+    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
     for (int i = 0; i < k; i++) {
-        ASSERT_EQ(res[i].id, (i + 45));
+        ASSERT_EQ(VecSimQueryResults_GetId(iterator), (i + 45));
+        iterator = VecSimQueryResults_IteratorNext(iterator);
     }
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(iterator, nullptr);
+    VecSimQueryResults_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -141,12 +157,17 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
+    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
     for (int i = 0; i < 10; i++) {
-        ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
+        int id = VecSimQueryResults_GetId(iterator);
+        float score = VecSimQueryResults_GetScore(iterator);
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+        iterator = VecSimQueryResults_IteratorNext(iterator);
     }
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(iterator, nullptr);
+    VecSimQueryResults_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -173,14 +194,19 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
-    size_t ids[n] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    size_t ids[n];
+    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
+    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
     for (int i = 0; i < 10; i++) {
-        ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
-        ids[res[i].id] = res[i].id;
+        int id = VecSimQueryResults_GetId(iterator);
+        float score = VecSimQueryResults_GetScore(iterator);
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+        ids[id] = id;
+        iterator = VecSimQueryResults_IteratorNext(iterator);
     }
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(iterator, nullptr);
+    VecSimQueryResults_Free(res);
     for (size_t i = 50; i < 60; i++) {
         ASSERT_EQ(ids[i], i);
         ids[i] = 0;
@@ -200,17 +226,21 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
+    iterator = VecSimQueryResults_GetIterator(res);
     for (int i = 0; i < 10; i++) {
-        ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
-
-        ids[res[i].id] = res[i].id;
+        int id = VecSimQueryResults_GetId(iterator);
+        float score = VecSimQueryResults_GetScore(iterator);
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+        ids[id] = id;
+        iterator = VecSimQueryResults_IteratorNext(iterator);
     }
     for (size_t i = 50; i < 60; i++) {
         ASSERT_EQ(ids[i], i);
         ids[i] = 0;
     }
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(iterator, nullptr);
+    VecSimQueryResults_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -386,8 +416,8 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
 
     float query[4] = {50, 50, 50, 50};
     size_t ids[100] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResults_Len(res), k);
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
     }
