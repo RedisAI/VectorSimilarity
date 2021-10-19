@@ -21,16 +21,15 @@ override DEBUG ?= 1
 export ASAN_OPTIONS=detect_odr_violation=0
 
 ifeq ($(SAN),mem)
-CMAKE_SAN=-DUSE_MSAN=ON
 export SAN=memory
-
-else ifeq ($(SAN),memory)
-CMAKE_SAN=-DUSE_MSAN=ON
-export SAN=memory
-
 else ifeq ($(SAN),addr)
-CMAKE_SAN=-DUSE_ASAN=ON
 export SAN=address
+endif
+
+ifeq ($(SAN),memory)
+CMAKE_SAN=-DUSE_MSAN=ON
+export SAN=memory
+override CTEST_ARGS += --exclude-regex BruteForceTest.sanity_rinsert_1280
 
 else ifeq ($(SAN),address)
 CMAKE_SAN=-DUSE_ASAN=ON
@@ -58,8 +57,9 @@ make clean         # remove binary files
 make all           # build all libraries and packages
 
 make test          # run tests
+  CTEST_ARGS=args    # extra CTest arguments
 
-make valgrind		   # run valgrind
+make valgrind      # run valgrind
 
 make platform      # build for specific Linux distribution
   OSNICK=nick        # Linux distribution to build for
@@ -122,7 +122,7 @@ endif
 test:
 	@mkdir -p tests/unit/build
 	@cd tests/unit/build && cmake $(CMAKE_FLAGS) .. && make
-	@cd tests/unit/build && GTEST_COLOR=1 ctest --output-on-failure
+	@cd tests/unit/build && GTEST_COLOR=1 ctest --output-on-failure $(CTEST_ARGS)
 
 .PHONY: test
 
