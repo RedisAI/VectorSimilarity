@@ -1,5 +1,6 @@
 #pragma once
 #include <sys/param.h>
+#include "VecSim/memory/vecsim_malloc.h"
 
 template <typename T>
 struct array_hdr_t {
@@ -17,7 +18,7 @@ array_hdr_t<T> *array_hdr(T *arr) {
 
 template <typename T>
 T *array_new_sz(int32_t cap, size_t len) {
-    auto *hdr = (array_hdr_t<T> *)malloc(sizeof(array_hdr_t<T>) + cap * sizeof(T));
+    auto *hdr = (array_hdr_t<T> *)vecsim_malloc(sizeof(array_hdr_t<T>) + cap * sizeof(T));
     hdr->cap = cap;
     hdr->len = len;
     return hdr->buf;
@@ -38,7 +39,7 @@ T *array_ensure_cap(T *arr, size_t cap) {
     array_hdr_t<T> *hdr = array_hdr(arr);
     if (cap > hdr->cap) {
         hdr->cap = MAX(hdr->cap * 2, cap);
-        hdr = (array_hdr_t<T> *)realloc(hdr, sizeof(array_hdr_t<T>) + hdr->cap * sizeof(T));
+        hdr = (array_hdr_t<T> *)vecsim_realloc(hdr, sizeof(array_hdr_t<T>) + hdr->cap * sizeof(T));
     }
     return hdr->buf;
 }
@@ -63,5 +64,5 @@ size_t array_len(T *arr) {
 template <typename T>
 void array_free(T *arr) {
     array_hdr_t<T> *arr_hdr = array_hdr(arr);
-    free(arr_hdr);
+    vecsim_free(arr_hdr);
 }
