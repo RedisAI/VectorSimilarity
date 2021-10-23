@@ -69,12 +69,15 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    size_t ids[n];
-    auto save_id = [&](int id, float score, size_t index) {ids[index] = id;};
-    runTopKSearchTest(index, query, k, save_id);
+    std::set<size_t> expected_ids;
     for (size_t i = n - 1; i > n - 1 - k; i--) {
-        ASSERT_EQ(i, ids[i]);
+        expected_ids.insert(i);
     }
+    auto verify_res = [&](int id, float score, size_t index) {
+        ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+        ASSERT_EQ(expected_ids.erase(id), 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
 }
 
@@ -157,7 +160,7 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        float num = (float)i / 10;
+        float num = (float)(i / 10);
         float f[] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -188,7 +191,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        float num = (float)i / 10;
+        float num = (float)(i / 10);
         float f[] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -208,7 +211,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
 
     // Reinsert the same vectors under the same ids
     for (size_t i = 0; i < n; i++) {
-        float num = (float)i / 10;
+        float num = (float)(i / 10);
         float f[] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -235,7 +238,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        float num = (float)i / 10;
+        float num = i / 10;
         float f[] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -255,7 +258,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 
     // Reinsert the same vectors under different ids than before
     for (size_t i = 0; i < n; i++) {
-        float num = (float)i / 10;
+        float num = i / 10;
         float f[] = {num, num, num, num};
         VecSimIndex_AddVector(index, (const void *)f, i+10);
     }
@@ -263,7 +266,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 
     // Run the same query again
     auto verify_res_different_id = [&](int id, float score, size_t index) {
-        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+        ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res_different_id);
 
@@ -386,16 +389,19 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    size_t ids[n];
-    auto save_id = [&](int id, float score, size_t index) {ids[index] = id;};
-    runTopKSearchTest(index, query, k, save_id);
+    std::set<size_t> expected_ids;
     for (size_t i = n - 1; i > n - 1 - k; i--) {
-        ASSERT_EQ(i, ids[i]);
+        expected_ids.insert(i);
     }
+    auto verify_res = [&](int id, float score, size_t index) {
+        ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+        ASSERT_EQ(expected_ids.erase(id), 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, brute_force_vector_search_test_blocksize_1) {
+TEST_F(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
     size_t dim = 4;
     size_t n = 100;
     size_t k = 11;
@@ -449,14 +455,15 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     // We do not expect any results
     VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResults_Len(res), 0);
+    VecSimQueryResults_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
-    for (float i = 0; (int)i < n; (int)i++) {
+    for (float i = 0; i < n; i++) {
         float f[] = {i, i, i, i};
-        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    for (size_t i = 0; i < n; i++) {
+    for (float i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
