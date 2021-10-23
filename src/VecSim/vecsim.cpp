@@ -71,9 +71,13 @@ extern "C" VecSimQueryResults *VecSimIndex_DistanceQuery(VecSimIndex *index, con
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
 
-extern "C" size_t VecSimQueryResults_Len(VecSimQueryResults *result) { return array_len(result); }
+extern "C" size_t VecSimQueryResults_Len(VecSimQueryResults *result) {
+    return array_len((VecSimQueryResults_Item *)result);
+}
 
-extern "C" void VecSimQueryResults_Free(VecSimQueryResults *result) { array_free(result); }
+extern "C" void VecSimQueryResults_Free(VecSimQueryResults *result) {
+    array_free((VecSimQueryResults_Item *)result);
+}
 
 extern "C" VecSimQueryResults_Iterator *VecSimQueryResults_GetIterator(VecSimQueryResults *results) {
     if (VecSimQueryResults_Len(results) == 0) {

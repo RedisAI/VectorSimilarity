@@ -5,7 +5,7 @@ template <typename T>
 struct array_hdr_t {
     size_t len;
     size_t cap;
-    T* buf;
+    T buf[];
 };
 
 typedef void *array_t;
