@@ -441,7 +441,7 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     size_t k = 11;
 
     VecSimParams params = {
-            .bfParams =  {.initialCapacity =  200, .blockSize = 1},
+            .bfParams =  {.initialCapacity =  200},
             .type =  VecSimType_FLOAT32,
             .size =  dim,
             .metric =  VecSimMetric_L2,
@@ -471,6 +471,7 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     // Again - we do not expect any results
     res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResults_Len(res), 0);
+    VecSimQueryResults_Free(res);
 
     VecSimIndex_Free(index);
 }
