@@ -24,11 +24,11 @@ size_t HNSWLib_Size(VecSimIndex *index);
 void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef);
 
 VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                      VecSimQueryParams *queryParams);
+                                                VecSimQueryParams *queryParams);
 
 // TODO?
-VecSimQueryResult_Collection *HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob, float distance,
-                                          VecSimQueryParams queryParams);
+VecSimQueryResult_Collection *HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+                                                    float distance, VecSimQueryParams queryParams);
 
 #ifdef __cplusplus
 }

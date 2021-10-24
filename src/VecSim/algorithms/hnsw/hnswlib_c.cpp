@@ -57,8 +57,8 @@ void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
     hnsw.setEf(ef);
 }
 
-VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                      VecSimQueryParams *queryParams) {
+VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data,
+                                                size_t k, VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;

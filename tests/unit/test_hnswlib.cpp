@@ -19,7 +19,8 @@ protected:
 static void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                               const std::function<void(int, float, int)> ResCB,
                               VecSimQueryParams *params = nullptr) {
-    VecSimQueryResult_Collection *res = VecSimIndex_TopKQuery(index, (const void *)query, k, params);
+    VecSimQueryResult_Collection *res =
+        VecSimIndex_TopKQuery(index, (const void *)query, k, params);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
     int res_ind = 0;
@@ -98,7 +99,8 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    VecSimQueryResult_Collection *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
+    VecSimQueryResult_Collection *res =
+        VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
     int res_ind = 0;

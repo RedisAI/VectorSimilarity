@@ -128,7 +128,8 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    VecSimQueryResult_Collection *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
+    VecSimQueryResult_Collection *res =
+        VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
     int res_ind = 0;
