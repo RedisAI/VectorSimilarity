@@ -58,7 +58,7 @@ void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
 }
 
 VecSimQueryResults *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                     VecSimQueryParams *queryParams) {
+                                      VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -74,7 +74,7 @@ VecSimQueryResults *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
         auto *results = array_new_len<VecSimQueryResults_Item>(knn_res->size(), knn_res->size());
         for (int i = knn_res->size() - 1; i >= 0; --i) {
-            results[i] = VecSimQueryResults_Item {knn_res->top().second, knn_res->top().first};
+            results[i] = VecSimQueryResults_Item{knn_res->top().second, knn_res->top().first};
             knn_res->pop();
         }
         // Restore efRuntime

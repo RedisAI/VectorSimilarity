@@ -219,7 +219,7 @@ extern "C" size_t BruteForce_Size(VecSimIndex *index) {
 }
 
 extern "C" VecSimQueryResults *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                   size_t k, VecSimQueryParams *queryParams) {
+                                                    size_t k, VecSimQueryParams *queryParams) {
 
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
     size_t dim = bfIndex->base.dim;
@@ -251,7 +251,8 @@ extern "C" VecSimQueryResults *BruteForce_TopKQuery(VecSimIndex *index, const vo
             }
         }
     }
-    VecSimQueryResults_Item *results = array_new_len<VecSimQueryResults_Item>(knn_res.size(), knn_res.size());
+    VecSimQueryResults_Item *results =
+        array_new_len<VecSimQueryResults_Item>(knn_res.size(), knn_res.size());
     for (int i = knn_res.size() - 1; i >= 0; --i) {
         results[i] = VecSimQueryResults_Item{knn_res.top().second, knn_res.top().first};
         knn_res.pop();
@@ -275,8 +276,8 @@ extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
 // TODO
 
 extern "C" VecSimQueryResults *BruteForce_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                                       float distance,
-                                                       VecSimQueryParams queryParams);
+                                                        float distance,
+                                                        VecSimQueryParams queryParams);
 
 extern "C" void BruteForce_ClearDeleted(VecSimIndex *index);
 
