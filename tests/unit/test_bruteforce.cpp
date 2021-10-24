@@ -496,3 +496,31 @@ TEST_F(BruteForceTest, brute_force_test_inf_score) {
     VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
 }
+
+TEST_F(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
+    size_t dim = 4;
+    size_t n = 2;
+
+    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 1},
+                           .type = VecSimType_FLOAT32,
+                           .size = dim,
+                           .metric = VecSimMetric_L2,
+                           .algo = VecSimAlgo_BF};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Add 2 vectors, into 2 separated blocks.
+    for (float i = 0; i < n; i++) {
+        float f[] = {i, i, i, i};
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // After deleting the first vector, the second one will be moved to the first block
+    for (float i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    VecSimIndex_Free(index);
+}

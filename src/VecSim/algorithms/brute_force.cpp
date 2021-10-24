@@ -188,6 +188,8 @@ extern "C" int BruteForce_DeleteVector(VecSimIndex *index, size_t label) {
 
     // Swap the last vector with the deleted vector;
     vectorBlock->members[vectorIndex] = lastVectorBlockMember;
+    lastVectorBlockMember->block = vectorBlock;
+
     float *destination = vectorBlock->vectors + (vectorIndex * vectorDim);
     float *origin = lastVectorBlock->vectors + (lastVectorBlockMember->index * vectorDim);
     memmove(destination, origin, sizeof(float) * vectorDim);
