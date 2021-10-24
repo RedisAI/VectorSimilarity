@@ -6,13 +6,23 @@
 #include "VecSim/utils/vec_utils.h"
 #include "memory.h"
 
-struct VecSimQueryResults_Iterator {
-    VecSimQueryResults_Item *curr_result;
+struct VecSimQueryResult_Iterator {
+    VecSimQueryResult *curr_result;
     size_t index;
     size_t results_len;
 };
 
-int cmpVecSimQueryResult(const VecSimQueryResults_Item *res1, const VecSimQueryResults_Item *res2) {
+struct VecSimBatchIterator {
+    VecSimIndex *index;
+    unsigned char iterator_id;
+    size_t returned_results_count;
+
+    BatchIterator_Next IteratorNext;
+    BatchIterator_Free IteratorFree;
+    BatchIterator_Reset IteratorReset;
+};
+
+int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     return res1->id > res2->id ? 1 : res1->id < res2->id ? -1 : 0;
 }
 
@@ -40,7 +50,7 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->SizeFn(index); }
 
-extern "C" VecSimQueryResults *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResult_Collection *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
                                                      size_t k, VecSimQueryParams *queryParams) {
     if (index->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
@@ -52,10 +62,10 @@ extern "C" VecSimQueryResults *VecSimIndex_TopKQuery(VecSimIndex *index, const v
     return index->TopKQueryFn(index, queryBlob, k, queryParams);
 }
 
-extern "C" VecSimQueryResults *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResult_Collection *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
                                                          size_t k, VecSimQueryParams *queryParams) {
-    VecSimQueryResults *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
-    qsort(results, VecSimQueryResults_Len(results), sizeof(VecSimQueryResults_Item),
+    VecSimQueryResult_Collection *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
+    qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResult);
     return results;
 }
@@ -65,57 +75,62 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) { return index->FreeFn(inde
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->InfoFn(index); }
 
 // TODO?
-extern "C" VecSimQueryResults *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResult_Collection *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
                                                          float distance,
                                                          VecSimQueryParams *queryParams) {
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
 
-extern "C" size_t VecSimQueryResults_Len(VecSimQueryResults *result) {
-    return array_len((VecSimQueryResults_Item *)result);
+extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_Collection *result) {
+    return array_len((VecSimQueryResult *)result);
 }
 
-extern "C" void VecSimQueryResults_Free(VecSimQueryResults *result) {
-    array_free((VecSimQueryResults_Item *)result);
+extern "C" void VecSimQueryResult_Free(VecSimQueryResult_Collection *result) {
+    array_free((VecSimQueryResult *)result);
 }
 
-extern "C" VecSimQueryResults_Iterator *
-VecSimQueryResults_GetIterator(VecSimQueryResults *results) {
-    if (VecSimQueryResults_Len(results) == 0) {
+extern "C" VecSimQueryResult_Iterator *
+VecSimQueryResult_GetIterator(VecSimQueryResult_Collection *results) {
+    if (VecSimQueryResult_Len(results) == 0) {
         return nullptr;
     }
-    return new VecSimQueryResults_Iterator{(VecSimQueryResults_Item *)results, 0,
-                                           VecSimQueryResults_Len(results)};
+    return new VecSimQueryResult_Iterator{(VecSimQueryResult *)results, 0,
+                                           VecSimQueryResult_Len(results)};
 }
 
-extern "C" VecSimQueryResults_Iterator *
-VecSimQueryResults_IteratorNext(VecSimQueryResults_Iterator *iterator) {
-    if (iterator == nullptr) {
-        return nullptr;
-    }
-    iterator->curr_result++;
-    iterator->index++;
+extern "C" bool
+VecSimQueryResult_IteratorHasNext(VecSimQueryResult_Iterator *iterator) {
     if (iterator->index == iterator->results_len) {
-        delete iterator;
+        return false;
+    }
+    return true;
+}
+
+extern "C" VecSimQueryResult *
+VecSimQueryResult_IteratorNext(VecSimQueryResult_Iterator *iterator) {
+    if (iterator->index == iterator->results_len) {
         return nullptr;
     }
-    return iterator;
+    VecSimQueryResult *item = iterator->curr_result++;
+    iterator->index++;
+
+    return item;
 }
 
-extern "C" int VecSimQueryResults_GetId(VecSimQueryResults_Iterator *iterator) {
-    if (iterator == nullptr) {
+extern "C" int VecSimQueryResult_GetId(VecSimQueryResult *res) {
+    if (res == nullptr) {
         return -1;
     }
-    return (int)iterator->curr_result->id;
+    return (int)res->id;
 }
 
-extern "C" float VecSimQueryResults_GetScore(VecSimQueryResults_Iterator *iterator) {
-    if (iterator == nullptr) {
+extern "C" float VecSimQueryResult_GetScore(VecSimQueryResult *res) {
+    if (res == nullptr) {
         return -1;
     }
-    return (float)iterator->curr_result->score;
+    return (float)res->score;
 }
 
-extern "C" void VecSimQueryResults_IteratorFree(VecSimQueryResults_Iterator *iterator) {
+extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator) {
     delete iterator;
 }

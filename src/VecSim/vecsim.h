@@ -90,20 +90,20 @@ typedef struct {
     // size_t memory;
 } VecSimIndexInfo;
 
-// Users should not access this struct directly, but with VecSimQueryResults_<X> API
-typedef struct {
+// Users should not access this struct directly, but with VecSimQueryResult_<X> API
+typedef struct VecSimQueryResult {
     size_t id;
     float score;
-} VecSimQueryResults_Item;
+} VecSimQueryResult;
 
 // An opaque object from which results can be obtained via iterator
-typedef struct VecSimQueryResults VecSimQueryResults;
+typedef struct VecSimQueryResult_Collection VecSimQueryResult_Collection;
 
-typedef struct VecSimQueryResults_Iterator VecSimQueryResult_Iterator;
+typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
 
 typedef struct VecSimBatchIterator VecSimBatchIterator;
 
-typedef enum { BY_DISTANCE, BY_ID } VecSimQueryResults_Order;
+typedef enum { BY_DISTANCE, BY_ID } VecSimQueryResult_Order;
 
 typedef struct VecSimIndex VecSimIndex;
 
@@ -111,11 +111,11 @@ typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
 typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex *index);
 typedef void (*Index_Free)(VecSimIndex *index);
-typedef VecSimQueryResults *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k,
+typedef VecSimQueryResult_Collection *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams);
-typedef VecSimQueryResults *(*Index_TopKQueryByID)(VecSimIndex *index, const void *queryBlob,
+typedef VecSimQueryResult_Collection *(*Index_TopKQueryByID)(VecSimIndex *index, const void *queryBlob,
                                                    size_t k, VecSimQueryParams *queryParams);
-typedef VecSimQueryResults *(*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
+typedef VecSimQueryResult_Collection *(*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
                                                    float distance, VecSimQueryParams *queryParams);
 typedef void (*Index_ClearDeleted)(VecSimIndex *index);
 typedef VecSimIndexInfo (*Index_Info)(VecSimIndex *index);
@@ -140,22 +140,15 @@ struct VecSimIndex {
     VecSimMetric metric;
 };
 
-typedef VecSimQueryResult_Iterator *(*BatchIterator_Next)(VecSimBatchIterator *iterator,
+typedef VecSimQueryResult_Collection *(*BatchIterator_Next)(VecSimBatchIterator *iterator,
                                                           size_t n_results);
 
 typedef void (*BatchIterator_Free)(VecSimBatchIterator *iterator);
 
-typedef VecSimQueryResult_Iterator *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
+typedef void *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
 
-struct VecSimBatchIterator {
-    VecSimIndex *index;
-    unsigned char iterator_id;
-    size_t returned_results_count;
-
-    BatchIterator_Next IteratorNext;
-    BatchIterator_Free IteratorFree;
-    BatchIterator_Reset IteratorReset;
-};
+// An opaque iterator object for querying index in batches at each step.
+typedef struct VecSimBatchIterator VecSimBatchIterator;
 
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
@@ -167,42 +160,44 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
-VecSimQueryResults *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+VecSimQueryResult_Collection *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
                                           VecSimQueryParams *queryParams);
 
-VecSimQueryResults *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob, size_t k,
+VecSimQueryResult_Collection *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob, size_t k,
                                               VecSimQueryParams *queryParams);
 
 // TODO?
-VecSimQueryResults *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+VecSimQueryResult_Collection *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
                                               float distance, VecSimQueryParams *queryParams);
 
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
 
 // Query results iterator API
-size_t VecSimQueryResults_Len(VecSimQueryResults *results_iterator);
+size_t VecSimQueryResult_Len(VecSimQueryResult_Collection *results_iterator);
 
-VecSimQueryResults_Iterator *VecSimQueryResults_GetIterator(VecSimQueryResults *results);
+VecSimQueryResult_Iterator *VecSimQueryResult_GetIterator(VecSimQueryResult_Collection *results);
 
-// Advance the iterator, so it will point to the next item. If this is the last item,
-// the returned iterator will point to NULL.
-VecSimQueryResults_Iterator *VecSimQueryResults_IteratorNext(VecSimQueryResults_Iterator *iterator);
+// Advance the iterator, so it will point to the next item, and return the value.
+// If this is the last item, this will return NULL.
+VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_Iterator *iterator);
 
-int VecSimQueryResults_GetId(VecSimQueryResults_Iterator *iterator);
+bool VecSimQueryResult_IteratorHasNext(VecSimQueryResult_Iterator *iterator);
 
-float VecSimQueryResults_GetScore(VecSimQueryResults_Iterator *iterator);
+int VecSimQueryResult_GetId(VecSimQueryResult *item);
 
-void VecSimQueryResults_IteratorFree(VecSimQueryResults_Iterator *iterator);
+float VecSimQueryResult_GetScore(VecSimQueryResult *item);
 
-void VecSimQueryResults_Free(VecSimQueryResults *results);
+void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
+
+void VecSimQueryResult_Free(VecSimQueryResult_Collection *results);
 
 // Batch iterator API
-VecSimBatchIterator *VecSimIterator_New(VecSimIndex *index, const void *queryBlob);
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
-VecSimQueryResults *VecSimIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                        VecSimQueryResults_Order order);
+VecSimQueryResult_Collection *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
+                                        VecSimQueryResult_Order order);
 
-void VecSimIterator_Free(VecSimBatchIterator *iterator);
+void VecSimBatchIterator_Free(VecSimBatchIterator *iterator);
 
 void VecSimIterator_Reset(VecSimBatchIterator *iterator);
 
