@@ -502,10 +502,10 @@ TEST_F(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
     size_t n = 2;
 
     VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 1},
-            .type = VecSimType_FLOAT32,
-            .size = dim,
-            .metric = VecSimMetric_L2,
-            .algo = VecSimAlgo_BF};
+                           .type = VecSimType_FLOAT32,
+                           .size = dim,
+                           .metric = VecSimMetric_L2,
+                           .algo = VecSimAlgo_BF};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
