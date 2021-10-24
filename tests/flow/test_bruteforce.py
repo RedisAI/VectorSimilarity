@@ -33,7 +33,7 @@ def test_bf_cosine():
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
     end = time.time()
-    print("lookup time for 1M *128 vectors took " + str(end - start) + " seconds")
+    print("\nlookup time for 1M vectors with dim=128 took " + str(end - start) + " seconds")
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
@@ -67,7 +67,7 @@ def test_bf_l2():
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
     end = time.time()
-    print("lookup time for 1M *128 vectors took " + str(end - start) + " seconds")
+    print("\nlookup time for 1M vectors with dim=128 took " + str(end - start) + " seconds")
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
 
