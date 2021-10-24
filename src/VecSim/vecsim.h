@@ -197,9 +197,11 @@ VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *que
 VecSimQueryResult_Collection *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
                                         VecSimQueryResult_Order order);
 
+bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator);
+
 void VecSimBatchIterator_Free(VecSimBatchIterator *iterator);
 
-void VecSimIterator_Reset(VecSimBatchIterator *iterator);
+void VecSimBatchIterator_Reset(VecSimBatchIterator *iterator);
 
 #ifdef __cplusplus
 }

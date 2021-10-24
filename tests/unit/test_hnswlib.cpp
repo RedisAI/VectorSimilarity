@@ -19,17 +19,19 @@ protected:
 static void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                               const std::function<void(int, float, int)> ResCB,
                               VecSimQueryParams *params = nullptr) {
-    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, params);
-    ASSERT_EQ(VecSimQueryResults_Len(res), k);
-    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
-    for (int i = 0; i < k; i++) {
-        int id = VecSimQueryResults_GetId(iterator);
-        float score = VecSimQueryResults_GetScore(iterator);
-        ResCB(id, score, i);
-        iterator = VecSimQueryResults_IteratorNext(iterator);
+    VecSimQueryResult_Collection *res = VecSimIndex_TopKQuery(index, (const void *)query, k, params);
+    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
+    int res_ind = 0;
+    while (VecSimQueryResult_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+        int id = VecSimQueryResult_GetId(item);
+        float score = VecSimQueryResult_GetScore(item);
+        ResCB(id, score, res_ind++);
     }
-    ASSERT_EQ(iterator, nullptr);
-    VecSimQueryResults_Free(res);
+    ASSERT_EQ(res_ind, k);
+    VecSimQueryResult_IteratorFree(iterator);
+    VecSimQueryResult_Free(res);
 }
 
 TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
@@ -96,15 +98,18 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    VecSimQueryResults *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResults_Len(res), k);
-    VecSimQueryResults_Iterator *iterator = VecSimQueryResults_GetIterator(res);
-    for (int i = 0; i < k; i++) {
-        ASSERT_EQ(VecSimQueryResults_GetId(iterator), (i + 45));
-        iterator = VecSimQueryResults_IteratorNext(iterator);
+    VecSimQueryResult_Collection *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
+    int res_ind = 0;
+    while (VecSimQueryResult_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+        ASSERT_EQ(VecSimQueryResult_GetId(item), (res_ind + 45));
+        res_ind++;
     }
-    ASSERT_EQ(iterator, nullptr);
-    VecSimQueryResults_Free(res);
+    ASSERT_EQ(res_ind, k);
+    VecSimQueryResult_IteratorFree(iterator);
+
     VecSimIndex_Free(index);
 }
 
@@ -452,9 +457,10 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     float query[] = {50, 50, 50, 50};
 
     // We do not expect any results
-    VecSimQueryResults *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResults_Len(res), 0);
-    VecSimQueryResults_Free(res);
+    VecSimQueryResult_Collection *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    ASSERT_EQ(VecSimQueryResult_GetIterator(res), nullptr);
+    VecSimQueryResult_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (float i = 0; i < n; i++) {
@@ -469,8 +475,9 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
 
     // Again - we do not expect any results
     res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResults_Len(res), 0);
-    VecSimQueryResults_Free(res);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    ASSERT_EQ(VecSimQueryResult_GetIterator(res), nullptr);
+    VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
 }

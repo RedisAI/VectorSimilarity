@@ -57,7 +57,7 @@ void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
     hnsw.setEf(ef);
 }
 
-VecSimQueryResults *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
+VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
                                       VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
@@ -72,16 +72,16 @@ VecSimQueryResults *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data
         }
         typedef priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
-        auto *results = array_new_len<VecSimQueryResults_Item>(knn_res->size(), knn_res->size());
+        auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = knn_res->size() - 1; i >= 0; --i) {
-            results[i] = VecSimQueryResults_Item{knn_res->top().second, knn_res->top().first};
+            results[i] = VecSimQueryResult{knn_res->top().second, knn_res->top().first};
             knn_res->pop();
         }
         // Restore efRuntime
         hnsw.setEf(originalEF);
         assert(hnsw.getEf() == originalEF);
 
-        return (VecSimQueryResults *)results;
+        return (VecSimQueryResult_Collection *)results;
     } catch (...) {
         return NULL;
     }
