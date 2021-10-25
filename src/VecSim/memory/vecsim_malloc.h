@@ -32,13 +32,15 @@ static inline char *vecsim_strndup(const char *s, size_t n) {
 
 #endif
 template <typename T>
-struct vecsim_allocator {
+struct VecsimAllocator {
     using value_type = T;
 
-    template <typename U>
-    vecsim_allocator(const vecsim_allocator<U> &other) {}
+	VecsimAllocator(){}
 
-    T *allocate(size_t size) { return vecsim_malloc(size * sizeof(T)); }
+    template <typename U>
+    VecsimAllocator(const VecsimAllocator<U> &other) {}
+
+    T *allocate(size_t size) { return (T*)vecsim_malloc(size * sizeof(T)); }
 
     void deallocate(T *ptr, size_t size) { vecsim_free(ptr); }
 };
