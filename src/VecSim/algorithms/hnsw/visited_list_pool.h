@@ -10,7 +10,7 @@ namespace hnswlib {
 
 typedef unsigned short int vl_type;
 
-class VisitedList : public VecsimBaseObject {
+class VisitedList {
 public:
     vl_type curV;
     vl_type *mass;
@@ -38,7 +38,7 @@ public:
 //
 /////////////////////////////////////////////////////////
 
-class VisitedListPool : public VecsimBaseObject {
+class VisitedListPool {
     std::deque<VisitedList *, VecsimAllocator<VisitedList *>> pool;
     std::mutex poolguard;
     int numelements;

@@ -27,7 +27,7 @@ typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
-struct CompareByFirst : public VecsimBaseObject {
+struct CompareByFirst {
     constexpr bool operator()(pair<dist_t, tableint> const &a,
                               pair<dist_t, tableint> const &b) const noexcept {
         return a.first < b.first;
@@ -41,7 +41,7 @@ using CandidatesQueue =
                    CompareByFirst<dist_t>>;
 
 template <typename dist_t>
-class HierarchicalNSW : public VecsimBaseObject {
+class HierarchicalNSW {
 
     // Index build parameters
     size_t max_elements_;
