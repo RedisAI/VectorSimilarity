@@ -16,14 +16,13 @@ int BruteForce_DeleteVector(VecSimIndex *index, size_t id);
 
 size_t BruteForce_Size(VecSimIndex *index);
 
-VecSimQueryResult_List *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                   size_t k, VecSimQueryParams *queryParams);
+VecSimQueryResult_List *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+                                             VecSimQueryParams *queryParams);
 
 // TODO
 
 VecSimQueryResult_List *BruteForce_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                                       float distance,
-                                                       VecSimQueryParams queryParams);
+                                                 float distance, VecSimQueryParams queryParams);
 
 void BruteForce_ClearDeleted(VecSimIndex *index);
 

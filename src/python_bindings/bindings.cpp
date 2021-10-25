@@ -25,7 +25,7 @@ public:
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         float *vector_data = (float *)items.data(0);
-        VecSimQueryResult_Collection *res =
+        VecSimQueryResult_List *res =
             VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
@@ -33,7 +33,7 @@ public:
         }
         size_t *data_numpy_l = new size_t[k];
         float *data_numpy_d = new float[k];
-        VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
+        VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
         int res_ind = 0;
         while (VecSimQueryResult_IteratorHasNext(iterator)) {
             VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);

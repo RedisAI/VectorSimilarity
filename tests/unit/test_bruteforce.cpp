@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "test_utils.h"
 
 class BruteForceTest : public ::testing::Test {
 protected:
@@ -12,37 +13,17 @@ protected:
     void TearDown() override {}
 };
 
-/*
- * helper function to run Top K search and iterate over the results. ResCB is a callback that takes
- * the id, score and index of a result, and performs test-specific logic for each.
- */
-static void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
-                              const std::function<void(int, float, int)> ResCB) {
-    VecSimQueryResult_Collection *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
-    int res_ind = 0;
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
-        int id = VecSimQueryResult_GetId(item);
-        float score = VecSimQueryResult_GetScore(item);
-        ResCB(id, score, res_ind++);
-    }
-    ASSERT_EQ(res_ind, k);
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
-}
-
 TEST_F(BruteForceTest, brute_force_vector_add_test) {
+    size_t dim = 4;
     VecSimParams params = {.bfParams = {.initialCapacity = 200},
                            .type = VecSimType_FLOAT32,
-                           .size = 4,
+                           .size = dim,
                            .metric = VecSimMetric_IP,
                            .algo = VecSimAlgo_BF};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    float a[4] = {1.0, 1.0, 1.0, 1.0};
+    float a[] = {1.0, 1.0, 1.0, 1.0};
     VecSimIndex_AddVector(index, (const void *)a, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
     VecSimIndex_Free(index);
@@ -73,7 +54,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     }
     auto verify_res = [&](int id, float score, size_t index) {
         ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-        ASSERT_EQ(expected_ids.erase(id), 1);
+        expected_ids.erase(id);
     };
     runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
@@ -128,19 +109,8 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    VecSimQueryResult_Collection *res =
-        VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);
-    int res_ind = 0;
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
-        ASSERT_EQ(VecSimQueryResult_GetId(item), (res_ind + 45));
-        res_ind++;
-    }
-    ASSERT_EQ(res_ind, k);
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
+    auto verify_res = [&](int id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, VecSimIndex_TopKQueryByID);
 
     VecSimIndex_Free(index);
 }
@@ -297,7 +267,7 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
         }
         auto verify_res = [&](int id, float score, size_t index) {
             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-            ASSERT_EQ(expected_ids.erase(id), 1);
+            expected_ids.erase(id);
         };
 
         // Send arbitrary vector (the first) and search for top k. This should return all the
@@ -386,7 +356,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     }
     auto verify_res = [&](int id, float score, size_t index) {
         ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-        ASSERT_EQ(expected_ids.erase(id), 1);
+        expected_ids.erase(id);
     };
     runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
@@ -441,9 +411,11 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     float query[] = {50, 50, 50, 50};
 
     // We do not expect any results
-    VecSimQueryResult_Collection *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    ASSERT_EQ(VecSimQueryResult_GetIterator(res), nullptr);
+    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
@@ -460,7 +432,9 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     // Again - we do not expect any results
     res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    ASSERT_EQ(VecSimQueryResult_GetIterator(res), nullptr);
+    it = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
