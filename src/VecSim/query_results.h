@@ -6,6 +6,8 @@
 extern "C" {
 #endif
 
+struct VecSimIndex;
+
 // Users should not access this struct directly, but with VecSimQueryResult_<X> API
 typedef struct VecSimQueryResult VecSimQueryResult;
 
@@ -38,6 +40,16 @@ void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
 void VecSimQueryResult_Free(VecSimQueryResult_List *results);
 
 // Batch iterator API
+typedef VecSimQueryResult_List *(*BatchIterator_Next)(VecSimBatchIterator *iterator,
+                                                      size_t n_results);
+
+typedef void (*BatchIterator_Free)(VecSimBatchIterator *iterator);
+
+typedef void *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
+
+// An opaque iterator object for querying index in batches at each step.
+typedef struct VecSimBatchIterator VecSimBatchIterator;
+
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
 VecSimQueryResult_List *VecSimBatchIterator_Next(VecSimBatchIterator *iterator,
@@ -51,6 +63,7 @@ void VecSimBatchIterator_Free(VecSimBatchIterator *iterator);
 void VecSimBatchIterator_Reset(VecSimBatchIterator *iterator);
 
 #ifdef __cplusplus
+
 }
 #endif
 

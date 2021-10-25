@@ -3,10 +3,6 @@
 #include <stdlib.h>
 #include "query_results.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // HNSW default parameters
 #define HNSW_DEFAULT_M        16
 #define HNSW_DEFAULT_EF_C     200
@@ -91,9 +87,9 @@ typedef struct {
     // size_t memory;
 } VecSimIndexInfo;
 
-
 typedef struct VecSimIndex VecSimIndex;
 
+// The methods of the abstract VecSimIndex object
 typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
 typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex *index);
@@ -129,16 +125,10 @@ struct VecSimIndex {
     VecSimMetric metric;
 };
 
-typedef VecSimQueryResult_List *(*BatchIterator_Next)(VecSimBatchIterator *iterator,
-                                                            size_t n_results);
-
-typedef void (*BatchIterator_Free)(VecSimBatchIterator *iterator);
-
-typedef void *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
-
-// An opaque iterator object for querying index in batches at each step.
-typedef struct VecSimBatchIterator VecSimBatchIterator;
-
+/**
+ * @brief Create a new VecSim index based on the given params.
+ * @params
+ */
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
 void VecSimIndex_Free(VecSimIndex *index);
@@ -161,8 +151,3 @@ VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index, const void
                                                         VecSimQueryParams *queryParams);
 
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
-
-
-#ifdef __cplusplus
-}
-#endif
