@@ -35,18 +35,18 @@ template <typename T>
 struct VecsimAllocator {
     using value_type = T;
 
-	VecsimAllocator(){}
+    VecsimAllocator() {}
 
     template <typename U>
     VecsimAllocator(const VecsimAllocator<U> &other) {}
 
-    T *allocate(size_t size) { return (T*)vecsim_malloc(size * sizeof(T)); }
+    T *allocate(size_t size) { return (T *)vecsim_malloc(size * sizeof(T)); }
 
     void deallocate(T *ptr, size_t size) { vecsim_free(ptr); }
 };
 
 struct VecsimBaseObject {
-	public:
-	void * operator new(size_t size);
-    void operator delete(void * p);
+public:
+    void *operator new(size_t size);
+    void operator delete(void *p);
 };
