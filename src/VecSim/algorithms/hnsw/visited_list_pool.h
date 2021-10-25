@@ -1,5 +1,7 @@
 #pragma once
 
+#include "VecSim/memory/vecsim_malloc.h"
+
 #include <mutex>
 #include <deque>
 #include <string.h>
@@ -8,7 +10,7 @@ namespace hnswlib {
 
 typedef unsigned short int vl_type;
 
-class VisitedList {
+class VisitedList : public VecsimBaseObject {
 public:
     vl_type curV;
     vl_type *mass;
@@ -36,8 +38,8 @@ public:
 //
 /////////////////////////////////////////////////////////
 
-class VisitedListPool {
-    std::deque<VisitedList *> pool;
+class VisitedListPool : public VecsimBaseObject {
+    std::deque<VisitedList *, VecsimAllocator<VisitedList*>> pool;
     std::mutex poolguard;
     int numelements;
 

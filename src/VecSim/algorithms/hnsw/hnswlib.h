@@ -5,6 +5,7 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim//spaces/space_interface.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/memory/vecsim_malloc.h"
 
 #include <set>
 #include <deque>
@@ -26,7 +27,7 @@ typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
-struct CompareByFirst {
+struct CompareByFirst : public VecsimBaseObject{
     constexpr bool operator()(pair<dist_t, tableint> const &a,
                               pair<dist_t, tableint> const &b) const noexcept {
         return a.first < b.first;
@@ -34,11 +35,11 @@ struct CompareByFirst {
 };
 
 template <typename dist_t>
-using CandidatesQueue = priority_queue<pair<dist_t, tableint>, std::vector<pair<dist_t, tableint>>,
+using CandidatesQueue = priority_queue<pair<dist_t, tableint>, std::vector<pair<dist_t, tableint>, VecsimAllocator<pair<dist_t, tableint>>>,
                                        CompareByFirst<dist_t>>;
 
 template <typename dist_t>
-class HierarchicalNSW {
+class HierarchicalNSW : public VecsimBaseObject{
 
     // Index build parameters
     size_t max_elements_;
@@ -73,9 +74,9 @@ class HierarchicalNSW {
     int enterpoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
-    std::vector<int> element_levels_;
-    std::set<tableint> available_ids;
-    std::unordered_map<labeltype, tableint> label_lookup_;
+    std::vector<int, VecsimAllocator<int>> element_levels_;
+    std::set<tableint, std::less<tableint>, VecsimAllocator<tableint>> available_ids;
+    std::unordered_map<labeltype, tableint, std::hash<labeltype>, std::equal_to<labeltype>, VecsimAllocator<std::pair<const labeltype, tableint>>> label_lookup_;
     VisitedListPool *visited_list_pool_;
 
     // used for synchronization only when parallel indexing / searching is enabled.

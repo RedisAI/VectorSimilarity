@@ -1,10 +1,11 @@
 #pragma once
+#include "VecSim/memory/vecsim_malloc.h"
 
 template <typename TYPE>
 using DISTFUNC = TYPE (*)(const void *, const void *, const void *);
 
 template <typename TYPE>
-class SpaceInterface {
+class SpaceInterface : public VecsimBaseObject {
 public:
     virtual size_t get_data_size() const = 0;
 
