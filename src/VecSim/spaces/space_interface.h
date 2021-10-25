@@ -5,7 +5,7 @@ template <typename TYPE>
 using DISTFUNC = TYPE (*)(const void *, const void *, const void *);
 
 template <typename TYPE>
-class SpaceInterface : public VecsimBaseObject {
+class SpaceInterface {
 public:
     virtual size_t get_data_size() const = 0;
 

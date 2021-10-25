@@ -1,8 +1,15 @@
 #include "vecsim_malloc.h"
-
-void *VecsimBaseObject::operator new(size_t size) {
+#include <new>
+void *operator new(size_t size) {
     void *p = vecsim_malloc(size);
     return p;
 }
 
-void VecsimBaseObject::operator delete(void *p) { vecsim_free(p); }
+void *operator new[](size_t size) {
+    void *p = vecsim_malloc(size);
+    return p;
+}
+
+void operator delete(void *p) { vecsim_free(p); }
+
+void operator delete[](void *p) { vecsim_free(p); }
