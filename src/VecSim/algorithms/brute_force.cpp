@@ -218,7 +218,7 @@ extern "C" size_t BruteForce_Size(VecSimIndex *index) {
     return bfIndex->count;
 }
 
-extern "C" VecSimQueryResult_Collection *BruteForce_TopKQuery(VecSimIndex *index,
+extern "C" VecSimQueryResult_List *BruteForce_TopKQuery(VecSimIndex *index,
                                                               const void *queryBlob, size_t k,
                                                               VecSimQueryParams *queryParams) {
 
@@ -257,7 +257,7 @@ extern "C" VecSimQueryResult_Collection *BruteForce_TopKQuery(VecSimIndex *index
         results[i] = VecSimQueryResult{knn_res.top().second, knn_res.top().first};
         knn_res.pop();
     }
-    return (VecSimQueryResult_Collection *)results;
+    return (VecSimQueryResult_List *)results;
 }
 
 extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
@@ -275,7 +275,7 @@ extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
 
 // TODO
 
-extern "C" VecSimQueryResult_Collection *BruteForce_DistanceQuery(VecSimIndex *index,
+extern "C" VecSimQueryResult_List *BruteForce_DistanceQuery(VecSimIndex *index,
                                                                   const void *queryBlob,
                                                                   float distance,
                                                                   VecSimQueryParams queryParams);

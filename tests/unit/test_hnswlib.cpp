@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -19,7 +19,7 @@ protected:
 static void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                               const std::function<void(int, float, int)> ResCB,
                               VecSimQueryParams *params = nullptr) {
-    VecSimQueryResult_Collection *res =
+    VecSimQueryResult_List *res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, params);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_GetIterator(res);

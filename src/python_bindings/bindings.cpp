@@ -1,5 +1,5 @@
 
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 
 #include "pybind11/pybind11.h"

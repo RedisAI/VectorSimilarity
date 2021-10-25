@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
 
 #include <cstdlib>
 
@@ -23,11 +23,11 @@ size_t HNSWLib_Size(VecSimIndex *index);
 
 void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef);
 
-VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+VecSimQueryResult_List *HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
                                                 VecSimQueryParams *queryParams);
 
 // TODO?
-VecSimQueryResult_Collection *HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+VecSimQueryResult_List *HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob,
                                                     float distance, VecSimQueryParams queryParams);
 
 #ifdef __cplusplus

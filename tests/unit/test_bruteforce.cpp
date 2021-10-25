@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
 
 class BruteForceTest : public ::testing::Test {
 protected:

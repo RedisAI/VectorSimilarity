@@ -57,7 +57,7 @@ void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
     hnsw.setEf(ef);
 }
 
-VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data,
+VecSimQueryResult_List *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data,
                                                 size_t k, VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
@@ -81,7 +81,7 @@ VecSimQueryResult_Collection *HNSWLib_TopKQuery(VecSimIndex *index, const void *
         hnsw.setEf(originalEF);
         assert(hnsw.getEf() == originalEF);
 
-        return (VecSimQueryResult_Collection *)results;
+        return (VecSimQueryResult_List *)results;
     } catch (...) {
         return NULL;
     }

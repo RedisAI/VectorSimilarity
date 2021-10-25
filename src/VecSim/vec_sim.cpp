@@ -1,5 +1,6 @@
 
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
+#include "VecSim/query_results.h"
 #include "VecSim/algorithms/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
@@ -50,7 +51,7 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->SizeFn(index); }
 
-extern "C" VecSimQueryResult_Collection *VecSimIndex_TopKQuery(VecSimIndex *index,
+extern "C" VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index,
                                                                const void *queryBlob, size_t k,
                                                                VecSimQueryParams *queryParams) {
     if (index->metric == VecSimMetric_Cosine) {
@@ -63,10 +64,10 @@ extern "C" VecSimQueryResult_Collection *VecSimIndex_TopKQuery(VecSimIndex *inde
     return index->TopKQueryFn(index, queryBlob, k, queryParams);
 }
 
-extern "C" VecSimQueryResult_Collection *VecSimIndex_TopKQueryByID(VecSimIndex *index,
+extern "C" VecSimQueryResult_List *VecSimIndex_TopKQueryByID(VecSimIndex *index,
                                                                    const void *queryBlob, size_t k,
                                                                    VecSimQueryParams *queryParams) {
-    VecSimQueryResult_Collection *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
+    VecSimQueryResult_List *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
     qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResult);
     return results;
@@ -77,23 +78,23 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) { return index->FreeFn(inde
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->InfoFn(index); }
 
 // TODO?
-extern "C" VecSimQueryResult_Collection *VecSimIndex_DistanceQuery(VecSimIndex *index,
+extern "C" VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index,
                                                                    const void *queryBlob,
                                                                    float distance,
                                                                    VecSimQueryParams *queryParams) {
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
 
-extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_Collection *result) {
+extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List *result) {
     return array_len((VecSimQueryResult *)result);
 }
 
-extern "C" void VecSimQueryResult_Free(VecSimQueryResult_Collection *result) {
+extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List *result) {
     array_free((VecSimQueryResult *)result);
 }
 
 extern "C" VecSimQueryResult_Iterator *
-VecSimQueryResult_GetIterator(VecSimQueryResult_Collection *results) {
+VecSimQueryResult_GetIterator(VecSimQueryResult_List *results) {
     if (VecSimQueryResult_Len(results) == 0) {
         return nullptr;
     }
