@@ -41,7 +41,8 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/vec_sim.cpp
 	VecSim/query_results.cpp
 	VecSim/query_result_struct.cpp
-    VecSim/utils/vec_utils.cpp)
+    VecSim/utils/vec_utils.cpp
+    VecSim/memory/vecsim_malloc.cpp)
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
