@@ -89,7 +89,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
 
     float query[] = {50, 50, 50, 50};
     auto verify_res = [&](int id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
-    runTopKSearchTest(index, query, k, verify_res, nullptr, VecSimIndex_TopKQueryByID);
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
 }
@@ -111,7 +111,7 @@ TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
     for (int i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i/10);
+            f[j] = (float)(i / 10);
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -144,7 +144,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -193,7 +193,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -215,7 +215,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
         VecSimIndex_AddVector(index, (const void *)f, i + 10);
     }
@@ -345,7 +345,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     for (size_t i = 0; i < n; i++) {
         float f[d];
         for (size_t j = 0; j < d; j++) {
-            f[j] = (float) i;
+            f[j] = (float)i;
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -402,7 +402,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     for (size_t i = 0; i < n; i++) {
         float f[d];
         for (size_t j = 0; j < d; j++) {
-            f[j] = (float) i;
+            f[j] = (float)i;
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -463,7 +463,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     for (size_t i = 0; i < n; i++) {
         float f[d];
         for (size_t j = 0; j < d; j++) {
-            f[j] = (float) i;
+            f[j] = (float)i;
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }

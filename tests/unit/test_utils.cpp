@@ -7,8 +7,9 @@
  */
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(int, float, int)> ResCB, VecSimQueryParams *params,
-                       Index_TopKQuery TopKQueryFunc) {
-    VecSimQueryResult_List *res = TopKQueryFunc(index, (const void *)query, k, params);
+                       VecSimQueryResult_Order order) {
+    VecSimQueryResult_List *res =
+        VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;

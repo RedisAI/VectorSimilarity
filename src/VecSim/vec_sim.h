@@ -180,28 +180,15 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * type and dimension. (todo: validate it)
  * @param k the number of "nearest neighbours" to return (upper bound).
  * @param queryParams run time params for the search, which are algorithm-specific.
+ * @param order the criterion to sort the results list by it. Default is by score, can also be by
+ * id.
  * @return An opaque object the represents a list of results. User can access the id and score
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
 VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                              VecSimQueryParams *queryParams);
-
-/**
- * @brief Search for the k (approximate) closest vectors to a given vector in the index using the
- * index TopKQuery callback. The results are ordered by their id.
- * @param index the index to query in.
- * @param queryBlob binary representation of the query vector. Blob size should match the index data
- * type and dimension. (todo: validate it)
- * @param k the number of "nearest neighbours" to return (upper bound).
- * @param queryParams run time params for the search, which are algorithm-specific.
- * @return An opaque object the represents a list of results. User can access the id and score
- * (which is the distance according to the index metric) of every result through
- * VecSimQueryResult_Iterator.
- */
-// Todo: consider unify this with TopKQuery and add VecSimQueryResult_Order as input.
-VecSimQueryResult_List *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
-                                                  size_t k, VecSimQueryParams *queryParams);
+                                              VecSimQueryParams *queryParams,
+                                              VecSimQueryResult_Order order = BY_SCORE);
 
 // TODO?
 VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,

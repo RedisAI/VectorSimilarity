@@ -122,7 +122,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
 
     float query[] = {50, 50, 50, 50};
     auto verify_res = [&](int id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
-    runTopKSearchTest(index, query, k, verify_res, nullptr, VecSimIndex_TopKQueryByID);
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
 }
@@ -142,7 +142,7 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -173,9 +173,9 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
-        VecSimIndex_AddVector(index, (const void *) f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -195,9 +195,9 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
-        VecSimIndex_AddVector(index, (const void *) f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -222,9 +222,9 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
-        VecSimIndex_AddVector(index, (const void *) f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -244,9 +244,9 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
         }
-        VecSimIndex_AddVector(index, (const void *) f, i+10);
+        VecSimIndex_AddVector(index, (const void *)f, i + 10);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -370,7 +370,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
         }
-        VecSimIndex_AddVector(index, (const void *) f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -408,7 +408,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
         }
-        VecSimIndex_AddVector(index, (const void *) f, i);
+        VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
