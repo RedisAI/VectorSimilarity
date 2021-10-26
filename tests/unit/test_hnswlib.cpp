@@ -75,7 +75,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 100);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQueryByID(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_ID);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         ASSERT_EQ(res[i].id, (i + 45));
