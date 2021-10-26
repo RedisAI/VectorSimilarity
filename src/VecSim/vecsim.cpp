@@ -4,6 +4,7 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
+#include <cassert>
 #include "memory.h"
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
@@ -37,6 +38,8 @@ extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->Size
 extern "C" VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
                                                     size_t k, VecSimQueryParams *queryParams,
                                                     VecSimQueryResult_Order order) {
+    assert((order == BY_ID || order == BY_SCORE) &&
+           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryResult *results;
     if (index->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
@@ -49,9 +52,6 @@ extern "C" VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const vo
     }
     if (order == BY_SCORE) {
         return results;
-    }
-    if (order != BY_ID) {
-        return nullptr; // invalid value for order.
     }
     // otherwise, sort results by id and then return.
     qsort(results, VecSimQueryResult_Len(results), sizeof(*results),
