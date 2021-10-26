@@ -4,6 +4,7 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
+#include <cassert>
 #include "memory.h"
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
@@ -35,20 +36,24 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->SizeFn(index); }
 
 extern "C" VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                    size_t k, VecSimQueryParams *queryParams) {
+                                                    size_t k, VecSimQueryParams *queryParams,
+                                                    VecSimQueryResult_Order order) {
+    assert((order == BY_ID || order == BY_SCORE) &&
+           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
+    VecSimQueryResult *results;
     if (index->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
         float normelized_blob[index->dim];
         memcpy(normelized_blob, queryBlob, index->dim * sizeof(float));
         float_vector_normalize(normelized_blob, index->dim);
-        return index->TopKQueryFn(index, normelized_blob, k, queryParams);
+        results = index->TopKQueryFn(index, normelized_blob, k, queryParams);
+    } else {
+        results = index->TopKQueryFn(index, queryBlob, k, queryParams);
     }
-    return index->TopKQueryFn(index, queryBlob, k, queryParams);
-}
-
-extern "C" VecSimQueryResult *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob,
-                                                        size_t k, VecSimQueryParams *queryParams) {
-    VecSimQueryResult *results = VecSimIndex_TopKQuery(index, queryBlob, k, queryParams);
+    if (order == BY_SCORE) {
+        return results;
+    }
+    // otherwise, sort results by id and then return.
     qsort(results, VecSimQueryResult_Len(results), sizeof(*results),
           (__compar_fn_t)cmpVecSimQueryResult);
     return results;

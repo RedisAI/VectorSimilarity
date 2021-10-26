@@ -95,6 +95,9 @@ typedef struct {
     float score;
 } VecSimQueryResult;
 
+// The possible ordering for results that return from a query
+typedef enum { BY_SCORE, BY_ID } VecSimQueryResult_Order;
+
 typedef struct VecSimIndex VecSimIndex;
 
 typedef VecSimIndex *(*Index_New)(const VecSimParams *params);
@@ -104,8 +107,6 @@ typedef size_t (*Index_IndexSize)(VecSimIndex *index);
 typedef void (*Index_Free)(VecSimIndex *index);
 typedef VecSimQueryResult *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob, size_t k,
                                               VecSimQueryParams *queryParams);
-typedef VecSimQueryResult *(*Index_TopKQueryByID)(VecSimIndex *index, const void *queryBlob,
-                                                  size_t k, VecSimQueryParams *queryParams);
 typedef VecSimQueryResult *(*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
                                                   float distance, VecSimQueryParams *queryParams);
 typedef void (*Index_ClearDeleted)(VecSimIndex *index);
@@ -136,10 +137,8 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                         VecSimQueryParams *queryParams);
-
-VecSimQueryResult *VecSimIndex_TopKQueryByID(VecSimIndex *index, const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams);
+                                         VecSimQueryParams *queryParams,
+                                         VecSimQueryResult_Order order = BY_SCORE);
 
 // TODO
 
