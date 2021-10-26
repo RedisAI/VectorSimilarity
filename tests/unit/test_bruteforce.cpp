@@ -23,7 +23,10 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    float a[] = {1.0, 1.0, 1.0, 1.0};
+    float a[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (float)i;
+    }
     VecSimIndex_AddVector(index, (const void *)a, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
     VecSimIndex_Free(index);
@@ -41,8 +44,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
                            .algo = VecSimAlgo_BF};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (float i = 0; (int)i < n; (int)i++) {
-        float f[] = {i, i, i, i};
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, (const void *)f, (size_t)i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -73,8 +79,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
 
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (float i = 0; (int)i < n; (int)i++) {
-        float f[] = {i, i, i, i};
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, (const void *)f, (int)i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -102,8 +111,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
                            .algo = VecSimAlgo_BF};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (float i = 0; (int)i < n; (int)i++) {
-        float f[] = {i, i, i, i};
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, (const void *)f, (int)i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -128,8 +140,10 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        float num = (float)(i / 10);
-        float f[] = {num, num, num, num};
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+        }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -157,9 +171,11 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        float num = (float)(i / 10);
-        float f[] = {num, num, num, num};
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+        }
+        VecSimIndex_AddVector(index, (const void *) f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -177,9 +193,11 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
 
     // Reinsert the same vectors under the same ids
     for (size_t i = 0; i < n; i++) {
-        float num = (float)(i / 10);
-        float f[] = {num, num, num, num};
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+        }
+        VecSimIndex_AddVector(index, (const void *) f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -202,9 +220,11 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        float num = i / 10;
-        float f[] = {num, num, num, num};
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+        }
+        VecSimIndex_AddVector(index, (const void *) f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -222,9 +242,11 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 
     // Reinsert the same vectors under different ids than before
     for (size_t i = 0; i < n; i++) {
-        float num = i / 10;
-        float f[] = {num, num, num, num};
-        VecSimIndex_AddVector(index, (const void *)f, i + 10);
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float) (i / 10); // i / 10 is in integer (take the "floor" value)
+        }
+        VecSimIndex_AddVector(index, (const void *) f, i+10);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -343,9 +365,12 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.blockSize, 1);
 
-    for (float i = 0; (int)i < n; (int)i++) {
-        float f[] = {i, i, i, i};
-        VecSimIndex_AddVector(index, (const void *)f, (size_t)i);
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *) f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -378,9 +403,12 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.blockSize, 1);
 
-    for (float i = 0; (int)i < n; (int)i++) {
-        float f[] = {i, i, i, i};
-        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *) f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -419,12 +447,15 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     VecSimQueryResult_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
-    for (float i = 0; i < n; i++) {
-        float f[] = {i, i, i, i};
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    for (float i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -485,14 +516,17 @@ TEST_F(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Add 2 vectors, into 2 separated blocks.
-    for (float i = 0; i < n; i++) {
-        float f[] = {i, i, i, i};
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // After deleting the first vector, the second one will be moved to the first block
-    for (float i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
