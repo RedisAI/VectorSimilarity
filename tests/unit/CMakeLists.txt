@@ -45,13 +45,17 @@ enable_testing()
 # Now simply link against gtest or gtest_main as needed. Eg
 add_executable(test_hnswlib test_hnswlib.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_utils.cpp)
+add_executable(test_allocator test_allocator.cpp)
+
 
 # add_test(NAME test_hnswlib COMMAND test_hnswlib)
 # add_test(NAME test_bruteforce COMMAND test_bruteforce)
 
 target_link_libraries(test_hnswlib PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
+target_link_libraries(test_allocator PUBLIC gtest_main VectorSimilarity)
 
 include(GoogleTest)
 gtest_discover_tests(test_hnswlib)
 gtest_discover_tests(test_bruteforce)
+gtest_discover_tests(test_allocator)
