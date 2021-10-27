@@ -49,7 +49,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
 
     float query[4] = {50, 50, 50, 50};
     size_t ids[100] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
@@ -80,7 +80,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
@@ -141,7 +141,7 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -174,7 +174,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
     size_t ids[n] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -199,7 +199,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-    res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
+    res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -237,7 +237,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[4] = {4.9, 4.95, 5.05, 5.1};
     size_t ids[100] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 50 && res[i].id < 60 && res[i].score <= 1);
@@ -261,7 +261,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-    res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL);
+    res = VecSimIndex_TopKQuery(index, (const void *)query, 10, NULL, BY_SCORE);
     for (int i = 0; i < 10; i++) {
         ASSERT_TRUE(res[i].id >= 60 && res[i].id < 70 && res[i].score <= 1);
         ids[res[i].id] = res[i].id;
@@ -299,7 +299,7 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
         }
         VecSimQueryResult *res =
-            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, NULL);
+            VecSimIndex_TopKQuery(index, (const void *)(vectors + 3 * d), k, NULL, BY_SCORE);
         ASSERT_EQ(VecSimQueryResult_Len(res), k);
         size_t ids[5] = {0};
         for (int i = 0; i < k; i++) {
@@ -386,7 +386,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
 
     float query[4] = {50, 50, 50, 50};
     size_t ids[100] = {0};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         ids[res[i].id] = res[i].id;
@@ -419,7 +419,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_blocksize_1) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     for (int i = 0; i < k; i++) {
         int diff_id = ((int)(res[i].id - 50) > 0) ? (res[i].id - 50) : (50 - res[i].id);
@@ -444,7 +444,7 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     float query[4] = {50, 50, 50, 50};
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
 
@@ -460,7 +460,7 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL);
+    res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
     VecSimIndex_Free(index);
@@ -487,7 +487,7 @@ TEST_F(BruteForceTest, brute_force_test_inf_score) {
     VecSimIndex_AddVector(index, "abbdefgh", 4);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
-    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, "abcdefgh", k, NULL);
+    VecSimQueryResult *res = VecSimIndex_TopKQuery(index, "abcdefgh", k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 4);
     ASSERT_EQ(1, res[0].id);
     ASSERT_EQ(3, res[1].id);
