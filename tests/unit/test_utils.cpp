@@ -15,7 +15,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
         VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
-        int id = VecSimQueryResult_GetId(item);
+        int id = (int)VecSimQueryResult_GetId(item);
         float score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }

@@ -37,8 +37,9 @@ add_compile_options(-march=x86-64)
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force.cpp
     VecSim/algorithms/hnsw/hnswlib_c.cpp
-        VecSim/vec_sim.cpp
-		VecSim/query_results.cpp
+	VecSim/vec_sim.cpp
+	VecSim/query_results.cpp
+	VecSim/query_result_struct.cpp
     VecSim/utils/vec_utils.cpp)
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)

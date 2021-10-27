@@ -4,6 +4,7 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/query_result_struct.h"
 
 #include <memory>
 #include <set>
@@ -11,8 +12,6 @@
 #include <unordered_map>
 #include <cstring>
 #include <queue>
-#include <limits>
-#include <iostream>
 
 using namespace std;
 
@@ -253,7 +252,9 @@ extern "C" VecSimQueryResult_List *BruteForce_TopKQuery(VecSimIndex *index, cons
     }
     auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
     for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
-        results[i] = VecSimQueryResult_Create(knn_res.top().second, knn_res.top().first);
+        results[i] = VecSimQueryResult_Create();
+        VecSimQueryResult_SetId(results[i], knn_res.top().second);
+        VecSimQueryResult_SetScore(results[i], knn_res.top().first);
         knn_res.pop();
     }
     return (VecSimQueryResult_List *)results;

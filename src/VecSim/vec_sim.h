@@ -100,8 +100,6 @@ typedef size_t (*Index_IndexSize)(VecSimIndex *index);
 typedef void (*Index_Free)(VecSimIndex *index);
 typedef VecSimQueryResult_List *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob,
                                                    size_t k, VecSimQueryParams *queryParams);
-typedef VecSimQueryResult_List *(*Index_TopKQueryByID)(VecSimIndex *index, const void *queryBlob,
-                                                       size_t k, VecSimQueryParams *queryParams);
 typedef VecSimQueryResult_List *(*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
                                                        float distance,
                                                        VecSimQueryParams *queryParams);
@@ -138,7 +136,6 @@ struct VecSimIndex {
  * algorithm-related params).
  * @return A pointer to the created index.
  */
-// todo: why aren't we using CreateFn for this, as we do in the rest of the api functions?
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
 /**
@@ -151,7 +148,7 @@ void VecSimIndex_Free(VecSimIndex *index);
  * @brief Add a vector to an index using its the AddFn.
  * @param index the index to which the vector is added.
  * @param blob binary representation of the vector. Blob size should match the index data type and
- * dimension (todo: validate it).
+ * dimension.
  * @param id the id of the added vector
  * @return ?
  */
@@ -177,7 +174,7 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * index TopKQuery callback. The results are ordered by their score.
  * @param index the index to query in.
  * @param queryBlob binary representation of the query vector. Blob size should match the index data
- * type and dimension. (todo: validate it)
+ * type and dimension.
  * @param k the number of "nearest neighbours" to return (upper bound).
  * @param queryParams run time params for the search, which are algorithm-specific.
  * @param order the criterion to sort the results list by it. Default is by score, can also be by
@@ -200,6 +197,17 @@ VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index, const void
  * @return Index general and specific meta-data.
  */
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
+
+/**
+ * @brief Create a new batch iterator for a specific index, for a specific query vector,
+ * using the Index_BatchIteratorNew method of the index. Should be released with
+ * VecSimBatchIterator_Free call.
+ * @param index the index in which the search will be done (in batches)
+ * @param queryBlob binary representation of the vector. Blob size should match the index data type
+ * and dimension.
+ * @return Fresh batch iterator
+ */
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,6 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
+#include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
@@ -49,12 +50,11 @@ extern "C" VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, con
     } else {
         results = index->TopKQueryFn(index, queryBlob, k, queryParams);
     }
-    if (order == BY_SCORE) {
-        return results;
+    if (order == BY_ID) {
+        // sort results by id and then return.
+        qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
+              (__compar_fn_t)cmpVecSimQueryResult);
     }
-    // otherwise, sort results by id and then return.
-    qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResult);
     return results;
 }
 

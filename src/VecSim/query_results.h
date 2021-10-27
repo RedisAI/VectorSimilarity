@@ -6,9 +6,6 @@
 extern "C" {
 #endif
 
-// Forward declaration
-struct VecSimIndex;
-
 // The possible ordering for results that return from a query
 typedef enum { BY_SCORE, BY_ID } VecSimQueryResult_Order;
 
@@ -18,35 +15,21 @@ typedef enum { BY_SCORE, BY_ID } VecSimQueryResult_Order;
  */
 typedef struct VecSimQueryResult VecSimQueryResult;
 /**
- * @brief Get the id of the result vector. If item is nullptr, return -1 (invalid id).
+ * @brief Get the id of the result vector. If item is nullptr, return INVALID_ID (defined as the
+ * -1).
  */
-int VecSimQueryResult_GetId(VecSimQueryResult *item);
+long VecSimQueryResult_GetId(VecSimQueryResult *item);
 
 /**
- * @brief Get the score of the result vector. If item is nullptr, return the minimal value of float
- * ("minus infinity").
+ * @brief Get the score of the result vector. If item is nullptr, return INVALID_SCORE (defined as
+ * the minimal value of float).
  */
 float VecSimQueryResult_GetScore(VecSimQueryResult *item);
 
 /**
- * @brief Create a new result (to use from index TopKQuery method)
- */
-VecSimQueryResult VecSimQueryResult_Create(size_t id, float score);
-
-/**
- * @brief Sets result's id (to use from index TopKQuery method)
- */
-void VecSimQueryResult_SetId(VecSimQueryResult result, size_t id);
-
-/**
- * @brief Sets result score (to use from index TopKQuery method)
- */
-void VecSimQueryResult_SetScore(VecSimQueryResult result, float score);
-
-/**
  * @brief An opaque object from which results can be obtained via iterator.
  */
-typedef struct VecSimQueryResult_List VecSimQueryResult_List;
+struct VecSimQueryResult_List;
 
 /**
  * @brief Iterator for going over the list of results that had returned form a query
@@ -99,17 +82,6 @@ typedef void (*BatchIterator_Free)(VecSimBatchIterator *iterator);
 typedef void *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
 
 /**
- * @brief Create a new batch iterator for a specific index, for a specific query vector,
- * using the Index_BatchIteratorNew method of the index. Should be released with
- * VecSimBatchIterator_Free call.
- * @param index the index in which the search will be done (in batches)
- * @param queryBlob binary representation of the vector. Blob size should match the index data type
- * and dimension.
- * @return Fresh batch iterator
- */
-VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
-
-/**
  * @brief Run TopKQuery over the underling index of the given iterator using BatchIterator_Next
  * method, and return n_results new results.
  * @param iterator the iterator that olds the current state of this "batched search".
@@ -140,9 +112,3 @@ void VecSimBatchIterator_Reset(VecSimBatchIterator *iterator);
 #ifdef __cplusplus
 }
 #endif
-
-// This should be used only internally for creating an array of results in TopKQuery methods.
-struct VecSimQueryResult {
-    size_t id;
-    float score;
-};
