@@ -20,5 +20,5 @@ public:
     void *operator new[](size_t size, std::shared_ptr<VecSimAllocator> allocator);
     void operator delete(void *p, size_t size);
     void operator delete[](void *p, size_t size);
-    std::shared_ptr<VecSimAllocator> *getAllocator();
+    std::shared_ptr<VecSimAllocator> getAllocator();
 };

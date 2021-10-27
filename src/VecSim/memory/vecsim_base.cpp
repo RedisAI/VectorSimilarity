@@ -34,3 +34,5 @@ void VecsimBaseObject::operator delete[](void *p, size_t size) {
     VecsimBaseObject *obj = reinterpret_cast<VecsimBaseObject *>(p);
     obj->allocator->deallocate(obj, size);
 }
+
+std::shared_ptr<VecSimAllocator> VecsimBaseObject::getAllocator() { return this->allocator; }
