@@ -1,8 +1,7 @@
 #pragma once
-
-#include "redismodule.h"
 #include <stddef.h>
 #include <memory>
+#include "redismodule.h"
 
 #ifdef REDIS_MODULE_TARGET /* Set this when compiling your code as a module */
 static inline void *vecsim_malloc(size_t n) { return RedisModule_Alloc(n); }
@@ -32,70 +31,56 @@ static inline char *vecsim_strndup(const char *s, size_t n) {
 #define vecsim_strndup strndup
 
 #endif
-template <typename T>
-struct VecsimAllocator {
-    using value_type = T;
 
+struct VecSimAllocator {
+private:
     std::shared_ptr<uint64_t> allocated;
 
-    VecsimAllocator() : allocated(new uint64_t) { *allocated = sizeof(allocated); }
+public:
+    VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
+
+    void *allocate(size_t size);
+    void deallocate(void *p, size_t size);
+
+    void *operator new(size_t size);
+    void *operator new[](size_t size);
+    void operator delete(void *p, size_t size);
+    void operator delete[](void *p, size_t size);
+
+    int64_t getAllocationSize();
+};
+
+template <typename T>
+struct VecsimSTLAllocator {
+    using value_type = T;
+
+    std::shared_ptr<VecSimAllocator> vecsim_allocator;
+    VecsimSTLAllocator() {}
+    VecsimSTLAllocator(std::shared_ptr<VecSimAllocator> vecsim_allocator)
+        : vecsim_allocator(vecsim_allocator) {}
+    VecsimSTLAllocator(VecSimAllocator *vecsim_allocator) : vecsim_allocator(vecsim_allocator) {}
+    template <typename U>
+    VecsimSTLAllocator(const VecsimSTLAllocator<U> &other)
+        : vecsim_allocator(other.vecsim_allocator) {}
 
     template <typename U>
-    VecsimAllocator(const VecsimAllocator<U> &other) : allocated(other.allocated) {}
-
-    template <typename U>
-    VecsimAllocator &operator=(const VecsimAllocator<U> &other) {
-        std::allocator<T>::operator=(other);
-        this->allocated = other.allocated;
+    VecsimSTLAllocator &operator=(const VecsimSTLAllocator<U> &other) {
+        this->vecsim_allocator = other.vecsim_allocator;
         return *this;
     }
 
-    T *allocate(size_t size) {
-
-        *allocated.get() += size * sizeof(T);
-        return (T *)vecsim_malloc(size * sizeof(T));
-    }
+    T *allocate(size_t size) { return (T *)this->vecsim_allocator->allocate(size * sizeof(T)); }
 
     void deallocate(T *ptr, size_t size) {
-        *allocated.get() -= size * sizeof(T);
-        vecsim_free(ptr);
-    }
-
-    T *allocate_blocks(size_t size) {
-
-        *allocated.get() += size;
-        return (T *)vecsim_malloc(size);
-    }
-
-    void deallocate_blocks(T *ptr, size_t size) {
-        *allocated.get() -= size;
-        vecsim_free(ptr);
+        this->vecsim_allocator->deallocate(ptr, size * sizeof(T));
     }
 };
 
 template <class T, class U>
-bool operator==(const VecsimAllocator<T> &, const VecsimAllocator<U> &) {
+bool operator==(const VecsimSTLAllocator<T> &, const VecsimSTLAllocator<U> &) {
     return true;
 }
 template <class T, class U>
-bool operator!=(const VecsimAllocator<T> &, const VecsimAllocator<U> &) {
+bool operator!=(const VecsimSTLAllocator<T> &, const VecsimSTLAllocator<U> &) {
     return false;
 }
-
-struct VecsimBaseObject {
-
-private:
-    VecsimAllocator<VecsimBaseObject> allocator;
-
-public:
-    VecsimBaseObject() {}
-    VecsimBaseObject(VecsimAllocator<VecsimBaseObject> allocator) : allocator(allocator) {}
-
-    void *operator new(size_t size, VecsimAllocator<VecsimBaseObject> &allocator);
-    void *operator new[](size_t size, VecsimAllocator<VecsimBaseObject> &allocator);
-    void operator delete(void *p, VecsimAllocator<VecsimBaseObject> &allocator);
-    void operator delete[](void *p, VecsimAllocator<VecsimBaseObject> &allocator);
-    virtual size_t size() = 0;
-    void setAllocator(VecsimAllocator<VecsimBaseObject> &allocator);
-    VecsimAllocator<VecsimBaseObject> &getAllocator();
-};
