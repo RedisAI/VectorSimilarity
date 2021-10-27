@@ -39,7 +39,7 @@ public:
 /////////////////////////////////////////////////////////
 
 class VisitedListPool {
-    std::deque<VisitedList *, VecsimAllocator<VisitedList *>> pool;
+    std::deque<VisitedList *, VecsimSTLAllocator<VisitedList *>> pool;
     std::mutex poolguard;
     int numelements;
 

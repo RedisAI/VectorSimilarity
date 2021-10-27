@@ -37,7 +37,7 @@ struct CompareByFirst {
 template <typename dist_t>
 using CandidatesQueue =
     priority_queue<pair<dist_t, tableint>,
-                   std::vector<pair<dist_t, tableint>, VecsimAllocator<pair<dist_t, tableint>>>,
+                   std::vector<pair<dist_t, tableint>, VecsimSTLAllocator<pair<dist_t, tableint>>>,
                    CompareByFirst<dist_t>>;
 
 template <typename dist_t>
@@ -76,10 +76,10 @@ class HierarchicalNSW {
     int enterpoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
-    std::vector<int, VecsimAllocator<int>> element_levels_;
-    std::set<tableint, std::less<tableint>, VecsimAllocator<tableint>> available_ids;
+    std::vector<int, VecsimSTLAllocator<int>> element_levels_;
+    std::set<tableint, std::less<tableint>, VecsimSTLAllocator<tableint>> available_ids;
     std::unordered_map<labeltype, tableint, std::hash<labeltype>, std::equal_to<labeltype>,
-                       VecsimAllocator<std::pair<const labeltype, tableint>>>
+                       VecsimSTLAllocator<std::pair<const labeltype, tableint>>>
         label_lookup_;
     VisitedListPool *visited_list_pool_;
 
