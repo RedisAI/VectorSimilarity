@@ -137,8 +137,7 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 VecSimQueryResult *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                         VecSimQueryParams *queryParams,
-                                         VecSimQueryResult_Order order = BY_SCORE);
+                                         VecSimQueryParams *queryParams, VecSimQueryResult_Order);
 
 // TODO
 

@@ -25,7 +25,8 @@ public:
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         float *vector_data = (float *)items.data(0);
-        VecSimQueryResult *res = VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params);
+        VecSimQueryResult *res =
+            VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contigious 2D array. Probably "
                                      "ef or M is too small");
