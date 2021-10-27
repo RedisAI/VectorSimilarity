@@ -177,15 +177,14 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * type and dimension.
  * @param k the number of "nearest neighbours" to return (upper bound).
  * @param queryParams run time params for the search, which are algorithm-specific.
- * @param order the criterion to sort the results list by it. Default is by score, can also be by
- * id.
+ * @param order the criterion to sort the results list by it. Options are by score, or by id.
  * @return An opaque object the represents a list of results. User can access the id and score
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
 VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
                                               VecSimQueryParams *queryParams,
-                                              VecSimQueryResult_Order order = BY_SCORE);
+                                              VecSimQueryResult_Order);
 
 // TODO?
 VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
