@@ -98,11 +98,11 @@ typedef int (*Index_AddVector)(VecSimIndex *index, const void *blob, size_t id);
 typedef int (*Index_DeleteVector)(VecSimIndex *index, size_t id);
 typedef size_t (*Index_IndexSize)(VecSimIndex *index);
 typedef void (*Index_Free)(VecSimIndex *index);
-typedef VecSimQueryResult_List *(*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob,
-                                                   size_t k, VecSimQueryParams *queryParams);
-typedef VecSimQueryResult_List *(*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
-                                                       float distance,
-                                                       VecSimQueryParams *queryParams);
+typedef VecSimQueryResult_List (*Index_TopKQuery)(VecSimIndex *index, const void *queryBlob,
+                                                  size_t k, VecSimQueryParams *queryParams);
+typedef VecSimQueryResult_List (*Index_DistanceQuery)(VecSimIndex *index, const void *queryBlob,
+                                                      float distance,
+                                                      VecSimQueryParams *queryParams);
 typedef void (*Index_ClearDeleted)(VecSimIndex *index);
 typedef VecSimIndexInfo (*Index_Info)(VecSimIndex *index);
 typedef VecSimBatchIterator *(*Index_BatchIteratorNew)(VecSimIndex *index, const void *queryBlob);
@@ -150,7 +150,7 @@ void VecSimIndex_Free(VecSimIndex *index);
  * @param blob binary representation of the vector. Blob size should match the index data type and
  * dimension.
  * @param id the id of the added vector
- * @return ?
+ * @return always returns true
  */
 int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 
@@ -158,7 +158,7 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
  * @brief Remove a vector from an index using its DeleteFn.
  * @param index the index from which the vector is removed.
  * @param id the id of the removed vector
- * @return ?
+ * @return always returns true
  */
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
@@ -170,7 +170,7 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 /**
- * @brief Search for the k (approximate) closest vectors to a given vector in the index using the
+ * @brief Search for the k closest vectors to a given vector in the index using the
  * index TopKQuery callback. The results are ordered by their score.
  * @param index the index to query in.
  * @param queryBlob binary representation of the query vector. Blob size should match the index data
@@ -182,13 +182,13 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
-VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                              VecSimQueryParams *queryParams,
-                                              VecSimQueryResult_Order);
+VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+                                             VecSimQueryParams *queryParams,
+                                             VecSimQueryResult_Order);
 
 // TODO?
-VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                                  float distance, VecSimQueryParams *queryParams);
+VecSimQueryResult_List VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+                                                 float distance, VecSimQueryParams *queryParams);
 
 /**
  * @brief Return index information.

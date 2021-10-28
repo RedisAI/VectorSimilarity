@@ -217,8 +217,8 @@ extern "C" size_t BruteForce_Size(VecSimIndex *index) {
     return bfIndex->count;
 }
 
-extern "C" VecSimQueryResult_List *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                        size_t k, VecSimQueryParams *queryParams) {
+extern "C" VecSimQueryResult_List BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob,
+                                                       size_t k, VecSimQueryParams *queryParams) {
 
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
     size_t dim = bfIndex->base.dim;
@@ -252,12 +252,11 @@ extern "C" VecSimQueryResult_List *BruteForce_TopKQuery(VecSimIndex *index, cons
     }
     auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
     for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
-        results[i] = VecSimQueryResult_Create();
         VecSimQueryResult_SetId(results[i], knn_res.top().second);
         VecSimQueryResult_SetScore(results[i], knn_res.top().first);
         knn_res.pop();
     }
-    return (VecSimQueryResult_List *)results;
+    return results;
 }
 
 extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {

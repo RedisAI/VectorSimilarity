@@ -58,8 +58,8 @@ void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
     hnsw.setEf(ef);
 }
 
-VecSimQueryResult_List *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                          VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
+                                         VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -75,7 +75,6 @@ VecSimQueryResult_List *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
         auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = (int)knn_res->size() - 1; i >= 0; --i) {
-            results[i] = VecSimQueryResult_Create();
             VecSimQueryResult_SetId(results[i], knn_res->top().second);
             VecSimQueryResult_SetScore(results[i], knn_res->top().first);
             knn_res->pop();
@@ -84,7 +83,7 @@ VecSimQueryResult_List *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_
         hnsw.setEf(originalEF);
         assert(hnsw.getEf() == originalEF);
 
-        return (VecSimQueryResult_List *)results;
+        return results;
     } catch (...) {
         return NULL;
     }

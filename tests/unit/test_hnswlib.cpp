@@ -452,7 +452,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     float query[] = {50, 50, 50, 50};
 
     // We do not expect any results
-    VecSimQueryResult_List *res =
+    VecSimQueryResult_List res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);

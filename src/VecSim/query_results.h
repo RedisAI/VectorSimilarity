@@ -14,6 +14,7 @@ typedef enum { BY_SCORE, BY_ID } VecSimQueryResult_Order;
  * vector id and score (comparing to the query vector).
  */
 typedef struct VecSimQueryResult VecSimQueryResult;
+
 /**
  * @brief Get the id of the result vector. If item is nullptr, return INVALID_ID (defined as the
  * -1).
@@ -29,7 +30,7 @@ float VecSimQueryResult_GetScore(VecSimQueryResult *item);
 /**
  * @brief An opaque object from which results can be obtained via iterator.
  */
-struct VecSimQueryResult_List;
+typedef VecSimQueryResult *VecSimQueryResult_List;
 
 /**
  * @brief Iterator for going over the list of results that had returned form a query
@@ -39,13 +40,13 @@ typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
 /**
  * @brief Get the length of the result list that returned from a query.
  */
-size_t VecSimQueryResult_Len(VecSimQueryResult_List *results);
+size_t VecSimQueryResult_Len(VecSimQueryResult_List results);
 
 /**
  * @brief Create an iterator for going over the list of results. The iterator needs to be free
  * with VecSimQueryResult_IteratorFree.
  */
-VecSimQueryResult_Iterator *VecSimQueryResult_List_GetIterator(VecSimQueryResult_List *results);
+VecSimQueryResult_Iterator *VecSimQueryResult_List_GetIterator(VecSimQueryResult_List results);
 
 /**
  * @brief Advance the iterator, so it will point to the next item, and return the value.
@@ -66,7 +67,7 @@ void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
 /**
  * @brief Release the entire query results list.
  */
-void VecSimQueryResult_Free(VecSimQueryResult_List *results);
+void VecSimQueryResult_Free(VecSimQueryResult_List results);
 
 /**
  * @brief Iterator for running the same query over an index, getting the in each iteration

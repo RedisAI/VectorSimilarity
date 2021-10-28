@@ -16,12 +16,6 @@ struct VecSimQueryResult {
 };
 
 /**
- * @brief Create a new empty result (to use from index TopKQuery method)
- * After creation, use SetId() and SetScore() so that the result will have valid fields.
- */
-VecSimQueryResult VecSimQueryResult_Create();
-
-/**
  * @brief Sets result's id (to use from index TopKQuery method)
  */
 void VecSimQueryResult_SetId(VecSimQueryResult &result, size_t id);

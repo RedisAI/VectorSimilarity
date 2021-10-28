@@ -1,4 +1,3 @@
-#include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/vec_sim.h"
@@ -23,28 +22,21 @@ struct VecSimBatchIterator {
     BatchIterator_Reset IteratorReset;
 };
 
-extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List *result) {
-    return array_len((VecSimQueryResult *)result);
-}
+extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List result) { return array_len(result); }
 
-extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List *result) {
-    array_free((VecSimQueryResult *)result);
-}
+extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List result) { array_free(result); }
 
 extern "C" VecSimQueryResult_Iterator *
-VecSimQueryResult_List_GetIterator(VecSimQueryResult_List *results) {
-    return new VecSimQueryResult_Iterator((VecSimQueryResult *)results);
+VecSimQueryResult_List_GetIterator(VecSimQueryResult_List results) {
+    return new VecSimQueryResult_Iterator(results);
 }
 
 extern "C" bool VecSimQueryResult_IteratorHasNext(VecSimQueryResult_Iterator *iterator) {
-    if (iterator->index == iterator->results_len) {
-        return false;
-    }
-    return true;
+    return iterator->index != iterator->results_len;
 }
 
 extern "C" VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_Iterator *iterator) {
-    if (!VecSimQueryResult_IteratorHasNext(iterator)) {
+    if (iterator->index == iterator->results_len) {
         return nullptr;
     }
     VecSimQueryResult *item = iterator->curr_result++;

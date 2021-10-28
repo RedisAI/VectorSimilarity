@@ -725,7 +725,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // check that the label actually exists in the graph, and update the number of elements.
     tableint element_internal_id;
     if (label_lookup_.find(label) == label_lookup_.end()) {
-        return false;
+        return true;
     }
     // add the element id to the available ids for future reuse.
     element_internal_id = label_lookup_[label];

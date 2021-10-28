@@ -35,12 +35,12 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->SizeFn(index); }
 
-extern "C" VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                         size_t k, VecSimQueryParams *queryParams,
-                                                         VecSimQueryResult_Order order) {
+extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
+                                                        size_t k, VecSimQueryParams *queryParams,
+                                                        VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
-    VecSimQueryResult_List *results;
+    VecSimQueryResult_List results;
     if (index->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
         float normalized_blob[index->dim];
@@ -63,8 +63,8 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) { return index->FreeFn(inde
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->InfoFn(index); }
 
 // TODO?
-extern "C" VecSimQueryResult_List *VecSimIndex_DistanceQuery(VecSimIndex *index,
-                                                             const void *queryBlob, float distance,
-                                                             VecSimQueryParams *queryParams) {
+extern "C" VecSimQueryResult_List VecSimIndex_DistanceQuery(VecSimIndex *index,
+                                                            const void *queryBlob, float distance,
+                                                            VecSimQueryParams *queryParams) {
     return index->DistanceQueryFn(index, queryBlob, distance, queryParams);
 }
