@@ -1,5 +1,5 @@
 
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 
 #include "pybind11/pybind11.h"
@@ -25,19 +25,26 @@ public:
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         float *vector_data = (float *)items.data(0);
-        VecSimQueryResult *res =
+        VecSimQueryResult_List res =
             VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
-            throw std::runtime_error("Cannot return the results in a contigious 2D array. Probably "
+            throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
         }
         size_t *data_numpy_l = new size_t[k];
         float *data_numpy_d = new float[k];
-        for (size_t i = 0; i < k; i++) {
-            data_numpy_d[i] = res[i].score;
-            data_numpy_l[i] = res[i].id;
+        VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+        int res_ind = 0;
+        while (VecSimQueryResult_IteratorHasNext(iterator)) {
+            VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+            int id = VecSimQueryResult_GetId(item);
+            float score = VecSimQueryResult_GetScore(item);
+            data_numpy_d[res_ind] = score;
+            data_numpy_l[res_ind++] = id;
         }
+        VecSimQueryResult_IteratorFree(iterator);
         VecSimQueryResult_Free(res);
+
         py::capsule free_when_done_l(data_numpy_l, [](void *f) { delete[] f; });
         py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
         return py::make_tuple(

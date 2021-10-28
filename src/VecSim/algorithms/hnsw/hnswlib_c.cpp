@@ -3,6 +3,7 @@
 #include "VecSim/algorithms/hnsw/hnswlib.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
+#include "VecSim/query_result_struct.h"
 
 #include <deque>
 #include <memory>
@@ -57,8 +58,8 @@ void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
     hnsw.setEf(ef);
 }
 
-VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                     VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
+                                         VecSimQueryParams *queryParams) {
     try {
         auto idx = reinterpret_cast<HNSWIndex *>(index);
         auto &hnsw = idx->hnsw;
@@ -73,8 +74,9 @@ VecSimQueryResult *HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data,
         typedef priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
         auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
-        for (int i = knn_res->size() - 1; i >= 0; --i) {
-            results[i] = VecSimQueryResult{knn_res->top().second, knn_res->top().first};
+        for (int i = (int)knn_res->size() - 1; i >= 0; --i) {
+            VecSimQueryResult_SetId(results[i], knn_res->top().second);
+            VecSimQueryResult_SetScore(results[i], knn_res->top().first);
             knn_res->pop();
         }
         // Restore efRuntime

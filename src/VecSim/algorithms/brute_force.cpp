@@ -4,6 +4,7 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/query_result_struct.h"
 
 #include <memory>
 #include <set>
@@ -11,15 +12,13 @@
 #include <unordered_map>
 #include <cstring>
 #include <queue>
-#include <limits>
-#include <iostream>
 
 using namespace std;
 
 typedef size_t labelType;
 typedef size_t idType;
 
-// Predeclaration
+// Pre declaration
 
 struct VectorBlock;
 
@@ -218,8 +217,8 @@ extern "C" size_t BruteForce_Size(VecSimIndex *index) {
     return bfIndex->count;
 }
 
-extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                   size_t k, VecSimQueryParams *queryParams) {
+extern "C" VecSimQueryResult_List BruteForce_TopKQuery(VecSimIndex *index, const void *queryBlob,
+                                                       size_t k, VecSimQueryParams *queryParams) {
 
     BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
     size_t dim = bfIndex->base.dim;
@@ -251,9 +250,10 @@ extern "C" VecSimQueryResult *BruteForce_TopKQuery(VecSimIndex *index, const voi
             }
         }
     }
-    VecSimQueryResult *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
-    for (int i = knn_res.size() - 1; i >= 0; --i) {
-        results[i] = VecSimQueryResult{knn_res.top().second, knn_res.top().first};
+    auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
+    for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
+        VecSimQueryResult_SetId(results[i], knn_res.top().second);
+        VecSimQueryResult_SetScore(results[i], knn_res.top().first);
         knn_res.pop();
     }
     return results;
@@ -274,9 +274,9 @@ extern "C" VecSimIndexInfo BruteForce_Info(VecSimIndex *index) {
 
 // TODO
 
-extern "C" VecSimQueryResult *BruteForce_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                                       float distance,
-                                                       VecSimQueryParams queryParams);
+extern "C" VecSimQueryResult_List *BruteForce_DistanceQuery(VecSimIndex *index,
+                                                            const void *queryBlob, float distance,
+                                                            VecSimQueryParams queryParams);
 
 extern "C" void BruteForce_ClearDeleted(VecSimIndex *index);
 
@@ -300,5 +300,5 @@ BruteForceIndex::BruteForceIndex(VecSimType vectype, VecSimMetric metric, size_t
         metric : metric
     };
     this->idToVectorBlockMemberMapping.resize(max_elements);
-    this->dist_func = this->space.get()->get_dist_func();
+    this->dist_func = this->space->get_dist_func();
 }

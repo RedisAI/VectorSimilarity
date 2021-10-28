@@ -43,8 +43,8 @@ add_subdirectory(${root}/src ${binroot}/VectorSimilarity)
 enable_testing()
 
 # Now simply link against gtest or gtest_main as needed. Eg
-add_executable(test_hnswlib test_hnswlib.cpp)
-add_executable(test_bruteforce test_bruteforce.cpp)
+add_executable(test_hnswlib test_hnswlib.cpp test_utils.cpp)
+add_executable(test_bruteforce test_bruteforce.cpp test_utils.cpp)
 
 # add_test(NAME test_hnswlib COMMAND test_hnswlib)
 # add_test(NAME test_bruteforce COMMAND test_bruteforce)

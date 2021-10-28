@@ -140,5 +140,5 @@ def test_recall_for_hnswlib_index_with_deletion():
 
     # Measure recall
     recall = float(correct)/(k*num_queries)
-    print("recall is: ", recall)
+    print("\nrecall is: \n", recall)
     assert(recall > 0.9)
