@@ -26,8 +26,8 @@ VecSimQueryResult_List HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBl
                                          VecSimQueryParams *queryParams);
 
 // TODO?
-VecSimQueryResult_List *HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                              float distance, VecSimQueryParams queryParams);
+VecSimQueryResult_List HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob,
+                                             float distance, VecSimQueryParams queryParams);
 
 #ifdef __cplusplus
 }

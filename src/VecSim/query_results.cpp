@@ -7,7 +7,7 @@ struct VecSimQueryResult_Iterator {
     size_t index;
     size_t results_len;
 
-    explicit VecSimQueryResult_Iterator(VecSimQueryResult *results_array)
+    explicit VecSimQueryResult_Iterator(VecSimQueryResult_List results_array)
         : curr_result(results_array), index(0), results_len(array_len(results_array)) {}
 };
 
@@ -45,11 +45,11 @@ extern "C" VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_I
     return item;
 }
 
-extern "C" long VecSimQueryResult_GetId(VecSimQueryResult *res) {
+extern "C" int64_t VecSimQueryResult_GetId(VecSimQueryResult *res) {
     if (res == nullptr) {
         return INVALID_ID;
     }
-    return (long)res->id;
+    return (int64_t)res->id;
 }
 
 extern "C" float VecSimQueryResult_GetScore(VecSimQueryResult *res) {

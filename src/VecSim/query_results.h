@@ -19,7 +19,7 @@ typedef struct VecSimQueryResult VecSimQueryResult;
  * @brief Get the id of the result vector. If item is nullptr, return INVALID_ID (defined as the
  * -1).
  */
-long VecSimQueryResult_GetId(VecSimQueryResult *item);
+int64_t VecSimQueryResult_GetId(VecSimQueryResult *item);
 
 /**
  * @brief Get the score of the result vector. If item is nullptr, return INVALID_SCORE (defined as
