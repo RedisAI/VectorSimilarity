@@ -11,11 +11,6 @@ extern "C" {
 typedef struct VecSimIndex VecSimIndex;
 
 /**
- * @brief abstract struct that represents an index. The supported index types use
- * this structure as the base, and add their specific functionality on top of it.
- */
-
-/**
  * @brief Create a new VecSim index based on the given params.
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
@@ -24,13 +19,13 @@ typedef struct VecSimIndex VecSimIndex;
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
 /**
- * @brief Release an index and its internal data using the FreeFn method.
+ * @brief Release an index and its internal data.
  * @param index the index to release.
  */
 void VecSimIndex_Free(VecSimIndex *index);
 
 /**
- * @brief Add a vector to an index using its the AddFn.
+ * @brief Add a vector to an index.
  * @param index the index to which the vector is added.
  * @param blob binary representation of the vector. Blob size should match the index data type and
  * dimension.
@@ -40,7 +35,7 @@ void VecSimIndex_Free(VecSimIndex *index);
 int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 
 /**
- * @brief Remove a vector from an index using its DeleteFn.
+ * @brief Remove a vector from an index.
  * @param index the index from which the vector is removed.
  * @param id the id of the removed vector
  * @return always returns true
@@ -48,15 +43,15 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
 /**
- * @brief Return the number of vectors in the index using irs SizeFn.
+ * @brief Return the number of vectors in the index.
  * @param index the index whose size is requested.
  * @return index size.
  */
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 /**
- * @brief Search for the k closest vectors to a given vector in the index using the
- * index TopKQuery callback. The results are ordered by their score.
+ * @brief Search for the k closest vectors to a given vector in the index. The results can be
+ * ordered by their score or id.
  * @param index the index to query in.
  * @param queryBlob binary representation of the query vector. Blob size should match the index data
  * type and dimension.

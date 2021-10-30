@@ -14,26 +14,13 @@
 
 using namespace std;
 
+// TODO: unify this with HNSW
 struct CompareByFirst {
     constexpr bool operator()(std::pair<float, labelType> const &a,
                               std::pair<float, labelType> const &b) const noexcept {
         return a.first < b.first;
     }
 };
-
-extern "C" VecSimIndex *BruteForce_New(const VecSimParams *params) {
-    try {
-        auto p = new BruteForceIndex(params);
-        return p;
-    } catch (...) {
-        return NULL;
-    }
-}
-
-extern "C" void BruteForce_Free(VecSimIndex *index) {
-    BruteForceIndex *bfIndex = reinterpret_cast<BruteForceIndex *>(index);
-    delete bfIndex;
-}
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const VecSimParams *params)

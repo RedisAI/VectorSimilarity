@@ -19,11 +19,11 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    if (index->metric == VecSimMetric_Cosine) {
+    if (index->getMetric() == VecSimMetric_Cosine) {
         // TODO: need more generic
-        float normalized_blob[index->dim];
-        memcpy(normalized_blob, blob, index->dim * sizeof(float));
-        float_vector_normalize(normalized_blob, index->dim);
+        float normalized_blob[index->getVectorDim()];
+        memcpy(normalized_blob, blob, index->getVectorDim() * sizeof(float));
+        float_vector_normalize(normalized_blob, index->getVectorDim());
         return index->addVector(normalized_blob, id);
     }
     return index->addVector(blob, id);
@@ -41,11 +41,11 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryResult_List results;
-    if (index->metric == VecSimMetric_Cosine) {
+    if (index->getMetric() == VecSimMetric_Cosine) {
         // TODO: need more generic
-        float normalized_blob[index->dim];
-        memcpy(normalized_blob, queryBlob, index->dim * sizeof(float));
-        float_vector_normalize(normalized_blob, index->dim);
+        float normalized_blob[index->getVectorDim()];
+        memcpy(normalized_blob, queryBlob, index->getVectorDim() * sizeof(float));
+        float_vector_normalize(normalized_blob, index->getVectorDim());
         results = index->topKQuery(normalized_blob, k, queryParams);
     } else {
         results = index->topKQuery(queryBlob, k, queryParams);

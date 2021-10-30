@@ -11,6 +11,21 @@
 using namespace std;
 using namespace hnswlib;
 
+/******************** Ctor / Dtor **************/
+
+HNSWIndex::HNSWIndex(const VecSimParams *params)
+    : VecSimIndex(params),
+      space(params->metric == VecSimMetric_L2
+                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
+                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))),
+      hnsw(space.get(), params->hnswParams.initialCapacity,
+           params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
+           params->hnswParams.efConstruction ? params->hnswParams.efConstruction
+                                             : HNSW_DEFAULT_EF_C) {
+    hnsw.setEf(params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
+}
+
+/******************** Implementation **************/
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
         if (hnsw.getIndexSize() == this->hnsw.getIndexCapacity()) {
@@ -71,18 +86,6 @@ VecSimIndexInfo HNSWIndex::info() {
     info.hnswInfo.indexSize = this->hnsw.getIndexSize();
     info.hnswInfo.levels = this->hnsw.getMaxLevel();
     return info;
-}
-
-HNSWIndex::HNSWIndex(const VecSimParams *params)
-    : VecSimIndex(params),
-      space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))),
-      hnsw(space.get(), params->hnswParams.initialCapacity,
-           params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
-           params->hnswParams.efConstruction ? params->hnswParams.efConstruction
-                                             : HNSW_DEFAULT_EF_C) {
-    hnsw.setEf(params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
 }
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }
