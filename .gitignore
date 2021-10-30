@@ -49,3 +49,4 @@ tests/flow/logs/
 *.egg*
 dist/**
 poetry.lock
+venv/
