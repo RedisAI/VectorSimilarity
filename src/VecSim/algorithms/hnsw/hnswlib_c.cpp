@@ -1,6 +1,5 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/hnsw/hnswlib.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/query_result_struct.h"
@@ -12,59 +11,29 @@
 using namespace std;
 using namespace hnswlib;
 
-struct HNSWIndex {
-    HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
-              size_t M = HNSW_DEFAULT_M, size_t ef_construction = HNSW_DEFAULT_EF_C,
-              size_t ef_runtime = HNSW_DEFAULT_EF_RT);
-
-    VecSimIndex base;
-    unique_ptr<SpaceInterface<float>> space;
-    HierarchicalNSW<float> hnsw;
-};
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-int HNSWLib_AddVector(VecSimIndex *index, const void *vector_data, size_t id) {
+int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
-        auto idx = reinterpret_cast<HNSWIndex *>(index);
-        auto &hnsw = idx->hnsw;
-        if (hnsw.getIndexSize() == hnsw.getIndexCapacity()) {
-            hnsw.resizeIndex(hnsw.getIndexCapacity() * 2);
+        if (hnsw.getIndexSize() == this->hnsw.getIndexCapacity()) {
+            this->hnsw.resizeIndex(this->hnsw.getIndexCapacity() * 2);
         }
-        hnsw.addPoint(vector_data, id);
+        this->hnsw.addPoint(vector_data, id);
         return true;
     } catch (...) {
         return false;
     }
 }
 
-int HNSWLib_DeleteVector(VecSimIndex *index, size_t id) {
-    auto idx = reinterpret_cast<HNSWIndex *>(index);
-    auto &hnsw = idx->hnsw;
-    return hnsw.removePoint(id);
-}
+int HNSWIndex::deleteVector(size_t id) { return this->hnsw.removePoint(id); }
 
-size_t HNSWLib_Size(VecSimIndex *index) {
-    auto idx = reinterpret_cast<HNSWIndex *>(index);
-    auto &hnsw = idx->hnsw;
-    return hnsw.getIndexSize();
-}
+size_t HNSWIndex::indexSize() { return this->hnsw.getIndexSize(); }
 
-void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef) {
-    auto idx = reinterpret_cast<HNSWIndex *>(index);
-    auto &hnsw = idx->hnsw;
-    hnsw.setEf(ef);
-}
+void HNSWIndex::setEf(size_t ef) { this->hnsw.setEf(ef); }
 
-VecSimQueryResult_List HNSWLib_TopKQuery(VecSimIndex *index, const void *query_data, size_t k,
-                                         VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
+                                            VecSimQueryParams *queryParams) {
     try {
-        auto idx = reinterpret_cast<HNSWIndex *>(index);
-        auto &hnsw = idx->hnsw;
         // Get original efRuntime and store it.
-        size_t originalEF = hnsw.getEf();
+        size_t originalEF = this->hnsw.getEf();
 
         if (queryParams) {
             if (queryParams->hnswRuntimeParams.efRuntime != 0) {
@@ -89,65 +58,31 @@ VecSimQueryResult_List HNSWLib_TopKQuery(VecSimIndex *index, const void *query_d
     }
 }
 
-void HNSWLib_Free(VecSimIndex *index) {
-    try {
-        auto idx = reinterpret_cast<HNSWIndex *>(index);
-        delete idx;
-    } catch (...) {
-    }
-}
-
-VecSimIndex *HNSWLib_New(const VecSimParams *params) {
-    try {
-        auto p = new HNSWIndex(
-            params->type, params->metric, params->size, params->hnswParams.initialCapacity,
-            params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
-            params->hnswParams.efConstruction ? params->hnswParams.efConstruction
-                                              : HNSW_DEFAULT_EF_C,
-            params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
-        return &p->base;
-    } catch (...) {
-        return NULL;
-    }
-}
-
-VecSimIndexInfo HNSWLib_Info(VecSimIndex *index) {
-    auto idx = reinterpret_cast<HNSWIndex *>(index);
-    auto &hnsw = idx->hnsw;
+VecSimIndexInfo HNSWIndex::info() {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
-    info.d = index->dim;
-    info.type = index->vecType;
-    info.metric = index->metric;
-    info.hnswInfo.M = hnsw.getM();
-    info.hnswInfo.efConstruction = hnsw.getEfConstruction();
-    info.hnswInfo.efRuntime = hnsw.getEf();
-    info.hnswInfo.indexSize = hnsw.getIndexSize();
-    info.hnswInfo.levels = hnsw.getMaxLevel();
+    info.d = this->dim;
+    info.type = this->vecType;
+    info.metric = this->metric;
+    info.hnswInfo.M = this->hnsw.getM();
+    info.hnswInfo.efConstruction = this->hnsw.getEfConstruction();
+    info.hnswInfo.efRuntime = this->hnsw.getEf();
+    info.hnswInfo.indexSize = this->hnsw.getIndexSize();
+    info.hnswInfo.levels = this->hnsw.getMaxLevel();
     return info;
 }
 
-#ifdef __cplusplus
+HNSWIndex::HNSWIndex(const VecSimParams *params)
+    : VecSimIndex(params),
+      space(params->metric == VecSimMetric_L2
+                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
+                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))),
+      hnsw(space.get(), params->hnswParams.initialCapacity,
+           params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
+           params->hnswParams.efConstruction ? params->hnswParams.efConstruction
+                                             : HNSW_DEFAULT_EF_C) {
+    hnsw.setEf(params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
 }
-#endif
 
-HNSWIndex::HNSWIndex(VecSimType vectype, VecSimMetric metric, size_t dim, size_t max_elements,
-                     size_t M, size_t ef_construction, size_t ef_runtime)
-    : space(metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(dim))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(dim))),
-      hnsw(space.get(), max_elements, M, ef_construction) {
-    hnsw.setEf(ef_runtime);
-    base = VecSimIndex{.AddFn = HNSWLib_AddVector,
-                       .DeleteFn = HNSWLib_DeleteVector,
-                       .SizeFn = HNSWLib_Size,
-                       .TopKQueryFn = HNSWLib_TopKQuery,
-                       .DistanceQueryFn = NULL,
-                       .ClearDeletedFn = NULL,
-                       .FreeFn = HNSWLib_Free,
-                       .InfoFn = HNSWLib_Info,
-                       .dim = dim,
-                       .vecType = vectype,
-                       .metric = metric};
-}
+VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }

@@ -1,34 +1,24 @@
 
 #pragma once
 
-#include "VecSim/vec_sim.h"
-#include <cstdlib>
+#include "VecSim/vec_sim_index.h"
+#include "VecSim/algorithms/hnsw/hnswlib.h"
+#include <memory>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+class HNSWIndex : public VecSimIndex {
+public:
+    HNSWIndex(const VecSimParams *params);
+    virtual int addVector(const void *vector_data, size_t label) override;
+    virtual int deleteVector(size_t id) override;
+    virtual size_t indexSize() override;
+    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
+                                             VecSimQueryParams *queryParams) override;
+    virtual VecSimIndexInfo info() override;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
 
-struct HNSWIndex;
+    void setEf(size_t ef);
 
-VecSimIndex *HNSWLib_New(const VecSimParams *params);
-
-void HNSWLib_Free(VecSimIndex *index);
-
-int HNSWLib_AddVector(VecSimIndex *index, const void *vector_data, size_t id);
-
-int HNSWLib_DeleteVector(VecSimIndex *index, size_t id);
-
-size_t HNSWLib_Size(VecSimIndex *index);
-
-void HNSWLib_SetQueryRuntimeEf(VecSimIndex *index, size_t ef);
-
-VecSimQueryResult_List HNSWLib_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                         VecSimQueryParams *queryParams);
-
-// TODO?
-VecSimQueryResult_List HNSWLib_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                             float distance, VecSimQueryParams queryParams);
-
-#ifdef __cplusplus
-}
-#endif
+private:
+    std::unique_ptr<SpaceInterface<float>> space;
+    hnswlib::HierarchicalNSW<float> hnsw;
+};
