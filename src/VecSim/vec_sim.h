@@ -71,10 +71,6 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
                                              VecSimQueryParams *queryParams,
                                              VecSimQueryResult_Order);
 
-// TODO?
-VecSimQueryResult_List VecSimIndex_DistanceQuery(VecSimIndex *index, const void *queryBlob,
-                                                 float distance, VecSimQueryParams *queryParams);
-
 /**
  * @brief Return index information.
  * @param index the index to return its info.
