@@ -1,6 +1,7 @@
-#include "batch_iterator.h"
+#include "VecSim/batch_iterator.h"
 
 #include <vector>
+#include <limits>
 
 class BF_BatchIterator : public VecSimBatchIterator {
 
@@ -9,11 +10,7 @@ class BF_BatchIterator : public VecSimBatchIterator {
     std::vector<std::pair<float, size_t>> scores;
 
 public:
-    BF_BatchIterator(const void *query_vector, const VecSimIndex *index) :
-            VecSimBatchIterator(query_vector, index) {
-        id = 0;
-        lower_bound = -INF;
-    }
+    BF_BatchIterator(const void *query_vector, const VecSimIndex *index);
 
     VecSimQueryResult_List getNextResults(size_t n_res) override;
 

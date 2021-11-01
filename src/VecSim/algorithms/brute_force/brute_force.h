@@ -7,6 +7,18 @@
 #include <set>
 #include <vector>
 #include <memory>
+#include <queue>
+
+// TODO: unify this with HNSW
+struct CompareByFirst {
+    constexpr bool operator()(std::pair<float, labelType> const &a,
+                              std::pair<float, labelType> const &b) const noexcept {
+        return a.first < b.first;
+    }
+};
+
+using CandidatesHeap = std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float , labelType>>,
+CompareByFirst>;
 
 class BruteForceIndex : public VecSimIndex {
 public:
@@ -14,6 +26,8 @@ public:
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() override;
+    CandidatesHeap heapBasedSearch(float lowerBound, float upperBound,
+                                                     const void *queryBlob, size_t nRes);
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;

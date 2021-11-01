@@ -41,7 +41,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/vec_sim.cpp
 	VecSim/query_results.cpp
 	VecSim/query_result_struct.cpp
-	VecSim/bf_batch_iterator.cpp
+        VecSim/algorithms/brute_force/bf_batch_iterator.cpp
 	VecSim/utils/vec_utils.cpp)
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
