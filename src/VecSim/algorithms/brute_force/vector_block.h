@@ -49,7 +49,7 @@ public:
         this->members[index] = member;
     }
 
-    std::vector<float> heapBasedSearch(DISTFUNC<float> DistFunc, float lowerBound, float upperBound, const void *queryBlob, size_t nRes,
+    std::vector<float> heapBasedSearch(DISTFUNC<float> DistFunc, float &lowerBound, float &upperBound, const void *queryBlob, size_t nRes,
                                        CandidatesHeap &candidates);
     virtual ~VectorBlock();
 

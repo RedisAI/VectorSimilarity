@@ -146,8 +146,8 @@ size_t BruteForceIndex::indexSize() { return this->count; }
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
-    float upperBound = std::numeric_limits<float>::min();
-    float lowerBound = std::numeric_limits<float>::max();
+    float upperBound = std::numeric_limits<float>::lowest();
+    float lowerBound = upperBound;
     CandidatesHeap TopCandidates;
     for (auto vectorBlock : this->vectorBlocks) {
         vectorBlock->heapBasedSearch(this->dist_func, lowerBound, upperBound, queryBlob, k, TopCandidates);
