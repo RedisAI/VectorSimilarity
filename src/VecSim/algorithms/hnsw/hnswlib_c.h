@@ -7,7 +7,7 @@
 
 class HNSWIndex : public VecSimIndex {
 public:
-    HNSWIndex(const VecSimParams *params);
+    HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() override;

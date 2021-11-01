@@ -13,12 +13,12 @@ using namespace hnswlib;
 
 /******************** Ctor / Dtor **************/
 
-HNSWIndex::HNSWIndex(const VecSimParams *params)
-    : VecSimIndex(params),
+HNSWIndex::HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(params, allocator),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
                 : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))),
-      hnsw(space.get(), params->hnswParams.initialCapacity,
+      hnsw(space.get(), params->hnswParams.initialCapacity, allocator,
            params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
            params->hnswParams.efConstruction ? params->hnswParams.efConstruction
                                              : HNSW_DEFAULT_EF_C) {

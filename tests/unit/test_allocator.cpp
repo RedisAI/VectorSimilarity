@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "VecSim/vecsim.h"
+#include "VecSim/vec_sim.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/memory/vecsim_base.h"

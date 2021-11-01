@@ -10,7 +10,7 @@
 
 class BruteForceIndex : public VecSimIndex {
 public:
-    BruteForceIndex(const VecSimParams *params);
+    BruteForceIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() override;
@@ -23,10 +23,13 @@ public:
 
 private:
     void updateVector(idType id, const void *vector_data);
-    std::unordered_map<labelType, idType> labelToIdLookup;
-    std::vector<VectorBlockMember *> idToVectorBlockMemberMapping;
-    std::set<idType> deletedIds;
-    std::vector<VectorBlock *> vectorBlocks;
+    std::unordered_map<labelType, idType, std::hash<labelType>, std::equal_to<labelType>,
+                       VecsimSTLAllocator<std::pair<const labelType, idType>>>
+        labelToIdLookup;
+    std::vector<VectorBlockMember *, VecsimSTLAllocator<VectorBlockMember *>>
+        idToVectorBlockMemberMapping;
+    std::set<idType, std::less<idType>, VecsimSTLAllocator<idType>> deletedIds;
+    std::vector<VectorBlock *, VecsimSTLAllocator<VectorBlock *>> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;
