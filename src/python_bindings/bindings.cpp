@@ -80,7 +80,10 @@ public:
         this->index = VecSimIndex_New(&params);
     }
 
-    void setDefaultEf(size_t ef) { HNSWLib_SetQueryRuntimeEf(index, ef); }
+    void setDefaultEf(size_t ef) {
+        HNSWIndex *hnsw = reinterpret_cast<HNSWIndex *>(index);
+        hnsw->setEf(ef);
+    }
 };
 
 class PyBFIndex : public PyVecSimIndex {

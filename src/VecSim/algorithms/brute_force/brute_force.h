@@ -1,13 +1,16 @@
-
 #pragma once
 
+#include "vector_block.h"
 #include "VecSim/vec_sim_index.h"
-#include "VecSim/algorithms/hnsw/hnswlib.h"
+#include "VecSim/spaces/space_interface.h"
+#include <unordered_map>
+#include <set>
+#include <vector>
 #include <memory>
 
-class HNSWIndex : public VecSimIndex {
+class BruteForceIndex : public VecSimIndex {
 public:
-    HNSWIndex(const VecSimParams *params);
+    BruteForceIndex(const VecSimParams *params);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() override;
@@ -16,9 +19,16 @@ public:
     virtual VecSimIndexInfo info() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
 
-    void setEf(size_t ef);
+    virtual ~BruteForceIndex();
 
 private:
+    void updateVector(idType id, const void *vector_data);
+    std::unordered_map<labelType, idType> labelToIdLookup;
+    std::vector<VectorBlockMember *> idToVectorBlockMemberMapping;
+    std::set<idType> deletedIds;
+    std::vector<VectorBlock *> vectorBlocks;
+    size_t vectorBlockSize;
+    idType count;
     std::unique_ptr<SpaceInterface<float>> space;
-    hnswlib::HierarchicalNSW<float> hnsw;
+    DISTFUNC<float> dist_func;
 };
