@@ -493,7 +493,7 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
                            .type = VecSimType_FLOAT32,
                            .size = dim,
                            .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+                           .algo = VecSimAlgo_HNSWLIB};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will

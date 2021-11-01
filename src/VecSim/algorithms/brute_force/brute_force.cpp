@@ -143,54 +143,20 @@ int BruteForceIndex::deleteVector(size_t label) {
 
 size_t BruteForceIndex::indexSize() { return this->count; }
 
-void BruteForceIndex::heapBasedSearch(float lowerBound, float upperBound,
-                                      const void *queryBlob, size_t nRes, CandidatesHeap &candidates, const vector<float>& scores) {
-    CandidatesHeap candidates;
-    for (auto vectorBlock : this->vectorBlocks) {
-        float scores[this->vectorBlockSize];
-        for (size_t i = 0; i < vectorBlock->getSize(); i++) {
-            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &dim);
-        }
-        size_t vec_count = vectorBlock->getSize();
-        for (int i = 0; i < vec_count; i++) {
-            if (scores[i] <= lowerBound) {
-                continue;
-            }
-            if (candidates.size() < nRes) {
-                labelType label = vectorBlock->getMember(i)->label;
-                candidates.emplace(scores[i], label);
-                upperBound = candidates.top().first;
-            } else {
-                if (scores[i] >= upperBound) {
-                    continue;
-                } else {
-                    labelType label = vectorBlock->getMember(i)->label;
-                    candidates.emplace(scores[i], label);
-                    candidates.pop();
-                    upperBound = candidates.top().first;
-                }
-            }
-        }
-    }
-    return candidates;
-}
-
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
     float upperBound = std::numeric_limits<float>::min();
-    CandidatesHeap candidates;
+    float lowerBound = std::numeric_limits<float>::max();
+    CandidatesHeap TopCandidates;
     for (auto vectorBlock : this->vectorBlocks) {
-        float scores[this->vectorBlockSize];
-        for (size_t i = 0; i < vectorBlock->getSize(); i++) {
-            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &dim);
-        }
-
-    auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
-    for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(results[i], knn_res.top().second);
-        VecSimQueryResult_SetScore(results[i], knn_res.top().first);
-        knn_res.pop();
+        vectorBlock->heapBasedSearch(this->dist_func, lowerBound, upperBound, queryBlob, k, TopCandidates);
+    }
+    auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
+    for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
+        VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
+        VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
+        TopCandidates.pop();
     }
     return results;
 }

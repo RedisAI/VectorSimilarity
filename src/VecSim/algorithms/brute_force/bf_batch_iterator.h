@@ -18,5 +18,5 @@ public:
 
     void reset() override;
 
-    ~BF_BatchIterator() = default;
+    ~BF_BatchIterator() override = default;
 };

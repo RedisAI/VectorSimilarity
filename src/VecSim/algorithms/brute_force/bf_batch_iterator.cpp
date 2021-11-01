@@ -10,6 +10,14 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res) {
 
 }
 
+bool BF_BatchIterator::isDepleted() {
+    return false;
+}
+
+void BF_BatchIterator::reset() {
+
+}
+
 
 
 

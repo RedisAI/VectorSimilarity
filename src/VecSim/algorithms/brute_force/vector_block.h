@@ -1,5 +1,9 @@
 #pragma once
 #include <stddef.h>
+#include <vector>
+#include <queue>
+
+#include "VecSim/spaces/space_interface.h"
 
 typedef size_t labelType;
 typedef size_t idType;
@@ -7,6 +11,17 @@ typedef size_t idType;
 // Pre declaration
 
 struct VectorBlock;
+
+// TODO: unify this with HNSW
+struct CompareByFirst {
+    constexpr bool operator()(std::pair<float, labelType> const &a,
+                              std::pair<float, labelType> const &b) const noexcept {
+        return a.first < b.first;
+    }
+};
+
+using CandidatesHeap = std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float , labelType>>,
+        CompareByFirst>;
 
 struct VectorBlockMember {
 public:
@@ -34,6 +49,8 @@ public:
         this->members[index] = member;
     }
 
+    std::vector<float> heapBasedSearch(DISTFUNC<float> DistFunc, float lowerBound, float upperBound, const void *queryBlob, size_t nRes,
+                                       CandidatesHeap &candidates);
     virtual ~VectorBlock();
 
 private:
