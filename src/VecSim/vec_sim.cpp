@@ -12,10 +12,11 @@ int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult 
     return res1->id > res2->id ? 1 : res1->id < res2->id ? -1 : 0;
 }
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
+    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
     if (params->algo == VecSimAlgo_HNSWLIB) {
-        return new HNSWIndex(params);
+        return new (allocator) HNSWIndex(params, allocator);
     }
-    return new BruteForceIndex(params);
+    return new (allocator) BruteForceIndex(params, allocator);
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {

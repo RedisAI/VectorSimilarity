@@ -23,10 +23,14 @@ struct CompareByFirst {
 };
 
 /******************** Ctor / Dtor **************/
-BruteForceIndex::BruteForceIndex(const VecSimParams *params)
-    : VecSimIndex(params), vectorBlockSize(params->bfParams.blockSize ? params->bfParams.blockSize
-                                                                      : BF_DEFAULT_BLOCK_SIZE),
-      count(0),
+BruteForceIndex::BruteForceIndex(const VecSimParams *params,
+                                 std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(params, allocator),
+      vectorBlockSize(params->bfParams.blockSize ? params->bfParams.blockSize
+                                                 : BF_DEFAULT_BLOCK_SIZE),
+      count(0), labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator),
+      deletedIds(allocator), vectorBlocks(allocator),
+
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
                 : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))) {

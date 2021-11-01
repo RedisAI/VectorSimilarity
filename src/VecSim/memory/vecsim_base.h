@@ -4,7 +4,7 @@
 
 struct VecsimBaseObject {
 
-private:
+protected:
     std::shared_ptr<VecSimAllocator> allocator;
 
 public:

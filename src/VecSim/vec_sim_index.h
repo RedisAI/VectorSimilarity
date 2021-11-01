@@ -2,12 +2,13 @@
 #include "vec_sim_common.h"
 #include "query_results.h"
 #include <stddef.h>
+#include "VecSim/memory/vecsim_base.h"
 
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
-class VecSimIndex {
+class VecSimIndex : public VecsimBaseObject {
 protected:
     size_t dim;
     VecSimType vecType;
@@ -20,8 +21,9 @@ public:
      * @param params VecSimParams struct, the base object takes the vector dimensions, type and
      * distance metric.
      */
-    VecSimIndex(const VecSimParams *params)
-        : dim(params->size), vecType(params->type), metric(params->metric) {}
+    VecSimIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator), dim(params->size), vecType(params->type),
+          metric(params->metric) {}
 
     /**
      * @brief Destroy the Vec Sim Index object
