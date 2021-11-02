@@ -202,6 +202,7 @@ VecSimIndexInfo BruteForceIndex::info() {
     info.metric = this->metric;
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
+    info.memory = this->allocator->getAllocationSize();
     return info;
 }
 

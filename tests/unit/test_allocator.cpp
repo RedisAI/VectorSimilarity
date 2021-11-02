@@ -81,6 +81,10 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     float vec[128]={};
     BruteForceIndex* bfIndex = new (allocator)BruteForceIndex(&params, allocator);
     ASSERT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator)+sizeof(BruteForceIndex));
+    VecSimIndexInfo info = bfIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
+
+
 
     bfIndex->addVector(vec, 1);
     size_t allocations = 0;
@@ -94,6 +98,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     allocations+= sizeof(VectorBlock*); // Keep the allocated vector block
     allocations+= sizeof(std::pair<labelType, idType>); //keep the mapping
     ASSERT_GE(allocator->getAllocationSize(), allocations);
+    info = bfIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
     bfIndex->addVector(vec, 2);
     allocations+=2*sizeof(VectorBlockMember*); // resize idToVectorBlockMemberMapping to 4
@@ -104,6 +110,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     allocations+= sizeof(VectorBlock*); // Keep the allocated vector block
     allocations+= sizeof(std::pair<labelType, idType>); //keep the mapping
     ASSERT_GE(allocator->getAllocationSize(), allocations);
+    info = bfIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
     bfIndex->deleteVector(2);
     allocations-= sizeof(VectorBlock); // New vector block
@@ -111,6 +119,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     allocations-= sizeof(VectorBlockMember*); // Pointer for the new vector block member
     allocations-= sizeof(float)*dim; // keep the vector in the vector block
     ASSERT_GE(allocator->getAllocationSize(), allocations);
+    info = bfIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
     bfIndex->deleteVector(1);
     allocations-= sizeof(VectorBlock); // New vector block
@@ -118,8 +128,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     allocations-= sizeof(VectorBlockMember*); // Pointer for the new vector block member
     allocations-= sizeof(float)*dim; // keep the vector in the vector block
     ASSERT_GE(allocator->getAllocationSize(), allocations);
-
-
-
+    info = bfIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     
 }
