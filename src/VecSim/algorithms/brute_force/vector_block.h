@@ -9,7 +9,7 @@ typedef size_t idType;
 
 struct VectorBlock;
 
-struct VectorBlockMember: public VecsimBaseObject {
+struct VectorBlockMember : public VecsimBaseObject {
 public:
     VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator);
     size_t index;
@@ -17,7 +17,7 @@ public:
     labelType label;
 };
 
-struct VectorBlock :public VecsimBaseObject{
+struct VectorBlock : public VecsimBaseObject {
 
 public:
     VectorBlock(size_t blockSize, size_t vectorSize, std::shared_ptr<VecSimAllocator> allocator);

@@ -10,7 +10,7 @@ class InnerProductSpace : public SpaceInterface<float> {
     size_t dim_;
 
 public:
-    explicit InnerProductSpace(size_t dim);
+    explicit InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator> allocator);
     ~InnerProductSpace();
 
     size_t get_data_size() const;

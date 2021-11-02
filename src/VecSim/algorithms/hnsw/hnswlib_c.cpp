@@ -16,8 +16,8 @@ using namespace hnswlib;
 HNSWIndex::HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(params, allocator),
       space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))),
+                ? static_cast<SpaceInterface<float> *>(new (allocator)L2Space(params->size, allocator))
+                : static_cast<SpaceInterface<float> *>(new (allocator)InnerProductSpace(params->size, allocator))),
       hnsw(space.get(), params->hnswParams.initialCapacity, allocator,
            params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
            params->hnswParams.efConstruction ? params->hnswParams.efConstruction

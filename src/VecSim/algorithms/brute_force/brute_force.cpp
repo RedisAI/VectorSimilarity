@@ -32,8 +32,8 @@ BruteForceIndex::BruteForceIndex(const VecSimParams *params,
       deletedIds(allocator), vectorBlocks(allocator),
 
       space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))) {
+                ? static_cast<SpaceInterface<float> *>(new (allocator)L2Space(params->size, allocator))
+                : static_cast<SpaceInterface<float> *>(new (allocator)InnerProductSpace(params->size, allocator))) {
     this->idToVectorBlockMemberMapping.resize(params->bfParams.initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
@@ -85,20 +85,22 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     VectorBlock *vectorBlock;
     if (this->vectorBlocks.size() == 0) {
         // No vector blocks, create new one.
-        vectorBlock = new (this->allocator)VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+        vectorBlock =
+            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
         this->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
         vectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
         if (vectorBlock->getSize() == this->vectorBlockSize) {
             // Last vector block is full, create a new one.
-            vectorBlock = new (this->allocator)VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+            vectorBlock = new (this->allocator)
+                VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
             this->vectorBlocks.push_back(vectorBlock);
         }
     }
 
     // Create vector block membership.
-    VectorBlockMember *vectorBlockMember = new (this->allocator)VectorBlockMember(this->allocator);
+    VectorBlockMember *vectorBlockMember = new (this->allocator) VectorBlockMember(this->allocator);
     this->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
     vectorBlock->addVector(vectorBlockMember, vector_data);
