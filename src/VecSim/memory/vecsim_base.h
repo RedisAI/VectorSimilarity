@@ -21,4 +21,6 @@ public:
     void operator delete(void *p, size_t size);
     void operator delete[](void *p, size_t size);
     std::shared_ptr<VecSimAllocator> getAllocator();
+
+    virtual ~VecsimBaseObject(){}
 };

@@ -1,17 +1,20 @@
 #include "vector_block.h"
+#include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
 
-VectorBlock::VectorBlock(size_t blockSize, size_t vectorSize) : dim(vectorSize), size(0) {
-    this->members = new VectorBlockMember *[blockSize];
-    this->vectors = new float[blockSize * vectorSize];
+VectorBlockMember::VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator) {}
+
+VectorBlock::VectorBlock(size_t blockSize, size_t vectorSize, std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator),  dim(vectorSize), size(0), blockSize(blockSize){
+    this->members = (VectorBlockMember **)this->allocator->allocate(sizeof(VectorBlockMember *)*blockSize);
+    this->vectors = (float*)this->allocator->allocate(sizeof(float)* blockSize * vectorSize);
 }
 
 VectorBlock::~VectorBlock() {
     for (size_t i = 0; i < this->size; i++) {
         delete members[i];
     }
-    delete[] members;
-    delete[] vectors;
+    this->allocator->deallocate(members, sizeof(VectorBlockMember *)*blockSize);
+    this->allocator->deallocate(vectors, sizeof(float)* blockSize * dim);
 }
 
 void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *vectorData) {

@@ -85,20 +85,20 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     VectorBlock *vectorBlock;
     if (this->vectorBlocks.size() == 0) {
         // No vector blocks, create new one.
-        vectorBlock = new VectorBlock(this->vectorBlockSize, this->dim);
+        vectorBlock = new (this->allocator)VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
         this->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
         vectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
         if (vectorBlock->getSize() == this->vectorBlockSize) {
             // Last vector block is full, create a new one.
-            vectorBlock = new VectorBlock(this->vectorBlockSize, this->dim);
+            vectorBlock = new (this->allocator)VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
             this->vectorBlocks.push_back(vectorBlock);
         }
     }
 
     // Create vector block membership.
-    VectorBlockMember *vectorBlockMember = new VectorBlockMember();
+    VectorBlockMember *vectorBlockMember = new (this->allocator)VectorBlockMember(this->allocator);
     this->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
     vectorBlock->addVector(vectorBlockMember, vector_data);

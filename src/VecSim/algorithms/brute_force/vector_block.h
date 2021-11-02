@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h>
+#include "VecSim/memory/vecsim_base.h"
 
 typedef size_t labelType;
 typedef size_t idType;
@@ -8,17 +9,18 @@ typedef size_t idType;
 
 struct VectorBlock;
 
-struct VectorBlockMember {
+struct VectorBlockMember: public VecsimBaseObject {
 public:
+    VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator);
     size_t index;
     VectorBlock *block;
     labelType label;
 };
 
-struct VectorBlock {
+struct VectorBlock :public VecsimBaseObject{
 
 public:
-    VectorBlock(size_t blockSize, size_t vectorSize);
+    VectorBlock(size_t blockSize, size_t vectorSize, std::shared_ptr<VecSimAllocator> allocator);
 
     void addVector(VectorBlockMember *vectorBlockMember, const void *vectorData);
 
@@ -39,6 +41,7 @@ public:
 private:
     size_t dim;
     size_t size;
+    size_t blockSize;
     VectorBlockMember **members;
     float *vectors;
 };

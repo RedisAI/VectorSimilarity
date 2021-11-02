@@ -8,9 +8,7 @@ void *VecSimAllocator::allocate(size_t size) {
 }
 
 void VecSimAllocator::deallocate(void *p, size_t size) {
-    if (this->allocated) {
-        *this->allocated.get() -= size;
-    }
+    *this->allocated.get() -= size;
     vecsim_free(p);
 }
 

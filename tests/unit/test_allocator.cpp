@@ -2,7 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
-#include "VecSim/memory/vecsim_base.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 
 class AllocatorTest : public ::testing::Test {
 protected:
@@ -43,30 +43,83 @@ public:
 };
 
 TEST_F(AllocatorTest, test_simple_object) {
-    VecSimAllocator allocator;
-    std::shared_ptr<VecSimAllocator> allocator_ptr = std::make_shared<VecSimAllocator>(allocator);
-    SimpleObject *obj = new (allocator_ptr) SimpleObject(allocator_ptr);
-    ASSERT_EQ(allocator_ptr->getAllocationSize(), sizeof(SimpleObject) + sizeof(VecSimAllocator));
+    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    SimpleObject *obj = new (allocator) SimpleObject(allocator);
+    ASSERT_EQ(allocator->getAllocationSize(), sizeof(SimpleObject) + sizeof(VecSimAllocator));
     delete obj;
-    ASSERT_EQ(allocator_ptr->getAllocationSize(), sizeof(VecSimAllocator));
+    ASSERT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator));
 }
 
 TEST_F(AllocatorTest, test_object_with_stl) {
-    VecSimAllocator allocator;
-    std::shared_ptr<VecSimAllocator> allocator_ptr = std::make_shared<VecSimAllocator>(allocator);
-    ObjectWithSTL *obj = new (allocator_ptr) ObjectWithSTL(allocator_ptr);
-    ASSERT_EQ(allocator.getAllocationSize(), sizeof(ObjectWithSTL) + sizeof(VecSimAllocator));
+    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    ObjectWithSTL *obj = new (allocator) ObjectWithSTL(allocator);
+    ASSERT_EQ(allocator->getAllocationSize(), sizeof(ObjectWithSTL) + sizeof(VecSimAllocator));
     obj->test_vec.push_back(1);
-    ASSERT_EQ(allocator.getAllocationSize(),
+    ASSERT_EQ(allocator->getAllocationSize(),
               sizeof(ObjectWithSTL) + sizeof(VecSimAllocator) + sizeof(int));
 }
 
 TEST_F(AllocatorTest, test_nested_object) {
-    VecSimAllocator allocator;
-    std::shared_ptr<VecSimAllocator> allocator_ptr = std::make_shared<VecSimAllocator>(allocator);
-    NestedObject *obj = new (allocator_ptr) NestedObject(allocator_ptr);
-    ASSERT_EQ(allocator.getAllocationSize(), sizeof(NestedObject) + sizeof(VecSimAllocator));
+    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    NestedObject *obj = new (allocator) NestedObject(allocator);
+    ASSERT_EQ(allocator->getAllocationSize(), sizeof(NestedObject) + sizeof(VecSimAllocator));
     obj->stl_object.test_vec.push_back(1);
-    ASSERT_EQ(allocator.getAllocationSize(),
+    ASSERT_EQ(allocator->getAllocationSize(),
               sizeof(NestedObject) + sizeof(VecSimAllocator) + sizeof(int));
+}
+
+TEST_F(AllocatorTest, test_bf_index_block_size_1) {
+    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+        // Create only the minimal struct.
+        size_t dim = 128;
+        VecSimParams params = {.bfParams = {.initialCapacity = 0, .blockSize = 1},
+                           .type = VecSimType_FLOAT32,
+                           .size = dim,
+                           .metric = VecSimMetric_IP,
+                           .algo = VecSimAlgo_BF};
+    
+    float vec[128]={};
+    BruteForceIndex* bfIndex = new (allocator)BruteForceIndex(&params, allocator);
+    ASSERT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator)+sizeof(BruteForceIndex));
+
+    bfIndex->addVector(vec, 1);
+    size_t allocations = 0;
+    allocations+=sizeof(VecSimAllocator); // Create allocator
+    allocations+=sizeof(BruteForceIndex); // Create index struct
+    allocations+=2*sizeof(VectorBlockMember*); // resize idToVectorBlockMemberMapping to 2
+    allocations+= sizeof(VectorBlock); // New vector block
+    allocations+=sizeof(VectorBlockMember);
+    allocations+= sizeof(VectorBlockMember*); // Pointer for the new vector block member
+    allocations+= sizeof(float)*dim; // keep the vector in the vector block
+    allocations+= sizeof(VectorBlock*); // Keep the allocated vector block
+    allocations+= sizeof(std::pair<labelType, idType>); //keep the mapping
+    ASSERT_GE(allocator->getAllocationSize(), allocations);
+
+    bfIndex->addVector(vec, 2);
+    allocations+=2*sizeof(VectorBlockMember*); // resize idToVectorBlockMemberMapping to 4
+    allocations+= sizeof(VectorBlock); // New vector block
+    allocations+=sizeof(VectorBlockMember);
+    allocations+= sizeof(VectorBlockMember*); // Pointer for the new vector block member
+    allocations+= sizeof(float)*dim; // keep the vector in the vector block
+    allocations+= sizeof(VectorBlock*); // Keep the allocated vector block
+    allocations+= sizeof(std::pair<labelType, idType>); //keep the mapping
+    ASSERT_GE(allocator->getAllocationSize(), allocations);
+
+    bfIndex->deleteVector(2);
+    allocations-= sizeof(VectorBlock); // New vector block
+    allocations-=sizeof(VectorBlockMember);
+    allocations-= sizeof(VectorBlockMember*); // Pointer for the new vector block member
+    allocations-= sizeof(float)*dim; // keep the vector in the vector block
+    ASSERT_GE(allocator->getAllocationSize(), allocations);
+
+    bfIndex->deleteVector(1);
+    allocations-= sizeof(VectorBlock); // New vector block
+    allocations-=sizeof(VectorBlockMember);
+    allocations-= sizeof(VectorBlockMember*); // Pointer for the new vector block member
+    allocations-= sizeof(float)*dim; // keep the vector in the vector block
+    ASSERT_GE(allocator->getAllocationSize(), allocations);
+
+
+
+    
 }
