@@ -439,7 +439,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
     size_t d = 4;
-    VecSimParams params = {.hnswParams = {.initialCapacity = 200},
+    VecSimParams params = {.hnswParams = {.initialCapacity = 0},
                            .type = VecSimType_FLOAT32,
                            .size = d,
                            .metric = VecSimMetric_L2,
@@ -514,33 +514,5 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
         }
     };
     runTopKSearchTest(index, "abcdefgh", k, verify_res);
-    VecSimIndex_Free(index);
-}
-
-TEST_F(HNSWLibTest, test_empty_index) {
-    size_t n = 4;
-    size_t k = 4;
-    size_t dim = 2;
-    VecSimParams params = {.hnswParams = {.initialCapacity = 0},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_HNSWLIB};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    float vec[dim];
-    // Add 2 vectors, into 2 separated blocks.
-    for (int i = 0; i < n; i++) {
-        VecSimIndex_AddVector(index, vec, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-    // After deleting the first vector, the second one will be moved to the first block
-    for (size_t i = 0; i < n; i++) {
-        VecSimIndex_DeleteVector(index, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
     VecSimIndex_Free(index);
 }
