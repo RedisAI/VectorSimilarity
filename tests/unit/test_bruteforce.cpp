@@ -534,3 +534,46 @@ TEST_F(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(BruteForceTest, brute_force_btach_iterator) {
+    size_t dim = 4;
+    size_t n = 100;
+
+    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 5},
+            .type = VecSimType_FLOAT32,
+            .size = dim,
+            .metric = VecSimMetric_L2,
+            .algo = VecSimAlgo_BF};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {100, 100, 100, 100};
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    size_t iteration_num = 0;
+
+    // expect to run 10 iteration, get 10 results every time
+    size_t n_res = 10;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::set<size_t> expected_ids;
+        for (size_t i = 1; i <= 10; i++) {
+            expected_ids.insert(n-iteration_num*10-i);
+        }
+        auto verify_res = [&](int id, float score, size_t index) {
+            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+            expected_ids.erase(id);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, 10);
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}

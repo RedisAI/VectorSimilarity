@@ -15,12 +15,16 @@ public:
     BruteForceIndex(const VecSimParams *params);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
-    virtual size_t indexSize() override;
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) override;
+    virtual size_t indexSize() const;
+    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
-
+    inline std::vector<VectorBlock *> getVectorBlocks() const {
+        return vectorBlocks;
+    }
+    inline DISTFUNC<float> distFunc() const {
+        return dist_func;
+    }
     virtual ~BruteForceIndex();
 
 private:

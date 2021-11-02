@@ -19,13 +19,13 @@ typedef struct VecSimQueryResult VecSimQueryResult;
  * @brief Get the id of the result vector. If item is nullptr, return INVALID_ID (defined as the
  * -1).
  */
-int64_t VecSimQueryResult_GetId(VecSimQueryResult *item);
+int64_t VecSimQueryResult_GetId(const VecSimQueryResult *item);
 
 /**
  * @brief Get the score of the result vector. If item is nullptr, return INVALID_SCORE (defined as
  * the minimal value of float).
  */
-float VecSimQueryResult_GetScore(VecSimQueryResult *item);
+float VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 
 /**
  * @brief An opaque object from which results can be obtained via iterator.
@@ -75,13 +75,6 @@ void VecSimQueryResult_Free(VecSimQueryResult_List results);
  */
 typedef struct VecSimBatchIterator VecSimBatchIterator;
 
-// Abstract batch iterator methods
-typedef VecSimQueryResult_List *(*BatchIterator_Next)(VecSimBatchIterator *iterator,
-                                                      size_t n_results);
-typedef bool (*BatchIterator_HasNext)(VecSimBatchIterator *iterator);
-typedef void (*BatchIterator_Free)(VecSimBatchIterator *iterator);
-typedef void *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
-
 /**
  * @brief Run TopKQuery over the underling index of the given iterator using BatchIterator_Next
  * method, and return n_results new results.
@@ -91,7 +84,7 @@ typedef void *(*BatchIterator_Reset)(VecSimBatchIterator *iterator);
  * @return List of (at most) new n_results vectors which are the "nearest neighbours" to the
  * underline query vector in the iterator.
  */
-VecSimQueryResult_List *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
+VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
                                                  VecSimQueryResult_Order order);
 
 /**

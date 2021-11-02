@@ -8,9 +8,6 @@
 #include "VecSim/utils/vec_utils.h"
 #include "memory.h"
 
-int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return res1->id > res2->id ? 1 : res1->id < res2->id ? -1 : 0;
-}
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     if (params->algo == VecSimAlgo_HNSWLIB) {
         return new HNSWIndex(params);
@@ -51,9 +48,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
         results = index->topKQuery(queryBlob, k, queryParams);
     }
     if (order == BY_ID) {
-        // sort results by id and then return.
-        qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
-              (__compar_fn_t)cmpVecSimQueryResult);
+        sort_results_by_id(results);
     }
     return results;
 }
@@ -61,3 +56,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
 extern "C" void VecSimIndex_Free(VecSimIndex *index) { delete index; }
 
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
+
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
+    return index->newBatchIterator(queryBlob);
+}

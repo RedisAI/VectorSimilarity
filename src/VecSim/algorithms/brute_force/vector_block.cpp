@@ -26,12 +26,16 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     this->size++;
 }
 
-std::vector<float> VectorBlock::heapBasedSearch(DISTFUNC<float> DistFunc, float &lowerBound, float &upperBound,
-                                  const void *queryBlob, size_t nRes, CandidatesHeap &candidates) {
+std::vector<float> VectorBlock::ComputeScores(DISTFUNC<float> DistFunc, const void *queryBlob) {
     std::vector<float>scores(size);
     for (size_t i = 0; i < size; i++) {
         scores[i] = DistFunc(this->getVector(i), queryBlob, &dim);
     }
+    return scores;
+}
+
+void VectorBlock::heapBasedSearch(const std::vector<float> &scores, float lowerBound, float &upperBound,
+                                  size_t nRes, CandidatesHeap &candidates) {
 
     for (int i = 0; i < size; i++) {
         if (scores[i] <= lowerBound) {
@@ -52,5 +56,4 @@ std::vector<float> VectorBlock::heapBasedSearch(DISTFUNC<float> DistFunc, float 
             }
         }
     }
-    return scores;
 }

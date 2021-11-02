@@ -141,7 +141,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     return true;
 }
 
-size_t BruteForceIndex::indexSize() { return this->count; }
+size_t BruteForceIndex::indexSize() const { return this->count; }
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
@@ -150,7 +150,8 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     float lowerBound = upperBound;
     CandidatesHeap TopCandidates;
     for (auto vectorBlock : this->vectorBlocks) {
-        vectorBlock->heapBasedSearch(this->dist_func, lowerBound, upperBound, queryBlob, k, TopCandidates);
+        vector<float> scores = vectorBlock->ComputeScores(this->dist_func, queryBlob);
+        vectorBlock->heapBasedSearch(scores, lowerBound, upperBound, k, TopCandidates);
     }
     auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
