@@ -29,8 +29,7 @@ HNSWIndex::HNSWIndex(const VecSimParams *params)
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
         if (hnsw.getIndexSize() == this->hnsw.getIndexCapacity()) {
-            this->hnsw.resizeIndex(this->hnsw.getIndexCapacity() * 2);
-            // this->hnsw.resizeIndex(std::max<size_t>(this->hnsw.getIndexCapacity() * 2,2));
+            this->hnsw.resizeIndex(std::max<size_t>(this->hnsw.getIndexCapacity() * 2, 2));
         }
         this->hnsw.addPoint(vector_data, id);
         return true;
