@@ -11,7 +11,7 @@ class BF_BatchIterator : public VecSimBatchIterator {
     const BruteForceIndex *index;
     unsigned char id;
     float lower_bound;
-    vector<vector<float>> scores; // vector of scores for every block.
+    vector<vector<pair<float, labelType>>> scores; // vector of scores for every block.
     static unsigned char next_id;
 
 public:

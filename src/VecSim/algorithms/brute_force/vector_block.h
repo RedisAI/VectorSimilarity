@@ -49,9 +49,9 @@ public:
         this->members[index] = member;
     }
 
-    std::vector<float> ComputeScores(DISTFUNC<float> DistFunc, const void *queryBlob);
+    std::vector<std::pair<float, labelType>> ComputeScores(DISTFUNC<float> DistFunc, const void *queryBlob);
 
-    void heapBasedSearch(const std::vector<float> &scores, float lowerBound, float &upperBound,
+    void heapBasedSearch(const std::vector<std::pair<float, labelType>> &scores, float lowerBound, float &upperBound,
                                       size_t nRes, CandidatesHeap &candidates);
     virtual ~VectorBlock();
 

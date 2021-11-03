@@ -150,7 +150,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     float lowerBound = upperBound;
     CandidatesHeap TopCandidates;
     for (auto vectorBlock : this->vectorBlocks) {
-        vector<float> scores = vectorBlock->ComputeScores(this->dist_func, queryBlob);
+        std::vector<std::pair<float, labelType>> scores = vectorBlock->ComputeScores(this->dist_func, queryBlob);
         vectorBlock->heapBasedSearch(scores, lowerBound, upperBound, k, TopCandidates);
     }
     auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
