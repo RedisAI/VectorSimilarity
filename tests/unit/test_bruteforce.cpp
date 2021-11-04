@@ -565,7 +565,6 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
 
 TEST_F(BruteForceTest, brute_force_btach_iterator) {
     size_t dim = 4;
-    size_t n = 100;
 
     VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 5},
             .type = VecSimType_FLOAT32,
@@ -574,34 +573,43 @@ TEST_F(BruteForceTest, brute_force_btach_iterator) {
             .algo = VecSimAlgo_BF};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (int i = 0; i < n; i++) {
-        float f[dim];
+    // run the test twice - for index of size 100, every iteration will run select-based search,
+    // as the number of results is 10, which is more than 1% of the index size. for index of size 10000
+    // with 10 requested results in every iteration, we will run the heap-based search.
+    for (size_t n : {100, 10000}) {
+        for (int i = 0; i < n; i++) {
+            float f[dim];
+            for (size_t j = 0; j < dim; j++) {
+                f[j] = (float) i;
+            }
+            VecSimIndex_AddVector(index, (const void *) f, i);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+        // query for (n,n,n,n) vector (recall that n is the largest id in te index)
+        float query[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
+            query[j] = (float)n;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+        size_t iteration_num = 0;
 
-    float query[] = {100, 100, 100, 100};
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
-    size_t iteration_num = 0;
-
-    // expect to run 10 iteration, get 10 results every time
-    size_t n_res = 10;
-    while (VecSimBatchIterator_HasNext(batchIterator)) {
-        std::set<size_t> expected_ids;
-        for (size_t i = 1; i <= 10; i++) {
-            expected_ids.insert(n-iteration_num*10-i);
+        // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet, in every iteration
+        size_t n_res = 10;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            std::set<size_t> expected_ids;
+            for (size_t i = 1; i <= n_res; i++) {
+                expected_ids.insert(n - iteration_num * n_res - i);
+            }
+            auto verify_res = [&](int id, float score, size_t index) {
+                ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+                expected_ids.erase(id);
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            iteration_num++;
         }
-        auto verify_res = [&](int id, float score, size_t index) {
-            ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-            expected_ids.erase(id);
-        };
-        runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
-        iteration_num++;
+        ASSERT_EQ(iteration_num, n / n_res);
+        VecSimBatchIterator_Free(batchIterator);
     }
-    ASSERT_EQ(iteration_num, 10);
-    VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
