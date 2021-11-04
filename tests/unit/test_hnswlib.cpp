@@ -439,7 +439,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
     size_t d = 4;
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
+    VecSimParams params = {.hnswParams = {.initialCapacity = 0},
                            .type = VecSimType_FLOAT32,
                            .size = d,
                            .metric = VecSimMetric_L2,
@@ -493,7 +493,7 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
                            .type = VecSimType_FLOAT32,
                            .size = dim,
                            .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+                           .algo = VecSimAlgo_HNSWLIB};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
