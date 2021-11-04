@@ -32,8 +32,10 @@ BruteForceIndex::BruteForceIndex(const VecSimParams *params,
       deletedIds(allocator), vectorBlocks(allocator),
 
       space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new (allocator)L2Space(params->size, allocator))
-                : static_cast<SpaceInterface<float> *>(new (allocator)InnerProductSpace(params->size, allocator))) {
+                ? static_cast<SpaceInterface<float> *>(new (allocator)
+                                                           L2Space(params->size, allocator))
+                : static_cast<SpaceInterface<float> *>(
+                      new (allocator) InnerProductSpace(params->size, allocator))) {
     this->idToVectorBlockMemberMapping.resize(params->bfParams.initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }

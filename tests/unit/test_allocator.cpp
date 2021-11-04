@@ -175,5 +175,4 @@ TEST_F(AllocatorTest, test_hnsw) {
     ASSERT_GE(current_memory, allocator->getAllocationSize());
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
-    
 }
