@@ -439,7 +439,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
     size_t d = 4;
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
+    VecSimParams params = {.hnswParams = {.initialCapacity = 0},
                            .type = VecSimType_FLOAT32,
                            .size = d,
                            .metric = VecSimMetric_L2,

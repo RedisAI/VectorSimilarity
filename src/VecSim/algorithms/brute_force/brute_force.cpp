@@ -67,7 +67,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     }
 
     // See if new id is bigger than current vector count. Needs to resize the index.
-    if (id > this->idToVectorBlockMemberMapping.size()) {
+    if (id >= this->idToVectorBlockMemberMapping.size()) {
         this->idToVectorBlockMemberMapping.resize(this->count * 2);
     }
 
