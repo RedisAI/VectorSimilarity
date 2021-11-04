@@ -5,7 +5,6 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 
-
 class AllocatorTest : public ::testing::Test {
 protected:
     AllocatorTest() {}
