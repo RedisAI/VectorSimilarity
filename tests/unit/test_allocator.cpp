@@ -46,26 +46,26 @@ public:
 TEST_F(AllocatorTest, test_simple_object) {
     std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
     SimpleObject *obj = new (allocator) SimpleObject(allocator);
-    ASSERT_EQ(allocator->getAllocationSize(), sizeof(SimpleObject) + sizeof(VecSimAllocator));
+    ASSERT_GE(allocator->getAllocationSize(), sizeof(SimpleObject) + sizeof(VecSimAllocator));
     delete obj;
-    ASSERT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator));
+    ASSERT_GE(allocator->getAllocationSize(), sizeof(VecSimAllocator));
 }
 
 TEST_F(AllocatorTest, test_object_with_stl) {
     std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
     ObjectWithSTL *obj = new (allocator) ObjectWithSTL(allocator);
-    ASSERT_EQ(allocator->getAllocationSize(), sizeof(ObjectWithSTL) + sizeof(VecSimAllocator));
+    ASSERT_GE(allocator->getAllocationSize(), sizeof(ObjectWithSTL) + sizeof(VecSimAllocator));
     obj->test_vec.push_back(1);
-    ASSERT_EQ(allocator->getAllocationSize(),
+    ASSERT_GE(allocator->getAllocationSize(),
               sizeof(ObjectWithSTL) + sizeof(VecSimAllocator) + sizeof(int));
 }
 
 TEST_F(AllocatorTest, test_nested_object) {
     std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
     NestedObject *obj = new (allocator) NestedObject(allocator);
-    ASSERT_EQ(allocator->getAllocationSize(), sizeof(NestedObject) + sizeof(VecSimAllocator));
+    ASSERT_GE(allocator->getAllocationSize(), sizeof(NestedObject) + sizeof(VecSimAllocator));
     obj->stl_object.test_vec.push_back(1);
-    ASSERT_EQ(allocator->getAllocationSize(),
+    ASSERT_GE(allocator->getAllocationSize(),
               sizeof(NestedObject) + sizeof(VecSimAllocator) + sizeof(int));
 }
 

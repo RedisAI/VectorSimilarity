@@ -35,12 +35,17 @@ static inline char *vecsim_strndup(const char *s, size_t n) {
 struct VecSimAllocator {
 private:
     std::shared_ptr<uint64_t> allocated;
+    size_t allocation_header_size;
 
 public:
-    VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
+    VecSimAllocator()
+        : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))),
+          allocation_header_size(sizeof(size_t)) {}
 
     void *allocate(size_t size);
     void deallocate(void *p, size_t size);
+    void *reallocate(void *p, size_t size);
+    void free_allocation(void *p);
 
     void *operator new(size_t size);
     void *operator new[](size_t size);
@@ -48,6 +53,9 @@ public:
     void operator delete[](void *p, size_t size);
 
     int64_t getAllocationSize();
+
+private:
+    inline size_t getPointerAllocationSize(void *p) { return *(((size_t *)p) - 1); }
 };
 
 template <typename T>
