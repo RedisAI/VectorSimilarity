@@ -20,8 +20,9 @@ struct CompareByFirst {
     }
 };
 
-using CandidatesHeap = std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float , labelType>>,
-        CompareByFirst>;
+using CandidatesHeap =
+    std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>,
+                        CompareByFirst>;
 
 struct VectorBlockMember {
 public:
@@ -49,10 +50,11 @@ public:
         this->members[index] = member;
     }
 
-    std::vector<std::pair<float, labelType>> ComputeScores(DISTFUNC<float> DistFunc, const void *queryBlob);
+    std::vector<std::pair<float, labelType>> ComputeScores(DISTFUNC<float> DistFunc,
+                                                           const void *queryBlob);
 
-    void heapBasedSearch(const std::vector<std::pair<float, labelType>> &scores, float lowerBound, float &upperBound,
-                                      size_t nRes, CandidatesHeap &candidates);
+    void heapBasedSearch(const std::vector<std::pair<float, labelType>> &scores, float &upperBound,
+                         size_t nRes, CandidatesHeap &candidates);
     virtual ~VectorBlock();
 
 private:

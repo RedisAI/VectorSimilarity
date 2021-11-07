@@ -55,18 +55,12 @@ extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *itera
 
 /********************** batch iterator API ***************************/
 VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                                 VecSimQueryResult_Order order) {
+                                                VecSimQueryResult_Order order) {
     return iterator->getNextResults(n_results, order);
 }
 
-bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator) {
-    return !iterator->isDepleted();
-}
+bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator) { return !iterator->isDepleted(); }
 
-void VecSimBatchIterator_Free(VecSimBatchIterator *iterator) {
-    delete iterator;
-}
+void VecSimBatchIterator_Free(VecSimBatchIterator *iterator) { delete iterator; }
 
-void VecSimBatchIterator_Reset(VecSimBatchIterator *iterator) {
-    iterator->reset();
-}
+void VecSimBatchIterator_Reset(VecSimBatchIterator *iterator) { iterator->reset(); }

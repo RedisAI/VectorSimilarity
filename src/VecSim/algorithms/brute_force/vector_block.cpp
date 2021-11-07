@@ -26,7 +26,8 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     this->size++;
 }
 
-std::vector<std::pair<float, labelType>> VectorBlock::ComputeScores(DISTFUNC<float> DistFunc, const void *queryBlob) {
+std::vector<std::pair<float, labelType>> VectorBlock::ComputeScores(DISTFUNC<float> DistFunc,
+                                                                    const void *queryBlob) {
     std::vector<std::pair<float, labelType>> scores(size);
     for (size_t i = 0; i < size; i++) {
         scores[i] = {DistFunc(this->getVector(i), queryBlob, &dim), getMember(i)->label};
@@ -34,10 +35,10 @@ std::vector<std::pair<float, labelType>> VectorBlock::ComputeScores(DISTFUNC<flo
     return scores;
 }
 
-void VectorBlock::heapBasedSearch(const std::vector<std::pair<float, labelType>> &scores, float lowerBound, float &upperBound,
-                                  size_t nRes, CandidatesHeap &candidates) {
+void VectorBlock::heapBasedSearch(const std::vector<std::pair<float, labelType>> &scores,
+                                  float &upperBound, size_t nRes, CandidatesHeap &candidates) {
 
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < scores.size(); i++) {
         if (candidates.size() < nRes) {
             candidates.emplace(scores[i].first, getMember(i)->label);
             upperBound = candidates.top().first;

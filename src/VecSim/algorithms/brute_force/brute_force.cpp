@@ -15,7 +15,6 @@
 
 using namespace std;
 
-
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const VecSimParams *params)
     : VecSimIndex(params), vectorBlockSize(params->bfParams.blockSize ? params->bfParams.blockSize
@@ -147,11 +146,11 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
                                                   VecSimQueryParams *queryParams) {
 
     float upperBound = std::numeric_limits<float>::lowest();
-    float lowerBound = upperBound;
     CandidatesHeap TopCandidates;
     for (auto vectorBlock : this->vectorBlocks) {
-        std::vector<std::pair<float, labelType>> scores = vectorBlock->ComputeScores(this->dist_func, queryBlob);
-        vectorBlock->heapBasedSearch(scores, lowerBound, upperBound, k, TopCandidates);
+        std::vector<std::pair<float, labelType>> scores =
+            vectorBlock->ComputeScores(this->dist_func, queryBlob);
+        vectorBlock->heapBasedSearch(scores, upperBound, k, TopCandidates);
     }
     auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {

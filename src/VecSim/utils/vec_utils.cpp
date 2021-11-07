@@ -3,8 +3,9 @@
 #include <math.h>
 
 int cmpVecSimQueryResult(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return VecSimQueryResult_GetId(res1) > VecSimQueryResult_GetId(res2) ? 1 :
-           (VecSimQueryResult_GetId(res1) < VecSimQueryResult_GetId(res2) ? -1 : 0);
+    return VecSimQueryResult_GetId(res1) > VecSimQueryResult_GetId(res2)
+               ? 1
+               : (VecSimQueryResult_GetId(res1) < VecSimQueryResult_GetId(res2) ? -1 : 0);
 }
 
 void float_vector_normalize(float *x, size_t dim) {

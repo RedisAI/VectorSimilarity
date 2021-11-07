@@ -86,7 +86,7 @@ typedef struct VecSimBatchIterator VecSimBatchIterator;
  * underline query vector in the iterator.
  */
 VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                                 VecSimQueryResult_Order order);
+                                                VecSimQueryResult_Order order);
 
 /**
  * @brief Return true while the iterator has new results to return, false if it is depleted

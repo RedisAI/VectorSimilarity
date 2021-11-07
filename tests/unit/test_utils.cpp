@@ -25,13 +25,13 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
 }
 
 /*
- * helper function to run batch search iteration, and iterate over the results. ResCB is a callback that takes
- * the id, score and index of a result, and performs test-specific logic for each.
+ * helper function to run batch search iteration, and iterate over the results. ResCB is a callback
+ * that takes the id, score and index of a result, and performs test-specific logic for each.
  */
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
-                       std::function<void(int, float, int)> ResCB, VecSimQueryResult_Order order) {
-    VecSimQueryResult_List res =
-    VecSimBatchIterator_Next(batch_iterator, n_res, order);
+                                std::function<void(int, float, int)> ResCB,
+                                VecSimQueryResult_Order order) {
+    VecSimQueryResult_List res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), n_res);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
