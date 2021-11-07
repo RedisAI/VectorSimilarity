@@ -11,7 +11,8 @@ class BF_BatchIterator : public VecSimBatchIterator {
     const BruteForceIndex *index;
     unsigned char id;
     float lower_bound;
-    vector<vector<pair<float, labelType>>> scores; // vector of scores for every block.
+    vector<vector<pair<float, labelType>>> scores; // vector of scores for every block ("score matrix").
+    unordered_map<labelType, pair<size_t, size_t>> labelToScoreCoordinates;
     static unsigned char next_id;
 
     VecSimQueryResult *selectBasedSearch(size_t n_res);

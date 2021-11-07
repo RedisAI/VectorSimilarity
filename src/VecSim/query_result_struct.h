@@ -4,7 +4,7 @@
 #include <limits>
 
 #define INVALID_ID    -1
-#define INVALID_SCORE std::numeric_limits<float>::min()
+#define INVALID_SCORE std::numeric_limits<float>::infinity()
 
 /**
  * This file contains the headers to be used internally for creating an array of results in

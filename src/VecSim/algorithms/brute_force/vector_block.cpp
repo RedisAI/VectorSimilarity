@@ -27,9 +27,9 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
 }
 
 std::vector<std::pair<float, labelType>> VectorBlock::ComputeScores(DISTFUNC<float> DistFunc, const void *queryBlob) {
-    std::vector<std::pair<float, labelType>>scores(size);
+    std::vector<std::pair<float, labelType>> scores(size);
     for (size_t i = 0; i < size; i++) {
-        scores[i] = {DistFunc(this->getVector(i), queryBlob, &dim), this->getMember(i)->label};
+        scores[i] = {DistFunc(this->getVector(i), queryBlob, &dim), getMember(i)->label};
     }
     return scores;
 }
@@ -38,17 +38,14 @@ void VectorBlock::heapBasedSearch(const std::vector<std::pair<float, labelType>>
                                   size_t nRes, CandidatesHeap &candidates) {
 
     for (int i = 0; i < size; i++) {
-        if (scores[i].first <= lowerBound) {
-            continue;
-        }
         if (candidates.size() < nRes) {
-            candidates.emplace(scores[i]);
+            candidates.emplace(scores[i].first, getMember(i)->label);
             upperBound = candidates.top().first;
         } else {
             if (scores[i].first >= upperBound) {
                 continue;
             } else {
-                candidates.emplace(scores[i]);
+                candidates.emplace(scores[i].first, getMember(i)->label);
                 candidates.pop();
                 upperBound = candidates.top().first;
             }

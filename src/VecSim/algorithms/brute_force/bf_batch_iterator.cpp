@@ -22,27 +22,32 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     for (int i = (int) TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
+        // Invalidate vector score, so we won't return it again in the next iterations.
+        pair<size_t, size_t> coordinates = labelToScoreCoordinates[TopCandidates.top().second];
+        scores[coordinates.first][coordinates.second].first = INVALID_SCORE;
         TopCandidates.pop();
     }
     return results;
 }
 
 VecSimQueryResult *BF_BatchIterator::selectBasedSearch(size_t n_res) {
+    // Flatten the score matrix, keep the labels to have stable sorting.
     vector<pair<float, labelType>> allScores;
     for (auto vectorBlockScores: scores) {
         allScores.insert(allScores.end(), vectorBlockScores.begin(), vectorBlockScores.end());
     }
 
-    auto n_th_element_pos = allScores.begin() + getResultsCount() + n_res;
-    std::nth_element(allScores.begin(), n_th_element_pos, allScores.begin() + getIndex()->indexSize());
+    auto n_th_element_pos = allScores.begin() + (int)n_res;
+    std::nth_element(allScores.begin(), n_th_element_pos, allScores.begin() + (int)getIndex()->indexSize());
 
     auto *results = array_new<VecSimQueryResult>(n_res);
-    for (size_t i = 0; i < getResultsCount() + n_res; i++) {
-        if (allScores[i].first >= lower_bound) {
-            results = array_append(results, VecSimQueryResult{});
-            VecSimQueryResult_SetId(results[array_len(results) - 1], allScores[i].second);
-            VecSimQueryResult_SetScore(results[array_len(results) - 1], allScores[i].first);
-        }
+    for (size_t i = 0; i < n_res; i++) {
+        results = array_append(results, VecSimQueryResult{});
+        VecSimQueryResult_SetId(results[array_len(results) - 1], allScores[i].second);
+        VecSimQueryResult_SetScore(results[array_len(results) - 1], allScores[i].first);
+        // Invalidate vector score, so we won't return it again in the next iterations.
+        pair<size_t, size_t> coordinates = labelToScoreCoordinates[allScores[i].second];
+        scores[coordinates.first][coordinates.second].first = INVALID_SCORE;
     }
     lower_bound = n_th_element_pos->first;
     return results;
@@ -60,10 +65,16 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res, VecSimQuer
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     // Only in the first iteration we need to compute all the scores
     if (scores.empty()) {
-        for (auto vectorBlock: getIndex()->getVectorBlocks()) {
-            // compute the scores for the vectors in every block and append them to the scores vectors.
+        vector<VectorBlock *> blocks = getIndex()->getVectorBlocks();
+        for (size_t i = 0; i < blocks.size(); i++) {
+            // compute the scores for the vectors in every block and create a score matrix.
             std::vector<std::pair<float, labelType>> block_scores =
-                    vectorBlock->ComputeScores(getIndex()->distFunc(), getQueryBlob());
+                    blocks[i]->ComputeScores(getIndex()->distFunc(), getQueryBlob());
+            // Save the "coordinates" of every label in the scores matrix
+            for (size_t j = 0; j < block_scores.size(); j++) {
+                labelType label = blocks[i]->getMember(j)->label;
+                labelToScoreCoordinates[label] = {i, j};
+            }
             scores.push_back(block_scores);
         }
     }
