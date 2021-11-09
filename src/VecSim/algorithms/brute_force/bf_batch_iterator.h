@@ -5,7 +5,6 @@
 #include <limits>
 
 using namespace std;
-using SearchFunc = VecSimQueryResult *(*)(size_t);
 
 class BF_BatchIterator : public VecSimBatchIterator {
 private:
