@@ -733,3 +733,54 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
+TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
+    size_t dim = 4;
+    size_t n = 1000;
+    VecSimParams params = {.bfParams = {.initialCapacity = n},
+                           .type = VecSimType_FLOAT32,
+                           .size = dim,
+                           .metric = VecSimMetric_L2,
+                           .algo = VecSimAlgo_BF};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+
+    // get all in first iteration, expect to use select search
+    size_t n_res = n;
+    auto verify_res = [&](int id, float score, size_t index) { ASSERT_TRUE(id == n - 1 - index); };
+    runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+
+    // try to get more results even though there are no.
+    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
+    // Reset, and run in batches, but the final batch is partial.
+    VecSimBatchIterator_Reset(batchIterator);
+    res = VecSimBatchIterator_Next(batchIterator, n_res / 2, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), n / 2);
+    VecSimQueryResult_Free(res);
+    res = VecSimBatchIterator_Next(batchIterator, n_res / 2 + 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), n / 2);
+    VecSimQueryResult_Free(res);
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}

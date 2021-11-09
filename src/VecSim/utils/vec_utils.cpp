@@ -8,7 +8,8 @@ int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryRes
 }
 
 int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) && !std::isnan(VecSimQueryResult_GetScore(res2)));
+    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
+           !std::isnan(VecSimQueryResult_GetScore(res2)));
     return (int)(VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2));
 }
 
@@ -27,10 +28,10 @@ void float_vector_normalize(float *x, size_t dim) {
 
 void sort_results_by_id(VecSimQueryResult_List results) {
     qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
-          (__compar_fn_t) cmpVecSimQueryResultById);
+          (__compar_fn_t)cmpVecSimQueryResultById);
 }
 
 void sort_results_by_score(VecSimQueryResult_List results) {
     qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
-          (__compar_fn_t) cmpVecSimQueryResultByScore);
+          (__compar_fn_t)cmpVecSimQueryResultByScore);
 }

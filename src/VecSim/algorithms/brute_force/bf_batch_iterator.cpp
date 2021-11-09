@@ -23,8 +23,9 @@ bool cmp(const pair<float, labelType> &a, const pair<float, labelType> &b) {
 
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
-VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res, VecSimQueryResult_Order order) {
-    if (getIndex()->indexSize() - getResultsCount() / 1000 > n_res) {
+VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res,
+                                                        VecSimQueryResult_Order order) {
+    if ((getIndex()->indexSize() - getResultsCount()) / 1000 > n_res) {
         return heapBasedSearch(n_res);
     }
     VecSimQueryResult *res = selectBasedSearch(n_res);
@@ -110,7 +111,7 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     if (scores.empty() && getResultsCount() == 0) {
         scores.reserve(getIndex()->indexSize());
         vector<VectorBlock *> blocks = getIndex()->getVectorBlocks();
-        for (auto& block : blocks) {
+        for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
             std::vector<std::pair<float, labelType>> block_scores =
                 block->computeBlockScores(getIndex()->distFunc(), getQueryBlob());

@@ -11,15 +11,15 @@ protected:
     size_t dim;
 
 public:
-    void SetUp(const ::benchmark::State& state) {
+    void SetUp(const ::benchmark::State &state) {
         // Initialize BF index
         dim = 4;
         size_t n_vectors = 10;
         VecSimParams params = {.bfParams = {.initialCapacity = n_vectors},
-                .type = VecSimType_FLOAT32,
-                .size = dim,
-                .metric = VecSimMetric_L2,
-                .algo = VecSimAlgo_BF};
+                               .type = VecSimType_FLOAT32,
+                               .size = dim,
+                               .metric = VecSimMetric_L2,
+                               .algo = VecSimAlgo_BF};
         bf_index = VecSimIndex_New(&params);
 
         // Add 1M random vectors with dim=100
@@ -30,14 +30,11 @@ public:
             data[i] = (float)distrib(rng);
         }
         for (size_t i = 0; i < n_vectors; ++i) {
-            VecSimIndex_AddVector(bf_index, data.data() + dim*i, i);
+            VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
         }
-
     }
 
-    void TearDown(const ::benchmark::State& state) {
-        VecSimIndex_Free(bf_index);
-    }
+    void TearDown(const ::benchmark::State &state) { VecSimIndex_Free(bf_index); }
 };
 
 // Register the function as a benchmark

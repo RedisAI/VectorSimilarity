@@ -12,7 +12,7 @@ private:
     const BruteForceIndex *index;
     unsigned char id;
     vector<pair<float, labelType>> scores; // vector of scores for every label.
-    static unsigned char next_id;  // this holds the next available id to be used by a new instance.
+    static unsigned char next_id; // this holds the next available id to be used by a new instance.
 
     VecSimQueryResult *searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
     VecSimQueryResult *selectBasedSearch(size_t n_res);
