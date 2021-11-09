@@ -563,7 +563,7 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, brute_force_btach_iterator) {
+TEST_F(BruteForceTest, brute_force_batch_iterator) {
     size_t dim = 4;
 
     VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 5},
@@ -596,16 +596,15 @@ TEST_F(BruteForceTest, brute_force_btach_iterator) {
         size_t iteration_num = 0;
 
         // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
-        // in every iteration
+        // in every iteration. The order should be from the largest to the lowest id.
         size_t n_res = 5;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            std::set<size_t> expected_ids;
-            for (size_t i = 1; i <= n_res; i++) {
-                expected_ids.insert(n - iteration_num * n_res - i);
+            std::vector<size_t> expected_ids(n_res);
+            for (size_t i = 0; i < n_res; i++) {
+                expected_ids[i] = (n - iteration_num * n_res - i - 1);
             }
             auto verify_res = [&](int id, float score, size_t index) {
-                ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-                expected_ids.erase(id);
+                ASSERT_TRUE(expected_ids[index] == id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
             iteration_num++;
@@ -616,7 +615,7 @@ TEST_F(BruteForceTest, brute_force_btach_iterator) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, brute_force_btach_iterator_non_unique_scores) {
+TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
 
     VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 5},
@@ -678,7 +677,7 @@ TEST_F(BruteForceTest, brute_force_btach_iterator_non_unique_scores) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, brute_force_btach_iterator_reset) {
+TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     size_t dim = 4;
 
     VecSimParams params = {.bfParams = {.initialCapacity = 100000, .blockSize = 100000},

@@ -1,6 +1,8 @@
 #include <cassert>
 #include <algorithm>
 #include <iostream>
+#include <cmath>
+#include <functional>
 #include "bf_batch_iterator.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
@@ -8,53 +10,95 @@
 
 unsigned char BF_BatchIterator::next_id = 0;
 
+// Compare function that handle NaN values (consider these as the highest, above inf)
+bool cmp(const pair<float, labelType> &a, const pair<float, labelType> &b) {
+    if (isnan(a.first)) {
+        return false;
+    }
+    if (isnan(b.first)) {
+        return true;
+    }
+    return a.first < b.first;
+}
+
+// heuristics: decide if using heap or select search, based on the ratio between the
+// number of remaining results and the index size.
+VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res, VecSimQueryResult_Order order) {
+    if (getIndex()->indexSize() - getResultsCount() / 1000 > n_res) {
+        return heapBasedSearch(n_res);
+    }
+    VecSimQueryResult *res = selectBasedSearch(n_res);
+    if (order == BY_SCORE) {
+        sort_results_by_score(res);
+    }
+    return res;
+}
+
 VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     float upperBound = std::numeric_limits<float>::lowest();
     CandidatesHeap TopCandidates;
-    vector<VectorBlock *> blocks = getIndex()->getVectorBlocks();
-    for (size_t i = 0; i < blocks.size(); i++) {
-        blocks[i]->heapBasedSearch(scores[i], upperBound, n_res, TopCandidates);
+    // map vector's label to its index in the scores vector.
+    unordered_map<size_t, size_t> TopCandidatesIndices(n_res);
+    for (int i = 0; i < scores.size(); i++) {
+        if (isnan(scores[i].first)) {
+            continue;
+        }
+        if (TopCandidates.size() < n_res) {
+            TopCandidates.emplace(scores[i].first, scores[i].second);
+            TopCandidatesIndices[scores[i].second] = i;
+            upperBound = TopCandidates.top().first;
+        } else {
+            if (scores[i].first >= upperBound) {
+                continue;
+            } else {
+                TopCandidates.emplace(scores[i].first, scores[i].second);
+                TopCandidatesIndices[scores[i].second] = i;
+                // remove the furthest vector from the candidates and from the label->index mappings
+                TopCandidatesIndices.erase(TopCandidates.top().second);
+                TopCandidates.pop();
+                upperBound = TopCandidates.top().first;
+            }
+        }
     }
 
     auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
-        // Erase vector score, so we won't return it again in the next iterations.
-        pair<size_t, size_t> coordinates = labelToScoreCoordinates[TopCandidates.top().second];
-        scores[coordinates.first].erase(scores[coordinates.first].begin() +
-                                        (int)coordinates.second);
+        // Invalidate vector score, so we won't return it again in the next iterations.
+        scores[TopCandidatesIndices[TopCandidates.top().second]].first = INVALID_SCORE;
         TopCandidates.pop();
     }
     return results;
 }
 
 VecSimQueryResult *BF_BatchIterator::selectBasedSearch(size_t n_res) {
-    // Flatten the score matrix, keep the labels to have stable sorting.
-    vector<pair<float, labelType>> allScores;
-    for (auto vectorBlockScores : scores) {
-        allScores.insert(allScores.end(), vectorBlockScores.begin(), vectorBlockScores.end());
+    // We return up to n_res vectors, the remaining vectors size is an upper bound.
+    if (n_res > scores.size()) {
+        n_res = scores.size();
     }
-
-    auto n_th_element_pos = allScores.begin() + (int)n_res;
-    std::nth_element(allScores.begin(), n_th_element_pos, allScores.end());
+    auto n_th_element_pos = scores.begin() + (int)n_res;
+    // This will perform an in-place partition of the elements in the array, based on the
+    // n-th element as the pivot - every element with a lower will be placed before it, and
+    // all the rest will be placed after.
+    std::nth_element(scores.begin(), n_th_element_pos, scores.end(), cmp);
 
     auto *results = array_new<VecSimQueryResult>(n_res);
     for (size_t i = 0; i < n_res; i++) {
+        if (isnan(scores[i].first)) {
+            continue;
+        }
         results = array_append(results, VecSimQueryResult{});
-        VecSimQueryResult_SetId(results[array_len(results) - 1], allScores[i].second);
-        VecSimQueryResult_SetScore(results[array_len(results) - 1], allScores[i].first);
-        // Erase vector score, so we won't return it again in the next iterations.
-        pair<size_t, size_t> coordinates = labelToScoreCoordinates[allScores[i].second];
-        scores[coordinates.first].erase(scores[coordinates.first].begin() +
-                                        (int)coordinates.second);
+        VecSimQueryResult_SetId(results[array_len(results) - 1], scores[i].second);
+        VecSimQueryResult_SetScore(results[array_len(results) - 1], scores[i].first);
     }
+    // Erase the returned results slice from the scores array
+    scores.erase(scores.begin(), n_th_element_pos);
     return results;
 }
 
 BF_BatchIterator::BF_BatchIterator(const void *query_vector, const BruteForceIndex *bf_index)
-    : VecSimBatchIterator(query_vector), id(BF_BatchIterator::next_id) {
-    index = bf_index;
+    : VecSimBatchIterator(query_vector), id(BF_BatchIterator::next_id), index(bf_index) {
     BF_BatchIterator::next_id++;
 }
 
@@ -63,28 +107,18 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     // Only in the first iteration we need to compute all the scores
-    if (scores.empty()) {
+    if (scores.empty() && getResultsCount() == 0) {
+        scores.reserve(getIndex()->indexSize());
         vector<VectorBlock *> blocks = getIndex()->getVectorBlocks();
-        for (size_t i = 0; i < blocks.size(); i++) {
-            // compute the scores for the vectors in every block and create a score matrix.
+        for (auto& block : blocks) {
+            // compute the scores for the vectors in every block and extend the scores array.
             std::vector<std::pair<float, labelType>> block_scores =
-                blocks[i]->ComputeScores(getIndex()->distFunc(), getQueryBlob());
-            // Save the "coordinates" of every label in the scores matrix
-            for (size_t j = 0; j < block_scores.size(); j++) {
-                labelType label = blocks[i]->getMember(j)->label;
-                labelToScoreCoordinates[label] = {i, j};
-            }
-            scores.push_back(block_scores);
+                block->computeBlockScores(getIndex()->distFunc(), getQueryBlob());
+            scores.insert(scores.end(), block_scores.begin(), block_scores.end());
         }
     }
-    // heuristics: decide if using heap or select search, based on the ratio between the
-    // number of remaining results and the index size.
-    VecSimQueryResult *results;
-    if ((getIndex()->indexSize() - getResultsCount()) / 1000 > n_res) {
-        results = heapBasedSearch(n_res);
-    } else {
-        results = selectBasedSearch(n_res);
-    }
+    VecSimQueryResult *results = searchByHeuristics(n_res, order);
+
     this->updateResultsCount(array_len(results));
     if (order == BY_ID) {
         sort_results_by_id(results);

@@ -67,7 +67,7 @@ int main() {
     bm.SetUp();
     long long total_time = 0;
     size_t res_per_iter = 100;
-    size_t n = 10;
+    size_t n = 100;
     for (size_t i=0; i<n; i++) {
         total_time += bm.get_10000_total_results(res_per_iter);
     }

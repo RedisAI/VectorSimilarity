@@ -50,11 +50,11 @@ public:
         this->members[index] = member;
     }
 
-    std::vector<std::pair<float, labelType>> ComputeScores(DISTFUNC<float> DistFunc,
+    // Compute the score for every vector in the block by using the given distance function.
+    // Return a collection of (score, label) pairs for every vector in the block.
+    std::vector<std::pair<float, labelType>> computeBlockScores(DISTFUNC<float> DistFunc,
                                                            const void *queryBlob);
 
-    void heapBasedSearch(const std::vector<std::pair<float, labelType>> &scores, float &upperBound,
-                         size_t nRes, CandidatesHeap &candidates);
     virtual ~VectorBlock();
 
 private:

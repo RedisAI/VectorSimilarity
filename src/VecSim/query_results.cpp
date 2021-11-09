@@ -44,7 +44,7 @@ extern "C" int64_t VecSimQueryResult_GetId(const VecSimQueryResult *res) {
 
 extern "C" float VecSimQueryResult_GetScore(const VecSimQueryResult *res) {
     if (res == nullptr) {
-        return INVALID_SCORE; // "minus infinity"
+        return INVALID_SCORE; // "NaN"
     }
     return (float)res->score;
 }

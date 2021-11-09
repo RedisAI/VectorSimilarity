@@ -24,7 +24,7 @@ int64_t VecSimQueryResult_GetId(const VecSimQueryResult *item);
 
 /**
  * @brief Get the score of the result vector. If item is nullptr, return INVALID_SCORE (defined as
- * the minimal value of float).
+ * the special value of NaN).
  */
 float VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 
