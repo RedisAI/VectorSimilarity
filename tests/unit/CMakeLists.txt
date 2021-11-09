@@ -55,3 +55,7 @@ target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
 include(GoogleTest)
 gtest_discover_tests(test_hnswlib)
 gtest_discover_tests(test_bruteforce)
+
+find_package(benchmark REQUIRED)
+add_executable(bf_benchmark bf_benchmark.cpp)
+target_link_libraries(bf_benchmark VectorSimilarity)
