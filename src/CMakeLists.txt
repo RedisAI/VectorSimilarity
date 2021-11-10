@@ -16,8 +16,6 @@ message("VectorSimilarity binroot: " ${binroot})
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
-SET(CMAKE_CC_COMMON_FLAGS "${CMAKE_CC_COMMON_FLAGS} -fno-omit-frame-pointer")
-
 message("VectorSimilarity VECSIM_ARCH: " ${VECSIM_ARCH})
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
