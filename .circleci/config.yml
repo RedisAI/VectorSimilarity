@@ -50,6 +50,10 @@ commands:
           command: bash -l -c "make valgrind"
 
       - run:
+          name: Benchmark
+          command: bash -l -c "make benchmark"
+
+      - run:
           name: install tox dependencies
           command: python3 -m pip install -r .circleci/circle_requirements.txt
       - run:
