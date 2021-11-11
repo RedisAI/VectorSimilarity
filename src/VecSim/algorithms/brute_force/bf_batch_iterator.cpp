@@ -115,8 +115,8 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     // Only in the first iteration we need to compute all the scores
     if (getResultsCount() == 0) {
         assert(this->scores.empty());
-        this->scores.reserve(getIndex()->indexSize());
-        vector<VectorBlock *> blocks = getIndex()->getVectorBlocks();
+        this->scores.reserve(this->index->indexSize());
+        vector<VectorBlock *> blocks = this->index->getVectorBlocks();
         for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
             std::vector<std::pair<float, labelType>> block_scores =
