@@ -93,3 +93,8 @@ format:
 
 lint:
 	./clang-check-all.sh
+
+benchmark:
+	./tests/benchmark.sh
+
+.PHONY: benchmark
