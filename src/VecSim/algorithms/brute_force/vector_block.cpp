@@ -28,9 +28,10 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
 
 std::vector<std::pair<float, labelType>> VectorBlock::computeBlockScores(DISTFUNC<float> DistFunc,
                                                                          const void *queryBlob) {
-    std::vector<std::pair<float, labelType>> scores(size);
-    for (size_t i = 0; i < size; i++) {
-        scores[i] = {DistFunc(this->getVector(i), queryBlob, &dim), getMember(i)->label};
+    std::vector<std::pair<float, labelType>> scores(this->size);
+    for (size_t i = 0; i < this->size; i++) {
+        scores[i] = {DistFunc(this->getVector(i), queryBlob, &this->dim),
+                     this->getMember(i)->label};
     }
     return scores;
 }

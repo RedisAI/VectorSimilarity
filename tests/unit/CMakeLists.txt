@@ -55,4 +55,3 @@ target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
 include(GoogleTest)
 gtest_discover_tests(test_hnswlib)
 gtest_discover_tests(test_bruteforce)
-
