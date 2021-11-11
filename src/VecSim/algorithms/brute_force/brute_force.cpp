@@ -147,18 +147,25 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
 
     float upperBound = std::numeric_limits<float>::lowest();
     CandidatesHeap TopCandidates;
+    // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
-        std::vector<std::pair<float, labelType>> scores =
-            vectorBlock->computeBlockScores(this->dist_func, queryBlob);
+        size_t block_size = vectorBlock->getSize();
+        std::vector<float> scores(block_size);
+        for (size_t i = 0; i < block_size; i++) {
+            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
+        }
         for (int i = 0; i < scores.size(); i++) {
+            // Always choose the current candidate if we have less than k.
             if (TopCandidates.size() < k) {
-                TopCandidates.emplace(scores[i].first, vectorBlock->getMember(i)->label);
+                TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
                 upperBound = TopCandidates.top().first;
+                // otherwise, try greedily to improve the top candidates with a vector that
+                // has a better score than the one that has the worst score until now.
             } else {
-                if (scores[i].first >= upperBound) {
+                if (scores[i] >= upperBound) {
                     continue;
                 } else {
-                    TopCandidates.emplace(scores[i].first, vectorBlock->getMember(i)->label);
+                    TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
                     TopCandidates.pop();
                     upperBound = TopCandidates.top().first;
                 }
