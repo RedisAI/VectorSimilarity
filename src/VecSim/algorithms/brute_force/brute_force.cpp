@@ -159,9 +159,9 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
             if (TopCandidates.size() < k) {
                 TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
                 upperBound = TopCandidates.top().first;
-                // otherwise, try greedily to improve the top candidates with a vector that
-                // has a better score than the one that has the worst score until now.
             } else {
+                // Otherwise, try greedily to improve the top candidates with a vector that
+                // has a better score than the one that has the worst score until now.
                 if (scores[i] >= upperBound) {
                     continue;
                 } else {

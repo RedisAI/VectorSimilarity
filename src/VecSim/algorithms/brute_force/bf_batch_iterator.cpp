@@ -41,9 +41,6 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     // map vector's label to its index in the scores vector.
     unordered_map<size_t, size_t> TopCandidatesIndices(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {
-        if (isnan(this->scores[i].first)) {
-            continue;
-        }
         if (TopCandidates.size() < n_res) {
             TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
             TopCandidatesIndices[this->scores[i].second] = i;
@@ -67,7 +64,10 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
         // Invalidate vector score, so we won't return it again in the next iterations.
-        this->scores[TopCandidatesIndices[TopCandidates.top().second]].first = INVALID_SCORE;
+        // swap
+        this->scores[TopCandidatesIndices[TopCandidates.top().second]] =
+            this->scores[this->scores_valid_start_pos];
+        this->scores[this->scores_valid_start_pos++].first = INVALID_SCORE;
         TopCandidates.pop();
     }
     return results;
