@@ -46,7 +46,5 @@ include_directories(${root}/src)
 add_subdirectory(${root}/src ${binroot}/VectorSimilarity)
 
 enable_testing()
-
-find_package(benchmark REQUIRED)
 add_executable(bf_benchmark bf_google_benchmark.cpp)
 target_link_libraries(bf_benchmark VectorSimilarity benchmark::benchmark)
