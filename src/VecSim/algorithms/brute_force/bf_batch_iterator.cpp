@@ -63,8 +63,8 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
-        // Invalidate vector score, so we won't return it again in the next iterations.
-        // swap
+        // Swap the current vector position with the first valid entry in the scores array,
+        // so we can advance the scores array's head for next iterations.
         this->scores[TopCandidatesIndices[TopCandidates.top().second]] =
             this->scores[this->scores_valid_start_pos];
         this->scores[this->scores_valid_start_pos++].first = INVALID_SCORE;
