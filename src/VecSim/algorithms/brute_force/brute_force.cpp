@@ -151,11 +151,11 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
                                                   VecSimQueryParams *queryParams) {
 
     float upperBound = std::numeric_limits<float>::lowest();
-    CandidatesHeap TopCandidates;
+    CandidatesHeap TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
         size_t block_size = vectorBlock->getLength();
-        std::vector<float> scores(block_size);
+        vecsim_stl::vector<float> scores(block_size, this->allocator);
         for (size_t i = 0; i < block_size; i++) {
             scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
         }
@@ -200,5 +200,5 @@ VecSimIndexInfo BruteForceIndex::info() {
 }
 
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
-    return new BF_BatchIterator(queryBlob, this);
+    return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }

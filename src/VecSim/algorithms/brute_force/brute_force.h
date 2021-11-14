@@ -17,7 +17,7 @@ public:
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
-    inline std::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
+    inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
     virtual ~BruteForceIndex();
 

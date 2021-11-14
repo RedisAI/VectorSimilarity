@@ -1,8 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
-#include <vector>
-#include <queue>
+#include "VecSim/utils/vecsim_stl.h"
 
 #include "VecSim/spaces/space_interface.h"
 
@@ -22,8 +21,8 @@ struct CompareByFirst {
 };
 
 using CandidatesHeap =
-    std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>,
-                        CompareByFirst>;
+    vecsim_stl::priority_queue<std::pair<float, labelType>,
+                               vecsim_stl::vector<std::pair<float, labelType>>, CompareByFirst>;
 
 struct VectorBlockMember : public VecsimBaseObject {
 public:
@@ -54,8 +53,8 @@ public:
 
     // Compute the score for every vector in the block by using the given distance function.
     // Return a collection of (score, label) pairs for every vector in the block.
-    std::vector<std::pair<float, labelType>> computeBlockScores(DISTFUNC<float> DistFunc,
-                                                                const void *queryBlob);
+    vecsim_stl::vector<std::pair<float, labelType>> computeBlockScores(DISTFUNC<float> DistFunc,
+                                                                       const void *queryBlob);
 
     virtual ~VectorBlock();
 

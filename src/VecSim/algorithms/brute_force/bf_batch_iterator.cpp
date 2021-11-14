@@ -27,7 +27,7 @@ VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res,
 
 VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     float upperBound = std::numeric_limits<float>::lowest();
-    CandidatesHeap TopCandidates;
+    CandidatesHeap TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
     unordered_map<size_t, size_t> TopCandidatesIndices(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {
@@ -88,8 +88,9 @@ VecSimQueryResult *BF_BatchIterator::selectBasedSearch(size_t n_res) {
     return results;
 }
 
-BF_BatchIterator::BF_BatchIterator(const void *query_vector, const BruteForceIndex *bf_index)
-    : VecSimBatchIterator(query_vector), id(BF_BatchIterator::next_id), index(bf_index),
+BF_BatchIterator::BF_BatchIterator(const void *query_vector, const BruteForceIndex *bf_index,
+                                   std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimBatchIterator(query_vector, allocator), id(BF_BatchIterator::next_id), index(bf_index),
       scores_valid_start_pos(0) {
     BF_BatchIterator::next_id++;
 }
@@ -102,10 +103,10 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     if (getResultsCount() == 0) {
         assert(this->scores.empty());
         this->scores.reserve(this->index->indexSize());
-        vector<VectorBlock *> blocks = this->index->getVectorBlocks();
+        vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
         for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
-            std::vector<std::pair<float, labelType>> block_scores =
+            vecsim_stl::vector<std::pair<float, labelType>> block_scores =
                 block->computeBlockScores(getIndex()->distFunc(), getQueryBlob());
             this->scores.insert(this->scores.end(), block_scores.begin(), block_scores.end());
         }

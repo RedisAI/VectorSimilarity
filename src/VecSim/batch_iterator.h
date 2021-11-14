@@ -1,19 +1,21 @@
 #pragma once
 
 #include "VecSim/vec_sim.h"
+#include "VecSim/memory/vecsim_base.h"
 
 /**
  * An abstract class for performing search in batches. Every index type should implement its own
  * batch iterator class.
  */
-class VecSimBatchIterator {
+class VecSimBatchIterator : public VecsimBaseObject {
 
     const void *query_vector;
     size_t returned_results_count;
 
 public:
-    explicit VecSimBatchIterator(const void *query_vector)
-        : query_vector(query_vector), returned_results_count(0){};
+    explicit VecSimBatchIterator(const void *query_vector,
+                                 std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0){};
 
     inline const void *getQueryBlob() const { return query_vector; }
 

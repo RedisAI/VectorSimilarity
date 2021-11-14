@@ -1,7 +1,6 @@
 #include "vector_block.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
-#include <vector>
 
 VectorBlockMember::VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator)
     : VecsimBaseObject(allocator) {}
@@ -33,10 +32,10 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     this->length++;
 }
 
-std::vector<std::pair<float, labelType>> VectorBlock::computeBlockScores(DISTFUNC<float> DistFunc,
-                                                                         const void *queryBlob) {
-    std::vector<std::pair<float, labelType>> scores(this->size);
-    for (size_t i = 0; i < this->size; i++) {
+vecsim_stl::vector<std::pair<float, labelType>>
+VectorBlock::computeBlockScores(DISTFUNC<float> DistFunc, const void *queryBlob) {
+    vecsim_stl::vector<std::pair<float, labelType>> scores(this->length, this->allocator);
+    for (size_t i = 0; i < this->length; i++) {
         scores[i] = {DistFunc(this->getVector(i), queryBlob, &this->dim),
                      this->getMember(i)->label};
     }
