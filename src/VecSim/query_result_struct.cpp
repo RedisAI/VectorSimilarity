@@ -7,5 +7,4 @@ void VecSimQueryResult_SetId(VecSimQueryResult &result, size_t id) { result.id =
 
 void VecSimQueryResult_SetScore(VecSimQueryResult &result, float score) {
     assert(!isnan(score));
-    result.score = score;
 }
