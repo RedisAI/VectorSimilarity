@@ -18,7 +18,6 @@ protected:
 
 struct SimpleObject : public VecsimBaseObject {
 public:
-    SimpleObject(VecSimAllocator *allocator) : VecsimBaseObject(allocator) {}
     SimpleObject(std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator) {}
     int x;
 };
@@ -27,7 +26,6 @@ struct ObjectWithSTL : public VecsimBaseObject {
     std::vector<int, VecsimSTLAllocator<int>> test_vec;
 
 public:
-    ObjectWithSTL(VecSimAllocator *allocator) : VecsimBaseObject(allocator), test_vec(allocator){};
     ObjectWithSTL(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), test_vec(allocator){};
 };
@@ -37,8 +35,6 @@ struct NestedObject : public VecsimBaseObject {
     SimpleObject simpleObject;
 
 public:
-    NestedObject(VecSimAllocator *allocator)
-        : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator){};
     NestedObject(std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator){};
 };

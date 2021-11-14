@@ -6,7 +6,7 @@
 size_t VecSimAllocator::allocation_header_size = sizeof(size_t);
 
 void *VecSimAllocator::allocate(size_t size) {
-    *this->allocated.get() += size + sizeof(size_t);
+    *this->allocated.get() += size + allocation_header_size;
     size_t *ptr = (size_t *)vecsim_malloc(size + allocation_header_size);
     *ptr = size;
 
