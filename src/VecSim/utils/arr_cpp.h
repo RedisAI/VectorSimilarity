@@ -50,7 +50,7 @@ T *array_grow(T *arr, size_t cap) {
 
 template <typename T>
 T *array_append(T *arr, T val) {
-    arr = array_grow(arr, ++array_hdr(arr)->len);
+    arr = array_grow(arr, array_hdr(arr)->len);
     arr[array_hdr(arr)->len - 1] = val;
     return arr;
 }

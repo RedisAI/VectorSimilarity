@@ -41,7 +41,8 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/vec_sim.cpp
 	VecSim/query_results.cpp
 	VecSim/query_result_struct.cpp
-    VecSim/utils/vec_utils.cpp)
+	VecSim/algorithms/brute_force/bf_batch_iterator.cpp
+	VecSim/utils/vec_utils.cpp)
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
@@ -52,6 +53,6 @@ install(TARGETS VectorSimilaritySpaces
     DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 if(NOT VECSIM_STATIC)
-    set_target_properties(VectorSimilarity PROPERTIES PREFIX "")
+    set_target_properties(VectorSimilarity PROPERTIES PREFIX "lib")
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()

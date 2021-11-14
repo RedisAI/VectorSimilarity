@@ -1,5 +1,6 @@
 #include "vector_block.h"
 #include <cstring>
+#include <vector>
 
 VectorBlock::VectorBlock(size_t blockSize, size_t vectorSize) : dim(vectorSize), size(0) {
     this->members = new VectorBlockMember *[blockSize];
@@ -23,4 +24,14 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     // Copy vector data and update block size.
     memcpy(this->vectors + (this->size * this->dim), vectorData, this->dim * sizeof(float));
     this->size++;
+}
+
+std::vector<std::pair<float, labelType>> VectorBlock::computeBlockScores(DISTFUNC<float> DistFunc,
+                                                                         const void *queryBlob) {
+    std::vector<std::pair<float, labelType>> scores(this->size);
+    for (size_t i = 0; i < this->size; i++) {
+        scores[i] = {DistFunc(this->getVector(i), queryBlob, &this->dim),
+                     this->getMember(i)->label};
+    }
+    return scores;
 }
