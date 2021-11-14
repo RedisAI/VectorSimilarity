@@ -15,6 +15,7 @@ unsigned char BF_BatchIterator::next_id = 0;
 VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res,
                                                         VecSimQueryResult_Order order) {
     if ((this->index->indexSize() - this->getResultsCount()) / 1000 > n_res) {
+        // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
     }
     VecSimQueryResult *res = this->selectBasedSearch(n_res);
@@ -52,8 +53,8 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
-        // Swap the current vector position with the first valid entry in the scores array,
-        // so we can advance the scores array's head for next iterations.
+        // Move the first valid entry in the scores array to the current vector position,
+        // and advance the scores array's head (for next iterations).
         this->scores[TopCandidatesIndices[TopCandidates.top().second]] =
             this->scores[this->scores_valid_start_pos++];
         TopCandidates.pop();
