@@ -31,7 +31,7 @@ void VecSimAllocator::free_allocation(void *p) {
     if (!p)
         return;
     size_t *ptr = ((size_t *)p) - 1;
-    *this->allocated.get() -= ptr[0];
+    *this->allocated.get() -= (ptr[0] + allocation_header_size);
     vecsim_free(ptr);
 }
 
