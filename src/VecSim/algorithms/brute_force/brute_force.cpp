@@ -6,9 +6,6 @@
 #include "VecSim/query_result_struct.h"
 
 #include <memory>
-#include <set>
-#include <vector>
-#include <unordered_map>
 #include <cstring>
 #include <queue>
 

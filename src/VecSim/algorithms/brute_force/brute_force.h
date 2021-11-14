@@ -3,9 +3,7 @@
 #include "vector_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/space_interface.h"
-#include <unordered_map>
-#include <set>
-#include <vector>
+#include "VecSim/utils/vecsim_stl.h"
 #include <memory>
 
 class BruteForceIndex : public VecSimIndex {
@@ -23,13 +21,10 @@ public:
 
 private:
     void updateVector(idType id, const void *vector_data);
-    std::unordered_map<labelType, idType, std::hash<labelType>, std::equal_to<labelType>,
-                       VecsimSTLAllocator<std::pair<const labelType, idType>>>
-        labelToIdLookup;
-    std::vector<VectorBlockMember *, VecsimSTLAllocator<VectorBlockMember *>>
-        idToVectorBlockMemberMapping;
-    std::set<idType, std::less<idType>, VecsimSTLAllocator<idType>> deletedIds;
-    std::vector<VectorBlock *, VecsimSTLAllocator<VectorBlock *>> vectorBlocks;
+    vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
+    vecsim_stl::vector<VectorBlockMember *> idToVectorBlockMemberMapping;
+    vecsim_stl::set<idType> deletedIds;
+    vecsim_stl::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;
