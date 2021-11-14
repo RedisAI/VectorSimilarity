@@ -26,9 +26,9 @@ public:
 
     inline float *getVector(size_t index) { return this->vectors + (index * this->dim); }
 
-    inline float *removeAndFetchVector() { return this->vectors + (this->size-- * this->dim); }
+    inline float *removeAndFetchVector() { return this->vectors + (this->length-- * this->dim); }
 
-    inline size_t getSize() { return size; }
+    inline size_t getLength() { return length; }
 
     inline VectorBlockMember *getMember(size_t index) { return this->members[index]; }
 
@@ -39,9 +39,14 @@ public:
     virtual ~VectorBlock();
 
 private:
+    // Vector dimensions.
     size_t dim;
-    size_t size;
+    // Current vector block length.
+    size_t length;
+    // Vector block size (capacity).
     size_t blockSize;
+    // Current members of the vector block.
     VectorBlockMember **members;
+    // Vectors hosted in the vector block.
     float *vectors;
 };

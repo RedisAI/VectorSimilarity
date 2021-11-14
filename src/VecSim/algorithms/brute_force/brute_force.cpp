@@ -93,7 +93,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     } else {
         // Get the last vector block.
         vectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
-        if (vectorBlock->getSize() == this->vectorBlockSize) {
+        if (vectorBlock->getLength() == this->vectorBlockSize) {
             // Last vector block is full, create a new one.
             vectorBlock = new (this->allocator)
                 VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
@@ -127,7 +127,7 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     VectorBlock *lastVectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
     VectorBlockMember *lastVectorBlockMember =
-        lastVectorBlock->getMember(lastVectorBlock->getSize() - 1);
+        lastVectorBlock->getMember(lastVectorBlock->getLength() - 1);
 
     // Swap the last vector with the deleted vector;
     vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
@@ -145,7 +145,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     this->labelToIdLookup.erase(label);
 
     // If the last vector block is emtpy;
-    if (lastVectorBlock->getSize() == 0) {
+    if (lastVectorBlock->getLength() == 0) {
         delete lastVectorBlock;
         this->vectorBlocks.pop_back();
     }
@@ -166,10 +166,10 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         knn_res;
     for (auto vectorBlock : this->vectorBlocks) {
         float scores[this->vectorBlockSize];
-        for (size_t i = 0; i < vectorBlock->getSize(); i++) {
+        for (size_t i = 0; i < vectorBlock->getLength(); i++) {
             scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &dim);
         }
-        size_t vec_count = vectorBlock->getSize();
+        size_t vec_count = vectorBlock->getLength();
         for (int i = 0; i < vec_count; i++) {
 
             if (knn_res.size() < k) {
