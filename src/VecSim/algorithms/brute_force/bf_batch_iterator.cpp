@@ -10,22 +10,12 @@
 
 unsigned char BF_BatchIterator::next_id = 0;
 
-// Compare function that handle NaN values (consider these as the highest, above inf: NaN>inf)
-bool cmp(const pair<float, labelType> &a, const pair<float, labelType> &b) {
-    if (isnan(a.first)) {
-        return false;
-    }
-    if (isnan(b.first)) {
-        return true;
-    }
-    return a.first < b.first;
-}
-
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
 VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res,
                                                         VecSimQueryResult_Order order) {
     if ((this->index->indexSize() - this->getResultsCount()) / 1000 > n_res) {
+        // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
     }
     VecSimQueryResult *res = this->selectBasedSearch(n_res);
@@ -63,11 +53,10 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
-        // Invalidate vector score, so we won't return it again in the next iterations.
-        // swap
+        // Move the first valid entry in the scores array to the current vector position,
+        // and advance the scores array's head (for next iterations).
         this->scores[TopCandidatesIndices[TopCandidates.top().second]] =
-            this->scores[this->scores_valid_start_pos];
-        this->scores[this->scores_valid_start_pos++].first = INVALID_SCORE;
+            this->scores[this->scores_valid_start_pos++];
         TopCandidates.pop();
     }
     return results;
@@ -86,13 +75,10 @@ VecSimQueryResult *BF_BatchIterator::selectBasedSearch(size_t n_res) {
     // This will perform an in-place partition of the elements in the slice of the array that
     // contains valid results, based on the n-th element as the pivot - every element with a lower
     // will be placed before it, and all the rest will be placed after.
-    std::nth_element(valid_begin_it, n_th_element_pos, this->scores.end(), cmp);
+    std::nth_element(valid_begin_it, n_th_element_pos, this->scores.end());
 
     auto *results = array_new<VecSimQueryResult>(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores_valid_start_pos + n_res; i++) {
-        if (isnan(this->scores[i].first)) {
-            continue;
-        }
         results = array_append(results, VecSimQueryResult{});
         VecSimQueryResult_SetId(results[array_len(results) - 1], this->scores[i].second);
         VecSimQueryResult_SetScore(results[array_len(results) - 1], this->scores[i].first);
