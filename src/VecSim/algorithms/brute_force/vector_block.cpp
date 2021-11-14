@@ -1,6 +1,7 @@
 #include "vector_block.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
+#include <vector>
 
 VectorBlockMember::VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator)
     : VecsimBaseObject(allocator) {}
@@ -30,4 +31,14 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     // Copy vector data and update block size.
     memcpy(this->vectors + (this->length * this->dim), vectorData, this->dim * sizeof(float));
     this->length++;
+}
+
+std::vector<std::pair<float, labelType>> VectorBlock::computeBlockScores(DISTFUNC<float> DistFunc,
+                                                                         const void *queryBlob) {
+    std::vector<std::pair<float, labelType>> scores(this->size);
+    for (size_t i = 0; i < this->size; i++) {
+        scores[i] = {DistFunc(this->getVector(i), queryBlob, &this->dim),
+                     this->getMember(i)->label};
+    }
+    return scores;
 }

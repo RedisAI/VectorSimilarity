@@ -1,6 +1,10 @@
 #pragma once
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
+#include <vector>
+#include <queue>
+
+#include "VecSim/spaces/space_interface.h"
 
 typedef size_t labelType;
 typedef size_t idType;
@@ -8,6 +12,18 @@ typedef size_t idType;
 // Pre declaration
 
 struct VectorBlock;
+
+// TODO: unify this with HNSW
+struct CompareByFirst {
+    constexpr bool operator()(std::pair<float, labelType> const &a,
+                              std::pair<float, labelType> const &b) const noexcept {
+        return a.first < b.first;
+    }
+};
+
+using CandidatesHeap =
+    std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>,
+                        CompareByFirst>;
 
 struct VectorBlockMember : public VecsimBaseObject {
 public:
@@ -35,6 +51,11 @@ public:
     inline void setMember(size_t index, VectorBlockMember *member) {
         this->members[index] = member;
     }
+
+    // Compute the score for every vector in the block by using the given distance function.
+    // Return a collection of (score, label) pairs for every vector in the block.
+    std::vector<std::pair<float, labelType>> computeBlockScores(DISTFUNC<float> DistFunc,
+                                                                const void *queryBlob);
 
     virtual ~VectorBlock();
 

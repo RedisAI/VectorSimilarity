@@ -4,20 +4,13 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 
 #include <memory>
 #include <cstring>
 #include <queue>
 
 using namespace std;
-
-// TODO: unify this with HNSW
-struct CompareByFirst {
-    constexpr bool operator()(std::pair<float, labelType> const &a,
-                              std::pair<float, labelType> const &b) const noexcept {
-        return a.first < b.first;
-    }
-};
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const VecSimParams *params,
@@ -152,44 +145,43 @@ int BruteForceIndex::deleteVector(size_t label) {
     return true;
 }
 
-size_t BruteForceIndex::indexSize() { return this->count; }
+size_t BruteForceIndex::indexSize() const { return this->count; }
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
-    float upperBound = std::numeric_limits<float>::min();
-    std::priority_queue<std::pair<float, labelType>, std::vector<std::pair<float, labelType>>,
-                        CompareByFirst>
-        knn_res;
+    float upperBound = std::numeric_limits<float>::lowest();
+    CandidatesHeap TopCandidates;
+    // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
-        float scores[this->vectorBlockSize];
-        for (size_t i = 0; i < vectorBlock->getLength(); i++) {
-            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &dim);
+        size_t block_size = vectorBlock->getLength();
+        std::vector<float> scores(block_size);
+        for (size_t i = 0; i < block_size; i++) {
+            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
         }
-        size_t vec_count = vectorBlock->getLength();
-        for (int i = 0; i < vec_count; i++) {
-
-            if (knn_res.size() < k) {
-                labelType label = vectorBlock->getMember(i)->label;
-                knn_res.emplace(scores[i], label);
-                upperBound = knn_res.top().first;
+        for (int i = 0; i < scores.size(); i++) {
+            // Always choose the current candidate if we have less than k.
+            if (TopCandidates.size() < k) {
+                TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
+                upperBound = TopCandidates.top().first;
             } else {
+                // Otherwise, try greedily to improve the top candidates with a vector that
+                // has a better score than the one that has the worst score until now.
                 if (scores[i] >= upperBound) {
                     continue;
                 } else {
-                    labelType label = vectorBlock->getMember(i)->label;
-                    knn_res.emplace(scores[i], label);
-                    knn_res.pop();
-                    upperBound = knn_res.top().first;
+                    TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
+                    TopCandidates.pop();
+                    upperBound = TopCandidates.top().first;
                 }
             }
         }
     }
-    auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
-    for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(results[i], knn_res.top().second);
-        VecSimQueryResult_SetScore(results[i], knn_res.top().first);
-        knn_res.pop();
+    auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
+    for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
+        VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
+        VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
+        TopCandidates.pop();
     }
     return results;
 }
@@ -207,4 +199,6 @@ VecSimIndexInfo BruteForceIndex::info() {
     return info;
 }
 
-VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) { return nullptr; }
+VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
+    return new BF_BatchIterator(queryBlob, this);
+}

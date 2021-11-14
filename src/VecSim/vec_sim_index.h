@@ -54,7 +54,7 @@ public:
      *
      * @return index size.
      */
-    virtual size_t indexSize() = 0;
+    virtual size_t indexSize() const = 0;
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.

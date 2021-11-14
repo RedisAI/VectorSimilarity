@@ -5,18 +5,20 @@
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include <memory>
+#include <queue>
 
 class BruteForceIndex : public VecSimIndex {
 public:
     BruteForceIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
-    virtual size_t indexSize() override;
+    virtual size_t indexSize() const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
-
+    inline std::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
+    inline DISTFUNC<float> distFunc() const { return dist_func; }
     virtual ~BruteForceIndex();
 
 private:

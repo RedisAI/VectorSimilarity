@@ -42,7 +42,7 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) { return this->hnsw.removePoint(id); }
 
-size_t HNSWIndex::indexSize() { return this->hnsw.getIndexSize(); }
+size_t HNSWIndex::indexSize() const { return this->hnsw.getIndexSize(); }
 
 void HNSWIndex::setEf(size_t ef) { this->hnsw.setEf(ef); }
 
