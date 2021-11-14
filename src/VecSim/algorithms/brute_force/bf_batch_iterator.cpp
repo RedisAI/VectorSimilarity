@@ -90,9 +90,6 @@ VecSimQueryResult *BF_BatchIterator::selectBasedSearch(size_t n_res) {
 
     auto *results = array_new<VecSimQueryResult>(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores_valid_start_pos + n_res; i++) {
-        if (isnan(this->scores[i].first)) {
-            continue;
-        }
         results = array_append(results, VecSimQueryResult{});
         VecSimQueryResult_SetId(results[array_len(results) - 1], this->scores[i].second);
         VecSimQueryResult_SetScore(results[array_len(results) - 1], this->scores[i].first);
