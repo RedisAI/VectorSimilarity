@@ -13,7 +13,7 @@ static inline void vecsim_free(void *p) { RedisModule_Free(p); }
 static inline char *vecsim_strdup(const char *s) { return RedisModule_Strdup(s); }
 
 static inline char *vecsim_strndup(const char *s, size_t n) {
-    char *ret = (char *)rm_malloc(n + 1);
+    char *ret = (char *)vecsim_malloc(n + 1);
 
     if (ret) {
         ret[n] = '\0';
@@ -35,12 +35,12 @@ static inline char *vecsim_strndup(const char *s, size_t n) {
 struct VecSimAllocator {
 private:
     std::shared_ptr<uint64_t> allocated;
-    size_t allocation_header_size;
+
+    // Static member that indicates each allocation additional size.
+    static size_t allocation_header_size;
 
 public:
-    VecSimAllocator()
-        : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))),
-          allocation_header_size(sizeof(size_t)) {}
+    VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
 
     void *allocate(size_t size);
     void deallocate(void *p, size_t size);
