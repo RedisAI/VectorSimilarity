@@ -49,8 +49,9 @@ public:
 };
 
 BENCHMARK_DEFINE_F(BM_BatchIteratorBF, get_10000_total_results)(benchmark::State &st) {
+
+    size_t n_res = st.range(0);
     for (auto _ : st) {
-        size_t n_res = st.range(0);
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data());
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
