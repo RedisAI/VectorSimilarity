@@ -20,6 +20,8 @@ make test          # run tests
 
 make valgrind		   # run valgrind
 
+make benchmark	   # run micro benchmarks
+
 make platform      # build for specific Linux distribution
   OSNICK=nick        # Linux distribution to build for
   REDIS_VER=ver      # use Redis version `ver`
@@ -93,3 +95,8 @@ format:
 
 lint:
 	./clang-check-all.sh
+
+benchmark:
+	./tests/benchmark.sh
+
+.PHONY: benchmark
