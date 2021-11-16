@@ -4,6 +4,7 @@
 
 #ifdef REDIS_MODULE_TARGET /* Set this when compiling your code as a module */
 #include "redismodule.h"
+#include <cstring>
 static inline void *vecsim_malloc(size_t n) { return RedisModule_Alloc(n); }
 static inline void *vecsim_calloc(size_t nelem, size_t elemsz) {
     return RedisModule_Calloc(nelem, elemsz);

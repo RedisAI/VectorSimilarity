@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 #include <stddef.h>
+#include <stdint.h>
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M        16
@@ -85,7 +86,7 @@ typedef struct {
     size_t d;            // Vector size (dimension).
     VecSimAlgo algo;     // Algorithm being used.
     VecSimMetric metric; // Index distance metric
-    size_t memory;       // Index memory consumption.
+    int64_t memory;       // Index memory consumption.
 } VecSimIndexInfo;
 
 #ifdef __cplusplus
