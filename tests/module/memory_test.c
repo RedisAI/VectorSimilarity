@@ -1,6 +1,6 @@
 
-#include "redismodule.h"
-#include "vec_sim.h"
+#include "VecSim/memory/redismodule.h"
+#include "VecSim/vec_sim.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -24,8 +24,10 @@ int VecSim_memory_basic_check (RedisModuleCtx *ctx, RedisModuleString **argv, in
     VecSimIndex *vec;
     vec = VecSimIndex_New(&param);
 
-    if (!vec)
+    if (vec) {
         RedisModule_ReplyWithSimpleString(ctx, "OK");
+        VecSimIndex_Free(vec);
+    }
     else
         RedisModule_ReplyWithError(ctx, "ERROR");
 
@@ -33,8 +35,10 @@ int VecSim_memory_basic_check (RedisModuleCtx *ctx, RedisModuleString **argv, in
 }
 
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    REDISMODULE_NOT_USED(argc);
 
-    if (RedisModule_Init(ctx, "RAI_llapi", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR)
+    if (RedisModule_Init(ctx, "VecSim_memory", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
 
     if (RedisModule_CreateCommand(ctx, "VecSim_memory.basic_check", VecSim_memory_basic_check, "", 0, 0,
