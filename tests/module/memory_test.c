@@ -7,6 +7,7 @@
 
 #define DIMENSION 100
 
+// get memory usage from redis-server
 long long _get_memory_usage (RedisModuleCtx *ctx) {
     long long usage;
     RedisModuleServerInfoData *info = RedisModule_GetServerInfo(ctx,"memory");
@@ -17,7 +18,8 @@ long long _get_memory_usage (RedisModuleCtx *ctx) {
     return usage;
 }
 
-void _fill_vectors(VecSimIndex *index, long long amount) {
+// adds 'amount' vectors to the index. could be 0 
+void _add_vectors(VecSimIndex *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
     int i;
     int64_t vec[indexInfo.d];
@@ -27,12 +29,14 @@ void _fill_vectors(VecSimIndex *index, long long amount) {
         VecSimIndex_AddVector(index,vec,i);
 }
 
+// deletes 'amount' vectors from the index. could be 0 or larger from the number of vectors in the index
 void _delete_vectors(VecSimIndex *index, long long amount) {
     int i;
     for (i=0;i<amount;i++)
         VecSimIndex_DeleteVector(index,i);
 }
 
+// creates a generic index, supports Broute Force and HNSW
 VecSimIndex* _create_index (VecSimAlgo algo) {
 
     VecSimParams param;
@@ -58,6 +62,8 @@ VecSimIndex* _create_index (VecSimAlgo algo) {
     return VecSimIndex_New(&param);
 }
 
+// creates an index, add n vectors, deletes m vectors and then compares redis-server memory usage report to the index memory usage report
+// uncomment the 3 lines close to the end to get the values along with the comparison result.
 int VecSim_memory_create_index_add_n_delete_m_check (RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     long long n,m,i;
@@ -83,19 +89,19 @@ int VecSim_memory_create_index_add_n_delete_m_check (RedisModuleCtx *ctx, RedisM
         return REDISMODULE_OK;
     }
 
-    startMemory = _get_memory_usage(ctx);
+    startMemory = _get_memory_usage(ctx);   // get memory usage before creating the index
 
     VecSimIndex *index = _create_index(algo);
-    _fill_vectors(index,n);
+    _add_vectors(index,n);
     _delete_vectors(index,m);
     
-    endMemory = _get_memory_usage(ctx);
+    endMemory = _get_memory_usage(ctx);     // get memory usage after creating the index
 
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
 
-    RedisModule_ReplyWithArray(ctx, 3);
-    RedisModule_ReplyWithLongLong(ctx,endMemory-startMemory);
-    RedisModule_ReplyWithLongLong(ctx,indexInfo.memory);
+    // RedisModule_ReplyWithArray(ctx, 3);
+    // RedisModule_ReplyWithLongLong(ctx,endMemory-startMemory);
+    // RedisModule_ReplyWithLongLong(ctx,indexInfo.memory);
 
     if (indexInfo.memory <= endMemory-startMemory)
         RedisModule_ReplyWithSimpleString(ctx, "OK");
@@ -106,6 +112,7 @@ int VecSim_memory_create_index_add_n_delete_m_check (RedisModuleCtx *ctx, RedisM
     return REDISMODULE_OK;
 }
 
+// calls to VecSim_memory_create_index_add_n_delete_m_check with m=0
 int VecSim_memory_create_index_add_n_check (RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     int i, res;
     RedisModuleString *newArgv[argc+1];
@@ -117,6 +124,7 @@ int VecSim_memory_create_index_add_n_check (RedisModuleCtx *ctx, RedisModuleStri
     return res;
 }
 
+// calls to VecSim_memory_create_index_add_n_check with n=0
 int VecSim_memory_create_index_check (RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     int i, res;
     RedisModuleString *newArgv[argc+1];
@@ -155,18 +163,22 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     if (RedisModule_Init(ctx, "VecSim_memory", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
 
+    // usage: VecSim_memory.basic_check
     if (RedisModule_CreateCommand(ctx, "VecSim_memory.basic_check", VecSim_memory_basic_check,
                                   "", 0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
 
+    // usage: VecSim_memory.create_index_check <algorithm:BF/HNSW>
     if (RedisModule_CreateCommand(ctx, "VecSim_memory.create_index_check", VecSim_memory_create_index_check,
                                   "", 0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
     
+    // usage: VecSim_memory.create_index_add_n_check <algorithm:BF/HNSW> <number>
     if (RedisModule_CreateCommand(ctx, "VecSim_memory.create_index_add_n_check", VecSim_memory_create_index_add_n_check,
                                   "", 0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
     
+    // usage: VecSim_memory.create_index_add_n_delete_m_check <algorithm:BF/HNSW> <number> <number>
     if (RedisModule_CreateCommand(ctx, "VecSim_memory.create_index_add_n_delete_m_check", VecSim_memory_create_index_add_n_delete_m_check,
                                   "", 0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
