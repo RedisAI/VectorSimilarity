@@ -9,7 +9,7 @@
 #include "memory.h"
 
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
-    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     if (params->algo == VecSimAlgo_HNSWLIB) {
         return new (allocator) HNSWIndex(params, allocator);
     }
@@ -54,7 +54,11 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     return results;
 }
 
-extern "C" void VecSimIndex_Free(VecSimIndex *index) { delete index; }
+extern "C" void VecSimIndex_Free(VecSimIndex *index) {
+    std::shared_ptr<VecSimAllocator> allocator =
+        index->getAllocator(); // Save allocator so it will not deallocate itself
+    delete index;
+}
 
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
 

@@ -39,9 +39,10 @@ private:
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
 
-public:
     VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
 
+public:
+    static std::shared_ptr<VecSimAllocator> newVecsimAllocator();
     void *allocate(size_t size);
     void deallocate(void *p, size_t size);
     void *reallocate(void *p, size_t size);

@@ -3,6 +3,11 @@
 #include <memory>
 #include <string.h>
 
+std::shared_ptr<VecSimAllocator> VecSimAllocator::newVecsimAllocator() {
+    std::shared_ptr<VecSimAllocator> allocator(new VecSimAllocator());
+    return allocator;
+}
+
 size_t VecSimAllocator::allocation_header_size = sizeof(size_t);
 
 void *VecSimAllocator::allocate(size_t size) {

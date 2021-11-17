@@ -45,7 +45,7 @@ public:
 };
 
 TEST_F(AllocatorTest, test_simple_object) {
-    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     SimpleObject *obj = new (allocator) SimpleObject(allocator);
@@ -57,7 +57,7 @@ TEST_F(AllocatorTest, test_simple_object) {
 }
 
 TEST_F(AllocatorTest, test_object_with_stl) {
-    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     ObjectWithSTL *obj = new (allocator) ObjectWithSTL(allocator);
@@ -69,7 +69,7 @@ TEST_F(AllocatorTest, test_object_with_stl) {
 }
 
 TEST_F(AllocatorTest, test_nested_object) {
-    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     NestedObject *obj = new (allocator) NestedObject(allocator);
@@ -81,7 +81,7 @@ TEST_F(AllocatorTest, test_nested_object) {
 }
 
 TEST_F(AllocatorTest, test_bf_index_block_size_1) {
-    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     // Create only the minimal struct.
@@ -185,7 +185,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 }
 
 TEST_F(AllocatorTest, test_hnsw) {
-    std::shared_ptr<VecSimAllocator> allocator = std::make_shared<VecSimAllocator>();
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     size_t d = 128;
