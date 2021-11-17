@@ -37,8 +37,20 @@ VecSimIndex* _create_index (VecSimAlgo algo) {
 
     VecSimParams param;
     param.algo = algo;
-    param.bfParams.blockSize = 1;
-    param.bfParams.initialCapacity = 1;
+    switch (algo)
+    {
+    case VecSimAlgo_BF:
+        param.bfParams.blockSize = 1;
+        param.bfParams.initialCapacity = 1;
+        break;
+    
+    case VecSimAlgo_HNSWLIB:
+        param.hnswParams.M = 2;
+        param.hnswParams.initialCapacity = 1;
+        param.hnswParams.efConstruction = 0;
+        param.hnswParams.efRuntime = 0;
+        break;
+    }
     param.type = VecSimType_INT64;
     param.size = DIMENSION;
     param.metric = VecSimMetric_L2;
@@ -81,9 +93,9 @@ int VecSim_memory_create_index_add_n_delete_m_check (RedisModuleCtx *ctx, RedisM
 
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
 
-    // RedisModule_ReplyWithArray(ctx, 3);
-    // RedisModule_ReplyWithLongLong(ctx,endMemory-startMemory);
-    // RedisModule_ReplyWithLongLong(ctx,indexInfo.memory);
+    RedisModule_ReplyWithArray(ctx, 3);
+    RedisModule_ReplyWithLongLong(ctx,endMemory-startMemory);
+    RedisModule_ReplyWithLongLong(ctx,indexInfo.memory);
 
     if (indexInfo.memory <= endMemory-startMemory)
         RedisModule_ReplyWithSimpleString(ctx, "OK");
