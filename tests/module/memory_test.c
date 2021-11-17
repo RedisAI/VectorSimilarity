@@ -49,7 +49,7 @@ VecSimIndex* _create_index (VecSimAlgo algo) {
         break;
     
     case VecSimAlgo_HNSWLIB:
-        param.hnswParams.M = 2;
+        param.hnswParams.M = 30;
         param.hnswParams.initialCapacity = 1;
         param.hnswParams.efConstruction = 0;
         param.hnswParams.efRuntime = 0;
