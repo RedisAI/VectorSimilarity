@@ -29,16 +29,16 @@ py::object wrap_results(VecSimQueryResult_List res, size_t len) {
     py::capsule free_when_done_l(data_numpy_l, [](void *f) { delete[] f; });
     py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
     return py::make_tuple(
-            py::array_t<size_t>(
-                    {(size_t)1, len},                       // shape
-                    {len * sizeof(size_t), sizeof(size_t)}, // C-style contiguous strides for double
-                    data_numpy_l,                         // the data pointer
-                    free_when_done_l),
-            py::array_t<float>(
-                    {(size_t)1, len},                     // shape
-                    {len * sizeof(float), sizeof(float)}, // C-style contiguous strides for double
-                    data_numpy_d,                       // the data pointer
-                    free_when_done_d));
+        py::array_t<size_t>(
+            {(size_t)1, len},                       // shape
+            {len * sizeof(size_t), sizeof(size_t)}, // C-style contiguous strides for double
+            data_numpy_l,                           // the data pointer
+            free_when_done_l),
+        py::array_t<float>(
+            {(size_t)1, len},                     // shape
+            {len * sizeof(float), sizeof(float)}, // C-style contiguous strides for double
+            data_numpy_d,                         // the data pointer
+            free_when_done_d));
 }
 
 class PyVecSimIndex {
@@ -93,28 +93,25 @@ public:
     }
 };
 
-
 class PyBFIndex : public PyVecSimIndex {
 public:
     PyBFIndex(const BFParams &bf_params, const VecSimType type, size_t dim,
               const VecSimMetric metric) {
         VecSimParams params = {.bfParams = bf_params,
-                .type = type,
-                .size = dim,
-                .metric = metric,
-                .algo = VecSimAlgo_BF};
+                               .type = type,
+                               .size = dim,
+                               .metric = metric,
+                               .algo = VecSimAlgo_BF};
         this->index = VecSimIndex_New(&params);
     }
-    VecSimIndex *get_index() {
-        return this->index;
-    }
-//    PyBFBatchIterator createBatchIterator(py::object query_blob) {
-//        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-//        float *vector_data = (float *)items.data(0);
-//        //auto *bf_iterator = new PyBFBatchIterator(this->index, vector_data);
-//        //return *bf_iterator;
-//        return PyBFBatchIterator(this->index, vector_data);
-//    }
+    VecSimIndex *get_index() { return this->index; }
+    //    PyBFBatchIterator createBatchIterator(py::object query_blob) {
+    //        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
+    //        float *vector_data = (float *)items.data(0);
+    //        //auto *bf_iterator = new PyBFBatchIterator(this->index, vector_data);
+    //        //return *bf_iterator;
+    //        return PyBFBatchIterator(this->index, vector_data);
+    //    }
 };
 
 class PyBFBatchIterator {
@@ -122,30 +119,25 @@ private:
     VecSimBatchIterator *batchIterator;
 
 public:
-    PyBFBatchIterator(PyBFIndex &py_bf_index,  py::object &query_blob) {
+    PyBFBatchIterator(PyBFIndex &py_bf_index, py::object &query_blob) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
         float *vector_data = (float *)items.data(0);
         float *vector_data_copy = new float[128];
-        memcpy(vector_data_copy, vector_data, 128*sizeof(float));
+        memcpy(vector_data_copy, vector_data, 128 * sizeof(float));
         batchIterator = VecSimBatchIterator_New(py_bf_index.get_index(), vector_data_copy);
     }
 
-    bool hasNext() {
-        return VecSimBatchIterator_HasNext(batchIterator);
-    }
+    bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator); }
     py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
         VecSimQueryResult_List results = VecSimBatchIterator_Next(batchIterator, n_res, order);
-        // The number of results may be lower than n_res, if there are less than n_res remaining vectors
-        // in the index that hadn't been returned yet.
+        // The number of results may be lower than n_res, if there are less than n_res remaining
+        // vectors in the index that hadn't been returned yet.
         size_t actual_n_res = VecSimQueryResult_Len(results);
         return wrap_results(results, actual_n_res);
     }
-    void reset() {
-        VecSimBatchIterator_Reset(batchIterator);
-    }
+    void reset() { VecSimBatchIterator_Reset(batchIterator); }
     virtual ~PyBFBatchIterator() { VecSimBatchIterator_Free(batchIterator); }
 };
-
 
 PYBIND11_MODULE(VecSim, m) {
     py::enum_<VecSimAlgo>(m, "VecSimAlgo")
@@ -214,7 +206,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init([](const BFParams &params, const VecSimType type, size_t dim,
                          VecSimMetric metric) { return new PyBFIndex(params, type, dim, metric); }),
              py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"));
-        //.def("create_batch_iterator", &PyBFIndex::createBatchIterator);
+    //.def("create_batch_iterator", &PyBFIndex::createBatchIterator);
 
     py::class_<PyBFBatchIterator>(m, "BFBatchIterator")
         .def(py::init([](PyBFIndex &index, py::object &query_blob) {
