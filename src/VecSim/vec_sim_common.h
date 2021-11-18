@@ -86,7 +86,7 @@ typedef struct {
     size_t d;            // Vector size (dimension).
     VecSimAlgo algo;     // Algorithm being used.
     VecSimMetric metric; // Index distance metric
-    int64_t memory;       // Index memory consumption.
+    int64_t memory;      // Index memory consumption.
 } VecSimIndexInfo;
 
 #ifdef __cplusplus
