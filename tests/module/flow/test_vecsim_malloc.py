@@ -24,13 +24,6 @@ def with_test_module(f):
     return wrapper
 
 @with_test_module
-def test_basic_check(env):
-
-    con = env.getConnection()
-    ret = con.execute_command('VecSim_memory.basic_check')
-    env.assertEqual(ret, b'OK')
-
-@with_test_module
 def test_create_index_check(env):
 
     con = env.getConnection()

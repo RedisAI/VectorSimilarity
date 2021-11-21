@@ -65,7 +65,7 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
 // Please keep up-to-date if additional algorithms are implemented.
 VecSimAlgo _get_algorithm(RedisModuleString *algo) {
 
-    char *al = RedisModule_StringPtrLen(algo, NULL);
+    const char *al = RedisModule_StringPtrLen(algo, NULL);
     if (!strcmp(al, "BF"))
         return VecSimAlgo_BF;
     if (!strcmp(al, "HNSW"))
@@ -116,7 +116,7 @@ int VecSim_memory_create_index_add_n_delete_m_check(RedisModuleCtx *ctx, RedisMo
     }
 
     VecSimAlgo algo;
-    if ((algo = _get_algorithm(argv[1])) < 0) {
+    if ((algo = _get_algorithm(argv[1])) == -1) {
         RedisModule_ReplyWithError(ctx, "ERROR: First argument should be a supported algorithm.");
         return REDISMODULE_OK;
     }
@@ -147,7 +147,7 @@ int VecSim_memory_create_index_add_n_check(RedisModuleCtx *ctx, RedisModuleStrin
     }
 
     VecSimAlgo algo;
-    if ((algo = _get_algorithm(argv[1])) < 0) {
+    if ((algo = _get_algorithm(argv[1])) == -1) {
         RedisModule_ReplyWithError(ctx, "ERROR: First argument should be a supported algorithm.");
         return REDISMODULE_OK;
     }
@@ -171,7 +171,7 @@ int VecSim_memory_create_index_check(RedisModuleCtx *ctx, RedisModuleString **ar
     }
 
     VecSimAlgo algo;
-    if ((algo = _get_algorithm(argv[1])) < 0) {
+    if ((algo = _get_algorithm(argv[1])) == -1) {
         RedisModule_ReplyWithError(ctx, "ERROR: First argument should be a supported algorithm.");
         return REDISMODULE_OK;
     }
@@ -179,35 +179,11 @@ int VecSim_memory_create_index_check(RedisModuleCtx *ctx, RedisModuleString **ar
     return _VecSim_memory_create_check_impl(ctx, algo, 0, 0);
 }
 
-int VecSim_memory_basic_check(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    REDISMODULE_NOT_USED(argv);
-
-    if (argc > 1) {
-        RedisModule_WrongArity(ctx);
-        return REDISMODULE_OK;
-    }
-
-    VecSimIndex *index = _create_index(VecSimAlgo_BF);
-
-    if (index) {
-        RedisModule_ReplyWithSimpleString(ctx, "OK");
-        VecSimIndex_Free(index);
-    } else
-        RedisModule_ReplyWithError(ctx, "ERROR");
-
-    return REDISMODULE_OK;
-}
-
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     REDISMODULE_NOT_USED(argv);
     REDISMODULE_NOT_USED(argc);
 
     if (RedisModule_Init(ctx, "VecSim_memory", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR)
-        return REDISMODULE_ERR;
-
-    // Usage: VecSim_memory.basic_check.
-    if (RedisModule_CreateCommand(ctx, "VecSim_memory.basic_check", VecSim_memory_basic_check, "",
-                                  0, 0, 0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
 
     // Usage: VecSim_memory.create_index_check <algorithm:BF/HNSW>.
