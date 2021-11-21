@@ -24,7 +24,7 @@ def with_test_module(f):
     return wrapper
 
 @with_test_module
-def test_create_index_check(env):
+def test_create_bf_and_hnsw_indexes_check(env):
 
     con = env.getConnection()
 

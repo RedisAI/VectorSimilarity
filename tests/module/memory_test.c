@@ -24,15 +24,14 @@ void _add_vectors(VecSimIndex *index, long long amount) {
     int64_t vec[indexInfo.d];
     for (int i = 0; i < indexInfo.d; i++)
         vec[i] = i;
-    for (int j = 0; j < amount; j++)
+    for (long long j = 0; j < amount; j++)
         VecSimIndex_AddVector(index, vec, j);
 }
 
 // Deletes 'amount' vectors from the index. could be 0 or larger from the number of vectors in the
 // index.
 void _delete_vectors(VecSimIndex *index, long long amount) {
-    int i;
-    for (i = 0; i < amount; i++)
+    for (long long i = 0; i < amount; i++)
         VecSimIndex_DeleteVector(index, i);
 }
 
