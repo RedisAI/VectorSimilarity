@@ -71,6 +71,7 @@ commands:
       - run:
           name: Tox Run
           command: |
+            sudo ./deps/readies/bin/getredis
             tox
 
       - save_cache:

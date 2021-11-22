@@ -35,6 +35,7 @@ hnswlib = "^0.5.2"
 pytest = "^6.2.4"
 scipy = "^1.5.4"
 pybind11 = {path = "deps/pybind11"}
+rltest = {git = "https://github.com/RedisLabsModules/RLTest.git", rev = "master"}
 
 
 [build-system]
