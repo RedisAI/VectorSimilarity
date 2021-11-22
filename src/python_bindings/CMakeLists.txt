@@ -1,5 +1,4 @@
 project(VecSim LANGUAGES CXX)
-SET(CMAKE_BUILD_TYPE RelWithDebInfo)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../deps/pybind11 pybind11)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ VectorSimilarity)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)

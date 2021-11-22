@@ -93,11 +93,8 @@ public:
 
     PyBatchIterator createBatchIterator(py::object &query_blob) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-        // Memory leak over here.
         float *vector_data = (float *)items.data(0);
-        float *vector_data_copy = new float[items.size()];
-        memcpy(vector_data_copy, vector_data, items.size() * sizeof(float));
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data_copy));
+        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
@@ -135,7 +132,6 @@ public:
                                .algo = VecSimAlgo_BF};
         this->index = VecSimIndex_New(&params);
     }
-    VecSimIndex *get_index() { return this->index; }
 };
 
 PYBIND11_MODULE(VecSim, m) {
@@ -206,7 +202,6 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init([](const BFParams &params, const VecSimType type, size_t dim,
                          VecSimMetric metric) { return new PyBFIndex(params, type, dim, metric); }),
              py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"));
-    //.def("create_batch_iterator", &PyBFIndex::createBatchIterator);
 
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
