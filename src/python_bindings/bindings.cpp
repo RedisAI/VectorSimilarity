@@ -1,6 +1,7 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
 #include "pybind11/numpy.h"
@@ -41,6 +42,27 @@ py::object wrap_results(VecSimQueryResult_List res, size_t len) {
             free_when_done_d));
 }
 
+class PyBatchIterator {
+private:
+    std::shared_ptr<VecSimBatchIterator> batchIterator;
+
+public:
+    PyBatchIterator(VecSimBatchIterator *batchIterator) : batchIterator(batchIterator) {}
+
+    bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
+
+    py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
+        VecSimQueryResult_List results =
+            VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
+        // The number of results may be lower than n_res, if there are less than n_res remaining
+        // vectors in the index that hadn't been returned yet.
+        size_t actual_n_res = VecSimQueryResult_Len(results);
+        return wrap_results(results, actual_n_res);
+    }
+    void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
+    virtual ~PyBatchIterator() {}
+};
+
 class PyVecSimIndex {
 public:
     PyVecSimIndex() {}
@@ -68,6 +90,15 @@ public:
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
+
+    PyBatchIterator createBatchIterator(py::object &query_blob) {
+        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
+        // Memory leak over here.
+        float *vector_data = (float *)items.data(0);
+        float *vector_data_copy = new float[items.size()];
+        memcpy(vector_data_copy, vector_data, items.size() * sizeof(float));
+        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data_copy));
+    }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
@@ -105,38 +136,6 @@ public:
         this->index = VecSimIndex_New(&params);
     }
     VecSimIndex *get_index() { return this->index; }
-    //    PyBFBatchIterator createBatchIterator(py::object query_blob) {
-    //        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-    //        float *vector_data = (float *)items.data(0);
-    //        //auto *bf_iterator = new PyBFBatchIterator(this->index, vector_data);
-    //        //return *bf_iterator;
-    //        return PyBFBatchIterator(this->index, vector_data);
-    //    }
-};
-
-class PyBFBatchIterator {
-private:
-    VecSimBatchIterator *batchIterator;
-
-public:
-    PyBFBatchIterator(PyBFIndex &py_bf_index, py::object &query_blob) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-        float *vector_data = (float *)items.data(0);
-        float *vector_data_copy = new float[128];
-        memcpy(vector_data_copy, vector_data, 128 * sizeof(float));
-        batchIterator = VecSimBatchIterator_New(py_bf_index.get_index(), vector_data_copy);
-    }
-
-    bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator); }
-    py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
-        VecSimQueryResult_List results = VecSimBatchIterator_Next(batchIterator, n_res, order);
-        // The number of results may be lower than n_res, if there are less than n_res remaining
-        // vectors in the index that hadn't been returned yet.
-        size_t actual_n_res = VecSimQueryResult_Len(results);
-        return wrap_results(results, actual_n_res);
-    }
-    void reset() { VecSimBatchIterator_Reset(batchIterator); }
-    virtual ~PyBFBatchIterator() { VecSimBatchIterator_Free(batchIterator); }
 };
 
 PYBIND11_MODULE(VecSim, m) {
@@ -193,7 +192,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("delete_vector", &PyVecSimIndex::deleteVector)
         .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
              py::arg("query_param") = nullptr)
-        .def("index_size", &PyVecSimIndex::indexSize);
+        .def("index_size", &PyVecSimIndex::indexSize)
+        .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init(
@@ -208,11 +208,8 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"));
     //.def("create_batch_iterator", &PyBFIndex::createBatchIterator);
 
-    py::class_<PyBFBatchIterator>(m, "BFBatchIterator")
-        .def(py::init([](PyBFIndex &index, py::object &query_blob) {
-            return new PyBFBatchIterator(index, query_blob);
-        }))
-        .def("has_next", &PyBFBatchIterator::hasNext)
-        .def("get_next_results", &PyBFBatchIterator::getNextResults)
-        .def("reset", &PyBFBatchIterator::reset);
+    py::class_<PyBatchIterator>(m, "BatchIterator")
+        .def("has_next", &PyBatchIterator::hasNext)
+        .def("get_next_results", &PyBatchIterator::getNextResults)
+        .def("reset", &PyBatchIterator::reset);
 }

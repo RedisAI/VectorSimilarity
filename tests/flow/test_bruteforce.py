@@ -85,7 +85,7 @@ def test_batch_iterator():
 
     # Create a random query vector and create a batch iterator
     query_data = np.float32(np.random.random((1, dim)))
-    batch_iterator = BFBatchIterator(bf_index, query_data)
+    batch_iterator = bf_index.create_batch_iterator(query_data)
     labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
     for i, _ in enumerate(labels_first_batch[0][:-1]):
         # assert sorting by id
