@@ -1,44 +1,23 @@
 #pragma once
+#include "VecSim/vec_sim_common.h"
 #include <stddef.h>
 #include <memory>
-
-#ifdef REDIS_MODULE_TARGET /* Set this when compiling your code as a module */
-#include "redismodule.h"
 #include <cstring>
-static inline void *vecsim_malloc(size_t n) { return RedisModule_Alloc(n); }
-static inline void *vecsim_calloc(size_t nelem, size_t elemsz) {
-    return RedisModule_Calloc(nelem, elemsz);
-}
-static inline void *vecsim_realloc(void *p, size_t n) { return RedisModule_Realloc(p, n); }
-static inline void vecsim_free(void *p) { RedisModule_Free(p); }
-static inline char *vecsim_strdup(const char *s) { return RedisModule_Strdup(s); }
-
-static inline char *vecsim_strndup(const char *s, size_t n) {
-    char *ret = (char *)vecsim_malloc(n + 1);
-
-    if (ret) {
-        ret[n] = '\0';
-        memcpy(ret, s, n);
-    }
-    return ret;
-}
-#else
-
-#define vecsim_malloc  malloc
-#define vecsim_free    free
-#define vecsim_calloc  calloc
-#define vecsim_realloc realloc
-#define vecsim_strdup  strdup
-#define vecsim_strndup strndup
-
-#endif
 
 struct VecSimAllocator {
+    // Allow global vecsim memory functions to access this class.
+    friend inline void *vecsim_malloc(size_t n);
+    friend inline void *vecsim_calloc(size_t nelem, size_t elemsz);
+    friend inline void *vecsim_realloc(void *p, size_t n);
+    friend inline void vecsim_free(void *p);
+    friend inline char *vecsim_strdup(const char *s);
+
 private:
     std::shared_ptr<uint64_t> allocated;
 
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
+    static VecSimMemoryFunctions memFunctions;
 
     VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
 
@@ -63,10 +42,76 @@ public:
         return a.allocated != b.allocated;
     }
 
+    static void setMemoryFunctions(VecSimMemoryFunctions memFunctions);
+
 private:
     // Retrive the original requested allocation size. Required for remalloc.
     inline size_t getPointerAllocationSize(void *p) { return *(((size_t *)p) - 1); }
 };
+
+/**
+ * @brief Global function to call for allocating memory buffer (malloc style).
+ *
+ * @param n - Amount of bytes to allocate.
+ * @return void* - Allocated buffer.
+ */
+inline void *vecsim_malloc(size_t n) { return VecSimAllocator::memFunctions.allocFunction(n); }
+
+/**
+ * @brief Global function to call for allocating memory buffer initiliazed to zero (calloc style).
+ *
+ * @param nelem Number of elements.
+ * @param elemsz Element size.
+ * @return void* - Allocated buffer.
+ */
+inline void *vecsim_calloc(size_t nelem, size_t elemsz) {
+    return VecSimAllocator::memFunctions.callocFunction(nelem, elemsz);
+}
+
+/**
+ * @brief Global function to reallocate a buffer (realloc style).
+ *
+ * @param p Allocated buffer.
+ * @param n Number of bytes required to the new buffer.
+ * @return void* Allocated buffer with size >= n.
+ */
+inline void *vecsim_realloc(void *p, size_t n) {
+    return VecSimAllocator::memFunctions.reallocFunction(p, n);
+}
+
+/**
+ * @brief Global function to free an allocated buffer.
+ *
+ * @param p Allocated buffer.
+ */
+inline void vecsim_free(void *p) { VecSimAllocator::memFunctions.freeFunction(p); }
+
+/**
+ * @brief Global function copy a string (strdup style).
+ *
+ * @param s Source string.
+ * @return char* Copied string.
+ */
+inline char *vecsim_strdup(const char *s) {
+    return VecSimAllocator::memFunctions.strdupFunction(s);
+}
+
+/**
+ * @brief Global function to copy a sub string with size of n.
+ *
+ * @param s Source string.
+ * @param n String length to copy.
+ * @return char* Copied string.
+ */
+inline char *vecsim_strndup(const char *s, size_t n) {
+    char *ret = (char *)vecsim_malloc(n + 1);
+
+    if (ret) {
+        ret[n] = '\0';
+        memcpy(ret, s, n);
+    }
+    return ret;
+}
 
 template <typename T>
 struct VecsimSTLAllocator {

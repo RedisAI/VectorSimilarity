@@ -65,3 +65,7 @@ extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
     return index->newBatchIterator(queryBlob);
 }
+
+extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
+    VecSimAllocator::setMemoryFunctions(memoryfunctions);
+}

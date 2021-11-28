@@ -1,5 +1,5 @@
 
-#include "VecSim/memory/redismodule.h"
+#include "redismodule.h"
 #include "VecSim/vec_sim.h"
 #include <stdbool.h>
 #include <errno.h>
@@ -201,6 +201,13 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
                                   VecSim_memory_create_index_add_n_delete_m_check, "", 0, 0,
                                   0) == REDISMODULE_ERR)
         return REDISMODULE_ERR;
+
+    VecSimMemoryFunctions memoryFunctions = {.allocFunction = RedisModule_Alloc,
+                                             .callocFunction = RedisModule_Calloc,
+                                             .freeFunction = RedisModule_Free,
+                                             .reallocFunction = RedisModule_Realloc,
+                                             .strdupFunction = RedisModule_Strdup};
+    VecSim_SetMemoryFunctions(memoryFunctions);
 
     return REDISMODULE_OK;
 }

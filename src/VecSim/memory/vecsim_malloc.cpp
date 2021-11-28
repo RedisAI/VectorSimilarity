@@ -10,6 +10,16 @@ std::shared_ptr<VecSimAllocator> VecSimAllocator::newVecsimAllocator() {
 
 size_t VecSimAllocator::allocation_header_size = sizeof(size_t);
 
+VecSimMemoryFunctions VecSimAllocator::memFunctions = {.allocFunction = malloc,
+                                                       .callocFunction = calloc,
+                                                       .reallocFunction = realloc,
+                                                       .freeFunction = free,
+                                                       .strdupFunction = strdup};
+
+void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
+    VecSimAllocator::memFunctions = memFunctions;
+}
+
 void *VecSimAllocator::allocate(size_t size) {
     *this->allocated.get() += size + allocation_header_size;
     size_t *ptr = (size_t *)vecsim_malloc(size + allocation_header_size);

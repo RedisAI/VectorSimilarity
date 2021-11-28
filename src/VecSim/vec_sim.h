@@ -84,6 +84,13 @@ VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
  */
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
+/**
+ * @brief Allow 3rd party memory functions to be used for memory management.
+ *
+ * @param memoryfunctions VecSimMemoryFunctions struct.
+ */
+void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
+
 #ifdef __cplusplus
 }
 #endif

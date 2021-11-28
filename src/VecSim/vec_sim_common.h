@@ -89,6 +89,25 @@ typedef struct {
     int64_t memory;      // Index memory consumption.
 } VecSimIndexInfo;
 
+// Memory function declerations.
+typedef void *(*allocFn)(size_t n);
+typedef void *(*callocFn)(size_t nelem, size_t elemsz);
+typedef void *(*reallocFn)(void *p, size_t n);
+typedef void (*freeFn)(void *p);
+typedef char *(*strdupFn)(const char *s);
+
+/**
+ * @brief A struct to pass 3rd party memory functions to Vecsimlib.
+ *
+ */
+typedef struct {
+    allocFn allocFunction;     // Malloc like function.
+    callocFn callocFunction;   // Calloc like function.
+    reallocFn reallocFunction; // Realloc like function.
+    freeFn freeFunction;       // Free function.
+    strdupFn strdupFunction;   // Strdup function.
+} VecSimMemoryFunctions;
+
 #ifdef __cplusplus
 }
 #endif
