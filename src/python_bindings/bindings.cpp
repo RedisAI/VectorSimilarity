@@ -1,12 +1,67 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
 #include "pybind11/numpy.h"
 #include "pybind11/stl.h"
+#include <cstring>
 
 namespace py = pybind11;
+
+// Helper function that iterates query results and wrap them in python object -
+// a tuple of two lists: (ids, scores)
+py::object wrap_results(VecSimQueryResult_List res, size_t len) {
+    size_t *data_numpy_l = new size_t[len];
+    float *data_numpy_d = new float[len];
+    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+    int res_ind = 0;
+    while (VecSimQueryResult_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+        int id = VecSimQueryResult_GetId(item);
+        float score = VecSimQueryResult_GetScore(item);
+        data_numpy_d[res_ind] = score;
+        data_numpy_l[res_ind++] = id;
+    }
+    VecSimQueryResult_IteratorFree(iterator);
+    VecSimQueryResult_Free(res);
+
+    py::capsule free_when_done_l(data_numpy_l, [](void *f) { delete[] f; });
+    py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
+    return py::make_tuple(
+        py::array_t<size_t>(
+            {(size_t)1, len},                       // shape
+            {len * sizeof(size_t), sizeof(size_t)}, // C-style contiguous strides for double
+            data_numpy_l,                           // the data pointer
+            free_when_done_l),
+        py::array_t<float>(
+            {(size_t)1, len},                     // shape
+            {len * sizeof(float), sizeof(float)}, // C-style contiguous strides for double
+            data_numpy_d,                         // the data pointer
+            free_when_done_d));
+}
+
+class PyBatchIterator {
+private:
+    std::shared_ptr<VecSimBatchIterator> batchIterator;
+
+public:
+    PyBatchIterator(VecSimBatchIterator *batchIterator) : batchIterator(batchIterator) {}
+
+    bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
+
+    py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
+        VecSimQueryResult_List results =
+            VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
+        // The number of results may be lower than n_res, if there are less than n_res remaining
+        // vectors in the index that hadn't been returned yet.
+        size_t actual_n_res = VecSimQueryResult_Len(results);
+        return wrap_results(results, actual_n_res);
+    }
+    void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
+    virtual ~PyBatchIterator() {}
+};
 
 class PyVecSimIndex {
 public:
@@ -31,36 +86,16 @@ public:
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
         }
-        size_t *data_numpy_l = new size_t[k];
-        float *data_numpy_d = new float[k];
-        VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
-        int res_ind = 0;
-        while (VecSimQueryResult_IteratorHasNext(iterator)) {
-            VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
-            int id = VecSimQueryResult_GetId(item);
-            float score = VecSimQueryResult_GetScore(item);
-            data_numpy_d[res_ind] = score;
-            data_numpy_l[res_ind++] = id;
-        }
-        VecSimQueryResult_IteratorFree(iterator);
-        VecSimQueryResult_Free(res);
-
-        py::capsule free_when_done_l(data_numpy_l, [](void *f) { delete[] f; });
-        py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
-        return py::make_tuple(
-            py::array_t<size_t>(
-                {(size_t)1, k},                       // shape
-                {k * sizeof(size_t), sizeof(size_t)}, // C-style contiguous strides for double
-                data_numpy_l,                         // the data pointer
-                free_when_done_l),
-            py::array_t<float>(
-                {(size_t)1, k},                     // shape
-                {k * sizeof(float), sizeof(float)}, // C-style contiguous strides for double
-                data_numpy_d,                       // the data pointer
-                free_when_done_d));
+        return wrap_results(res, k);
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
+
+    PyBatchIterator createBatchIterator(py::object &query_blob) {
+        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
+        float *vector_data = (float *)items.data(0);
+        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data));
+    }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
@@ -118,6 +153,11 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimMetric_Cosine", VecSimMetric_Cosine)
         .export_values();
 
+    py::enum_<VecSimQueryResult_Order>(m, "VecSimQueryResult_Order")
+        .value("BY_SCORE", BY_SCORE)
+        .value("BY_ID", BY_ID)
+        .export_values();
+
     py::class_<HNSWParams>(m, "HNSWParams")
         .def(py::init())
         .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
@@ -148,7 +188,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("delete_vector", &PyVecSimIndex::deleteVector)
         .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
              py::arg("query_param") = nullptr)
-        .def("index_size", &PyVecSimIndex::indexSize);
+        .def("index_size", &PyVecSimIndex::indexSize)
+        .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init(
@@ -161,4 +202,9 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init([](const BFParams &params, const VecSimType type, size_t dim,
                          VecSimMetric metric) { return new PyBFIndex(params, type, dim, metric); }),
              py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"));
+
+    py::class_<PyBatchIterator>(m, "BatchIterator")
+        .def("has_next", &PyBatchIterator::hasNext)
+        .def("get_next_results", &PyBatchIterator::getNextResults)
+        .def("reset", &PyBatchIterator::reset);
 }
