@@ -71,8 +71,7 @@ commands:
       - run:
           name: Tox Run
           command: |
-            sudo ./deps/readies/bin/getredis
-            tox
+            tox -e flowenv
 
       - save_cache:
           paths:
