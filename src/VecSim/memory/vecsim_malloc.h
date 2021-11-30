@@ -10,7 +10,6 @@ struct VecSimAllocator {
     friend inline void *vecsim_calloc(size_t nelem, size_t elemsz);
     friend inline void *vecsim_realloc(void *p, size_t n);
     friend inline void vecsim_free(void *p);
-    friend inline char *vecsim_strdup(const char *s);
 
 private:
     std::shared_ptr<uint64_t> allocated;
@@ -85,33 +84,6 @@ inline void *vecsim_realloc(void *p, size_t n) {
  * @param p Allocated buffer.
  */
 inline void vecsim_free(void *p) { VecSimAllocator::memFunctions.freeFunction(p); }
-
-/**
- * @brief Global function copy a string (strdup style).
- *
- * @param s Source string.
- * @return char* Copied string.
- */
-inline char *vecsim_strdup(const char *s) {
-    return VecSimAllocator::memFunctions.strdupFunction(s);
-}
-
-/**
- * @brief Global function to copy a sub string with size of n.
- *
- * @param s Source string.
- * @param n String length to copy.
- * @return char* Copied string.
- */
-inline char *vecsim_strndup(const char *s, size_t n) {
-    char *ret = (char *)vecsim_malloc(n + 1);
-
-    if (ret) {
-        ret[n] = '\0';
-        memcpy(ret, s, n);
-    }
-    return ret;
-}
 
 template <typename T>
 struct VecsimSTLAllocator {

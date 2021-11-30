@@ -205,8 +205,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     VecSimMemoryFunctions memoryFunctions = {.allocFunction = RedisModule_Alloc,
                                              .callocFunction = RedisModule_Calloc,
                                              .freeFunction = RedisModule_Free,
-                                             .reallocFunction = RedisModule_Realloc,
-                                             .strdupFunction = RedisModule_Strdup};
+                                             .reallocFunction = RedisModule_Realloc};
     VecSim_SetMemoryFunctions(memoryFunctions);
 
     return REDISMODULE_OK;

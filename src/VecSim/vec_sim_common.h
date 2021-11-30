@@ -105,7 +105,6 @@ typedef struct {
     callocFn callocFunction;   // Calloc like function.
     reallocFn reallocFunction; // Realloc like function.
     freeFn freeFunction;       // Free function.
-    strdupFn strdupFunction;   // Strdup function.
 } VecSimMemoryFunctions;
 
 #ifdef __cplusplus

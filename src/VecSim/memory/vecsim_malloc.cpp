@@ -13,8 +13,7 @@ size_t VecSimAllocator::allocation_header_size = sizeof(size_t);
 VecSimMemoryFunctions VecSimAllocator::memFunctions = {.allocFunction = malloc,
                                                        .callocFunction = calloc,
                                                        .reallocFunction = realloc,
-                                                       .freeFunction = free,
-                                                       .strdupFunction = strdup};
+                                                       .freeFunction = free};
 
 void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
     VecSimAllocator::memFunctions = memFunctions;
