@@ -62,6 +62,8 @@ VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, s
 bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator) { return !iterator->isDepleted(); }
 
 void VecSimBatchIterator_Free(VecSimBatchIterator *iterator) {
+    // Batch iterator might be deleted after the index, so it should keep the allocator before
+    // deleteing.
     auto allocator = iterator->getAllocator();
     delete iterator;
 }
