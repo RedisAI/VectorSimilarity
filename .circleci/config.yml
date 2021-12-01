@@ -71,7 +71,7 @@ commands:
       - run:
           name: Tox Run
           command: |
-            tox
+            tox -e flowenv
 
       - save_cache:
           paths:

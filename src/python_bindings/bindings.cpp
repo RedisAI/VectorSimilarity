@@ -47,7 +47,8 @@ private:
     std::shared_ptr<VecSimBatchIterator> batchIterator;
 
 public:
-    PyBatchIterator(VecSimBatchIterator *batchIterator) : batchIterator(batchIterator) {}
+    PyBatchIterator(VecSimBatchIterator *batchIterator)
+        : batchIterator(batchIterator, VecSimBatchIterator_Free) {}
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 

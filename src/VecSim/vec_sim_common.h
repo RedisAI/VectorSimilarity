@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 #include <stddef.h>
+#include <stdint.h>
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M        16
@@ -85,9 +86,26 @@ typedef struct {
     size_t d;            // Vector size (dimension).
     VecSimAlgo algo;     // Algorithm being used.
     VecSimMetric metric; // Index distance metric
-    // TODO:
-    // size_t memory
+    int64_t memory;      // Index memory consumption.
 } VecSimIndexInfo;
+
+// Memory function declerations.
+typedef void *(*allocFn)(size_t n);
+typedef void *(*callocFn)(size_t nelem, size_t elemsz);
+typedef void *(*reallocFn)(void *p, size_t n);
+typedef void (*freeFn)(void *p);
+typedef char *(*strdupFn)(const char *s);
+
+/**
+ * @brief A struct to pass 3rd party memory functions to Vecsimlib.
+ *
+ */
+typedef struct {
+    allocFn allocFunction;     // Malloc like function.
+    callocFn callocFunction;   // Calloc like function.
+    reallocFn reallocFunction; // Realloc like function.
+    freeFn freeFunction;       // Free function.
+} VecSimMemoryFunctions;
 
 #ifdef __cplusplus
 }

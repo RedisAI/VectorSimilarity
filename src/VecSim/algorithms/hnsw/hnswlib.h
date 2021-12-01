@@ -5,8 +5,9 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim//spaces/space_interface.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/utils/vecsim_stl.h"
 
-#include <set>
 #include <deque>
 #include <memory>
 #include <cassert>
@@ -34,11 +35,12 @@ struct CompareByFirst {
 };
 
 template <typename dist_t>
-using CandidatesQueue = priority_queue<pair<dist_t, tableint>, std::vector<pair<dist_t, tableint>>,
-                                       CompareByFirst<dist_t>>;
+using CandidatesQueue =
+    vecsim_stl::priority_queue<pair<dist_t, tableint>, vecsim_stl::vector<pair<dist_t, tableint>>,
+                               CompareByFirst<dist_t>>;
 
 template <typename dist_t>
-class HierarchicalNSW {
+class HierarchicalNSW : VecsimBaseObject {
 
     // Index build parameters
     size_t max_elements_;
@@ -73,9 +75,9 @@ class HierarchicalNSW {
     int enterpoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
-    std::vector<int> element_levels_;
-    std::set<tableint> available_ids;
-    std::unordered_map<labeltype, tableint> label_lookup_;
+    vecsim_stl::vector<int> element_levels_;
+    vecsim_stl::set<tableint> available_ids;
+    vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
     VisitedListPool *visited_list_pool_;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -94,7 +96,7 @@ class HierarchicalNSW {
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     char *getDataByInternalId(tableint internal_id) const;
     int getRandomLevel(double reverse_size);
-    std::set<tableint> *getIncomingEdgesPtr(tableint internal_id, int level) const;
+    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, int level) const;
     void setIncomingEdgesPtr(tableint internal_id, int level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, int level) const;
@@ -103,7 +105,7 @@ class HierarchicalNSW {
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, CandidatesQueue<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
-                          const std::set<tableint> &orig_neighbors, tableint *removed_links,
+                          const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
     CandidatesQueue<dist_t> searchLayer(tableint ep_id, const void *data_point, int layer,
                                         size_t ef) const;
@@ -115,7 +117,8 @@ class HierarchicalNSW {
                                       tableint *neighbour_neighbours_list, int level);
 
 public:
-    HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements, size_t M = 16,
+    HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
+                    std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100);
     ~HierarchicalNSW();
 
@@ -129,7 +132,8 @@ public:
     void resizeIndex(size_t new_max_elements);
     bool removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
-    priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data, size_t k) const;
+    vecsim_stl::priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
+                                                                  size_t k) const;
     void checkIntegrity();
 };
 
@@ -206,16 +210,16 @@ int HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
 }
 
 template <typename dist_t>
-std::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
-                                                                 int level) const {
+vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
+                                                                        int level) const {
     if (level == 0) {
-        return reinterpret_cast<std::set<tableint> *>(
+        return reinterpret_cast<vecsim_stl::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<std::set<tableint> *>(*(void **)(linkLists_[internal_id] +
-                                                             (level - 1) * size_links_per_element_ +
-                                                             incoming_links_offset));
+    return reinterpret_cast<vecsim_stl::set<tableint> *>(
+        *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
+                   incoming_links_offset));
 }
 
 template <typename dist_t>
@@ -264,7 +268,7 @@ template <typename dist_t>
 void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
                                                CandidatesQueue<dist_t> candidates, size_t Mcurmax,
                                                tableint *node_neighbors,
-                                               const std::set<tableint> &orig_neighbors,
+                                               const vecsim_stl::set<tableint> &orig_neighbors,
                                                tableint *removed_links, size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
@@ -299,8 +303,8 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
     vl_type *visited_array = vl->mass;
     vl_type visited_array_tag = vl->curV;
 
-    CandidatesQueue<dist_t> top_candidates;
-    CandidatesQueue<dist_t> candidate_set;
+    CandidatesQueue<dist_t> top_candidates(this->allocator);
+    CandidatesQueue<dist_t> candidate_set(this->allocator);
 
     dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
     dist_t lowerBound = dist;
@@ -370,8 +374,8 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(CandidatesQueue<dist_t> &
         return;
     }
 
-    std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
-    std::vector<std::pair<dist_t, tableint>> return_list;
+    vecsim_stl::priority_queue<std::pair<dist_t, tableint>> queue_closest(this->allocator);
+    vecsim_stl::vector<std::pair<dist_t, tableint>> return_list(this->allocator);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
         // (higher).
@@ -420,7 +424,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(tableint cur_c,
         throw std::runtime_error(
             "Should be not be more than M_ candidates returned by the heuristic");
 
-    std::vector<tableint> selectedNeighbors;
+    vecsim_stl::vector<tableint> selectedNeighbors(this->allocator);
     selectedNeighbors.reserve(M_);
     while (top_candidates.size() > 0) {
         selectedNeighbors.push_back(top_candidates.top().second);
@@ -442,7 +446,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(tableint cur_c,
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges = new std::set<tableint>();
+        auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
@@ -470,8 +474,8 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(tableint cur_c,
             setListCount(ll_other, sz_link_list_other + 1);
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
-            CandidatesQueue<dist_t> candidates;
-            std::set<tableint> orig_neighbors_set;
+            CandidatesQueue<dist_t> candidates(this->allocator);
+            vecsim_stl::set<tableint> orig_neighbors_set(this->allocator);
             dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c),
                                         getDataByInternalId(selectedNeighbor), dist_func_param_);
             candidates.emplace(d_max, cur_c);
@@ -493,11 +497,10 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(tableint cur_c,
 
             // remove the current neighbor from the incoming list of nodes for the
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
-            std::set<tableint> *neighbour_incoming_edges =
-                getIncomingEdgesPtr(selectedNeighbor, level);
+            auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
             for (size_t i = 0; i < removed_links_num; i++) {
                 tableint node_id = removed_links[i];
-                std::set<tableint> *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
+                auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
@@ -530,8 +533,8 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
                                                            int level) {
 
     // put the deleted element's neighbours in the candidates.
-    CandidatesQueue<dist_t> candidates;
-    std::set<tableint> candidates_set;
+    CandidatesQueue<dist_t> candidates(this->allocator);
+    vecsim_stl::set<tableint> candidates_set(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (tableint *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
@@ -546,7 +549,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
-    std::set<tableint> neighbour_orig_neighbours_set;
+    vecsim_stl::set<tableint> neighbour_orig_neighbours_set(this->allocator);
     unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
     auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
     for (size_t j = 0; j < neighbour_neighbours_count; j++) {
@@ -571,11 +574,11 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
 
     // remove neighbour id from the incoming list of nodes for his
     // neighbours that were chosen to remove
-    std::set<tableint> *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+    auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
 
     for (size_t i = 0; i < removed_links_num; i++) {
         tableint node_id = removed_links[i];
-        std::set<tableint> *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
+        auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
 
         // if the node id (the neighbour's neighbour to be removed)
         // wasn't pointing to the neighbour (edge was one directional),
@@ -594,7 +597,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
     for (size_t i = 0; i < updated_links_num; i++) {
         tableint node_id = neighbour_neighbours[i];
         if (neighbour_orig_neighbours_set.find(node_id) == neighbour_orig_neighbours_set.end()) {
-            std::set<tableint> *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
+            auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
             // if the node has an edge to the neighbour as well, remove it
             // from the incoming nodes of the neighbour
             // otherwise, need to update the edge as incoming.
@@ -617,13 +620,16 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
 }
 
 template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements, size_t M,
+HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
+                                         std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                          size_t ef_construction, size_t ef, size_t random_seed)
-    :
+    : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
+      available_ids(allocator), label_lookup_(allocator)
+
 #ifdef ENABLE_PARALLELIZATION
-      link_list_locks_(max_elements),
+                                    link_list_locks_(max_elements),
 #endif
-      element_levels_(max_elements) {
+{
 
     max_elements_ = max_elements;
     M_ = M;
@@ -638,7 +644,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 
     cur_element_count = 0;
     max_id = -1;
-    visited_list_pool_ = new VisitedListPool(1, (int)max_elements);
+    visited_list_pool_ =
+        new (this->allocator) VisitedListPool(1, (int)max_elements, this->allocator);
 
     // initializations for special treatment of the first node
     enterpoint_node_ = -1;
@@ -657,11 +664,11 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     label_offset_ = size_links_level0_ + data_size_;
     offsetLevel0_ = 0;
 
-    data_level0_memory_ = (char *)malloc(max_elements_ * size_data_per_element_);
+    data_level0_memory_ = (char *)this->allocator->allocate(max_elements_ * size_data_per_element_);
     if (data_level0_memory_ == nullptr)
         throw std::runtime_error("Not enough memory");
 
-    linkLists_ = (char **)malloc(sizeof(void *) * max_elements_);
+    linkLists_ = (char **)this->allocator->allocate(sizeof(void *) * max_elements_);
     if (linkLists_ == nullptr)
         throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate linklists");
 
@@ -683,10 +690,10 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
             delete getIncomingEdgesPtr(id, level);
         }
         if (element_levels_[id] > 0)
-            free(linkLists_[id]);
+            this->allocator->free_allocation(linkLists_[id]);
     }
-    free(linkLists_);
-    free(data_level0_memory_);
+    this->allocator->free_allocation(linkLists_);
+    this->allocator->free_allocation(data_level0_memory_);
     delete visited_list_pool_;
 }
 
@@ -699,20 +706,22 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
     delete visited_list_pool_;
-    visited_list_pool_ = new VisitedListPool(1, (int)new_max_elements);
+    visited_list_pool_ =
+        new (this->allocator) VisitedListPool(1, (int)new_max_elements, this->allocator);
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
 #endif
     // Reallocate base layer
-    char *data_level0_memory_new =
-        (char *)realloc(data_level0_memory_, new_max_elements * size_data_per_element_);
+    char *data_level0_memory_new = (char *)this->allocator->reallocate(
+        data_level0_memory_, new_max_elements * size_data_per_element_);
     if (data_level0_memory_new == nullptr)
         throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
     data_level0_memory_ = data_level0_memory_new;
 
     // Reallocate all other layers
-    char **linkLists_new = (char **)realloc(linkLists_, sizeof(void *) * new_max_elements);
+    char **linkLists_new =
+        (char **)this->allocator->reallocate(linkLists_, sizeof(void *) * new_max_elements);
     if (linkLists_new == nullptr)
         throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
     linkLists_ = linkLists_new;
@@ -762,15 +771,14 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             // if this edge is uni-directional, we should remove the element from the neighbor's
             // incoming edges.
             if (!bidirectional_edge) {
-                std::set<tableint> *neighbour_incoming_edges =
-                    getIncomingEdgesPtr(neighbour_id, level);
+                auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
                 neighbour_incoming_edges->erase(element_internal_id);
             }
         }
 
         // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // repairs.
-        std::set<tableint> *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
+        auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
         for (auto incoming_edge : *incoming_edges) {
             linklistsizeint *incoming_node_neighbours_list =
                 get_linklist_at_level(incoming_edge, level);
@@ -802,7 +810,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     }
 
     if (element_levels_[element_internal_id] > 0) {
-        free(linkLists_[element_internal_id]);
+        this->allocator->free_allocation(linkLists_[element_internal_id]);
     }
     memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
@@ -861,7 +869,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 
     if (element_max_level > 0) {
-        linkLists_[cur_c] = (char *)malloc(size_links_per_element_ * element_max_level + 1);
+        linkLists_[cur_c] =
+            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level + 1);
         if (linkLists_[cur_c] == nullptr)
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
         memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level + 1);
@@ -927,16 +936,16 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         maxlevel_ = element_max_level;
         // create the incoming edges set for the new levels.
         for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges = new std::set<tableint>();
+            auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
     }
 }
 
 template <typename dist_t>
-priority_queue<pair<dist_t, labeltype>> HierarchicalNSW<dist_t>::searchKnn(const void *query_data,
-                                                                           size_t k) const {
-    std::priority_queue<std::pair<dist_t, labeltype>> result;
+vecsim_stl::priority_queue<pair<dist_t, labeltype>>
+HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
+    vecsim_stl::priority_queue<std::pair<dist_t, labeltype>> result(this->allocator);
     if (cur_element_count == 0)
         return result;
 
@@ -988,7 +997,7 @@ void HierarchicalNSW<dist_t>::checkIntegrity() {
 
     int connections_checked = 0;
     int double_connections = 0;
-    std::vector<int> inbound_connections_num(max_id, 0);
+    vecsim_stl::vector<int> inbound_connections_num(max_id, 0, this->allocator);
     size_t incoming_edges_sets_sizes = 0;
 
     for (int i = 0; i <= max_id; i++) {
@@ -999,7 +1008,7 @@ void HierarchicalNSW<dist_t>::checkIntegrity() {
             linklistsizeint *ll_cur = get_linklist_at_level(i, l);
             int size = getListCount(ll_cur);
             auto *data = (tableint *)(ll_cur + 1);
-            std::set<tableint> s;
+            vecsim_stl::set<tableint> s(this->allocator);
             for (int j = 0; j < size; j++) {
                 assert(data[j] >= 0);
                 assert(data[j] <= cur_element_count);

@@ -5,7 +5,8 @@
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 
-InnerProductSpace::InnerProductSpace(size_t dim) {
+InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
+    : SpaceInterface(allocator) {
     fstdistfunc_ = InnerProduct;
     Arch_Optimization arch_opt = getArchitectureOptimization();
     if (arch_opt == ARCH_OPT_AVX512) {

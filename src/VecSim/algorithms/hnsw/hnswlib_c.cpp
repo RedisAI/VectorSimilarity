@@ -13,12 +13,14 @@ using namespace hnswlib;
 
 /******************** Ctor / Dtor **************/
 
-HNSWIndex::HNSWIndex(const VecSimParams *params)
-    : VecSimIndex(params),
+HNSWIndex::HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(params, allocator),
       space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))),
-      hnsw(space.get(), params->hnswParams.initialCapacity,
+                ? static_cast<SpaceInterface<float> *>(new (allocator)
+                                                           L2Space(params->size, allocator))
+                : static_cast<SpaceInterface<float> *>(
+                      new (allocator) InnerProductSpace(params->size, allocator))),
+      hnsw(space.get(), params->hnswParams.initialCapacity, allocator,
            params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
            params->hnswParams.efConstruction ? params->hnswParams.efConstruction
                                              : HNSW_DEFAULT_EF_C) {
@@ -55,7 +57,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                 hnsw.setEf(queryParams->hnswRuntimeParams.efRuntime);
             }
         }
-        typedef priority_queue<pair<float, size_t>> knn_queue_t;
+        typedef vecsim_stl::priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
         auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = (int)knn_res->size() - 1; i >= 0; --i) {
@@ -85,6 +87,7 @@ VecSimIndexInfo HNSWIndex::info() {
     info.hnswInfo.efRuntime = this->hnsw.getEf();
     info.hnswInfo.indexSize = this->hnsw.getIndexSize();
     info.hnswInfo.levels = this->hnsw.getMaxLevel();
+    info.memory = this->allocator->getAllocationSize();
     return info;
 }
 

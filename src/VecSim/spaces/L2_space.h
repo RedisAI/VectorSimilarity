@@ -9,7 +9,7 @@ class L2Space : public SpaceInterface<float> {
     size_t dim_;
 
 public:
-    explicit L2Space(size_t dim);
+    explicit L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator);
     ~L2Space() override;
 
     size_t get_data_size() const override;

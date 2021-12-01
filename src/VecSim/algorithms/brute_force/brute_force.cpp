@@ -7,22 +7,25 @@
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 
 #include <memory>
-#include <set>
-#include <vector>
-#include <unordered_map>
 #include <cstring>
 #include <queue>
 
 using namespace std;
 
 /******************** Ctor / Dtor **************/
-BruteForceIndex::BruteForceIndex(const VecSimParams *params)
-    : VecSimIndex(params), vectorBlockSize(params->bfParams.blockSize ? params->bfParams.blockSize
-                                                                      : BF_DEFAULT_BLOCK_SIZE),
-      count(0),
+BruteForceIndex::BruteForceIndex(const VecSimParams *params,
+                                 std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(params, allocator),
+      vectorBlockSize(params->bfParams.blockSize ? params->bfParams.blockSize
+                                                 : BF_DEFAULT_BLOCK_SIZE),
+      count(0), labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator),
+      deletedIds(allocator), vectorBlocks(allocator),
+
       space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new L2Space(params->size))
-                : static_cast<SpaceInterface<float> *>(new InnerProductSpace(params->size))) {
+                ? static_cast<SpaceInterface<float> *>(new (allocator)
+                                                           L2Space(params->size, allocator))
+                : static_cast<SpaceInterface<float> *>(
+                      new (allocator) InnerProductSpace(params->size, allocator))) {
     this->idToVectorBlockMemberMapping.resize(params->bfParams.initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
@@ -74,20 +77,22 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     VectorBlock *vectorBlock;
     if (this->vectorBlocks.size() == 0) {
         // No vector blocks, create new one.
-        vectorBlock = new VectorBlock(this->vectorBlockSize, this->dim);
+        vectorBlock =
+            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
         this->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
         vectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
-        if (vectorBlock->getSize() == this->vectorBlockSize) {
+        if (vectorBlock->getLength() == this->vectorBlockSize) {
             // Last vector block is full, create a new one.
-            vectorBlock = new VectorBlock(this->vectorBlockSize, this->dim);
+            vectorBlock = new (this->allocator)
+                VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
             this->vectorBlocks.push_back(vectorBlock);
         }
     }
 
     // Create vector block membership.
-    VectorBlockMember *vectorBlockMember = new VectorBlockMember();
+    VectorBlockMember *vectorBlockMember = new (this->allocator) VectorBlockMember(this->allocator);
     this->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
     vectorBlock->addVector(vectorBlockMember, vector_data);
@@ -112,7 +117,7 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     VectorBlock *lastVectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
     VectorBlockMember *lastVectorBlockMember =
-        lastVectorBlock->getMember(lastVectorBlock->getSize() - 1);
+        lastVectorBlock->getMember(lastVectorBlock->getLength() - 1);
 
     // Swap the last vector with the deleted vector;
     vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
@@ -130,7 +135,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     this->labelToIdLookup.erase(label);
 
     // If the last vector block is emtpy;
-    if (lastVectorBlock->getSize() == 0) {
+    if (lastVectorBlock->getLength() == 0) {
         delete lastVectorBlock;
         this->vectorBlocks.pop_back();
     }
@@ -146,11 +151,11 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
                                                   VecSimQueryParams *queryParams) {
 
     float upperBound = std::numeric_limits<float>::lowest();
-    CandidatesHeap TopCandidates;
+    CandidatesHeap TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
-        size_t block_size = vectorBlock->getSize();
-        std::vector<float> scores(block_size);
+        size_t block_size = vectorBlock->getLength();
+        vecsim_stl::vector<float> scores(block_size, this->allocator);
         for (size_t i = 0; i < block_size; i++) {
             scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
         }
@@ -190,9 +195,10 @@ VecSimIndexInfo BruteForceIndex::info() {
     info.metric = this->metric;
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
+    info.memory = this->allocator->getAllocationSize();
     return info;
 }
 
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
-    return new BF_BatchIterator(queryBlob, this);
+    return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }

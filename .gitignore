@@ -50,3 +50,5 @@ tests/flow/logs/
 dist/**
 poetry.lock
 venv/
+
+tests/module/flow/logs
