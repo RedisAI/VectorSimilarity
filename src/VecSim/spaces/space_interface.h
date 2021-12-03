@@ -1,5 +1,8 @@
+
 #pragma once
 #include "VecSim/memory/vecsim_base.h"
+
+#include <stddef.h>
 
 template <typename TYPE>
 using DISTFUNC = TYPE (*)(const void *, const void *, const void *);

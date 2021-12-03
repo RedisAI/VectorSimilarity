@@ -1,4 +1,5 @@
 #pragma once
+
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -9,18 +10,21 @@
 #endif
 
 #if defined(USE_AVX) || defined(USE_SSE)
-#ifdef _MSC_VER
+#if defined(__GNUC__)
+#include <x86intrin.h>
+#elif defined(__clang__)
+#include <xmmintrin.h>
+#elif defined(_MSC_VER)
 #include <intrin.h>
 #include <stdexcept>
-#else
-#include <x86intrin.h>
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #define PORTABLE_ALIGN32 __attribute__((aligned(32)))
 #define PORTABLE_ALIGN64 __attribute__((aligned(64)))
-#else
+#elif defined(_MSC_VER)
 #define PORTABLE_ALIGN32 __declspec(align(32))
 #define PORTABLE_ALIGN64 __declspec(align(64))
 #endif
-#endif
+
+#endif // USE_AVX || USE_SSE
