@@ -1,6 +1,6 @@
 #include "vec_utils.h"
 #include "VecSim/query_result_struct.h"
-#include <math.h>
+#include <cmath>
 #include <cassert>
 
 int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
