@@ -66,6 +66,8 @@ make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
   VG|VALGRIND=1      # run tests with valgrind
 make flow_test     # run flow tests
+  TEST=file::name    # run specific test
+  BB=1               # run with debugger, stop on BB()
 make mem_test      # run memory tests
 make benchmark	   # run benchmarks
 
@@ -164,7 +166,7 @@ endif
 #----------------------------------------------------------------------------------------------
 
 pybind:
-	$(SHOW)BINDIR="$(BINDIR)" python3 -m poetry build --dist-dir $(BINDIR)
+	$(SHOW)python3 -m poetry build
 
 #----------------------------------------------------------------------------------------------
 
@@ -185,19 +187,23 @@ unit_test:
 	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 flow_test:
-	$(SHOW)cd tests/flow && python3 -m pytest 
+ifneq ($(VIRTUAL_ENV),)
+	$(SHOW)cd tests/flow && python3 -m pytest $(TEST)
+else
+	$(SHOW)python3 -m tox -e flowenv
+endif
 
 mem_test:
 	$(SHOW)python3 -m RLTest --test $(ROOT)/tests/module/flow/test_vecsim_malloc.py \
 		--module $(BINDIR)/module_tests//memory_test.so
 
-pybind_test:
-	$(SHOW)python3 -m tox -e flowenv
-
 benchmark:
 	$(SHOW)$(BINDIR)/benchmark/bf_benchmark
 
-.PHONY: unit_test mem_test benchmark
+toxenv:
+	$(SHOW)bash -c ". ./.tox/flowenv/bin/activate; $$SHELL"
+
+.PHONY: unit_test flow_test mem_test benchmark toxenv
 
 #----------------------------------------------------------------------------------------------
 

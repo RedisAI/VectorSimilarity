@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_TESTS "Build tests" ON)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 

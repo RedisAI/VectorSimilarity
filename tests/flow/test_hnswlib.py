@@ -1,12 +1,10 @@
-from VecSim import *
-import numpy as np
+from common import *
 import hnswlib
-from scipy import spatial
-from  numpy.testing import assert_allclose
 
 
 # compare results with the original version of hnswlib - do not use elements deletion.
 def test_sanity_hnswlib_index_L2():
+    BB()
     dim = 16
     num_elements = 10000
     space = 'l2'

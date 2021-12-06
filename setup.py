@@ -24,8 +24,11 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
-        self.build_lib = os.getenv("BINDIR")
-        self.build_temp = os.getenv("BINDIR") + ".tmp"
+        # plat = paella.Platform()
+        # bindir = os.path.join(os.getenv("BINDIR", f"bin/{plat.os}-{plat.arch}-release"), "pybind")
+        # paella.mkdir_p(bindir)
+        # self.build_lib = bindir
+        # self.build_temp = bindir + ".tmp"
 
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
@@ -48,6 +51,7 @@ class CMakeBuild(build_ext):
             "-DPYTHON_EXECUTABLE={}".format(sys.executable),
             "-DCMAKE_BUILD_TYPE={}".format(cfg),
             "-Wno-dev",
+            "--no-warn-unused-cli",
             "-DBUILD_TESTS=OFF",
         ]
         build_args = []

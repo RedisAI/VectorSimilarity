@@ -44,8 +44,8 @@ class VecSimSetup(paella.Setup):
     def common_last(self):
         self.run("python3 %s/bin/getrmpytools" % READIES)
         self.run("%s/bin/getclang" % READIES)
+        self.run("NO_PY2=1 %s/bin/getpudb" % READIES)
         self.pip_install("-r %s/sbin/requirements.txt" % ROOT)
-        self.run("python3 -m poetry install")
 
 #----------------------------------------------------------------------------------------------
 

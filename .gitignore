@@ -3,6 +3,7 @@
 /tests/module/build/
 
 /bin/
+/build/
 /venv/
 /deps/readies/
 /1/
