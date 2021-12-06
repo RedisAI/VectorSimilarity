@@ -5,6 +5,7 @@
 /bin/
 /venv/
 /deps/readies/
+/1/
 
 # Prerequisites
 *.d

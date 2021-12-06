@@ -56,16 +56,17 @@ make build
   VERBOSE=1        # print detailed build info
   VG|VALGRIND=1    # build for Valgrind
   SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
+make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
 make all           # build all libraries and packages
 
-make test          # run tests
+make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
-
-make valgrind      # run valgrind
-
+  VG|VALGRIND=1      # run tests with valgrind
+make flow_test     # run flow tests
+make mem_test      # run memory tests
 make benchmark	   # run benchmarks
 
 make platform      # build for specific Linux distribution
@@ -81,7 +82,7 @@ endef
 
 #----------------------------------------------------------------------------------------------
 
-BINDIR=$(BINROOT)/src
+BINDIR=$(BINROOT)
 TARGET=$(BINDIR)/libVectorSimilarity.so
 SRCDIR=src
 
@@ -119,6 +120,7 @@ CMAKE_FLAGS += \
 	-Wno-deprecated \
 	-DCMAKE_WARN_DEPRECATED=OFF \
 	-Wno-dev \
+	--no-warn-unused-cli \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN)
@@ -150,12 +152,6 @@ else
 	@make -C $(BINDIR) $(MAKE_J)
 endif
 
-#build:
-#	@mkdir -p build
-#	@cd build; cmake $(CMAKE_FLAGS) ../src
-#	@-touch build/Makefile
-#	@make -C build
-
 clean:
 ifeq ($(ALL),1)
 	$(SHOW)rm -rf $(BINROOT)
@@ -167,45 +163,58 @@ endif
 
 #----------------------------------------------------------------------------------------------
 
-test:
-#	$(SHOW)mkdir -p $(BINROOT)/test
-#	$(SHOW)cd $(BINROOT)/tests && cmake $(CMAKE_FLAGS) $(ROOT)/tests/unit && $(MAKE)
-#	@cd $(BINDIR)/test && cmake $(CMAKE_FLAGS) .. && make
-#	@cd $(BINDIR)/test && GTEST_COLOR=1 ctest --output-on-failure $(CTEST_ARGS)
-	$(SHOW)cd $(BINDIR)/unit_tests && ctest --output-on-failure $(CTEST_ARGS)
-
-.PHONY: test
+pybind:
+	$(SHOW)BINDIR="$(BINDIR)" python3 -m poetry build --dist-dir $(BINDIR)
 
 #----------------------------------------------------------------------------------------------
 
-valgrind:
-	@./tests/valgrind.sh
+_CTEST_ARGS=$(CTEST_ARGS)
+_CTEST_ARGS += --output-on-failure
 
-.PHONY: valgrind
+ifeq ($(VERBOSE),1)
+_CTEST_ARGS += -V
+endif
+
+ifeq ($(VALGRIND),1)
+_CTEST_ARGS += \
+	-T memcheck \
+	--overwrite MemoryCheckCommandOptions="--leak-check=full"
+endif
+
+unit_test:
+	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
+
+flow_test:
+	$(SHOW)cd tests/flow && python3 -m pytest 
+
+mem_test:
+	$(SHOW)python3 -m RLTest --test $(ROOT)/tests/module/flow/test_vecsim_malloc.py \
+		--module $(BINDIR)/module_tests//memory_test.so
+
+pybind_test:
+	$(SHOW)python3 -m tox -e flowenv
+
+benchmark:
+	$(SHOW)$(BINDIR)/benchmark/bf_benchmark
+
+.PHONY: unit_test mem_test benchmark
 
 #----------------------------------------------------------------------------------------------
 
 check-format:
-	./sbin/check-format.sh
+	$(SHOW)./sbin/check-format.sh
 
 format:
-	FIX=1 ./sbin/check-format.sh
+	$(SHOW)FIX=1 ./sbin/check-format.sh
 
 .PHONY: check-format format
 
 #----------------------------------------------------------------------------------------------
 
 platform:
-	@make -C build/platforms build PACK=1 ARTIFACTS=1
+	$(SHOW)make -C build/platforms build PACK=1 ARTIFACTS=1
 ifeq ($(PUBLISH),1)
-	@make -C build/platforms publish
+	$(SHOW)make -C build/platforms publish
 endif
 
 .PHONY: platform
-
-#----------------------------------------------------------------------------------------------
-
-benchmark:
-	./tests/benchmark.sh
-
-.PHONY: benchmark

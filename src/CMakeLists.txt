@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
+option(BUILD_TESTS "Build tests" OFF)
+
 option(VECSIM_STATIC "Build as static library" OFF)
 
 option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
@@ -8,11 +10,11 @@ option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
 if(NOT DEFINED root)
 	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 endif()
-message("VectorSimilarity root: " ${root})
+message("# VectorSimilarity root: " ${root})
 if(NOT DEFINED binroot)
 	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR}/.. ABSOLUTE)
 endif()
-message("VectorSimilarity binroot: " ${binroot})
+message("# VectorSimilarity binroot: " ${binroot})
 
 include(${root}/cmake/common.cmake)
 
@@ -20,11 +22,15 @@ if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
 endif()
 
+if (BUILD_TESTS)
+	include(${root}/cmake/gtest.cmake)
+endif()
+
 project(VectorSimilarity)
 
 set(CMAKE_CXX_STANDARD 14)
 
-message("VectorSimilarity VECSIM_ARCH: " ${VECSIM_ARCH})
+message("# VectorSimilarity VECSIM_ARCH: " ${VECSIM_ARCH})
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -56,8 +62,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/utils/vec_utils.cpp
     VecSim/memory/vecsim_malloc.cpp
     VecSim/memory/vecsim_base.cpp
-    VecSim/algorithms/brute_force/bf_batch_iterator.cpp
-  )
+    VecSim/algorithms/brute_force/bf_batch_iterator.cpp)
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
@@ -72,4 +77,8 @@ if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
 
-add_subdirectory(${root}/tests/unit unit_tests)
+if(BUILD_TESTS)
+	add_subdirectory(${root}/tests/unit unit_tests)
+	add_subdirectory(${root}/tests/module module_tests)
+	add_subdirectory(${root}/tests/benchmark benchmark)
+endif()
