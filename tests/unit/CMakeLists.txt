@@ -6,10 +6,13 @@ option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
 option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
 
 if(NOT DEFINED root)
-	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
-	set(binroot ${root}/build)
+	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/../.. ABSOLUTE)
 endif()
-message("VectorSimilarity_UnitTest: " ${binroot})
+message("VectorSimilarity/tests/unit root: " ${root})
+#if(NOT DEFINED binroot)
+#	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR}/../unit_tests ABSOLUTE)
+#endif()
+message("VectorSimilarity/tests/unit binroot: " ${binroot})
 
 if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
@@ -35,9 +38,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 
-include_directories(${root}/src)
+# include_directories(${root}/src)
 
-add_subdirectory(${root}/src ${binroot}/VectorSimilarity)
+# add_subdirectory(${root}/src ${binroot}/VectorSimilarity)
 
 enable_testing()
 

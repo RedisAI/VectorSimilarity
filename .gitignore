@@ -1,3 +1,11 @@
+/tests/flow/logs/
+/tests/module/flow/logs
+/tests/module/build/
+
+/bin/
+/venv/
+/deps/readies/
+
 # Prerequisites
 *.d
 
@@ -30,25 +38,16 @@
 *.exe
 *.out
 *.app
-*.pyc
 **/CMakeFiles
 **/cmake_install.cmake
 **/CMakeCache.txt
-**/build
 
-/build/
-/deps/readies/
-/test/module/build/
-
-__pycache__/
-test/flow/logs/
-tests/flow/logs/
-
-.vscode
-**/.ipynb_checkpoints
+# Python
 *.egg*
 dist/**
 poetry.lock
-venv/
+*.pyc
+__pycache__/
 
-tests/module/flow/logs
+.vscode
+**/.ipynb_checkpoints

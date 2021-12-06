@@ -1,4 +1,10 @@
 
+ifeq (n,$(findstring n,$(firstword -$(MAKEFLAGS))))
+DRY_RUN:=1
+else
+DRY_RUN:=
+endif
+
 ifneq ($(VG),)
 VALGRIND=$(VG)
 endif
@@ -44,7 +50,7 @@ include $(ROOT)/deps/readies/mk/main
 
 #----------------------------------------------------------------------------------------------
 
-define HELP
+define HELPTEXT
 make build
   DEBUG=1          # build debug variant
   VERBOSE=1        # print detailed build info
@@ -75,19 +81,28 @@ endef
 
 #----------------------------------------------------------------------------------------------
 
+BINDIR=$(BINROOT)/src
+TARGET=$(BINDIR)/libVectorSimilarity.so
+SRCDIR=src
+
 MK_CUSTOM_CLEAN=1
-BINDIR=$(BINROOT)
 
-include $(MK)/defs
-include $(MK)/rules
-
-#----------------------------------------------------------------------------------------------
-
-all: build
-
-.PHONY: all
+ifeq ($(SLOW),1)
+MAKE_J=
+else
+MAKE_J:=-j$(shell nproc)
+endif
 
 #----------------------------------------------------------------------------------------------
+
+CMAKE_DIR=$(ROOT)/src
+
+CMAKE_FILES= \
+	src/CMakeLists.txt \
+	src/VecSim/spaces/CMakeLists.txt \
+	cmake/common.cmake \
+	cmake/gtest.cmake \
+	cmake/clang-sanitizers.cmake
 
 ifeq ($(DEBUG),1)
 CMAKE_BUILD_TYPE=DEBUG
@@ -100,30 +115,64 @@ ifeq ($(VERBOSE),1)
 CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=on
 endif
 
-CMAKE_FLAGS += $(CMAKE_SAN)
+CMAKE_FLAGS += \
+	-Wno-deprecated \
+	-DCMAKE_WARN_DEPRECATED=OFF \
+	-Wno-dev \
+	-DOSNICK=$(OSNICK) \
+	-DARCH=$(ARCH) \
+	$(CMAKE_SAN)
 
-build:
-	@mkdir -p build
-	@cd build; cmake $(CMAKE_FLAGS) ../src
-	@-touch build/Makefile
-	@make -C build
+#----------------------------------------------------------------------------------------------
 
-clean:
-ifneq ($(ALL),1)
-	@make -C build clean
-	@make -C tests/unit/build clean
+include $(MK)/defs
+
+#----------------------------------------------------------------------------------------------
+
+all: bindirs $(TARGET)
+
+.PHONY: all
+
+include $(MK)/rules
+
+#----------------------------------------------------------------------------------------------
+
+.PHONY: __force
+
+$(BINDIR)/Makefile: __force
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+
+$(TARGET): $(BINDIR)/Makefile
+	@echo Building $(TARGET) ...
+ifneq ($(DRY_RUN),1)
+	$(SHOW)$(MAKE) -C $(BINDIR) $(MAKE_J)
 else
-	@rm -rf build tests/unit/build
+	@make -C $(BINDIR) $(MAKE_J)
 endif
 
-.PHONY: build clean
+#build:
+#	@mkdir -p build
+#	@cd build; cmake $(CMAKE_FLAGS) ../src
+#	@-touch build/Makefile
+#	@make -C build
+
+clean:
+ifeq ($(ALL),1)
+	$(SHOW)rm -rf $(BINROOT)
+else
+	$(SHOW)$(MAKE) -C $(BINDIR) clean
+endif
+
+.PHONY: clean
 
 #----------------------------------------------------------------------------------------------
 
 test:
-	@mkdir -p tests/unit/build
-	@cd tests/unit/build && cmake $(CMAKE_FLAGS) .. && make
-	@cd tests/unit/build && GTEST_COLOR=1 ctest --output-on-failure $(CTEST_ARGS)
+#	$(SHOW)mkdir -p $(BINROOT)/test
+#	$(SHOW)cd $(BINROOT)/tests && cmake $(CMAKE_FLAGS) $(ROOT)/tests/unit && $(MAKE)
+#	@cd $(BINDIR)/test && cmake $(CMAKE_FLAGS) .. && make
+#	@cd $(BINDIR)/test && GTEST_COLOR=1 ctest --output-on-failure $(CTEST_ARGS)
+	$(SHOW)cd $(BINDIR)/unit_tests && ctest --output-on-failure $(CTEST_ARGS)
 
 .PHONY: test
 

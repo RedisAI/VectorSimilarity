@@ -1,6 +1,4 @@
 cmake_minimum_required(VERSION 3.10)
-cmake_policy(SET CMP0077 NEW)
-set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
@@ -8,12 +6,15 @@ option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
 option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
 
 if(NOT DEFINED root)
-	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/.. ABSOLUTE)
+	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 endif()
+message("VectorSimilarity root: " ${root})
 if(NOT DEFINED binroot)
-	set(binroot ${root}/build)
+	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR}/.. ABSOLUTE)
 endif()
 message("VectorSimilarity binroot: " ${binroot})
+
+include(${root}/cmake/common.cmake)
 
 if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
@@ -41,7 +42,9 @@ endif()
 
 add_subdirectory(VecSim/spaces)
 
-add_compile_options(-march=x86-64)
+if(ARCH STREQUAL "x64")
+	add_compile_options(-march=x86-64)
+endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
@@ -68,3 +71,5 @@ if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "lib")
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
+
+add_subdirectory(${root}/tests/unit unit_tests)
