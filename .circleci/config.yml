@@ -26,7 +26,6 @@ commands:
   build-steps:
     steps:
       - checkout-all
-      - setup-automation
       - restore_cache: # Download and cache dependencies
           keys:
           - v1-dependencies-{{ checksum "pyproject.toml" }}
