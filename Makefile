@@ -56,6 +56,7 @@ make build
   VERBOSE=1        # print detailed build info
   VG|VALGRIND=1    # build for Valgrind
   SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
+  SLOW=1           # don't run build in parallel (for diagnostics)
 make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
@@ -81,6 +82,8 @@ make platform      # build for specific Linux distribution
 make format          # fix formatting of sources
 make check-format    # check formatting of sources
 
+make sanbox        # create container with CLang Sanitizer
+
 endef
 
 #----------------------------------------------------------------------------------------------
@@ -96,6 +99,28 @@ MAKE_J=
 else
 MAKE_J:=-j$(shell nproc)
 endif
+
+#----------------------------------------------------------------------------------------------
+
+ifeq ($(ARCH),x64)
+
+ifeq ($(SAN),)
+ifneq ($(findstring centos,$(OSNICK)),)
+VECSIM_ARCH ?= skylake-avx512
+else
+VECSIM_ARCH ?= x86-64-v4
+endif
+else
+VECSIM_ARCH ?= skylake-avx512
+endif
+
+CMAKE_VECSIM=-DVECSIM_ARCH=$(VECSIM_ARCH)
+
+else # ARCH != x64
+
+CMAKE_VECSIM=
+
+endif # ARCH
 
 #----------------------------------------------------------------------------------------------
 
@@ -126,7 +151,8 @@ CMAKE_FLAGS += \
 	--no-warn-unused-cli \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
-	$(CMAKE_SAN)
+	$(CMAKE_SAN) \
+	$(CMAKE_VECSIM)
 
 #----------------------------------------------------------------------------------------------
 
@@ -227,3 +253,14 @@ ifeq ($(PUBLISH),1)
 endif
 
 .PHONY: platform
+
+#----------------------------------------------------------------------------------------------
+
+ifneq ($(wildcard /w/*),)
+SANBOX_ARGS += -v /w:/w
+endif
+
+sanbox:
+	@docker run -it -v $(PWD):/vecsim -w /vecsim --cap-add=SYS_PTRACE --security-opt seccomp=unconfined $(SANBOX_ARGS) redisfab/clang:13-x64-bullseye bash
+
+.PHONY: sanbox

@@ -113,8 +113,6 @@ Arch_Optimization getArchitectureOptimization() {
 
 #else
 
-Arch_Optimization getArchitectureOptimization() {
-    return ARCH_OPT_NONE;
-}
+Arch_Optimization getArchitectureOptimization() { return ARCH_OPT_NONE; }
 
 #endif

@@ -20,6 +20,9 @@ message("# VecSim/UnitTest VECSIM_ARCH: " ${VECSIM_ARCH})
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
+
 enable_testing()
 
 add_executable(test_hnswlib test_hnswlib.cpp test_utils.cpp)
