@@ -11,6 +11,7 @@
 #include <deque>
 #include <memory>
 #include <cassert>
+#include <climits>
 #include <queue>
 #include <random>
 #include <iostream>
@@ -634,6 +635,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     max_elements_ = max_elements;
     M_ = M;
     maxM_ = M_;
+    if (M_ > SIZE_MAX / 2)
+        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     maxM0_ = M_ * 2;
     ef_construction_ = std::max(ef_construction, M_);
     ef_ = ef;
@@ -651,14 +654,22 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     enterpoint_node_ = -1;
     maxlevel_ = -1;
 
+    if (M_ == 1)
+        throw std::runtime_error("HNSW index parameter M cannot be 1");
     mult_ = 1 / log(1.0 * M_);
     level_generator_.seed(random_seed);
 
     // data_level0_memory will look like this:
     // -----4------ | -----4*M0----------- | ----8------------------| ------32------- | ----8---- |
     // <links_len>  | <link_1> <link_2>... | <incoming_links_set> |   <data>        |  <label>
+    if (maxM0_ > (SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint))/sizeof(tableint))
+        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(tableint) + sizeof(void *);
+
+    if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labeltype))
+        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labeltype);
+
     incoming_links_offset0 = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
     offsetData_ = size_links_level0_;
     label_offset_ = size_links_level0_ + data_size_;
