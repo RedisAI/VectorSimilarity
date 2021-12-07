@@ -662,7 +662,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     // data_level0_memory will look like this:
     // -----4------ | -----4*M0----------- | ----8------------------| ------32------- | ----8---- |
     // <links_len>  | <link_1> <link_2>... | <incoming_links_set> |   <data>        |  <label>
-    if (maxM0_ > (SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint))/sizeof(tableint))
+    if (maxM0_ > (SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(tableint))
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(tableint) + sizeof(void *);
 

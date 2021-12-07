@@ -15,8 +15,7 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
             return new (allocator) HNSWIndex(params, allocator);
         }
         return new (allocator) BruteForceIndex(params, allocator);
-    }
-    catch (...) {
+    } catch (...) {
         return NULL;
     }
 }
