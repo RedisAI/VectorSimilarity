@@ -1,9 +1,10 @@
 /tests/flow/logs/
 /tests/module/flow/logs
-/tests/module/build/
 
+/.tox/
 /bin/
 /build/
+/dist/
 /venv/
 /deps/readies/
 /1/

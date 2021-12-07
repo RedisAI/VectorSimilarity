@@ -1,4 +1,7 @@
 #include "space_aux.h"
+
+#if defined(__x86_64__)
+
 #include <cpuid.h>
 
 void cpuid(int info[4], int InfoType) {
@@ -107,3 +110,11 @@ Arch_Optimization getArchitectureOptimization() {
     }
     return ARCH_OPT_NONE;
 }
+
+#else
+
+Arch_Optimization getArchitectureOptimization() {
+    return ARCH_OPT_NONE;
+}
+
+#endif

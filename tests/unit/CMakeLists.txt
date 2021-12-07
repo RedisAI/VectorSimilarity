@@ -12,7 +12,7 @@ include(CTest)
 
 set(CMAKE_CXX_STANDARD 14)
 
-if (NOT DEFINED VECSIM_ARCH)
+if (NOT DEFINED VECSIM_ARCH AND ARCH STREQUAL "x64")
 	set(VECSIM_ARCH "x86-64-v4")
 endif()
 message("# VecSim/UnitTest VECSIM_ARCH: " ${VECSIM_ARCH})

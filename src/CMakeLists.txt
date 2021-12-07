@@ -12,7 +12,7 @@ if(NOT DEFINED root)
 endif()
 message("# VectorSimilarity root: " ${root})
 if(NOT DEFINED binroot)
-	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR}/.. ABSOLUTE)
+	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 endif()
 message("# VectorSimilarity binroot: " ${binroot})
 

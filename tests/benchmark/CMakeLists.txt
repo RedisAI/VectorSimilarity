@@ -1,20 +1,15 @@
 
-cmake_minimum_required(VERSION 3.10)
-
-cmake_policy(SET CMP0077 NEW)
-set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-
 if(NOT DEFINED root)
     get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
-    set(binroot ${root}/build)
 endif()
-message("# VectorSimilarity_Benchmark: " ${binroot})
+message("# VectorSimilarity_Benchmark root: " ${root})
+message("# VectorSimilarity_Benchmark binroot: " ${binroot})
 
 project(VectorSimilarity_Benchmark)
 
 set(CMAKE_CXX_STANDARD 14)
 
-if (NOT DEFINED VECSIM_ARCH)
+if (NOT DEFINED VECSIM_ARCH AND ARCH STREQUAL "x64")
     set(VECSIM_ARCH "x86-64-v4")
 endif()
 message("# VecSim/Benchmark VECSIM_ARCH: " ${VECSIM_ARCH})

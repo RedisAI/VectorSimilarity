@@ -70,6 +70,7 @@ make flow_test     # run flow tests
   BB=1               # run with debugger, stop on BB()
 make mem_test      # run memory tests
 make benchmark	   # run benchmarks
+make toxenv        # enter Tox environment (for debugging flow tests)
 
 make platform      # build for specific Linux distribution
   OSNICK=nick        # Linux distribution to build for
@@ -171,7 +172,9 @@ pybind:
 #----------------------------------------------------------------------------------------------
 
 _CTEST_ARGS=$(CTEST_ARGS)
-_CTEST_ARGS += --output-on-failure
+_CTEST_ARGS += \
+	--output-on-failure \
+	$(MAKE_J)
 
 ifeq ($(VERBOSE),1)
 _CTEST_ARGS += -V
