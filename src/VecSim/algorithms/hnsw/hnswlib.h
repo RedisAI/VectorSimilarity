@@ -7,7 +7,6 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
-#include "hnsw_batch_iterator.h"
 
 #include <deque>
 #include <memory>
@@ -109,7 +108,7 @@ class HierarchicalNSW : VecsimBaseObject {
                           const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
     CandidatesQueue<dist_t> searchLayer(tableint ep_id, const void *data_point, int layer,
-                                        size_t ef, HNSW_BatchIterator *b_iter = nullptr) const;
+                                        size_t ef) const;
     void getNeighborsByHeuristic2(CandidatesQueue<dist_t> &top_candidates, size_t M);
     tableint mutuallyConnectNewElement(tableint cur_c, CandidatesQueue<dist_t> &top_candidates,
                                        int level);
@@ -268,6 +267,11 @@ tableint HierarchicalNSW<dist_t>::getEntryPoint() const {
     return enterpoint_node_;
 }
 
+template <typename dist_t>
+VisitedList HierarchicalNSW<dist_t>::getVisitedList() const {
+    return visited_list_pool_->getFreeVisitedList()->visitedElements;
+}
+
 /**
  * helper functions
  */
@@ -305,7 +309,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 
 template <typename dist_t>
 CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point,
-                                                             int layer, size_t ef, HNSW_BatchIterator *b_iter) const {
+                                                             int layer, size_t ef) const {
 
     // We want to reset the visited list (i.e., set all nodes as unvisited), unless the following holds:
     // - we are running search in batches

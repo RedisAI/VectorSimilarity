@@ -29,6 +29,8 @@ private:
     idType entry_point; // internal id of the node to begin the scan from in the next iteration.
     bool allow_marked_candidates; // flag that indicates if we allow the search to visit in nodes that
                                   // where returned in previous iterations
+    hnswlib::VisitedList
+    CandidatesHeap scanGraph();
 
 public:
     HNSW_BatchIterator(const void *query_vector, const HNSWIndex *index,
