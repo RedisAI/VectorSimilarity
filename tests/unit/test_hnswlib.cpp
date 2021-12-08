@@ -544,3 +544,27 @@ TEST_F(HNSWLibTest, hnsw_bad_params) {
         ASSERT_TRUE(index == NULL);
     }
 }
+
+TEST_F(HNSWLibTest, hnsw_delete_enter_point) {
+    size_t n = 10000;
+    size_t dim = 2;
+    size_t M = 2;
+
+    VecSimParams params = {
+        .hnswParams = {.initialCapacity = n, .M = M, .efConstruction = 0, .efRuntime = 0},
+        .type = VecSimType_FLOAT32,
+        .size = dim,
+        .metric = VecSimMetric_L2,
+        .algo = VecSimAlgo_HNSWLIB};
+
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    int64_t vec[dim];
+    for (int i = 0; i < dim; i++)
+        vec[i] = i;
+    for (size_t j = 0; j < n; j++)
+        VecSimIndex_AddVector(index, vec, j);
+
+    for (size_t j = 0; j < n; j++)
+        ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, j));
+}
