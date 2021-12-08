@@ -809,13 +809,26 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
         unsigned short list_len = getListCount(top_level_list);
         while (list_len == 0) {
-            maxlevel_--;
-            if (maxlevel_ < 0) {
-                enterpoint_node_ = -1;
-                break;
+            size_t elements = cur_element_count;
+            tableint cur_id = 0;
+            while (elements > 0) {
+                if (available_ids.find(&cur_id) == available_ids.end()) {
+                    elements--;
+                    top_level_list = get_linklist_at_level(cur_id, maxlevel_);
+                    if ((list_len = getListCount(top_level_list)))
+                        break;
+                }
+                cur_id++;
             }
-            top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
-            list_len = getListCount(top_level_list);
+            if (list_len == 0) {
+                maxlevel_--;
+                if (maxlevel_ < 0) {
+                    enterpoint_node_ = -1;
+                    break;
+                }
+                top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
+                list_len = getListCount(top_level_list);
+            }
         }
         // set the (arbitrary) first neighbor as the entry point (if there is some element in the
         // index).
