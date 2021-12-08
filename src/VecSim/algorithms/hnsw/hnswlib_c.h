@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "VecSim/vec_sim_index.h"

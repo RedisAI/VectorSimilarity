@@ -12,23 +12,23 @@ typedef unsigned short int vl_type;
 
 class VisitedList : public VecsimBaseObject {
 public:
-    vl_type curV;
-    vl_type *mass;
-    unsigned int numelements;
+    vl_type curVisitedTag;
+    vl_type *visitedElements;
+    unsigned int numElements;
 
-    VisitedList(int numelements1, std::shared_ptr<VecSimAllocator> allocator)
+    VisitedList(int num_elements, std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {
-        curV = -1;
-        numelements = numelements1;
-        mass = new vl_type[numelements];
-        memset(mass, 0, sizeof(vl_type) * numelements);
+        curVisitedTag = -1;
+        numElements = num_elements;
+        visitedElements = new vl_type[numElements];
+        memset(visitedElements, 0, sizeof(vl_type) * numElements);
     }
 
     void reset() {
-        curV++;
+        curVisitedTag++;
     };
 
-    ~VisitedList() { delete[] mass; }
+    ~VisitedList() { delete[] visitedElements; }
 };
 ///////////////////////////////////////////////////////////
 //
@@ -38,15 +38,15 @@ public:
 
 class VisitedListPool : public VecsimBaseObject {
     std::deque<VisitedList *, VecsimSTLAllocator<VisitedList *>> pool;
-    std::mutex poolguard;
-    int numelements;
+    std::mutex poolGuard;
+    int numElements;
 
 public:
-    VisitedListPool(int initmaxpools, int numelements1, std::shared_ptr<VecSimAllocator> allocator)
+    VisitedListPool(int init_max_pools, int num_elements, std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), pool(allocator) {
-        numelements = numelements1;
-        for (int i = 0; i < initmaxpools; i++)
-            pool.push_front(new (allocator) VisitedList(numelements, allocator));
+        numElements = num_elements;
+        for (int i = 0; i < init_max_pools; i++)
+            pool.push_front(new (allocator) VisitedList(numElements, allocator));
     }
 
     VisitedList *getFreeVisitedList(bool reset=true) {
@@ -71,7 +71,7 @@ public:
     };
 
     void returnVisitedListToPool(VisitedList *vl) {
-        std::unique_lock<std::mutex> lock(poolguard);
+        std::unique_lock<std::mutex> lock(poolGuard);
         pool.push_front(vl);
     };
 

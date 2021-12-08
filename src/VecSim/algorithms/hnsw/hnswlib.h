@@ -307,18 +307,22 @@ template <typename dist_t>
 CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point,
                                                              int layer, size_t ef, HNSW_BatchIterator *b_iter) const {
 
-    // Unless we are reusing some batch iterator, we want to reset to visited list.
-    bool reset = (b_iter == nullptr || b_iter->getSearchId() == -1);
+    // We want to reset the visited list (i.e., set all nodes as unvisited), unless the following holds:
+    // - we are running search in batches
+    // - we are in the first phase, where we do not search again in nodes that were visited in previous iterations.
+    bool reset = (!b_iter);
     VisitedList *vl = visited_list_pool_->getFreeVisitedList(reset);
-    vl_type *visited_array = vl->mass;
-    vl_type visited_array_tag = vl->curV;
+    vl_type *visited_array = vl->visitedElements;
+    vl_type visited_array_tag = vl->curVisitedTag;
 
-    // Use an existing tag to mark visited nodes
-    if (search_uid > 0) {
-        visited_array_tag = search_uid;
+    if (b_iter) {
+        if (b_iter->getSearchId() == INVALID_SEARCH_ID) {
+            b_iter->setSearchId(visited_array_tag); // set the current tag as the search id for next iterations
+        } else {
+            visited_array_tag = b_iter->getSearchId(); // use the search id from previous iterations as the tag
+        }
     }
 
-    // todo: cont. from here
     CandidatesQueue<dist_t> top_candidates(this->allocator);
     CandidatesQueue<dist_t> candidate_set(this->allocator);
 
@@ -336,6 +340,10 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
         // if the closest element in the candidates set is further than the furthest element in the top candidates
         // set, we finish the search.
         if ((-curr_el_pair.first) > lowerBound) {
+            // If we found fewer results than wanted, allow
+            if (b_iter && top_candidates.size() < ef) {
+                b_iter->setAllowMarkedCandidates();
+            }
             break;
         }
         candidate_set.pop();
@@ -385,9 +393,6 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
     visited_list_pool_->returnVisitedListToPool(vl);
 #endif
 
-    if (search_uid > 0) {
-
-    }
     return top_candidates;
 }
 

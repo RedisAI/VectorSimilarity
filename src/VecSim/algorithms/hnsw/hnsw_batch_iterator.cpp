@@ -5,7 +5,7 @@
 HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex *hnsw_index,
                    std::shared_ptr<VecSimAllocator> allocator) : VecSimBatchIterator(query_vector, allocator),
                    // the search_id is determined in the first iteration.
-                   search_id(INVALID_ID), index(hnsw_index), allow_marked_candidates(false) {
+                   search_id(INVALID_SEARCH_ID), index(hnsw_index), allow_marked_candidates(false) {
     entry_point = hnsw_index->getEntryPointId();
 }
 
