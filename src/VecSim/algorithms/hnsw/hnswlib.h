@@ -806,40 +806,35 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // replace the entry point with another one, if we are deleting the current entry point.
     if (element_internal_id == enterpoint_node_) {
         assert(element_top_level == maxlevel_);
-        linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
-        unsigned short list_len = getListCount(top_level_list);
-        while (list_len == 0) {
-            size_t elements = cur_element_count;
-            tableint cur_id = 0;
-            while (elements > 0) {
-                if (available_ids.find(&cur_id) == available_ids.end()) {
-                    elements--;
-                    top_level_list = get_linklist_at_level(cur_id, maxlevel_);
-                    if ((list_len = getListCount(top_level_list)))
+        // Sets the (arbitrary) new entry point.
+        while (element_internal_id == enterpoint_node_) {
+            linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
+
+            if (getListCount(top_level_list)) {
+                // Tries to set the (arbitrary) first neighbor as the entry point.
+                enterpoint_node_ = ((tableint *)(top_level_list + 1))[0];
+            } else {
+                // If there is no neighbors in the current level, check for any vector at
+                // this level to be the new entry point.
+                for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
+                    if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
+                        enterpoint_node_ = cur_id;
                         break;
+                    }
                 }
-                cur_id++;
             }
-            if (list_len == 0) {
-                maxlevel_--;
-                if (maxlevel_ < 0) {
-                    enterpoint_node_ = -1;
-                    break;
-                }
-                top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
-                list_len = getListCount(top_level_list);
+            // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
+            // until we find a new enter point, or the index is empty.
+            if (element_internal_id == enterpoint_node_ && --maxlevel_ < 0) {
+                enterpoint_node_ = -1;
             }
-        }
-        // set the (arbitrary) first neighbor as the entry point (if there is some element in the
-        // index).
-        if (enterpoint_node_ >= 0) {
-            enterpoint_node_ = ((tableint *)(top_level_list + 1))[0];
         }
     }
 
     if (element_levels_[element_internal_id] > 0) {
         this->allocator->free_allocation(linkLists_[element_internal_id]);
     }
+    element_levels_[element_internal_id] = -1;
     memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
     return true;
