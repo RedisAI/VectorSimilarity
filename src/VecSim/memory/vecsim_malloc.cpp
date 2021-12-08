@@ -33,6 +33,9 @@ void *VecSimAllocator::allocate(size_t size) {
 void VecSimAllocator::deallocate(void *p, size_t size) { free_allocation(p); }
 
 void *VecSimAllocator::reallocate(void *p, size_t size) {
+    if (!p) {
+        return this->allocate(size);
+    }
     size_t oldSize = getPointerAllocationSize(p);
     if (oldSize >= size) {
         return p;
