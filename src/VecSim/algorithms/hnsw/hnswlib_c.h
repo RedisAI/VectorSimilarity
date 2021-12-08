@@ -17,8 +17,10 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
 
     void setEf(size_t ef);
+    hnswlib::tableint getEntryPointId() const;
+
+    hnswlib::HierarchicalNSW<float> hnsw;
 
 private:
     std::unique_ptr<SpaceInterface<float>> space;
-    hnswlib::HierarchicalNSW<float> hnsw;
 };

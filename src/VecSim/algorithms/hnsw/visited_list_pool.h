@@ -21,14 +21,11 @@ public:
         curV = -1;
         numelements = numelements1;
         mass = new vl_type[numelements];
+        memset(mass, 0, sizeof(vl_type) * numelements);
     }
 
     void reset() {
         curV++;
-        if (curV == 0) {
-            memset(mass, 0, sizeof(vl_type) * numelements);
-            curV++;
-        }
     };
 
     ~VisitedList() { delete[] mass; }
@@ -52,7 +49,7 @@ public:
             pool.push_front(new (allocator) VisitedList(numelements, allocator));
     }
 
-    VisitedList *getFreeVisitedList() {
+    VisitedList *getFreeVisitedList(bool reset=true) {
         VisitedList *vl;
 #ifdef ENABLE_PARALLELIZATION
         {
@@ -67,7 +64,9 @@ public:
 #else
         vl = pool.front();
 #endif
-        vl->reset();
+        if (reset) {
+            vl->reset();
+        }
         return vl;
     };
 
