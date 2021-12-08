@@ -558,6 +558,7 @@ TEST_F(HNSWLibTest, hnsw_delete_enter_point) {
         .algo = VecSimAlgo_HNSWLIB};
 
     VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_TRUE(index != NULL);
 
     int64_t vec[dim];
     for (int i = 0; i < dim; i++)
