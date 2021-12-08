@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
+#include <climits>
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -515,4 +516,31 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
     };
     runTopKSearchTest(index, "abcdefgh", k, verify_res);
     VecSimIndex_Free(index);
+}
+
+// Tests VecSimIndex_New failure on bad M parameter. Should return null.
+TEST_F(HNSWLibTest, hnsw_bad_params) {
+    size_t n = 1000000;
+    size_t dim = 2;
+    size_t bad_M[] = {
+        1,        // Will fail because 1/log(M).
+        10000000, // Will fail on this->allocator->allocate(max_elements_ * size_data_per_element_)
+        SIZE_MAX, // Will fail on M * 2 overflow.
+        SIZE_MAX / 2, // Will fail on M * 2 overflow.
+        SIZE_MAX / 4  // Will fail on size_links_level0_ calculation:
+                      // sizeof(linklistsizeint) + M * 2 * sizeof(tableint) + sizeof(void *)
+    };
+    unsigned long len = sizeof(bad_M) / sizeof(size_t);
+
+    for (unsigned long i = 0; i < len; i++) {
+        VecSimParams params = {.hnswParams = {.initialCapacity = n},
+                               .type = VecSimType_FLOAT32,
+                               .size = dim,
+                               .metric = VecSimMetric_L2,
+                               .algo = VecSimAlgo_HNSWLIB};
+
+        params.hnswParams.M = bad_M[i];
+        VecSimIndex *index = VecSimIndex_New(&params);
+        ASSERT_TRUE(index == NULL);
+    }
 }
