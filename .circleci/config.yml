@@ -28,7 +28,7 @@ commands:
       - checkout-all
       - restore_cache: # Download and cache dependencies
           keys:
-          - v1-dependencies-{{ checksum "pyproject.toml" }}
+          - v2-dependencies-{{ checksum "pyproject.toml" }}
           # fallback to using the latest cache if no exact match is found
           - v2-dependencies-
       - install-prerequisites
@@ -84,7 +84,7 @@ jobs:
       - checkout-all
       - run:
           name: Run & build tests
-          command: bash -l -c "make SAN=<<parameters.san-type>> build test"
+          command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
 
 #----------------------------------------------------------------------------------------------------------------------------------
 

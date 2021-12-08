@@ -230,6 +230,9 @@ benchmark:
 	$(SHOW)$(BINDIR)/benchmark/bf_benchmark
 
 toxenv:
+ifeq ($(wildcard .tox,)
+	$(SHOW)tox -e flowenv
+endif
 	$(SHOW)bash -c ". ./.tox/flowenv/bin/activate; $$SHELL"
 
 .PHONY: unit_test flow_test mem_test benchmark toxenv
