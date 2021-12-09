@@ -566,6 +566,11 @@ TEST_F(HNSWLibTest, hnsw_delete_enter_point) {
     for (size_t j = 0; j < n; j++)
         VecSimIndex_AddVector(index, vec, j);
 
-    for (size_t j = 0; j < n; j++)
-        ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, j));
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+
+    while (info.hnswInfo.indexSize > 0) {
+        ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entry));
+        info = VecSimIndex_Info(index);
+    }
+    VecSimIndex_Free(index);
 }
