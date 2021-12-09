@@ -20,25 +20,33 @@ void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
 }
 
 void *VecSimAllocator::allocate(size_t size) {
-    *this->allocated.get() += size + allocation_header_size;
     size_t *ptr = (size_t *)vecsim_malloc(size + allocation_header_size);
-    *ptr = size;
 
-    return ptr + 1;
+    if (ptr) {
+        *this->allocated.get() += size + allocation_header_size;
+        *ptr = size;
+        return ptr + 1;
+    }
+    return NULL;
 }
 
 void VecSimAllocator::deallocate(void *p, size_t size) { free_allocation(p); }
 
 void *VecSimAllocator::reallocate(void *p, size_t size) {
-    size_t *ptr = ((size_t *)p) - 1;
+    if (!p) {
+        return this->allocate(size);
+    }
     size_t oldSize = getPointerAllocationSize(p);
     if (oldSize >= size) {
         return p;
     }
     void *new_ptr = this->allocate(size);
-    memcpy(new_ptr, p, oldSize);
-    free_allocation(p);
-    return new_ptr;
+    if (new_ptr) {
+        memcpy(new_ptr, p, oldSize);
+        free_allocation(p);
+        return new_ptr;
+    }
+    return NULL;
 }
 
 void VecSimAllocator::free_allocation(void *p) {
