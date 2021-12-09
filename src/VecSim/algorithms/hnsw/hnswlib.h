@@ -95,14 +95,11 @@ class HierarchicalNSW : VecsimBaseObject {
     labeltype getExternalLabel(tableint internal_id) const;
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
-    char *getDataByInternalId(tableint internal_id) const;
     int getRandomLevel(double reverse_size);
     vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, int level) const;
     void setIncomingEdgesPtr(tableint internal_id, int level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, int level) const;
-    linklistsizeint *get_linklist_at_level(tableint internal_id, int level) const;
-    unsigned short int getListCount(const linklistsizeint *ptr) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, CandidatesQueue<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
@@ -131,11 +128,16 @@ public:
     size_t getM() const;
     size_t getMaxLevel() const;
     tableint getEntryPoint() const;
+    VisitedList *getVisitedList() const;
+    char *getDataByInternalId(tableint internal_id) const;
+    linklistsizeint *get_linklist_at_level(tableint internal_id, int level) const;
+    unsigned short int getListCount(const linklistsizeint *ptr) const;
     void resizeIndex(size_t new_max_elements);
     bool removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
+    tableint searchBottomLayerEP(const void *query_data) const;
     vecsim_stl::priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
-                                                                  size_t k, HNSW_BatchIterator *b_iter = nullptr) const;
+                                                                  size_t k) const;
     void checkIntegrity();
 };
 
@@ -269,8 +271,8 @@ tableint HierarchicalNSW<dist_t>::getEntryPoint() const {
 }
 
 template <typename dist_t>
-VisitedList HierarchicalNSW<dist_t>::getVisitedList() const {
-    return visited_list_pool_->getFreeVisitedList()->visitedElements;
+VisitedList *HierarchicalNSW<dist_t>::getVisitedList() const {
+    return visited_list_pool_->getFreeVisitedList();
 }
 
 /**
@@ -311,22 +313,9 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 template <typename dist_t>
 CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point,
                                                              int layer, size_t ef) const {
-
-    // We want to reset the visited list (i.e., set all nodes as unvisited), unless the following holds:
-    // - we are running search in batches
-    // - we are in the first phase, where we do not search again in nodes that were visited in previous iterations.
-    bool reset = (!b_iter);
-    VisitedList *vl = visited_list_pool_->getFreeVisitedList(reset);
+    VisitedList *vl = visited_list_pool_->getFreeVisitedList();
     vl_type *visited_array = vl->visitedElements;
-    vl_type visited_array_tag = vl->curVisitedTag;
-
-    if (b_iter) {
-        if (b_iter->getSearchId() == INVALID_SEARCH_ID) {
-            b_iter->setSearchId(visited_array_tag); // set the current tag as the search id for next iterations
-        } else {
-            visited_array_tag = b_iter->getSearchId(); // use the search id from previous iterations as the tag
-        }
-    }
+    vl_type visited_array_tag = vl->curTag;
 
     CandidatesQueue<dist_t> top_candidates(this->allocator);
     CandidatesQueue<dist_t> candidate_set(this->allocator);
@@ -345,10 +334,6 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
         // if the closest element in the candidates set is further than the furthest element in the top candidates
         // set, we finish the search.
         if ((-curr_el_pair.first) > lowerBound) {
-            // If we found fewer results than wanted, allow
-            if (b_iter && top_candidates.size() < ef) {
-                b_iter->setAllowMarkedCandidates();
-            }
             break;
         }
         candidate_set.pop();
@@ -397,7 +382,6 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
 #ifdef ENABLE_PARALLELIZATION
     visited_list_pool_->returnVisitedListToPool(vl);
 #endif
-
     return top_candidates;
 }
 
@@ -991,15 +975,14 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
 }
 
 template <typename dist_t>
-vecsim_stl::priority_queue<pair<dist_t, labeltype>>
-HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, HNSW_BatchIterator *b_iter) const {
-    vecsim_stl::priority_queue<std::pair<dist_t, labeltype>> result(this->allocator);
-    if (cur_element_count == 0)
-        return result;
+tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) const {
 
+    if (cur_element_count == 0) {
+        return enterpoint_node_;
+    }
     tableint currObj = enterpoint_node_;
     dist_t cur_dist =
-        fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
+            fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
     for (int level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
@@ -1013,7 +996,7 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, HNSW_BatchI
                     throw std::runtime_error("candidate error: out of index range");
 
                 dist_t d =
-                    fstdistfunc_(query_data, getDataByInternalId(candidate), dist_func_param_);
+                        fstdistfunc_(query_data, getDataByInternalId(candidate), dist_func_param_);
                 if (d < cur_dist) {
                     cur_dist = d;
                     currObj = candidate;
@@ -1022,9 +1005,19 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, HNSW_BatchI
             }
         }
     }
+    return currObj;
+}
 
-    CandidatesQueue<dist_t> top_candidates = searchLayer(currObj, query_data, 0, std::max(ef_, k),
-                                                         b_iter);
+template <typename dist_t>
+vecsim_stl::priority_queue<pair<dist_t, labeltype>>
+HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
+
+    vecsim_stl::priority_queue<std::pair<dist_t, labeltype>> result(this->allocator);
+    if (cur_element_count == 0)
+        return result;
+
+    tableint bottom_layer_ep = searchBottomLayerEP(query_data);
+    CandidatesQueue<dist_t> top_candidates = searchLayer(bottom_layer_ep, query_data, 0, std::max(ef_, k));
 
     while (top_candidates.size() > k) {
         top_candidates.pop();

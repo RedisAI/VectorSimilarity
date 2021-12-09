@@ -12,20 +12,20 @@ typedef unsigned short int vl_type;
 
 class VisitedList : public VecsimBaseObject {
 public:
-    vl_type curVisitedTag;
+    vl_type curTag;
     vl_type *visitedElements;
     unsigned int numElements;
 
     VisitedList(int num_elements, std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator) {
-        curVisitedTag = -1;
+        curTag = 0;
         numElements = num_elements;
         visitedElements = new vl_type[numElements];
         memset(visitedElements, 0, sizeof(vl_type) * numElements);
     }
 
     void reset() {
-        curVisitedTag++;
+        curTag++;
     };
 
     ~VisitedList() { delete[] visitedElements; }
@@ -49,7 +49,7 @@ public:
             pool.push_front(new (allocator) VisitedList(numElements, allocator));
     }
 
-    VisitedList *getFreeVisitedList(bool reset=true) {
+    VisitedList *getFreeVisitedList() {
         VisitedList *vl;
 #ifdef ENABLE_PARALLELIZATION
         {
@@ -64,9 +64,7 @@ public:
 #else
         vl = pool.front();
 #endif
-        if (reset) {
-            vl->reset();
-        }
+        vl->reset();
         return vl;
     };
 

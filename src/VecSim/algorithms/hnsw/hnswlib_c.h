@@ -19,7 +19,5 @@ public:
     hnswlib::tableint getEntryPointId() const;
 
     hnswlib::HierarchicalNSW<float> hnsw;
-
-private:
     std::unique_ptr<SpaceInterface<float>> space;
 };
