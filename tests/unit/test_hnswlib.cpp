@@ -545,7 +545,7 @@ TEST_F(HNSWLibTest, hnsw_bad_params) {
     }
 }
 
-TEST_F(HNSWLibTest, hnsw_delete_enter_point) {
+TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
     size_t n = 10000;
     size_t dim = 2;
     size_t M = 2;
@@ -569,7 +569,7 @@ TEST_F(HNSWLibTest, hnsw_delete_enter_point) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
     while (info.hnswInfo.indexSize > 0) {
-        ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entry));
+        ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entrypoint));
         info = VecSimIndex_Info(index);
     }
     VecSimIndex_Free(index);
