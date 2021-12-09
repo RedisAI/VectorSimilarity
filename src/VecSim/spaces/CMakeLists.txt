@@ -1,14 +1,10 @@
 
 project(VectorSimilarity_Spaces)
 
-if (NOT DEFINED VECSIM_ARCH AND ARCH STREQUAL "x64")
-	set(VECSIM_ARCH "x86-64-v4")
+if (VECSIM_MARCH)
+	add_compile_options(-march=${VECSIM_MARCH})
 endif()
-message("VecSim/spaces VECSIM_ARCH: " ${VECSIM_ARCH})
-
-if (DEFINED VECSIM_ARCH)
-	add_compile_options(-march=${VECSIM_ARCH})
-endif()
+message("VecSim/spaces VECSIM_MARCH: " ${VECSIM_MARCH})
 
 # build SSE/AVX* code only on x64 processors
 if(ARCH STREQUAL "x64")

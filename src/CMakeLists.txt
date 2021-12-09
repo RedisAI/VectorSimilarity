@@ -16,8 +16,6 @@ if(NOT DEFINED binroot)
 endif()
 message("# VectorSimilarity binroot: " ${binroot})
 
-message("# VECSIM_ARCH=" ${VECSIM_ARCH})
-
 include(${root}/cmake/common.cmake)
 
 if (USE_ASAN OR USE_MSAN)
@@ -28,19 +26,21 @@ if (BUILD_TESTS)
 	include(${root}/cmake/gtest.cmake)
 endif()
 
+#----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
 set(CMAKE_CXX_STANDARD 14)
 
-message("# VectorSimilarity VECSIM_ARCH: " ${VECSIM_ARCH})
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
+include_directories(${root}/src)
 include_directories(${root}/deps)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
+
+if(ARCH STREQUAL "x64")
+	add_compile_options(-march=x86-64)
+endif()
 
 if(VECSIM_STATIC)
 	set(VECSIM_LIBTYPE STATIC)
@@ -49,10 +49,6 @@ else()
 endif()
 
 add_subdirectory(VecSim/spaces)
-
-if(ARCH STREQUAL "x64")
-	add_compile_options(-march=x86-64)
-endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
@@ -68,11 +64,9 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
-install(TARGETS VectorSimilarity
-    DESTINATION ${CMAKE_INSTALL_PREFIX})
-
-install(TARGETS VectorSimilaritySpaces
-    DESTINATION ${CMAKE_INSTALL_PREFIX})
+# Needed for build as ExternalProject (like RediSearch does)
+install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "lib")

@@ -18,3 +18,8 @@ endif()
 message("# OS=${OS}")
 message("# OSNICK=${OSNICK}")
 message("# ARCH=${ARCH}")
+
+if (NOT DEFINED VECSIM_MARCH AND ARCH STREQUAL "x64")
+	set(VECSIM_MARCH "x86-64-v4")
+endif()
+message("# VECSIM_MARCH: " ${VECSIM_MARCH})
