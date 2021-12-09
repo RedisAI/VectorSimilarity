@@ -66,6 +66,7 @@ make all           # build all libraries and packages
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
   VG|VALGRIND=1      # run tests with valgrind
+make valgrind      # build for Valgrind and run tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
   BB=1               # run with debugger, stop on BB()
@@ -161,12 +162,6 @@ CMAKE_FLAGS += \
 
 include $(MK)/defs
 
-#----------------------------------------------------------------------------------------------
-
-all: bindirs $(TARGET)
-
-.PHONY: all
-
 include $(MK)/rules
 
 #----------------------------------------------------------------------------------------------
@@ -198,6 +193,8 @@ endif
 pybind:
 	$(SHOW)python3 -m poetry build
 
+.PHONY: pybind
+
 #----------------------------------------------------------------------------------------------
 
 _CTEST_ARGS=$(CTEST_ARGS)
@@ -218,6 +215,11 @@ endif
 unit_test:
 	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
+valgrind:
+	$(SHOW)$(MAKE) VG=1 build unit_test
+
+.PHONY: unit_test valgrind
+
 #----------------------------------------------------------------------------------------------
 
 flow_test:
@@ -227,6 +229,8 @@ else
 	$(SHOW)$(MAKE) pybind
 	$(SHOW)python3 -m tox -e flowenv
 endif
+
+.PHONY: flow_test
 
 #----------------------------------------------------------------------------------------------
 
@@ -243,6 +247,8 @@ mod_test:
 		--module $(BINDIR)/module_tests//memory_test.so \
 		--clear-logs \
 		$(RLTEST_ARGS)
+
+.PHONY: mod_test
 
 #----------------------------------------------------------------------------------------------
 
