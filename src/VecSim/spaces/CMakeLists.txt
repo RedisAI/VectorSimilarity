@@ -10,6 +10,7 @@ if (DEFINED VECSIM_ARCH)
 	add_compile_options(-march=${VECSIM_ARCH})
 endif()
 
+# build SSE/AVX* code only on x64 processors
 if(ARCH STREQUAL "x64")
 	set(SPACES_SOURCES
 		space_aux.cpp

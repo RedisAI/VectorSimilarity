@@ -16,6 +16,8 @@ if(NOT DEFINED binroot)
 endif()
 message("# VectorSimilarity binroot: " ${binroot})
 
+message("# VECSIM_ARCH=" ${VECSIM_ARCH})
+
 include(${root}/cmake/common.cmake)
 
 if (USE_ASAN OR USE_MSAN)

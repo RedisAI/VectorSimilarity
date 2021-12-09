@@ -66,10 +66,13 @@ make all           # build all libraries and packages
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
   VG|VALGRIND=1      # run tests with valgrind
-make flow_test     # run flow tests
+make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
   BB=1               # run with debugger, stop on BB()
-make mem_test      # run memory tests
+make mod_test      # run Redis module intergration tests (with RLTest)
+  TEST=file:name     # run specific test
+  VERBOSE=1          # show more test detail
+  BB=1               # run with debugger, stop on BB()
 make benchmark	   # run benchmarks
 make toxenv        # enter Tox environment (for debugging flow tests)
 
@@ -215,6 +218,8 @@ endif
 unit_test:
 	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
+#----------------------------------------------------------------------------------------------
+
 flow_test:
 ifneq ($(VIRTUAL_ENV),)
 	$(SHOW)cd tests/flow && python3 -m pytest $(TEST)
@@ -222,9 +227,23 @@ else
 	$(SHOW)python3 -m tox -e flowenv
 endif
 
-mem_test:
-	$(SHOW)python3 -m RLTest --test $(ROOT)/tests/module/flow/test_vecsim_malloc.py \
-		--module $(BINDIR)/module_tests//memory_test.so
+#----------------------------------------------------------------------------------------------
+
+ifneq ($(TEST),)
+RLTEST_ARGS += --test $(TEST) -s
+endif
+ifeq ($(VERBOSE),1)
+RLTEST_ARGS += -v
+endif
+
+mod_test:
+	$(SHOW)cd $(ROOT)/tests/module/flow && \
+		python3 -m RLTest \
+		--module $(BINDIR)/module_tests//memory_test.so \
+		--clear-logs \
+		$(RLTEST_ARGS)
+
+#----------------------------------------------------------------------------------------------
 
 benchmark:
 	$(SHOW)$(BINDIR)/benchmark/bf_benchmark

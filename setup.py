@@ -10,7 +10,7 @@ HERE = os.path.abspath(os.path.dirname(__file__))
 ROOT = HERE
 READIES = os.path.join(ROOT, "deps/readies")
 sys.path.insert(0, READIES)
-import paella
+import paella # automation code, also allows setting breakpoints via BB()
 
 
 # A CMakeExtension needs a sourcedir instead of a file list.
@@ -24,6 +24,8 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
+        ## to be enabled once it is possible to set build directories for artifacts 
+        ## used to construct .whl files
         # plat = paella.Platform()
         # bindir = os.path.join(os.getenv("BINDIR", f"bin/{plat.os}-{plat.arch}-release"), "pybind")
         # paella.mkdir_p(bindir)

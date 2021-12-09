@@ -4,7 +4,6 @@ import hnswlib
 
 # compare results with the original version of hnswlib - do not use elements deletion.
 def test_sanity_hnswlib_index_L2():
-    BB()
     dim = 16
     num_elements = 10000
     space = 'l2'

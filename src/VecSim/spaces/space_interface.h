@@ -1,4 +1,3 @@
-
 #pragma once
 #include "VecSim/memory/vecsim_base.h"
 
