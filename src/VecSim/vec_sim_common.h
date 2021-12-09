@@ -76,6 +76,7 @@ typedef struct {
             size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
             size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
             size_t levels;         // Number of graph levels.
+            size_t entry;          // Entry vector label.
         } hnswInfo;
         struct {
             size_t indexSize; // Current count of vectors.
