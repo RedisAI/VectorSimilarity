@@ -186,7 +186,7 @@ endif
 
 clean:
 ifeq ($(ALL),1)
-	$(SHOW)rm -rf $(BINROOT)
+	$(SHOW)rm -rf $(BINROOT) build dist .tox
 else
 	$(SHOW)$(MAKE) -C $(BINDIR) clean
 endif
@@ -224,6 +224,7 @@ flow_test:
 ifneq ($(VIRTUAL_ENV),)
 	$(SHOW)cd tests/flow && python3 -m pytest $(TEST)
 else
+	$(SHOW)$(MAKE) pybind
 	$(SHOW)python3 -m tox -e flowenv
 endif
 

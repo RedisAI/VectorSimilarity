@@ -24,9 +24,10 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
+        platform = paella.Platform()
+
         ## to be enabled once it is possible to set build directories for artifacts 
         ## used to construct .whl files
-        # plat = paella.Platform()
         # bindir = os.path.join(os.getenv("BINDIR", f"bin/{plat.os}-{plat.arch}-release"), "pybind")
         # paella.mkdir_p(bindir)
         # self.build_lib = bindir
@@ -55,6 +56,9 @@ class CMakeBuild(build_ext):
             "-Wno-dev",
             "--no-warn-unused-cli",
             "-DBUILD_TESTS=OFF",
+            f"-DOS={platform.os}",
+            f"-DOSNICK={platform.osnick}",
+            f"-DARCH={platform.arch}",
         ]
         build_args = []
 
