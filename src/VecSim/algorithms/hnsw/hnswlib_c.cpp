@@ -87,6 +87,7 @@ VecSimIndexInfo HNSWIndex::info() {
     info.hnswInfo.efRuntime = this->hnsw.getEf();
     info.hnswInfo.indexSize = this->hnsw.getIndexSize();
     info.hnswInfo.levels = this->hnsw.getMaxLevel();
+    info.hnswInfo.entrypoint = this->hnsw.getEntryPointLabel();
     info.memory = this->allocator->getAllocationSize();
     return info;
 }
