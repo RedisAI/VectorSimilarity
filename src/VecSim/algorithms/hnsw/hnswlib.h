@@ -130,6 +130,7 @@ public:
     size_t getEfConstruction() const;
     size_t getM() const;
     size_t getMaxLevel() const;
+    size_t getEnterPointLabel() const;
     void resizeIndex(size_t new_max_elements);
     bool removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
@@ -175,6 +176,13 @@ size_t HierarchicalNSW<dist_t>::getM() const {
 template <typename dist_t>
 size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
     return maxlevel_;
+}
+
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getEnterPointLabel() const {
+    if (enterpoint_node_ != -1)
+        return (size_t)getExternalLabel(enterpoint_node_);
+    return -1;
 }
 
 template <typename dist_t>
@@ -751,11 +759,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return true;
     }
-    // add the element id to the available ids for future reuse.
     element_internal_id = label_lookup_[label];
-    cur_element_count--;
-    label_lookup_.erase(label);
-    available_ids.insert(element_internal_id);
 
     // go over levels from the top and repair connections
     int element_top_level = element_levels_[element_internal_id];
@@ -810,7 +814,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         while (element_internal_id == enterpoint_node_) {
             linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
 
-            if (getListCount(top_level_list)) {
+            if (getListCount(top_level_list) > 0) {
                 // Tries to set the (arbitrary) first neighbor as the entry point.
                 enterpoint_node_ = ((tableint *)(top_level_list + 1))[0];
             } else {
@@ -825,8 +829,11 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             }
             // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
             // until we find a new enter point, or the index is empty.
-            if (element_internal_id == enterpoint_node_ && --maxlevel_ < 0) {
-                enterpoint_node_ = -1;
+            if (element_internal_id == enterpoint_node_) {
+                maxlevel_--;
+                if (maxlevel_ < 0) {
+                    enterpoint_node_ = -1;
+                }
             }
         }
     }
@@ -834,6 +841,10 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     if (element_levels_[element_internal_id] > 0) {
         this->allocator->free_allocation(linkLists_[element_internal_id]);
     }
+    // add the element id to the available ids for future reuse.
+    cur_element_count--;
+    label_lookup_.erase(label);
+    available_ids.insert(element_internal_id);
     element_levels_[element_internal_id] = -1;
     memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
