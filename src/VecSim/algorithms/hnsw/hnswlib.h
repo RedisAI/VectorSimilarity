@@ -84,7 +84,7 @@ class HierarchicalNSW : VecsimBaseObject {
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     VisitedNodesHandlerPool *visited_nodes_handler_pool;
-    size_t pool_initial_size
+    size_t pool_initial_size;
     std::mutex global;
     std::mutex cur_element_count_guard_;
     std::vector<std::mutex> link_list_locks_;
