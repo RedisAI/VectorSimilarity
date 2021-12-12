@@ -57,7 +57,7 @@ TEST_F(AllocatorTest, test_simple_object) {
 }
 
 TEST_F(AllocatorTest, test_object_with_stl) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    std::shared_ptr<VecSimAllocator> allocator(VecSimAllocator::newVecsimAllocator());
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     ObjectWithSTL *obj = new (allocator) ObjectWithSTL(allocator);
@@ -66,6 +66,7 @@ TEST_F(AllocatorTest, test_object_with_stl) {
     obj->test_vec.push_back(1);
     expectedAllocationSize += sizeof(int) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+    delete obj;
 }
 
 TEST_F(AllocatorTest, test_nested_object) {
@@ -78,6 +79,7 @@ TEST_F(AllocatorTest, test_nested_object) {
     obj->stl_object.test_vec.push_back(1);
     expectedAllocationSize += sizeof(int) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+    delete obj;
 }
 
 TEST_F(AllocatorTest, test_bf_index_block_size_1) {
@@ -181,7 +183,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
                 allocator->getAllocationSize() >= expectedAllocationSize + allocationDelta);
     info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
-    delete bfIndex;
+    VecSimIndex_Free(bfIndex);
 }
 
 TEST_F(AllocatorTest, test_hnsw) {
@@ -221,6 +223,8 @@ TEST_F(AllocatorTest, test_hnsw) {
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
+
+    VecSimIndex_Free(hnswIndex);
 
     // TODO: commented out since hnsw does not recalim memory
     // current_memory = info.memory;
