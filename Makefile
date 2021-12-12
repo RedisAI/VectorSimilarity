@@ -209,7 +209,7 @@ endif
 ifeq ($(VALGRIND),1)
 _CTEST_ARGS += \
 	-T memcheck \
-	--overwrite MemoryCheckCommandOptions="--leak-check=full"
+	--overwrite MemoryCheckCommandOptions="--leak-check=full --error-exitcode=255"
 endif
 
 unit_test:
