@@ -41,7 +41,7 @@ public:
 
     inline float *getVector(size_t index) { return this->vectors + (index * this->dim); }
 
-    inline float *removeAndFetchVector() { return this->vectors + (this->length-- * this->dim); }
+    inline float *removeAndFetchVector() { return this->vectors + ((--this->length) * this->dim); }
 
     inline size_t getLength() { return length; }
 
