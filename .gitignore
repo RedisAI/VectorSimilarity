@@ -8,6 +8,7 @@
 /venv/
 /deps/readies/
 /1/
+**/build/
 
 # Prerequisites
 *.d
