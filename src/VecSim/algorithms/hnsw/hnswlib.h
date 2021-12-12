@@ -79,7 +79,7 @@ class HierarchicalNSW : VecsimBaseObject {
     vecsim_stl::vector<int> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
-    VisitedListPool *visited_list_pool_;
+    std::unique_ptr<VisitedListPool> visited_list_pool_;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
@@ -655,8 +655,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 
     cur_element_count = 0;
     max_id = -1;
-    visited_list_pool_ =
-        new (this->allocator) VisitedListPool(1, (int)max_elements, this->allocator);
+    visited_list_pool_ = std::unique_ptr<VisitedListPool>(
+        new (this->allocator) VisitedListPool(1, (int)max_elements, this->allocator));
 
     // initializations for special treatment of the first node
     entrypoint_node_ = -1;
@@ -717,7 +717,6 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     }
     this->allocator->free_allocation(linkLists_);
     this->allocator->free_allocation(data_level0_memory_);
-    delete visited_list_pool_;
 }
 
 /**
@@ -728,9 +727,8 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     if (new_max_elements < cur_element_count)
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
-    delete visited_list_pool_;
-    visited_list_pool_ =
-        new (this->allocator) VisitedListPool(1, (int)new_max_elements, this->allocator);
+    visited_list_pool_ = std::unique_ptr<VisitedListPool>(
+        new (this->allocator) VisitedListPool(1, (int)new_max_elements, this->allocator));
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
