@@ -18,6 +18,20 @@ void VecsimBaseObject::operator delete[](void *p, size_t size) {
     obj->allocator->deallocate(obj, size);
 }
 
+void VecsimBaseObject::operator delete(void *p, std::shared_ptr<VecSimAllocator> allocator) {
+    allocator->free_allocation(p);
+}
+void VecsimBaseObject::operator delete[](void *p, std::shared_ptr<VecSimAllocator> allocator) {
+    allocator->free_allocation(p);
+}
+
+void operator delete(void *p, std::shared_ptr<VecSimAllocator> allocator) {
+    allocator->free_allocation(p);
+}
+void operator delete[](void *p, std::shared_ptr<VecSimAllocator> allocator) {
+    allocator->free_allocation(p);
+}
+
 void operator delete(void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator) {
     allocator->deallocate(p, size);
 }
