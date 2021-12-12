@@ -1,10 +1,11 @@
 #include "hnsw_batch_iterator.h"
+
+#include <utility>
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/hnsw/visited_list_pool.h"
 
 inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
-    return this->visited_list->visitedElements[node_id] == this->tag_range_start+RETURNED_VISITED_ODD_OFFSET
-    || this->visited_list->visitedElements[node_id] == this->tag_range_start+RETURNED_VISITED_EVEN_OFFSET;
+    return this->visited_list->visitedElements[node_id] % 2 == 0;
 }
 
 inline void HNSW_BatchIterator::markReturned (uint node_id) {
@@ -23,15 +24,15 @@ unique_ptr<CandidatesHeap> HNSW_BatchIterator::scanGraph() {
     auto &hnsw_index = this->index->hnsw;
     auto space = this->index->space.get();
 
+    //todo: put this in a function
     hnswlib::vl_type *visited_array = this->visited_list->visitedElements;
-
-    // Replace the visited tag and returned_visited rags to be the different one than the previous iteration.
-    this->cur_visited_tag = (this->cur_visited_tag == this->tag_range_start+VISITED_ODD_OFFSET) ?
-                                       this->tag_range_start+VISITED_EVEN_OFFSET :
-                                       this->tag_range_start+VISITED_ODD_OFFSET;
-    this->cur_returned_visited_tag = (this->cur_returned_visited_tag == this->tag_range_start+RETURNED_VISITED_ODD_OFFSET) ?
-            this->tag_range_start+RETURNED_VISITED_EVEN_OFFSET :
-            this->tag_range_start+RETURNED_VISITED_ODD_OFFSET;
+    // Get fresh visited tag and returned_visited (different from the previous iteration).
+    this->visited_list->reset();
+    if (this->cur_visited_tag == 1) {this->visited_list->reset();}
+    this->cur_visited_tag = this->visited_list->curTag;
+    this->visited_list->reset();
+    if (this->cur_visited_tag == 1) {this->visited_list->reset();}
+    this->cur_returned_visited_tag = this->visited_list->curTag;
 
     auto dist_func = space->get_dist_func();
     float dist = dist_func(this->getQueryBlob(), hnsw_index.getDataByInternalId(this->entry_point),
@@ -116,28 +117,26 @@ unique_ptr<CandidatesHeap> HNSW_BatchIterator::scanGraph() {
             }
         }
     }
+    this->iterations_counter++;
     return make_unique<CandidatesHeap>(top_candidates);
 }
 
 HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex *hnsw_index,
-                   std::shared_ptr<VecSimAllocator> allocator) : VecSimBatchIterator(query_vector, allocator),
+                   std::shared_ptr<VecSimAllocator> allocator) :
+                   VecSimBatchIterator(query_vector, std::move(allocator)),
                    // the search_id and the visited list is determined in the first iteration.
-                   index(hnsw_index), allow_marked_candidates(false),
+                   index(hnsw_index), allow_marked_candidates(false), iterations_counter(0),
                    depleted(false), results(nullptr) {
 
     this->entry_point = hnsw_index->getEntryPointId();
     // Save the current state of the visited list, and derive tags in which we are going to use
     // from the current tag. We will use these "fresh" tags to mark returned results and visited nodes.
     this->visited_list = this->index->hnsw.getVisitedList();
-    // reset again to obtain 2 alternating tags for marking visited nodes in a specific iteration.
     this->tag_range_start = this->visited_list->curTag;
-    this->cur_visited_tag = this->tag_range_start+VISITED_ODD_OFFSET;
-    this->visited_list->reset();
-    // reset again twice to get another 2 alternating tags, to mark nodes that were returned and scanned
-    // in a specific iteration.
+    this->cur_visited_tag = this->tag_range_start;
+    // reset to get another tag to mark nodes that were returned and scanned
     this->visited_list->reset();
     this->cur_returned_visited_tag = this->visited_list->curTag;
-    this->visited_list->reset();
 }
 
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQueryResult_Order order) {

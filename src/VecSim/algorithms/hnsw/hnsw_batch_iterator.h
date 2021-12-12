@@ -26,10 +26,11 @@ private:
     bool allow_marked_candidates; // flag that indicates if we allow the search to visit in nodes that
                                   // where returned in previous iterations
     hnswlib::VisitedList *visited_list; // Pointer to the hnsw visitedList structure.
-    u_char tag_range_start; // save the minimal tag which is used to mark nodes that were visited and/or
+    ushort iterations_counter;
+    ushort tag_range_start; // save the minimal tag which is used to mark nodes that were visited and/or
                             // returned by this iterator.
-    u_char cur_visited_tag; // used to mark nodes that were scanned in this iteration (that hasn't returned by the iterator).
-    u_char cur_returned_visited_tag; // use to mark nodes that were returned in previous iteration,
+    ushort cur_visited_tag; // used to mark nodes that were scanned in this iteration (that hasn't returned before by the iterator).
+    ushort cur_returned_visited_tag; // use to mark nodes that were returned in previous iteration,
                                      // and scanned in the current iteration
     bool depleted;
 
