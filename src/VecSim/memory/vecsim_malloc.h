@@ -23,6 +23,7 @@ private:
 public:
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();
     void *allocate(size_t size);
+    void *callocate(size_t size);
     void deallocate(void *p, size_t size);
     void *reallocate(void *p, size_t size);
     void free_allocation(void *p);
