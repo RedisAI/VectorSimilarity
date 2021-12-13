@@ -79,11 +79,11 @@ class HierarchicalNSW : VecsimBaseObject {
     vecsim_stl::vector<int> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
-    VisitedNodesHandler *visited_nodes_handler;
+    std::unique_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
-    VisitedNodesHandlerPool *visited_nodes_handler_pool;
+    std::unique_ptr<VisitedNodesHandlerPool> visited_nodes_handler_pool;
     size_t pool_initial_size;
     std::mutex global;
     std::mutex cur_element_count_guard_;
@@ -665,11 +665,11 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     max_id = -1;
 #ifdef ENABLE_PARALLELIZATION
     pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = new (this->allocator)
-        VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator);
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
+        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
 #else
-    visited_nodes_handler =
-        new (this->allocator) VisitedNodesHandler(max_elements, this->allocator);
+    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+        new (this->allocator) VisitedNodesHandler(max_elements, this->allocator));
 #endif
 
     // initializations for special treatment of the first node
@@ -731,11 +731,6 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     }
     this->allocator->free_allocation(linkLists_);
     this->allocator->free_allocation(data_level0_memory_);
-#ifdef ENABLE_PARALLELIZATION
-    delete visited_nodes_handler_pool;
-#else
-    delete visited_nodes_handler;
-#endif
 }
 
 /**
@@ -748,14 +743,13 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
             "Cannot resize, max element is less than the current number of elements");
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
-    delete visited_nodes_handler_pool;
-    visited_nodes_handler_pool = new (this->allocator)
-        VisitedNodesHandlerPool(this->pool_initial_size, new_max_elements, this->allocator);
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(this->pool_initial_size, new_max_elements, this->allocator));
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
 #else
-    delete visited_nodes_handler;
-    visited_nodes_handler =
-        new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator);
+    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+        new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
     // Reallocate base layer
     char *data_level0_memory_new = (char *)this->allocator->reallocate(

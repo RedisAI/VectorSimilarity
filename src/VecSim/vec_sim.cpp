@@ -9,15 +9,23 @@
 #include "memory.h"
 
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
+    VecSimIndex *index = NULL;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
-        std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-        if (params->algo == VecSimAlgo_HNSWLIB) {
-            return new (allocator) HNSWIndex(params, allocator);
+        switch (params->algo) {
+        case VecSimAlgo_HNSWLIB:
+            index = new (allocator) HNSWIndex(params, allocator);
+            break;
+        case VecSimAlgo_BF:
+            index = new (allocator) BruteForceIndex(params, allocator);
+            break;
+        default:
+            break;
         }
-        return new (allocator) BruteForceIndex(params, allocator);
     } catch (...) {
-        return NULL;
+        // Index will delete itself. For now, do nothing.
     }
+    return index;
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
