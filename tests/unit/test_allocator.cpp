@@ -89,7 +89,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     // Create only the minimal struct.
     size_t dim = 128;
     BFParams params = {.type = VecSimType_FLOAT32,
-                       .size = dim,
+                       .dim = dim,
                        .metric = VecSimMetric_IP,
                        .initialCapacity = 0,
                        .blockSize = 1};
@@ -194,7 +194,7 @@ TEST_F(AllocatorTest, test_hnsw) {
 
     // Build with default args
     HNSWParams params = {.type = VecSimType_FLOAT32,
-                         .size = d,
+                         .dim = d,
                          .metric = VecSimMetric_L2,
                          .initialCapacity = 0};
 
