@@ -6,13 +6,11 @@ import sys
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
-# Convert distutils Windows platform specifiers to CMake -A arguments
-PLAT_TO_CMAKE = {
-    "win32": "Win32",
-    "win-amd64": "x64",
-    "win-arm32": "ARM",
-    "win-arm64": "ARM64",
-}
+HERE = os.path.abspath(os.path.dirname(__file__))
+ROOT = HERE
+READIES = os.path.join(ROOT, "deps/readies")
+sys.path.insert(0, READIES)
+import paella # automation code, also allows setting breakpoints via BB()
 
 
 # A CMakeExtension needs a sourcedir instead of a file list.
@@ -26,6 +24,15 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
+        platform = paella.Platform()
+
+        ## to be enabled once it is possible to set build directories for artifacts 
+        ## used to construct .whl files
+        # bindir = os.path.join(os.getenv("BINDIR", f"bin/{plat.os}-{plat.arch}-release"), "pybind")
+        # paella.mkdir_p(bindir)
+        # self.build_lib = bindir
+        # self.build_temp = bindir + ".tmp"
+
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
         # required for auto-detection & inclusion of auxiliary "native" libs
@@ -45,7 +52,13 @@ class CMakeBuild(build_ext):
         cmake_args = [
             "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}".format(extdir),
             "-DPYTHON_EXECUTABLE={}".format(sys.executable),
-            "-DCMAKE_BUILD_TYPE={}".format(cfg),  # not used on MSVC, but no harm
+            "-DCMAKE_BUILD_TYPE={}".format(cfg),
+            "-Wno-dev",
+            "--no-warn-unused-cli",
+            "-DBUILD_TESTS=OFF",
+            f"-DOS={platform.os}",
+            f"-DOSNICK={platform.osnick}",
+            f"-DARCH={platform.arch}",
         ]
         build_args = []
 
@@ -54,40 +67,12 @@ class CMakeBuild(build_ext):
             "-DEXAMPLE_VERSION_INFO={}".format(self.distribution.get_version())
         ]
 
-        if self.compiler.compiler_type != "msvc":
-            # Using Ninja-build since it a) is available as a wheel and b)
-            # multithreads automatically. MSVC would require all variables be
-            # exported for Ninja to pick it up, which is a little tricky to do.
-            # Users can override the generator with CMAKE_GENERATOR in CMake
-            # 3.15+.
-            if not cmake_generator:
-                try:
-                    import ninja  # noqa: F401
-
-                    cmake_args += ["-GNinja"]
-                except ImportError:
-                    pass
-
-        else:
-
-            # Single config generators are handled "normally"
-            single_config = any(x in cmake_generator for x in {"NMake", "Ninja"})
-
-            # CMake allows an arch-in-generator style for backward compatibility
-            contains_arch = any(x in cmake_generator for x in {"ARM", "Win64"})
-
-            # Specify the arch if using MSVC generator, but only if it doesn't
-            # contain a backward-compatibility arch spec already in the
-            # generator name.
-            if not single_config and not contains_arch:
-                cmake_args += ["-A", PLAT_TO_CMAKE[self.plat_name]]
-
-            # Multi-config generators have a different way to specify configs
-            if not single_config:
-                cmake_args += [
-                    "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}".format(cfg.upper(), extdir)
-                ]
-                build_args += ["--config", cfg]
+        if not cmake_generator:
+            try:
+                import ninja  # noqa: F401
+                cmake_args += ["-GNinja"]
+            except ImportError:
+                pass
 
         if sys.platform.startswith("darwin"):
             # Cross-compile support for macOS - respect ARCHFLAGS if set
@@ -120,8 +105,8 @@ class CMakeBuild(build_ext):
 setup(
     name="VecSim",
     version="0.0.1",
-    author="RedisLabs CTO Team",
-    author_email="oss@redislabs.com",
+    author="Redis, Inc. CTO Team",
+    author_email="oss@redis.com",
     description="Python library around collection of vector similarity algorithm",
     long_description="",
     ext_modules=[CMakeExtension("VecSim", "src/python_bindings")],

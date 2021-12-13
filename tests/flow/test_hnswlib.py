@@ -1,8 +1,5 @@
-from VecSim import *
-import numpy as np
+from common import *
 import hnswlib
-from scipy import spatial
-from  numpy.testing import assert_allclose
 
 
 # compare results with the original version of hnswlib - do not use elements deletion.

@@ -9,6 +9,7 @@
 L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
     : SpaceInterface(allocator) {
     fstdistfunc_ = L2Sqr;
+#if defined(__x86_64__)
     Arch_Optimization arch_opt = getArchitectureOptimization();
     if (arch_opt == ARCH_OPT_AVX512) {
         if (dim % 16 == 0) {
@@ -33,6 +34,7 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
             fstdistfunc_ = L2SqrSIMD4ExtResiduals_SSE;
         }
     }
+#endif // __x86_64__
     dim_ = dim;
     data_size_ = dim * sizeof(float);
 }

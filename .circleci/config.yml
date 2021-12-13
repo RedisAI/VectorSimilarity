@@ -7,6 +7,7 @@ commands:
           name: Setup automation
           command: |
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
+            ./deps/readies/bin/getpy3
 
   checkout-all:
     steps:
@@ -15,85 +16,77 @@ commands:
           name: Checkout submodules
           command: git submodule update --init --recursive
 
+  install-prerequisites:
+    steps:
+      - setup-automation
+      - run:
+          name: System setup
+          command: ./sbin/system-setup.py
+
   build-steps:
     steps:
       - checkout-all
-      - setup-automation
-
       - restore_cache: # Download and cache dependencies
           keys:
-          - v1-dependencies-{{ checksum "pyproject.toml" }}
+          - v2-dependencies-{{ checksum "pyproject.toml" }}
           # fallback to using the latest cache if no exact match is found
-          - v1-dependencies-
-
+          - v2-dependencies-
+      - install-prerequisites
       - run:
-          name: Get prerequisites
-          command: |
-            sudo apt remove -y python2
-            sudo ./sbin/system-setup.py
-            sudo apt autoremove -y
-
-      - run:
-          name: lint
-          command: bash -l -c "make lint"
-
+          name: Check format
+          command: bash -l -c "make check-format"
       - run:
           name: Build
           command: bash -l -c "make build"
-
       - run:
-          name: Unit Test
-          command: bash -l -c "make test"
-
+          name: Unit test
+          command: bash -l -c "make unit_test"
       - run:
-          name: Valgrind
-          command: bash -l -c "make valgrind"
-
+          name: Valgrind test
+          command: bash -l -c "make VG=1 build unit_test"
       - run:
           name: Benchmark
           command: bash -l -c "make benchmark"
-
       - run:
-          name: install tox dependencies
-          command: python3 -m pip install -r .circleci/circle_requirements.txt
+          name: Build Python bindings
+          command: bash -l -c "make pybind"
       - run:
-          name: poetry install
-          command: |
-            python --version
-            poetry install
-          no_output_timeout: 30m
-
-      - run:
-          name: build sdist and wheels
-          command: |
-            poetry build
-
-      - run:
-          name: Tox Run
-          command: |
-            tox -e flowenv
-
+          name: Flow tests
+          command: bash -l -c "make flow_test"
       - save_cache:
           paths:
             - ./.tox
             - ~/.cache/pip
             - ~/.cache/pypoetry
-          key: v1-dependencies-{{ checksum "pyproject.toml" }}
+          key: v2-dependencies-{{ checksum "pyproject.toml" }}
 
-# jobs:
-#   build-ubuntu:
-#     machine:
-#       enabled: true
-#       image: ubuntu-2004:202010-01
-#       resource_class: xlarge
+#----------------------------------------------------------------------------------------------------------------------------------
+
 jobs:
   build-ubuntu:
     resource_class: large
     docker:
-      - image: circleci/python:3.8
+      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+#     machine:
+#       enabled: true
+#       image: ubuntu-2004:202010-01
+#       resource_class: xlarge
     steps:
       - build-steps
 
+  sanitize:
+    docker:
+      - image: redisfab/clang:13-x64-bullseye
+    parameters:
+      san-type:
+        type: string
+    steps:
+      - checkout-all
+      - run:
+          name: Run & build tests
+          command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
+
+#----------------------------------------------------------------------------------------------------------------------------------
 
 on-any-branch: &on-any-branch
   filters:
@@ -153,6 +146,7 @@ on-integ-and-version-tags: &on-integ-and-version-tags
     tags:
       only: /^v[0-9].*/
 
+#----------------------------------------------------------------------------------------------------------------------------------
 
 workflows:
   version: 2
@@ -160,4 +154,10 @@ workflows:
   default_flow:
     jobs:
       - build-ubuntu:
+          <<: *on-any-branch
+      - sanitize:
+          name: sanitize-<< matrix.san-type >>
+          matrix:
+            parameters:
+              san-type: [address, memory]
           <<: *on-any-branch
