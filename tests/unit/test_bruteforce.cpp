@@ -15,11 +15,11 @@ protected:
 
 TEST_F(BruteForceTest, brute_force_vector_add_test) {
     size_t dim = 4;
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_IP,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_IP,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -37,11 +37,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     size_t n = 100;
     size_t k = 11;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_IP,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_IP,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -71,12 +71,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
     size_t k = 11;
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
-
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -104,11 +103,11 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
     size_t k = 11;
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -132,11 +131,11 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
     size_t k = 10;
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -163,11 +162,11 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     size_t k = 10;
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -212,11 +211,11 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     size_t k = 10;
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -264,13 +263,11 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
     size_t d = 1280;
     size_t k = 5;
 
-    VecSimParams params = {
-        .bfParams = {.initialCapacity = n},
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_BF,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = d,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     auto *vectors = (float *)malloc(n * d * sizeof(float));
@@ -310,16 +307,11 @@ TEST_F(BruteForceTest, test_bf_info) {
     size_t d = 128;
 
     // Build with default args
-    VecSimParams params = {
-        .bfParams =
-            {
-                .initialCapacity = n,
-            },
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_BF,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = d,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
@@ -330,15 +322,12 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndex_Free(index);
 
     d = 1280;
-    params = {
-        .bfParams = {.initialCapacity = n, .blockSize = 1
-
-        },
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_BF,
-    };
+    params = {.algo = VecSimAlgo_BF,
+              .bfParams = {.type = VecSimType_FLOAT32,
+                           .size = d,
+                           .metric = VecSimMetric_L2,
+                           .initialCapacity = n,
+                           .blockSize = 1}};
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
@@ -354,11 +343,12 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     size_t n = 100;
     size_t k = 11;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 1},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_IP,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_IP,
+                                        .initialCapacity = 200,
+                                        .blockSize = 1}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
@@ -392,11 +382,12 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
     size_t n = 100;
     size_t k = 11;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 1},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200,
+                                        .blockSize = 1}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
@@ -428,11 +419,11 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -476,11 +467,12 @@ TEST_F(BruteForceTest, brute_force_test_inf_score) {
     size_t n = 4;
     size_t k = 4;
     size_t dim = 2;
-    VecSimParams params = {.bfParams = {.initialCapacity = n},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
@@ -508,11 +500,12 @@ TEST_F(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t n = 2;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 1},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200,
+                                        .blockSize = 1}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -539,11 +532,12 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
     size_t dim = 4;
     size_t n = 2;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 0, .blockSize = 1},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 0,
+                                        .blockSize = 1}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -566,11 +560,12 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
 TEST_F(BruteForceTest, brute_force_batch_iterator) {
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 5},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200,
+                                        .blockSize = 5}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // run the test twice - for index of size 100, every iteration will run select-based search,
@@ -618,11 +613,12 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
 TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 200, .blockSize = 5},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 200,
+                                        .blockSize = 5}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // run the test twice - for index of size 100, every iteration will run select-based search,
@@ -680,11 +676,12 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
 TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     size_t dim = 4;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 100000, .blockSize = 100000},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 100000,
+                                        .blockSize = 100000}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     size_t n = 10000;
@@ -737,11 +734,12 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
 TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     size_t dim = 4;
     size_t n = 1000;
-    VecSimParams params = {.bfParams = {.initialCapacity = n},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_BF};
+    
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .size = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {

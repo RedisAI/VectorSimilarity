@@ -88,11 +88,11 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     // Create only the minimal struct.
     size_t dim = 128;
-    VecSimParams params = {.bfParams = {.initialCapacity = 0, .blockSize = 1},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_IP,
-                           .algo = VecSimAlgo_BF};
+    BFParams params = {.type = VecSimType_FLOAT32,
+                       .size = dim,
+                       .metric = VecSimMetric_IP,
+                       .initialCapacity = 0,
+                       .blockSize = 1};
 
     float vec[128] = {};
     BruteForceIndex *bfIndex = new (allocator) BruteForceIndex(&params, allocator);
@@ -193,16 +193,10 @@ TEST_F(AllocatorTest, test_hnsw) {
     size_t d = 128;
 
     // Build with default args
-    VecSimParams params = {
-        .hnswParams =
-            {
-                .initialCapacity = 0,
-            },
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    HNSWParams params = {.type = VecSimType_FLOAT32,
+                         .size = d,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = 0};
 
     float vec[128] = {};
     HNSWIndex *hnswIndex = new (allocator) HNSWIndex(&params, allocator);
