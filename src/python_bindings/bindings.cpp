@@ -106,10 +106,9 @@ protected:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params, const VecSimType type, size_t dim,
-                   const VecSimMetric metric) {
-        VecSimParams params = {.hnswParams = hnsw_params,
-                               .algo = VecSimAlgo_HNSWLIB};
+    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                               .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
     }
 
@@ -121,10 +120,9 @@ public:
 
 class PyBFIndex : public PyVecSimIndex {
 public:
-    PyBFIndex(const BFParams &bf_params, const VecSimType type, size_t dim,
-              const VecSimMetric metric) {
-        VecSimParams params = {.bfParams = bf_params,
-                               .algo = VecSimAlgo_BF};
+    PyBFIndex(const BFParams &bf_params) {
+        VecSimParams params = {.algo = VecSimAlgo_BF,
+                               .bfParams = bf_params};
         this->index = VecSimIndex_New(&params);
     }
 };
