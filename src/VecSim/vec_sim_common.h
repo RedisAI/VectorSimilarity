@@ -31,6 +31,9 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMet
  *
  */
 typedef struct {
+    VecSimType type;     // Datatype to index.
+    size_t size;         // Vector size (dimension).
+    VecSimMetric metric; // Distance metric to use in the index.
     size_t initialCapacity;
     size_t M;
     size_t efConstruction;
@@ -38,18 +41,18 @@ typedef struct {
 } HNSWParams;
 
 typedef struct {
+    VecSimType type;     // Datatype to index.
+    size_t size;         // Vector size (dimension).
+    VecSimMetric metric; // Distance metric to use in the index.
     size_t initialCapacity;
     size_t blockSize;
 } BFParams;
 typedef struct {
+    VecSimAlgo algo;     // Algorithm to use.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
     };
-    VecSimType type;     // Datatype to index.
-    size_t size;         // Vector size (dimension).
-    VecSimMetric metric; // Distance metric to use in the index.
-    VecSimAlgo algo;     // Algorithm to use.
 } VecSimParams;
 
 /**
