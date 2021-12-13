@@ -202,6 +202,10 @@ VecSimIndexInfo BruteForceIndex::info() {
     return info;
 }
 
+size_t BruteForceIndex::getVectorDim() { return this->dim; }
+
+VecSimMetric BruteForceIndex::getMetric() { return this->metric; }
+
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }

@@ -85,19 +85,12 @@ public:
      *
      * @return vector dimension
      */
-    inline size_t getVectorDim() { return this->dim; }
+    virtual size_t getVectorDim() = 0;// { return this->dim; }
 
     /**
      * @brief Get the vector metric
      *
      * @return Index metric
      */
-    inline VecSimMetric getMetric() { return this->metric; }
-
-    /**
-     * @brief Get the vector type
-     *
-     * @return vector type
-     */
-    inline VecSimType getVectorType() { return this->vecType; }
+    virtual VecSimMetric getMetric() = 0;// { return this->metric; }
 };

@@ -19,6 +19,8 @@ public:
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;
+    virtual size_t getVectorDim() override;
+    virtual VecSimMetric getMetric() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
 
     void setEf(size_t ef);

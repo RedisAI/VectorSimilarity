@@ -96,3 +96,7 @@ VecSimIndexInfo HNSWIndex::info() {
 }
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }
+
+size_t HNSWIndex::getVectorDim() { return this->dim; }
+
+VecSimMetric HNSWIndex::getMetric() { return this->metric; }
