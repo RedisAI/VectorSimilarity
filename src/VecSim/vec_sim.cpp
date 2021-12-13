@@ -14,10 +14,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = new (allocator) HNSWIndex(params, allocator);
+            index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = new (allocator) BruteForceIndex(params, allocator);
+            index = new (allocator) BruteForceIndex(&params->bfParams, allocator);
             break;
         default:
             break;

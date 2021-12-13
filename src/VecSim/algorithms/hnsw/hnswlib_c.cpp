@@ -13,18 +13,21 @@ using namespace hnswlib;
 
 /******************** Ctor / Dtor **************/
 
-HNSWIndex::HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(params, allocator),
+HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(allocator),
+      dim(params->size),
+      vecType(params->type),
+      metric(params->metric),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
                                                            L2Space(params->size, allocator))
                 : static_cast<SpaceInterface<float> *>(
                       new (allocator) InnerProductSpace(params->size, allocator))),
-      hnsw(space.get(), params->hnswParams.initialCapacity, allocator,
-           params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
-           params->hnswParams.efConstruction ? params->hnswParams.efConstruction
+      hnsw(space.get(), params->initialCapacity, allocator,
+           params->M ? params->M : HNSW_DEFAULT_M,
+           params->efConstruction ? params->efConstruction
                                              : HNSW_DEFAULT_EF_C) {
-    hnsw.setEf(params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
+    hnsw.setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
 }
 
 /******************** Implementation **************/
