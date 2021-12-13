@@ -13,16 +13,11 @@
 using namespace std;
 
 /******************** Ctor / Dtor **************/
-BruteForceIndex::BruteForceIndex(const BFParams *params,
-                                 std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator),
-      dim(params->dim),
-      vecType(params->type),
-      metric(params->metric),
-      vectorBlockSize(params->blockSize ? params->blockSize
-                                                 : BF_DEFAULT_BLOCK_SIZE),
-      count(0), labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator),
-      deletedIds(allocator), vectorBlocks(allocator),
+BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
+      vectorBlockSize(params->blockSize ? params->blockSize : BF_DEFAULT_BLOCK_SIZE), count(0),
+      labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator), deletedIds(allocator),
+      vectorBlocks(allocator),
 
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)

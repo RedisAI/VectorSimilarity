@@ -263,11 +263,10 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
     size_t d = 1280;
     size_t k = 5;
 
-    VecSimParams params = {.algo = VecSimAlgo_BF,
-                           .bfParams = {.type = VecSimType_FLOAT32,
-                                        .dim = d,
-                                        .metric = VecSimMetric_L2,
-                                        .initialCapacity = n}};
+    VecSimParams params = {
+        .algo = VecSimAlgo_BF,
+        .bfParams = {
+            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     auto *vectors = (float *)malloc(n * d * sizeof(float));
@@ -307,11 +306,10 @@ TEST_F(BruteForceTest, test_bf_info) {
     size_t d = 128;
 
     // Build with default args
-    VecSimParams params = {.algo = VecSimAlgo_BF,
-                           .bfParams = {.type = VecSimType_FLOAT32,
-                                        .dim = d,
-                                        .metric = VecSimMetric_L2,
-                                        .initialCapacity = n}};
+    VecSimParams params = {
+        .algo = VecSimAlgo_BF,
+        .bfParams = {
+            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
@@ -734,7 +732,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
 TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     size_t dim = 4;
     size_t n = 1000;
-    
+
     VecSimParams params = {.algo = VecSimAlgo_BF,
                            .bfParams = {.type = VecSimType_FLOAT32,
                                         .dim = dim,
