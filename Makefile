@@ -16,6 +16,7 @@ endif
 ifneq ($(SAN),)
 override DEBUG ?= 1
 export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
+export MSAN_OPTIONS=allocator_may_return_null=1
 
 ifeq ($(SAN),mem)
 override SAN=memory
