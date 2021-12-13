@@ -16,7 +16,7 @@ using namespace std;
 BruteForceIndex::BruteForceIndex(const BFParams *params,
                                  std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator),
-      dim(params->size),
+      dim(params->dim),
       vecType(params->type),
       metric(params->metric),
       vectorBlockSize(params->blockSize ? params->blockSize
@@ -26,9 +26,9 @@ BruteForceIndex::BruteForceIndex(const BFParams *params,
 
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
-                                                           L2Space(params->size, allocator))
+                                                           L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->size, allocator))) {
+                      new (allocator) InnerProductSpace(params->dim, allocator))) {
     this->idToVectorBlockMemberMapping.resize(params->initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
