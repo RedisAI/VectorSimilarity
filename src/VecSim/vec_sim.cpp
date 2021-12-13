@@ -13,14 +13,14 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
         switch (params->algo) {
-            case VecSimAlgo_HNSWLIB:
-                index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
-                break;
-            case VecSimAlgo_BF:
-                index = new (allocator) BruteForceIndex(&params->bfParams, allocator);
-                break;
-            default:
-                break;
+        case VecSimAlgo_HNSWLIB:
+            index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
+            break;
+        case VecSimAlgo_BF:
+            index = new (allocator) BruteForceIndex(&params->bfParams, allocator);
+            break;
+        default:
+            break;
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
