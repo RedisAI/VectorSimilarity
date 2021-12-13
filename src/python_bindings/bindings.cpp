@@ -152,7 +152,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<HNSWParams>(m, "HNSWParams")
         .def(py::init())
         .def_readwrite("type", &HNSWParams::type)
-        .def_readwrite("dim", &HNSWParams::size)
+        .def_readwrite("dim", &HNSWParams::dim)
         .def_readwrite("metric", &HNSWParams::metric)
         .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
         .def_readwrite("M", &HNSWParams::M)
@@ -162,7 +162,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
         .def_readwrite("type", &BFParams::type)
-        .def_readwrite("dim", &BFParams::size)
+        .def_readwrite("dim", &BFParams::dim)
         .def_readwrite("metric", &BFParams::metric)
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
