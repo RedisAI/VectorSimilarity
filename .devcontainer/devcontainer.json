@@ -2,6 +2,16 @@
   "build": { "dockerfile": "Dockerfile" },
   "postCreateCommand": "./sbin/system-setup.py",
   "postStartCommand": "zsh",
-  "extensions": ["ms-vscode.cpptools-extension-pack", "ms-python.python", "ms-toolsai.jupyter-keymap", "ms-azuretools.vscode-docker", "github.codespaces", "github.vscode-pull-request-github", "eamodio.gitlens", "streetsidesoftware.code-spell-checker", "ms-toolsai.jupyter-renderer", "ms-vscode-remote.vscode-remote-extensionpack"],
+  "extensions": [
+    "ms-vscode.cpptools-extension-pack",
+    "ms-python.python",
+    "ms-toolsai.jupyter-keymap",
+    "ms-azuretools.vscode-docker",
+    "github.codespaces",
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    "streetsidesoftware.code-spell-checker",
+    "ms-toolsai.jupyter-renderer",
+    "ms-vscode-remote.vscode-remote-extensionpack"],
   "name": "memory sanitizer"
 }
