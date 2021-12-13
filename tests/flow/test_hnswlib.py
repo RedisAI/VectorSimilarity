@@ -16,10 +16,10 @@ def test_sanity_hnswlib_index_L2():
     hnswparams = HNSWParams()
 
     params.algo = VecSimAlgo_HNSWLIB
-    params.dim = dim
-    params.metric = VecSimMetric_L2
-    params.type = VecSimType_FLOAT32
 
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_L2
+    hnswparams.type = VecSimType_FLOAT32
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
@@ -56,10 +56,10 @@ def test_sanity_hnswlib_index_cosine():
     hnswparams = HNSWParams()
 
     params.algo = VecSimAlgo_HNSWLIB
-    params.dim = dim
-    params.metric = VecSimMetric_Cosine
-    params.type = VecSimType_FLOAT32
 
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_Cosine
+    hnswparams.type = VecSimType_FLOAT32
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements

@@ -16,11 +16,13 @@ protected:
 
 TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
     size_t dim = 4;
-    VecSimParams params = {.hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
-                           .type = VecSimType_FLOAT32,
-                           .size = 4,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_HNSWLIB};
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 200,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -37,13 +39,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
     size_t n = 100;
     size_t k = 11;
     size_t dim = 4;
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
-        .type = VecSimType_FLOAT32,
-        .size = 4,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 200,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -70,13 +72,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     size_t dim = 4;
     size_t k = 11;
 
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
-        .type = VecSimType_FLOAT32,
-        .size = dim,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 200,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -100,13 +102,13 @@ TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
     size_t dim = 4;
     size_t k = 10;
 
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
-        .type = VecSimType_FLOAT32,
-        .size = dim,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 200,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -133,13 +135,13 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
     size_t dim = 4;
     size_t k = 10;
 
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
-        .type = VecSimType_FLOAT32,
-        .size = dim,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 200,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -182,13 +184,13 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
     size_t dim = 4;
     size_t k = 10;
 
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = 200, .M = 16, .efConstruction = 200},
-        .type = VecSimType_FLOAT32,
-        .size = dim,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 200,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -236,13 +238,13 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
     size_t d = 1280;
     size_t k = 5;
 
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = n, .M = 16, .efConstruction = 200},
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = d,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     auto *vectors = (float *)malloc(n * d * sizeof(float));
@@ -282,17 +284,13 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     size_t d = 128;
 
     // Build with default args
-    VecSimParams params = {
-        .hnswParams =
-            {
-                .initialCapacity = n,
-
-            },
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = d,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
@@ -304,15 +302,14 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     VecSimIndex_Free(index);
 
     d = 1280;
-    params = {
-        .hnswParams = {.initialCapacity = n, .M = 200, .efConstruction = 1000, .efRuntime = 500
-
-        },
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    params = {.algo = VecSimAlgo_HNSWLIB,
+              .hnswParams = {.type = VecSimType_FLOAT32,
+                             .size = d,
+                             .metric = VecSimMetric_L2,
+                             .initialCapacity = n,
+                             .M = 200,
+                             .efConstruction = 1000,
+                             .efRuntime = 500}};
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
@@ -330,17 +327,13 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     size_t k = 11;
 
     // Build with default args
-    VecSimParams params = {
-        .hnswParams =
-            {
-                .initialCapacity = n,
-            },
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
-
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = d,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = 16,
+                                          .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -386,16 +379,14 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     size_t efConstruction = 300;
     size_t efRuntime = 500;
     // Build with default args
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = n,
-                       .M = M,
-                       .efConstruction = efConstruction,
-                       .efRuntime = efRuntime},
-        .type = VecSimType_FLOAT32,
-        .size = d,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB,
-    };
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = d,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = M,
+                                          .efConstruction = efConstruction,
+                                          .efRuntime = efRuntime}};
 
     size_t k = 11;
     VecSimIndex *index = VecSimIndex_New(&params);
@@ -440,12 +431,11 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
     size_t d = 4;
-    VecSimParams params = {.hnswParams = {.initialCapacity = 0},
-                           .type = VecSimType_FLOAT32,
-                           .size = d,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_HNSWLIB};
-
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = d,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 0}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -490,11 +480,11 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
     size_t n = 4;
     size_t k = 4;
     size_t dim = 2;
-    VecSimParams params = {.hnswParams = {.initialCapacity = n},
-                           .type = VecSimType_FLOAT32,
-                           .size = dim,
-                           .metric = VecSimMetric_L2,
-                           .algo = VecSimAlgo_HNSWLIB};
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
@@ -533,11 +523,11 @@ TEST_F(HNSWLibTest, hnsw_bad_params) {
     unsigned long len = sizeof(bad_M) / sizeof(size_t);
 
     for (unsigned long i = 0; i < len; i++) {
-        VecSimParams params = {.hnswParams = {.initialCapacity = n},
-                               .type = VecSimType_FLOAT32,
-                               .size = dim,
-                               .metric = VecSimMetric_L2,
-                               .algo = VecSimAlgo_HNSWLIB};
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                               .hnswParams = {.type = VecSimType_FLOAT32,
+                                              .size = dim,
+                                              .metric = VecSimMetric_L2,
+                                              .initialCapacity = n}};
 
         params.hnswParams.M = bad_M[i];
         VecSimIndex *index = VecSimIndex_New(&params);
@@ -550,12 +540,14 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
     size_t dim = 2;
     size_t M = 2;
 
-    VecSimParams params = {
-        .hnswParams = {.initialCapacity = n, .M = M, .efConstruction = 0, .efRuntime = 0},
-        .type = VecSimType_FLOAT32,
-        .size = dim,
-        .metric = VecSimMetric_L2,
-        .algo = VecSimAlgo_HNSWLIB};
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .size = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = M,
+                                          .efConstruction = 0,
+                                          .efRuntime = 0}};
 
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_TRUE(index != NULL);

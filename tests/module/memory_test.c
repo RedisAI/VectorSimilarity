@@ -44,6 +44,9 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
     case VecSimAlgo_BF:
         param.bfParams.blockSize = 1;
         param.bfParams.initialCapacity = 1;
+        param.bfParams.type = VecSimType_INT64;
+        param.bfParams.size = DIMENSION;
+        param.bfParams.metric = VecSimMetric_L2;
         break;
 
     case VecSimAlgo_HNSWLIB:
@@ -51,11 +54,11 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
         param.hnswParams.initialCapacity = 1;
         param.hnswParams.efConstruction = 0;
         param.hnswParams.efRuntime = 0;
+        param.hnswParams.type = VecSimType_INT64;
+        param.hnswParams.size = DIMENSION;
+        param.hnswParams.metric = VecSimMetric_L2;
         break;
     }
-    param.type = VecSimType_INT64;
-    param.size = DIMENSION;
-    param.metric = VecSimMetric_L2;
 
     return VecSimIndex_New(&param);
 }
