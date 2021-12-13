@@ -193,10 +193,8 @@ TEST_F(AllocatorTest, test_hnsw) {
     size_t d = 128;
 
     // Build with default args
-    HNSWParams params = {.type = VecSimType_FLOAT32,
-                         .dim = d,
-                         .metric = VecSimMetric_L2,
-                         .initialCapacity = 0};
+    HNSWParams params = {
+        .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
 
     float vec[128] = {};
     HNSWIndex *hnswIndex = new (allocator) HNSWIndex(&params, allocator);

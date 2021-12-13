@@ -431,11 +431,10 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
     size_t d = 4;
-    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                           .hnswParams = {.type = VecSimType_FLOAT32,
-                                          .dim = d,
-                                          .metric = VecSimMetric_L2,
-                                          .initialCapacity = 0}};
+    VecSimParams params = {
+        .algo = VecSimAlgo_HNSWLIB,
+        .hnswParams = {
+            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);

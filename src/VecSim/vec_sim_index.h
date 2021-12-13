@@ -14,8 +14,7 @@ public:
      * @brief Construct a new Vec Sim Index object
      *
      */
-    VecSimIndex(std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator) {}
+    VecSimIndex(std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator) {}
 
     /**
      * @brief Destroy the Vec Sim Index object
@@ -85,12 +84,12 @@ public:
      *
      * @return vector dimension
      */
-    virtual size_t getVectorDim() = 0;// { return this->dim; }
+    virtual size_t getVectorDim() = 0; // { return this->dim; }
 
     /**
      * @brief Get the vector metric
      *
      * @return Index metric
      */
-    virtual VecSimMetric getMetric() = 0;// { return this->metric; }
+    virtual VecSimMetric getMetric() = 0; // { return this->metric; }
 };
