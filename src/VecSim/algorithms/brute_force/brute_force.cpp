@@ -48,9 +48,9 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
+    float normalized_data[this->dim];
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
-        float normalized_data[this->dim];
         memcpy(normalized_data, vector_data, this->dim * sizeof(float));
         float_vector_normalize(normalized_data, this->dim);
         vector_data = normalized_data;
@@ -157,9 +157,9 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
+    float normalized_blob[this->dim];
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
-        float normalized_blob[this->dim];
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
         float_vector_normalize(normalized_blob, this->dim);
         queryBlob = normalized_blob;
