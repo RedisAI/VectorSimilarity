@@ -3,6 +3,7 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 
@@ -46,6 +47,14 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
 }
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
+
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        float normalized_data[this->dim];
+        memcpy(normalized_data, vector_data, this->dim * sizeof(float));
+        float_vector_normalize(normalized_data, this->dim);
+        vector_data = normalized_data;
+    }
 
     idType id = 0;
     bool update = false;
@@ -148,6 +157,14 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        float normalized_blob[this->dim];
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        float_vector_normalize(normalized_blob, this->dim);
+        queryBlob = normalized_blob;
+    }
+
     float upperBound = std::numeric_limits<float>::lowest();
     CandidatesHeap TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
@@ -196,10 +213,6 @@ VecSimIndexInfo BruteForceIndex::info() {
     info.memory = this->allocator->getAllocationSize();
     return info;
 }
-
-size_t BruteForceIndex::getVectorDim() { return this->dim; }
-
-VecSimMetric BruteForceIndex::getMetric() { return this->metric; }
 
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);

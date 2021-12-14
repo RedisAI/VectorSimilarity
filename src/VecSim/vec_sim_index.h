@@ -78,18 +78,4 @@ public:
      * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
-
-    /**
-     * @brief Get the vector dimension
-     *
-     * @return vector dimension
-     */
-    virtual size_t getVectorDim() = 0; // { return this->dim; }
-
-    /**
-     * @brief Get the vector metric
-     *
-     * @return Index metric
-     */
-    virtual VecSimMetric getMetric() = 0; // { return this->metric; }
 };

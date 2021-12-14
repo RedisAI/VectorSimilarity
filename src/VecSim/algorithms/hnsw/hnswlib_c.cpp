@@ -1,5 +1,6 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/query_result_struct.h"
@@ -28,6 +29,13 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
 /******************** Implementation **************/
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
+        if (this->metric == VecSimMetric_Cosine) {
+            // TODO: need more generic
+            float normalized_data[this->dim];
+            memcpy(normalized_data, vector_data, this->dim * sizeof(float));
+            float_vector_normalize(normalized_data, this->dim);
+            vector_data = normalized_data;
+        }
         if (hnsw.getIndexSize() == this->hnsw.getIndexCapacity()) {
             this->hnsw.resizeIndex(std::max<size_t>(this->hnsw.getIndexCapacity() * 2, 2));
         }
@@ -47,6 +55,13 @@ void HNSWIndex::setEf(size_t ef) { this->hnsw.setEf(ef); }
 VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                                             VecSimQueryParams *queryParams) {
     try {
+        if (this->metric == VecSimMetric_Cosine) {
+            // TODO: need more generic
+            float normalized_data[this->dim];
+            memcpy(normalized_data, query_data, this->dim * sizeof(float));
+            float_vector_normalize(normalized_data, this->dim);
+            query_data = normalized_data;
+        }
         // Get original efRuntime and store it.
         size_t originalEF = this->hnsw.getEf();
 
@@ -91,7 +106,3 @@ VecSimIndexInfo HNSWIndex::info() {
 }
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }
-
-size_t HNSWIndex::getVectorDim() { return this->dim; }
-
-VecSimMetric HNSWIndex::getMetric() { return this->metric; }
