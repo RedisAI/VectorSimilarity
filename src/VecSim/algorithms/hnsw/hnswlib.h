@@ -73,13 +73,13 @@ class HierarchicalNSW : VecsimBaseObject {
     int maxlevel_;
 
     // Index data structures
-    int enterpoint_node_;
+    int entrypoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
     vecsim_stl::vector<int> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
-    VisitedListPool *visited_list_pool_;
+    std::unique_ptr<VisitedListPool> visited_list_pool_;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
@@ -127,7 +127,8 @@ public:
     size_t getEfConstruction() const;
     size_t getM() const;
     size_t getMaxLevel() const;
-    tableint getEntryPoint() const;
+    size_t getEntryPointLabel() const;
+    tableint getEntryPointId() const;
     VisitedList *getVisitedList() const;
     char *getDataByInternalId(tableint internal_id) const;
     linklistsizeint *get_linklist_at_level(tableint internal_id, int level) const;
@@ -178,6 +179,13 @@ size_t HierarchicalNSW<dist_t>::getM() const {
 template <typename dist_t>
 size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
     return maxlevel_;
+}
+
+template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getEntryPointLabel() const {
+    if (entrypoint_node_ != -1)
+        return (size_t)getExternalLabel(entrypoint_node_);
+    return -1;
 }
 
 template <typename dist_t>
@@ -266,8 +274,8 @@ void HierarchicalNSW<dist_t>::setListCount(linklistsizeint *ptr, unsigned short 
 }
 
 template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::getEntryPoint() const {
-    return enterpoint_node_;
+tableint HierarchicalNSW<dist_t>::getEntryPointId() const {
+    return entrypoint_node_;
 }
 
 template <typename dist_t>
@@ -323,16 +331,12 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
     dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
     dist_t lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
-    // the candidates distances are saved negatively, so we will have O(1) access to the closest candidate
-    // from the max heap, which is the one with the largest (negative) value
     candidate_set.emplace(-dist, ep_id);
 
     visited_array[ep_id] = visited_array_tag;
 
     while (!candidate_set.empty()) {
-        pair<dist_t, tableint> curr_el_pair = candidate_set.top();
-        // if the closest element in the candidates set is further than the furthest element in the top candidates
-        // set, we finish the search.
+        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
@@ -664,11 +668,11 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 
     cur_element_count = 0;
     max_id = -1;
-    visited_list_pool_ =
-        new (this->allocator) VisitedListPool(1, (int)max_elements, this->allocator);
+    visited_list_pool_ = std::unique_ptr<VisitedListPool>(
+        new (this->allocator) VisitedListPool(1, (int)max_elements, this->allocator));
 
     // initializations for special treatment of the first node
-    enterpoint_node_ = -1;
+    entrypoint_node_ = -1;
     maxlevel_ = -1;
 
     if (M <= 1)
@@ -726,7 +730,6 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     }
     this->allocator->free_allocation(linkLists_);
     this->allocator->free_allocation(data_level0_memory_);
-    delete visited_list_pool_;
 }
 
 /**
@@ -737,9 +740,8 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     if (new_max_elements < cur_element_count)
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
-    delete visited_list_pool_;
-    visited_list_pool_ =
-        new (this->allocator) VisitedListPool(1, (int)new_max_elements, this->allocator);
+    visited_list_pool_ = std::unique_ptr<VisitedListPool>(
+        new (this->allocator) VisitedListPool(1, (int)new_max_elements, this->allocator));
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
@@ -768,11 +770,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return true;
     }
-    // add the element id to the available ids for future reuse.
     element_internal_id = label_lookup_[label];
-    cur_element_count--;
-    label_lookup_.erase(label);
-    available_ids.insert(element_internal_id);
 
     // go over levels from the top and repair connections
     int element_top_level = element_levels_[element_internal_id];
@@ -821,29 +819,44 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     }
 
     // replace the entry point with another one, if we are deleting the current entry point.
-    if (element_internal_id == enterpoint_node_) {
+    if (element_internal_id == entrypoint_node_) {
         assert(element_top_level == maxlevel_);
-        linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
-        unsigned short list_len = getListCount(top_level_list);
-        while (list_len == 0) {
-            maxlevel_--;
-            if (maxlevel_ < 0) {
-                enterpoint_node_ = -1;
-                break;
+        // Sets the (arbitrary) new entry point.
+        while (element_internal_id == entrypoint_node_) {
+            linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
+
+            if (getListCount(top_level_list) > 0) {
+                // Tries to set the (arbitrary) first neighbor as the entry point.
+                entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
+            } else {
+                // If there is no neighbors in the current level, check for any vector at
+                // this level to be the new entry point.
+                for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
+                    if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
+                        entrypoint_node_ = cur_id;
+                        break;
+                    }
+                }
             }
-            top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
-            list_len = getListCount(top_level_list);
-        }
-        // set the (arbitrary) first neighbor as the entry point (if there is some element in the
-        // index).
-        if (enterpoint_node_ >= 0) {
-            enterpoint_node_ = ((tableint *)(top_level_list + 1))[0];
+            // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
+            // until we find a new enter point, or the index is empty.
+            if (element_internal_id == entrypoint_node_) {
+                maxlevel_--;
+                if (maxlevel_ < 0) {
+                    entrypoint_node_ = -1;
+                }
+            }
         }
     }
 
     if (element_levels_[element_internal_id] > 0) {
         this->allocator->free_allocation(linkLists_[element_internal_id]);
     }
+    // add the element id to the available ids for future reuse.
+    cur_element_count--;
+    label_lookup_.erase(label);
+    available_ids.insert(element_internal_id);
+    element_levels_[element_internal_id] = -1;
     memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
     return true;
@@ -891,7 +904,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     if (element_max_level <= maxlevelcopy)
         entry_point_lock.unlock();
 #endif
-    int currObj = enterpoint_node_;
+    int currObj = entrypoint_node_;
 
     memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
@@ -909,7 +922,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     }
 
     // this condition only means that we are not inserting the first element.
-    if (enterpoint_node_ != -1) {
+    if (entrypoint_node_ != -1) {
         if (element_max_level < maxlevelcopy) {
             dist_t cur_dist =
                 fstdistfunc_(data_point, getDataByInternalId(currObj), dist_func_param_);
@@ -958,13 +971,13 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         }
     } else {
         // Do nothing for the first element
-        enterpoint_node_ = 0;
+        entrypoint_node_ = 0;
         maxlevel_ = element_max_level;
     }
 
     // updating the maximum level (holding a global lock)
     if (element_max_level > maxlevelcopy) {
-        enterpoint_node_ = cur_c;
+        entrypoint_node_ = cur_c;
         maxlevel_ = element_max_level;
         // create the incoming edges set for the new levels.
         for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
@@ -978,11 +991,11 @@ template <typename dist_t>
 tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) const {
 
     if (cur_element_count == 0) {
-        return enterpoint_node_;
+        return entrypoint_node_;
     }
-    tableint currObj = enterpoint_node_;
+    tableint currObj = entrypoint_node_;
     dist_t cur_dist =
-            fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
+            fstdistfunc_(query_data, getDataByInternalId(entrypoint_node_), dist_func_param_);
     for (int level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
@@ -996,7 +1009,7 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
                     throw std::runtime_error("candidate error: out of index range");
 
                 dist_t d =
-                        fstdistfunc_(query_data, getDataByInternalId(candidate), dist_func_param_);
+                    fstdistfunc_(query_data, getDataByInternalId(candidate), dist_func_param_);
                 if (d < cur_dist) {
                     cur_dist = d;
                     currObj = candidate;

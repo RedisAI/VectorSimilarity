@@ -10,14 +10,16 @@ protected:
 public:
     VecsimBaseObject(std::shared_ptr<VecSimAllocator> allocator) : allocator(allocator) {}
 
-    void *operator new(size_t size, std::shared_ptr<VecSimAllocator> allocator);
-    void *operator new[](size_t size, std::shared_ptr<VecSimAllocator> allocator);
-    void operator delete(void *p, size_t size);
-    void operator delete[](void *p, size_t size);
+    static void *operator new(size_t size, std::shared_ptr<VecSimAllocator> allocator);
+    static void *operator new[](size_t size, std::shared_ptr<VecSimAllocator> allocator);
+    static void operator delete(void *p, size_t size);
+    static void operator delete[](void *p, size_t size);
 
     // Placement delete. To be used in try/catch clause when called with the respected constructor
-    void operator delete(void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
-    void operator delete[](void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
+    static void operator delete(void *p, std::shared_ptr<VecSimAllocator> allocator);
+    static void operator delete[](void *p, std::shared_ptr<VecSimAllocator> allocator);
+    static void operator delete(void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
+    static void operator delete[](void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
 
     std::shared_ptr<VecSimAllocator> getAllocator();
     virtual ~VecsimBaseObject() {}

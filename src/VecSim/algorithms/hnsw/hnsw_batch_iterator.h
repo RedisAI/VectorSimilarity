@@ -47,7 +47,7 @@ public:
 
     bool isDepleted() override;
 
-    void reset() override;
+    void reset() override {}
 
     ~HNSW_BatchIterator() override = default;
 };
