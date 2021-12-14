@@ -57,6 +57,17 @@ void VecSimAllocator::free_allocation(void *p) {
     vecsim_free(ptr);
 }
 
+void *VecSimAllocator::callocate(size_t size) {
+    size_t *ptr = (size_t *)vecsim_calloc(1, size + allocation_header_size);
+
+    if (ptr) {
+        *this->allocated.get() += size + allocation_header_size;
+        *ptr = size;
+        return ptr + 1;
+    }
+    return NULL;
+}
+
 void *VecSimAllocator::operator new(size_t size) { return vecsim_malloc(size); }
 
 void *VecSimAllocator::operator new[](size_t size) { return vecsim_malloc(size); }

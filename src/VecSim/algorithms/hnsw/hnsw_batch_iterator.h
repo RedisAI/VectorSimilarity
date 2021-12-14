@@ -25,7 +25,7 @@ private:
     idType entry_point; // internal id of the node to begin the scan from in the next iteration.
     bool allow_marked_candidates; // flag that indicates if we allow the search to visit in nodes that
                                   // where returned in previous iterations
-    hnswlib::VisitedList *visited_list; // Pointer to the hnsw visitedList structure.
+    hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     ushort iterations_counter;
     ushort tag_range_start; // save the minimal tag which is used to mark nodes that were visited and/or
                             // returned by this iterator.

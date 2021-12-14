@@ -2,18 +2,18 @@
 
 #include <utility>
 #include "VecSim/query_result_struct.h"
-#include "VecSim/algorithms/hnsw/visited_list_pool.h"
+#include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
 inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
-    return this->visited_list->visitedElements[node_id] % 2 == 0;
+    return this->visited_list->getNodeTag(node_id) - this->tag_range_start % 2 == 1;
 }
 
 inline void HNSW_BatchIterator::markReturned (uint node_id) {
-    this->visited_list->visitedElements[node_id] = this->cur_returned_visited_tag;
+    this->visited_list->visitNode(node_id, cur_returned_visited_tag);
 }
 
 inline void HNSW_BatchIterator::unmarkReturned (uint node_id) {
-    this->visited_list->visitedElements[node_id] = this->cur_visited_tag;
+    this->visited_list->visitNode(node_id, cur_visited_tag);
 }
 
 unique_ptr<CandidatesHeap> HNSW_BatchIterator::scanGraph() {
@@ -24,15 +24,9 @@ unique_ptr<CandidatesHeap> HNSW_BatchIterator::scanGraph() {
     auto &hnsw_index = this->index->hnsw;
     auto space = this->index->space.get();
 
-    //todo: put this in a function
-    hnswlib::vl_type *visited_array = this->visited_list->visitedElements;
     // Get fresh visited tag and returned_visited (different from the previous iteration).
-    this->visited_list->reset();
-    if (this->cur_visited_tag == 1) {this->visited_list->reset();}
-    this->cur_visited_tag = this->visited_list->curTag;
-    this->visited_list->reset();
-    if (this->cur_visited_tag == 1) {this->visited_list->reset();}
-    this->cur_returned_visited_tag = this->visited_list->curTag;
+    this->cur_visited_tag = this->visited_list->getFreshTag();
+    this->cur_returned_visited_tag = this->visited_list->getFreshTag();
 
     auto dist_func = space->get_dist_func();
     float dist = dist_func(this->getQueryBlob(), hnsw_index.getDataByInternalId(this->entry_point),
@@ -43,7 +37,7 @@ unique_ptr<CandidatesHeap> HNSW_BatchIterator::scanGraph() {
     // from the max heap, which is the one with the largest (negative) value
     candidate_set.emplace(-dist, this->entry_point);
 
-    visited_array[this->entry_point] = cur_visited_tag;
+    this->visited_list->visitNode(this->entry_point,  cur_visited_tag);
 
     while (!candidate_set.empty()) {
         pair<float, idType> curr_el_pair = candidate_set.top();
@@ -80,17 +74,17 @@ unique_ptr<CandidatesHeap> HNSW_BatchIterator::scanGraph() {
             _mm_prefetch((char *)(visited_array + *(node_links + j + 1)), _MM_HINT_T0);
             _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
 #endif
-            if (visited_array[candidate_id] == this->cur_visited_tag ||
-            visited_array[candidate_id] == this->cur_returned_visited_tag) {
+            if (this->visited_list->getNodeTag(candidate_id) == this->cur_visited_tag ||
+                    this->visited_list->getNodeTag(candidate_id) == this->cur_returned_visited_tag) {
                 continue;
             }
             if (!this->allow_marked_candidates && this->hasReturned(candidate_id)) {
                 continue;
             }
             if (hasReturned(candidate_id)) {
-                visited_array[candidate_id] = this->cur_returned_visited_tag;
+                this->visited_list->visitNode(candidate_id, cur_returned_visited_tag);
             } else {
-                visited_array[candidate_id] = this->cur_visited_tag;
+                this->visited_list->visitNode(candidate_id, cur_visited_tag);
             }
             char *candidate_data = hnsw_index.getDataByInternalId(candidate_id);
             float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
@@ -132,11 +126,16 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
     // Save the current state of the visited list, and derive tags in which we are going to use
     // from the current tag. We will use these "fresh" tags to mark returned results and visited nodes.
     this->visited_list = this->index->hnsw.getVisitedList();
-    this->tag_range_start = this->visited_list->curTag;
+    this->tag_range_start = this->visited_list->getFreshTag();
+    // Note: we assume that the number of iterations will be at most 500. We want to ensure that
+    // tags will not reset during the iterations
+    if (USHRT_MAX-this->tag_range_start < 1000) {
+        this->visited_list->reset();
+        this->tag_range_start = this->visited_list->getFreshTag();
+    }
     this->cur_visited_tag = this->tag_range_start;
     // reset to get another tag to mark nodes that were returned and scanned
-    this->visited_list->reset();
-    this->cur_returned_visited_tag = this->visited_list->curTag;
+    this->cur_returned_visited_tag = this->visited_list->getFreshTag();
 }
 
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQueryResult_Order order) {
