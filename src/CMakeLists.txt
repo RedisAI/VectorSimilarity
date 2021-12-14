@@ -53,6 +53,7 @@ add_subdirectory(VecSim/spaces)
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
     VecSim/algorithms/brute_force/vector_block.cpp
+	VecSim/algorithms/hnsw/visited_nodes_handler.cpp
     VecSim/algorithms/hnsw/hnswlib_c.cpp
     VecSim/vec_sim.cpp
     VecSim/query_results.cpp

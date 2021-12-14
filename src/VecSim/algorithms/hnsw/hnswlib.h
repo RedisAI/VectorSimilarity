@@ -1,6 +1,6 @@
 #pragma once
 
-#include "visited_list_pool.h"
+#include "visited_nodes_handler.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim//spaces/space_interface.h"
@@ -79,10 +79,12 @@ class HierarchicalNSW : VecsimBaseObject {
     vecsim_stl::vector<int> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
-    std::unique_ptr<VisitedListPool> visited_list_pool_;
+    std::unique_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
+    std::unique_ptr<VisitedNodesHandlerPool> visited_nodes_handler_pool;
+    size_t pool_initial_size;
     std::mutex global;
     std::mutex cur_element_count_guard_;
     std::vector<std::mutex> link_list_locks_;
@@ -120,7 +122,8 @@ class HierarchicalNSW : VecsimBaseObject {
 public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
-                    size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100);
+                    size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
+                    size_t initial_pool_size = 1);
     ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -308,9 +311,13 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 template <typename dist_t>
 CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point,
                                                              int layer, size_t ef) const {
-    VisitedList *vl = visited_list_pool_->getFreeVisitedList();
-    vl_type *visited_array = vl->mass;
-    vl_type visited_array_tag = vl->curV;
+
+#ifdef ENABLE_PARALLELIZATION
+    this->visited_nodes_handler =
+        this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
+#endif
+
+    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
     CandidatesQueue<dist_t> top_candidates(this->allocator);
     CandidatesQueue<dist_t> candidate_set(this->allocator);
@@ -320,7 +327,7 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
-    visited_array[ep_id] = visited_array_tag;
+    this->visited_nodes_handler->visitNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
@@ -349,9 +356,9 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
             _mm_prefetch((char *)(visited_array + *(node_links + j + 1)), _MM_HINT_T0);
             _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
 #endif
-            if (visited_array[candidate_id] == visited_array_tag)
+            if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
                 continue;
-            visited_array[candidate_id] = visited_array_tag;
+            this->visited_nodes_handler->visitNode(candidate_id, visited_tag);
             char *currObj1 = (getDataByInternalId(candidate_id));
 
             dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
@@ -371,7 +378,7 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
         }
     }
 #ifdef ENABLE_PARALLELIZATION
-    visited_list_pool_->returnVisitedListToPool(vl);
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
 #endif
     return top_candidates;
 }
@@ -631,7 +638,8 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
 template <typename dist_t>
 HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                                          std::shared_ptr<VecSimAllocator> allocator, size_t M,
-                                         size_t ef_construction, size_t ef, size_t random_seed)
+                                         size_t ef_construction, size_t ef, size_t random_seed,
+                                         size_t pool_initial_size)
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
       available_ids(allocator), label_lookup_(allocator)
 
@@ -655,8 +663,14 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 
     cur_element_count = 0;
     max_id = -1;
-    visited_list_pool_ = std::unique_ptr<VisitedListPool>(
-        new (this->allocator) VisitedListPool(1, (int)max_elements, this->allocator));
+#ifdef ENABLE_PARALLELIZATION
+    pool_initial_size = pool_initial_size;
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
+        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
+#else
+    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+        new (this->allocator) VisitedNodesHandler(max_elements, this->allocator));
+#endif
 
     // initializations for special treatment of the first node
     entrypoint_node_ = -1;
@@ -727,11 +741,15 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     if (new_max_elements < cur_element_count)
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
-    visited_list_pool_ = std::unique_ptr<VisitedListPool>(
-        new (this->allocator) VisitedListPool(1, (int)new_max_elements, this->allocator));
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(this->pool_initial_size, new_max_elements, this->allocator));
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+#else
+    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+        new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
     // Reallocate base layer
     char *data_level0_memory_new = (char *)this->allocator->reallocate(
