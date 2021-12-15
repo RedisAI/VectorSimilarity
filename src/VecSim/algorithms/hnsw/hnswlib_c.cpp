@@ -29,7 +29,7 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
 /******************** Implementation **************/
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
-        float normalized_data[this->dim];
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, vector_data, this->dim * sizeof(float));
@@ -55,7 +55,7 @@ void HNSWIndex::setEf(size_t ef) { this->hnsw.setEf(ef); }
 VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                                             VecSimQueryParams *queryParams) {
     try {
-        float normalized_data[this->dim];
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, query_data, this->dim * sizeof(float));
