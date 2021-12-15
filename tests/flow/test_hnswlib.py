@@ -16,10 +16,10 @@ def test_sanity_hnswlib_index_L2():
     hnswparams = HNSWParams()
 
     params.algo = VecSimAlgo_HNSWLIB
-    params.dim = dim
-    params.metric = VecSimMetric_L2
-    params.type = VecSimType_FLOAT32
 
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_L2
+    hnswparams.type = VecSimType_FLOAT32
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
@@ -56,10 +56,10 @@ def test_sanity_hnswlib_index_cosine():
     hnswparams = HNSWParams()
 
     params.algo = VecSimAlgo_HNSWLIB
-    params.dim = dim
-    params.metric = VecSimMetric_Cosine
-    params.type = VecSimType_FLOAT32
 
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_Cosine
+    hnswparams.type = VecSimType_FLOAT32
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
@@ -103,8 +103,11 @@ def test_recall_for_hnswlib_index_with_deletion():
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
     hnswparams.efRuntime = efRuntime
+    hnswparams.dim = dim
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.metric = VecSimMetric_L2
 
-    hnsw_index = HNSWIndex(hnswparams, VecSimType_FLOAT32, dim, VecSimMetric_L2)
+    hnsw_index = HNSWIndex(hnswparams)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []

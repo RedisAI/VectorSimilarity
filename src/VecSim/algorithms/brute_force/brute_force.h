@@ -8,8 +8,13 @@
 #include <queue>
 
 class BruteForceIndex : public VecSimIndex {
+protected:
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
+
 public:
-    BruteForceIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() const;

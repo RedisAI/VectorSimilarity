@@ -844,7 +844,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
                 }
             }
             // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
-            // until we find a new enter point, or the index is empty.
+            // until we find a new entry point, or the index is empty.
             if (element_internal_id == entrypoint_node_) {
                 maxlevel_--;
                 if (maxlevel_ < 0) {

@@ -3,6 +3,7 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 
@@ -13,20 +14,18 @@
 using namespace std;
 
 /******************** Ctor / Dtor **************/
-BruteForceIndex::BruteForceIndex(const VecSimParams *params,
-                                 std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(params, allocator),
-      vectorBlockSize(params->bfParams.blockSize ? params->bfParams.blockSize
-                                                 : BF_DEFAULT_BLOCK_SIZE),
-      count(0), labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator),
-      deletedIds(allocator), vectorBlocks(allocator),
+BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
+      vectorBlockSize(params->blockSize ? params->blockSize : BF_DEFAULT_BLOCK_SIZE), count(0),
+      labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator), deletedIds(allocator),
+      vectorBlocks(allocator),
 
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
-                                                           L2Space(params->size, allocator))
+                                                           L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->size, allocator))) {
-    this->idToVectorBlockMemberMapping.resize(params->bfParams.initialCapacity);
+                      new (allocator) InnerProductSpace(params->dim, allocator))) {
+    this->idToVectorBlockMemberMapping.resize(params->initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
 
@@ -48,6 +47,14 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
 }
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
+
+    float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        memcpy(normalized_data, vector_data, this->dim * sizeof(float));
+        float_vector_normalize(normalized_data, this->dim);
+        vector_data = normalized_data;
+    }
 
     idType id = 0;
     bool update = false;
@@ -149,6 +156,14 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
+
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        float_vector_normalize(normalized_blob, this->dim);
+        queryBlob = normalized_blob;
+    }
 
     float upperBound = std::numeric_limits<float>::lowest();
     CandidatesHeap TopCandidates(this->allocator);

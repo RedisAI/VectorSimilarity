@@ -3,9 +3,9 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
 #include <cassert>
-#include "VecSim/utils/vec_utils.h"
 #include "memory.h"
 
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
@@ -14,10 +14,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = new (allocator) HNSWIndex(params, allocator);
+            index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = new (allocator) BruteForceIndex(params, allocator);
+            index = new (allocator) BruteForceIndex(&params->bfParams, allocator);
             break;
         default:
             break;
@@ -29,13 +29,6 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    if (index->getMetric() == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        float normalized_blob[index->getVectorDim()];
-        memcpy(normalized_blob, blob, index->getVectorDim() * sizeof(float));
-        float_vector_normalize(normalized_blob, index->getVectorDim());
-        return index->addVector(normalized_blob, id);
-    }
     return index->addVector(blob, id);
 }
 
@@ -51,15 +44,8 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryResult_List results;
-    if (index->getMetric() == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        float normalized_blob[index->getVectorDim()];
-        memcpy(normalized_blob, queryBlob, index->getVectorDim() * sizeof(float));
-        float_vector_normalize(normalized_blob, index->getVectorDim());
-        results = index->topKQuery(normalized_blob, k, queryParams);
-    } else {
-        results = index->topKQuery(queryBlob, k, queryParams);
-    }
+    results = index->topKQuery(queryBlob, k, queryParams);
+
     if (order == BY_ID) {
         sort_results_by_id(results);
     }
