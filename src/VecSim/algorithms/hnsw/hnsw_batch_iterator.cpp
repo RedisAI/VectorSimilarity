@@ -5,7 +5,7 @@
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
 inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
-    return this->visited_list->getNodeTag(node_id) - this->tag_range_start % 2 == 1;
+    return (this->visited_list->getNodeTag(node_id) - this->tag_range_start % 2) == 1;
 }
 
 inline void HNSW_BatchIterator::markReturned (uint node_id) {
