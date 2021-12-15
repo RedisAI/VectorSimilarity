@@ -31,7 +31,7 @@ public:
     void reset();
 
     // Mark node_id with tag, to have an indication that this node has been visited.
-    inline void visitNode(uint node_id, tag_t tag) { elements_tags[node_id] = tag; }
+    inline void tagNode(uint node_id, tag_t tag) { elements_tags[node_id] = tag; }
 
     // Get the tag in which node_id is marked currently.
     inline tag_t getNodeTag(uint node_id) { return elements_tags[node_id]; }

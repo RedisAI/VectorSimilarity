@@ -4,9 +4,8 @@
 #include "hnswlib_c.h"
 
 typedef size_t labelType;
-typedef size_t idType;
+typedef uint idType;
 
-typedef enum {VISITED_ODD_OFFSET, VISITED_EVEN_OFFSET, RETURNED_VISITED_ODD_OFFSET, RETURNED_VISITED_EVEN_OFFSET} TagOffset;
 using namespace std;
 
 struct CompareByFirst {
@@ -23,7 +22,7 @@ private:
     const HNSWIndex *index;
     unique_ptr<CandidatesHeap> results; // results to return immediately in the next iteration.
     idType entry_point; // internal id of the node to begin the scan from in the next iteration.
-    bool allow_marked_candidates; // flag that indicates if we allow the search to visit in nodes that
+    bool allow_returned_candidates; // flag that indicates if we allow the search to visit in nodes that
                                   // where returned in previous iterations
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     ushort iterations_counter;
@@ -34,10 +33,12 @@ private:
                                      // and scanned in the current iteration
     bool depleted;
 
-    unique_ptr<CandidatesHeap> scanGraph();
+    CandidatesHeap *scanGraph();
     inline bool hasReturned(idType node_id) const;
-    inline void markReturned (uint node_id);
-    inline void unmarkReturned (uint node_id);
+    inline void markReturned (idType node_id);
+    inline void unmarkReturned (idType node_id);
+    inline void visitNode (idType node_id);
+    inline bool hasVisitedInCurIteration(idType node_id) const;
 
 public:
     HNSW_BatchIterator(const void *query_vector, const HNSWIndex *index,

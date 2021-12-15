@@ -340,7 +340,7 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
-    this->visited_nodes_handler->visitNode(ep_id, visited_tag);
+    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
@@ -371,7 +371,7 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
 #endif
             if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
                 continue;
-            this->visited_nodes_handler->visitNode(candidate_id, visited_tag);
+            this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
             char *currObj1 = (getDataByInternalId(candidate_id));
 
             dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);

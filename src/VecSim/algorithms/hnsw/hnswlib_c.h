@@ -18,6 +18,6 @@ public:
     void setEf(size_t ef);
     hnswlib::tableint getEntryPointId() const;
 
-    hnswlib::HierarchicalNSW<float> hnsw;
     std::unique_ptr<SpaceInterface<float>> space;
+    hnswlib::HierarchicalNSW<float> hnsw;
 };
