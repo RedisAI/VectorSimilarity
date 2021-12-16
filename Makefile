@@ -224,12 +224,8 @@ valgrind:
 #----------------------------------------------------------------------------------------------
 
 flow_test:
-ifneq ($(VIRTUAL_ENV),)
-	$(SHOW)cd tests/flow && python3 -m pytest $(TEST)
-else
 	$(SHOW)$(MAKE) pybind
-	$(SHOW)python3 -m tox -e flowenv
-endif
+	$(SHOW)tox -e flowenv
 
 .PHONY: flow_test
 
