@@ -1,6 +1,26 @@
 version: 2.1
 
 commands:
+  abort_for_docs:
+    steps:
+      - run:
+          name: Avoid tests for docs
+          command: |
+            if [[ $CIRCLE_BRANCH == *docs ]]; then
+              echo "Identifies as documents PR, no testing required"
+              circleci step halt
+            fi
+            
+  abort_for_noci:
+    steps:
+      - run:
+          name: Ignore CI for specific branches
+          command: |
+            if [[ $CIRCLE_BRANCH == *noci ]]; then
+              echo "Identifies as actively ignoring CI, no testing required."
+              circleci step halt
+            fi
+
   setup-automation:
     steps:
       - run:
@@ -25,6 +45,8 @@ commands:
 
   build-steps:
     steps:
+      - abort_for_docs
+      - abort_for_noci
       - checkout-all
       - restore_cache: # Download and cache dependencies
           keys:
@@ -44,9 +66,6 @@ commands:
       - run:
           name: Valgrind test
           command: bash -l -c "make VG=1 build unit_test"
-      - run:
-          name: Benchmark
-          command: bash -l -c "make benchmark"
       - run:
           name: Build Python bindings
           command: bash -l -c "make pybind"
@@ -81,10 +100,32 @@ jobs:
       san-type:
         type: string
     steps:
+      - abort_for_docs
+      - abort_for_noci
       - checkout-all
       - run:
           name: Run & build tests
           command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
+
+  nightly_flow:
+    resource_class: large
+    docker:
+      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+#     machine:
+#       enabled: true
+#       image: ubuntu-2004:202010-01
+#       resource_class: xlarge
+    steps:
+      - abort_for_docs
+      - abort_for_noci
+      - build-steps
+      - run:
+          name: Benchmark
+          command: bash -l -c "make benchmark"
+      - run:
+          name: Redis tests
+          command: bash -l -c "tox -e modtest"
+
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -102,10 +143,10 @@ never: &never
     tags:
       ignore: /.*/
 
-on-master: &on-master
+on-main: &on-main
   filters:
     branches:
-      only: master
+      only: main
     tags:
       ignore: /.*/
 
@@ -113,7 +154,7 @@ on-integ-branch: &on-integ-branch
   filters:
     branches:
       only:
-        - master
+        - main
         - /^\d+\.\d+.*$/
         - /^feature-.*$/
     tags:
@@ -123,7 +164,7 @@ not-on-integ-branch: &not-on-integ-branch
   filters:
     branches:
       ignore:
-        - master
+        - main
         - /^\d+\.\d+.*$/
         - /^feature-.*$/
     tags:
@@ -140,7 +181,7 @@ on-integ-and-version-tags: &on-integ-and-version-tags
   filters:
     branches:
       only:
-        - master
+        - main
         - /^\d+\.\d+.*$/
         - /^feature-.*$/
     tags:
@@ -161,3 +202,19 @@ workflows:
             parameters:
               san-type: [address, memory]
           <<: *on-any-branch
+  
+  nightly:
+    triggers:
+      - schedule:
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - main
+    jobs:
+    - nightly_flow
+    - sanitize:
+          name: sanitize-<< matrix.san-type >>
+          matrix:
+            parameters:
+              san-type: [address, memory]
