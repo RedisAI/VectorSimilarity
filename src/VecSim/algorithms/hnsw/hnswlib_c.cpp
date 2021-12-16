@@ -1,5 +1,6 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/query_result_struct.h"
@@ -13,23 +14,28 @@ using namespace hnswlib;
 
 /******************** Ctor / Dtor **************/
 
-HNSWIndex::HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(params, allocator),
+HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
-                                                           L2Space(params->size, allocator))
+                                                           L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->size, allocator))),
-      hnsw(space.get(), params->hnswParams.initialCapacity, allocator,
-           params->hnswParams.M ? params->hnswParams.M : HNSW_DEFAULT_M,
-           params->hnswParams.efConstruction ? params->hnswParams.efConstruction
-                                             : HNSW_DEFAULT_EF_C) {
-    hnsw.setEf(params->hnswParams.efRuntime ? params->hnswParams.efRuntime : HNSW_DEFAULT_EF_RT);
+                      new (allocator) InnerProductSpace(params->dim, allocator))),
+      hnsw(space.get(), params->initialCapacity, allocator, params->M ? params->M : HNSW_DEFAULT_M,
+           params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C) {
+    hnsw.setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
 }
 
 /******************** Implementation **************/
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+        if (this->metric == VecSimMetric_Cosine) {
+            // TODO: need more generic
+            memcpy(normalized_data, vector_data, this->dim * sizeof(float));
+            float_vector_normalize(normalized_data, this->dim);
+            vector_data = normalized_data;
+        }
         if (hnsw.getIndexSize() == this->hnsw.getIndexCapacity()) {
             this->hnsw.resizeIndex(std::max<size_t>(this->hnsw.getIndexCapacity() * 2, 2));
         }
@@ -49,6 +55,13 @@ void HNSWIndex::setEf(size_t ef) { this->hnsw.setEf(ef); }
 VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                                             VecSimQueryParams *queryParams) {
     try {
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+        if (this->metric == VecSimMetric_Cosine) {
+            // TODO: need more generic
+            memcpy(normalized_data, query_data, this->dim * sizeof(float));
+            float_vector_normalize(normalized_data, this->dim);
+            query_data = normalized_data;
+        }
         // Get original efRuntime and store it.
         size_t originalEF = this->hnsw.getEf();
 

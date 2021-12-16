@@ -9,7 +9,10 @@ def test_bf_cosine():
     bfparams = BFParams()
     bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
-    bfindex = BFIndex(bfparams, VecSimType_FLOAT32, dim, VecSimMetric_Cosine)
+    bfparams.dim = dim
+    bfparams.type = VecSimType_FLOAT32
+    bfparams.metric = VecSimMetric_Cosine
+    bfindex = BFIndex(bfparams)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -41,7 +44,10 @@ def test_bf_l2():
     bfparams = BFParams()
     bfparams.initialCapacity = num_elements
     bfparams.blockSize = num_elements
-    bfindex = BFIndex(bfparams, VecSimType_FLOAT32, dim, VecSimMetric_L2)
+    bfparams.dim = dim
+    bfparams.type = VecSimType_FLOAT32
+    bfparams.metric = VecSimMetric_L2
+    bfindex = BFIndex(bfparams)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -68,10 +74,13 @@ def test_batch_iterator():
     num_elements = 1000000
 
     # Create a brute force index for vectors of 128 floats. Use 'Cosine' as the distance metric
-    bf_params = BFParams()
-    bf_params.initialCapacity = num_elements
-    bf_params.blockSize = num_elements
-    bf_index = BFIndex(bf_params, VecSimType_FLOAT32, dim, VecSimMetric_L2)
+    bfparams = BFParams()
+    bfparams.initialCapacity = num_elements
+    bfparams.blockSize = num_elements
+    bfparams.dim = dim
+    bfparams.type = VecSimType_FLOAT32
+    bfparams.metric = VecSimMetric_L2
+    bf_index = BFIndex(bfparams)
 
     # Add 1M random vectors to the index
     data = np.float32(np.random.random((num_elements, dim)))
