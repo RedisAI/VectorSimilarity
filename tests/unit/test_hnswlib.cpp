@@ -565,3 +565,52 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
     }
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, hnsw_override) {
+    size_t n = 100;
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 300;
+
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+            .hnswParams = {.type = VecSimType_FLOAT32,
+                    .dim = dim,
+                    .metric = VecSimMetric_L2,
+                    .initialCapacity = n,
+                    .M = M,
+                    .efConstruction = 20,
+                    .efRuntime = ef}};
+
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_TRUE(index != nullptr);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Insert again 300 vectors, the first 100 will be overwritten (deleted first).
+    n = 300;
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+    // This is testing a bug fix - before we had the seconder sorting by id in CompareByFirst,
+    // the graph got disconnected due to the deletion of some node followed by a bad repairing of one
+    // of its neighbours. Here, we ensure that we get all the nodes in the graph as results.
+    auto verify_res = [&](int id, float score, size_t index) { ASSERT_TRUE(id == n - 1 - index); };
+    runTopKSearchTest(index, query, 300, verify_res);
+
+    VecSimIndex_Free(index);
+}
