@@ -33,7 +33,7 @@ inline void HNSW_BatchIterator::unmarkReturned(idType node_id) {
     this->visited_list->tagNode(node_id, cur_visited_tag);
 }
 
-CandidatesHeap *HNSW_BatchIterator::scanGraph() {
+CandidatesHeap HNSW_BatchIterator::scanGraph() {
 
     CandidatesHeap top_candidates(this->allocator);
     CandidatesHeap candidate_set(this->allocator);
@@ -131,7 +131,7 @@ CandidatesHeap *HNSW_BatchIterator::scanGraph() {
             this->depleted = true;
         }
     }
-    return new CandidatesHeap(top_candidates, this->allocator);
+    return top_candidates;
 }
 
 HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex *hnsw_index,
@@ -139,7 +139,7 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
                    VecSimBatchIterator(query_vector, std::move(allocator)),
                    // the search_id and the visited list is determined in the first iteration.
                    index(hnsw_index), allow_returned_candidates(false),
-                   depleted(false), results(nullptr) {
+                   depleted(false), results(this->allocator) {
 
     this->entry_point = hnsw_index->getEntryPointId();
     // Save the current state of the visited list, and derive tags in which we are going to use
@@ -159,16 +159,21 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQu
     if (this->getResultsCount() == 0) {
         idType bottom_layer_ep = this->index->hnsw.searchBottomLayerEP(this->getQueryBlob());
         this->entry_point = bottom_layer_ep;
-        results = unique_ptr<CandidatesHeap>(this->scanGraph());
+        auto top_candidates = this->scanGraph();
+        // Get the results and insert them to a min heap.
+        while (!top_candidates.empty()) {
+            results.emplace(top_candidates.top().first, top_candidates.top().second);
+            top_candidates.pop();
+        }
     }
     auto *batch_results = array_new<VecSimQueryResult>(n_res);
     while (array_len(batch_results) < n_res) {
-        size_t num_results_left = min(results->size(), n_res-array_len(batch_results));
+        size_t num_results_left = min(results.size(), n_res-array_len(batch_results));
         for (int i = 0; i < num_results_left; i++) {
             batch_results = array_append(batch_results, VecSimQueryResult{});
-            VecSimQueryResult_SetId(batch_results[i], results->top().second);
-            VecSimQueryResult_SetScore(batch_results[i], results->top().first);
-            results->pop();
+            VecSimQueryResult_SetId(batch_results[i], results.top().second);
+            VecSimQueryResult_SetScore(batch_results[i], results.top().first);
+            results.pop();
         }
         if (array_len(batch_results) == n_res || this->depleted) {
             this->updateResultsCount(array_len(batch_results));
@@ -183,11 +188,16 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQu
             return batch_results;
         }
         // Otherwise, scan graph for more results, and save them.
-        results = unique_ptr<CandidatesHeap>(this->scanGraph());
+        auto top_candidates = this->scanGraph();
+        // Get the results and insert them to a min heap.
+        while (!top_candidates.empty()) {
+            results.emplace(top_candidates.top().first, top_candidates.top().second);
+            top_candidates.pop();
+        }
     }
     return batch_results;
 }
 
 bool HNSW_BatchIterator::isDepleted() {
-    return this->depleted && this->results->empty();
+    return this->depleted && this->results.empty();
 }

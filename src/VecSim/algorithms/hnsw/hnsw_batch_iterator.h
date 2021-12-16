@@ -16,11 +16,12 @@ struct CompareByFirst {
 };
 
 using CandidatesHeap = vecsim_stl::priority_queue<pair<float, labelType>>;
+using CandidatesMinHeap = vecsim_stl::min_priority_queue<pair<float, labelType>>;
 
 class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
     const HNSWIndex *index;
-    unique_ptr<CandidatesHeap> results; // results to return immediately in the next iteration.
+    CandidatesMinHeap results; // results to return immediately in the next iteration.
     idType entry_point; // internal id of the node to begin the scan from in the next iteration.
     bool allow_returned_candidates; // flag that indicates if we allow the search to visit in nodes that
                                   // where returned in previous iterations
@@ -33,7 +34,7 @@ private:
                                      // and scanned in the current iteration
     bool depleted;
 
-    CandidatesHeap *scanGraph();
+    CandidatesHeap scanGraph();
     inline bool hasReturned(idType node_id) const;
     inline void markReturned (idType node_id);
     inline void unmarkReturned (idType node_id);
