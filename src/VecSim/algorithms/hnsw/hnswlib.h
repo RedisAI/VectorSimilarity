@@ -31,7 +31,7 @@ template <typename dist_t>
 struct CompareByFirst {
     constexpr bool operator()(pair<dist_t, tableint> const &a,
                               pair<dist_t, tableint> const &b) const noexcept {
-        return a.first < b.first;
+        return (a.first != b.first) ? a.first < b.first : a.second < b.second;
     }
 };
 

@@ -2,6 +2,7 @@
 
 #include <utility>
 #include "VecSim/query_result_struct.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
 // Every tag which is greater than "tag_range_start" with an odd difference,
@@ -93,9 +94,8 @@ CandidatesHeap *HNSW_BatchIterator::scanGraph() {
             if (!this->allow_returned_candidates && this->hasReturned(candidate_id)) {
                 continue;
             }
-            if (hasReturned(candidate_id)) {
-                this->visitNode(candidate_id);
-            }
+            this->visitNode(candidate_id);
+
             char *candidate_data = hnsw_index.getDataByInternalId(candidate_id);
             float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
                                              space->get_data_dim());
@@ -175,6 +175,11 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQu
             if (this->getResultsCount() == this->index->indexSize()) {
                 this->depleted = true;
             }
+            if (order == BY_SCORE) {
+                sort_results_by_score(batch_results);
+            } else {
+                sort_results_by_id(batch_results);
+            }
             return batch_results;
         }
         // Otherwise, scan graph for more results, and save them.
@@ -184,5 +189,5 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQu
 }
 
 bool HNSW_BatchIterator::isDepleted() {
-    return this->depleted;
+    return this->depleted && this->results->empty();
 }
