@@ -16,7 +16,7 @@ struct VectorBlock;
 struct CompareByFirst {
     constexpr bool operator()(std::pair<float, labelType> const &a,
                               std::pair<float, labelType> const &b) const noexcept {
-        return a.first < b.first;
+        return (a.first != b.first) ? a.first < b.first : a.second < b.second;
     }
 };
 
