@@ -137,7 +137,6 @@ jobs:
           name: Redis tests
           command: bash -l -c "tox -e modtest"
 
-jobs:
   codecov:
     resource_class: large
     docker:
