@@ -231,6 +231,9 @@ workflows:
             parameters:
               san-type: [address, memory]
           <<: *on-any-branch
+      - codecov:
+          <<: *on-any-branch
+
   
   nightly:
     triggers:
