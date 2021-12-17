@@ -13,6 +13,10 @@ ifeq ($(VALGRIND),1)
 override DEBUG ?= 1
 endif
 
+ifeq ($(COV),1)
+override DEBUG ?= 1
+endif
+
 ifneq ($(SAN),)
 override DEBUG ?= 1
 export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
@@ -54,6 +58,7 @@ include $(ROOT)/deps/readies/mk/main
 define HELPTEXT
 make build
   DEBUG=1          # build debug variant
+  COV=1			   # build for code coverage
   VERBOSE=1        # print detailed build info
   VG|VALGRIND=1    # build for Valgrind
   SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
