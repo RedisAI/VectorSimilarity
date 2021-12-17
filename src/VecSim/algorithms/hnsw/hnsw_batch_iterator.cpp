@@ -5,11 +5,11 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
-// Every tag which is greater than "tag_range_start" with an odd difference,
+// Every tag which is greater than "tag_range_start" with an even difference,
 // was meant to mark returned nodes in previous iterations.
 inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
     return (this->visited_list->getNodeTag(node_id) > this->tag_range_start) &&
-            ((this->visited_list->getNodeTag(node_id) - this->tag_range_start) % 2 == 1);
+            ((this->visited_list->getNodeTag(node_id) - this->tag_range_start) % 2 == 0);
 }
 
 inline bool HNSW_BatchIterator::hasVisitedInCurIteration(idType node_id) const{
@@ -44,9 +44,6 @@ CandidatesHeap HNSW_BatchIterator::scanGraph() {
     // Get fresh visited tag and returned_visited (different from the previous iteration).
     this->cur_visited_tag = this->visited_list->getFreshTag();
     this->cur_returned_visited_tag = this->visited_list->getFreshTag();
-    if (this->getResultsCount() == 0) {
-        this->tag_range_start = this->cur_visited_tag;
-    }
 
     auto dist_func = space->get_dist_func();
 
@@ -145,10 +142,12 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
     // Save the current state of the visited list, and derive tags in which we are going to use
     // from the current tag. We will use these "fresh" tags to mark returned results and visited nodes.
     this->visited_list = this->index->hnsw.getVisitedList();
+    this->tag_range_start = this->visited_list->getFreshTag();
     // Note: we assume that the number of iterations will be at most 500. We want to ensure that
     // tags will not reset during the iterations
     if (USHRT_MAX-this->tag_range_start < 1000) {
         this->visited_list->reset();
+        this->tag_range_start = this->visited_list->getFreshTag();
     }
 }
 
@@ -168,14 +167,15 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQu
     }
     auto *batch_results = array_new<VecSimQueryResult>(n_res);
     while (array_len(batch_results) < n_res) {
-        size_t num_results_left = min(results.size(), n_res-array_len(batch_results));
-        for (int i = 0; i < num_results_left; i++) {
+        size_t iteration_res_num = array_len(batch_results);
+        size_t num_results_to_add = min(results.size(), n_res-iteration_res_num);
+        for (int i = 0; i < num_results_to_add; i++) {
             batch_results = array_append(batch_results, VecSimQueryResult{});
-            VecSimQueryResult_SetId(batch_results[i], results.top().second);
-            VecSimQueryResult_SetScore(batch_results[i], results.top().first);
+            VecSimQueryResult_SetId(batch_results[iteration_res_num], results.top().second);
+            VecSimQueryResult_SetScore(batch_results[iteration_res_num++], results.top().first);
             results.pop();
         }
-        if (array_len(batch_results) == n_res || this->depleted) {
+        if (iteration_res_num == n_res || this->depleted) {
             this->updateResultsCount(array_len(batch_results));
             if (this->getResultsCount() == this->index->indexSize()) {
                 this->depleted = true;
@@ -204,5 +204,10 @@ bool HNSW_BatchIterator::isDepleted() {
 
 void HNSW_BatchIterator::reset() {
     this->resetResultsCount();
+    this->tag_range_start = this->visited_list->getFreshTag();
+    if (USHRT_MAX-this->tag_range_start < 1000) {
+        this->visited_list->reset();
+        this->tag_range_start = this->visited_list->getFreshTag();
+    }
     this->results = CandidatesMinHeap(this->allocator); // clear the results queue
 }

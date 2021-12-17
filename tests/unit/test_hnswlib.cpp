@@ -575,7 +575,7 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator) {
+TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 20;
@@ -632,15 +632,17 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator) {
 
 TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     size_t dim = 4;
+    size_t n = 1000;
+    size_t M = 8;
+    size_t ef = 20;
 
-    VecSimParams params = {.bfParams = {.initialCapacity = 100000, .blockSize = 100000},
+    VecSimParams params = {.hnswParams = {.initialCapacity = n, .M = M, .efConstruction = ef, .efRuntime = ef},
             .type = VecSimType_FLOAT32,
             .size = dim,
             .metric = VecSimMetric_L2,
-            .algo = VecSimAlgo_BF};
+            .algo = VecSimAlgo_HNSWLIB};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    size_t n = 10000;
     for (int i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -675,7 +677,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
                 ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
                 expected_ids.erase(id);
             };
-            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
             iteration_num++;
             if (iteration_num == total_iteration) {
                 break;
