@@ -629,3 +629,60 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
+    size_t dim = 4;
+
+    VecSimParams params = {.bfParams = {.initialCapacity = 100000, .blockSize = 100000},
+            .type = VecSimType_FLOAT32,
+            .size = dim,
+            .metric = VecSimMetric_L2,
+            .algo = VecSimAlgo_BF};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    size_t n = 10000;
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+
+    // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
+    // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
+    // iterator.
+    size_t n_res = 100;
+    size_t total_iteration = 5;
+    size_t re_runs = 3;
+
+    for (size_t take = 0; take < re_runs; take++) {
+        size_t iteration_num = 0;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            std::set<size_t> expected_ids;
+            for (size_t i = 1; i <= n_res; i++) {
+                expected_ids.insert(n - iteration_num * n_res - i);
+            }
+            auto verify_res = [&](int id, float score, size_t index) {
+                ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+                expected_ids.erase(id);
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            iteration_num++;
+            if (iteration_num == total_iteration) {
+                break;
+            }
+        }
+        VecSimBatchIterator_Reset(batchIterator);
+    }
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}

@@ -201,3 +201,8 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res, VecSimQu
 bool HNSW_BatchIterator::isDepleted() {
     return this->depleted && this->results.empty();
 }
+
+void HNSW_BatchIterator::reset() {
+    this->resetResultsCount();
+    this->results = CandidatesMinHeap(this->allocator); // clear the results queue
+}

@@ -26,7 +26,6 @@ private:
     bool allow_returned_candidates; // flag that indicates if we allow the search to visit in nodes that
                                   // where returned in previous iterations
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
-    ushort iterations_counter;
     ushort tag_range_start; // save the minimal tag which is used to mark nodes that were visited and/or
                             // returned by this iterator.
     ushort cur_visited_tag; // used to mark nodes that were scanned in this iteration (that hasn't returned before by the iterator).
@@ -49,7 +48,7 @@ public:
 
     bool isDepleted() override;
 
-    void reset() override {}
+    void reset() override;
 
     ~HNSW_BatchIterator() override = default;
 };
