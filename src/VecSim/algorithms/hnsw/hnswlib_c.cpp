@@ -5,7 +5,6 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
-
 #include <deque>
 #include <memory>
 #include <cassert>
@@ -94,10 +93,8 @@ VecSimIndexInfo HNSWIndex::info() {
     return info;
 }
 
-tableint HNSWIndex::getEntryPointId() const {
-    return hnsw.getEntryPointId();
-}
+tableint HNSWIndex::getEntryPointId() const { return hnsw.getEntryPointId(); }
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
-    return new (this->allocator)HNSW_BatchIterator(queryBlob, this, this->allocator);
+    return new (this->allocator) HNSW_BatchIterator(queryBlob, this, this->allocator);
 }

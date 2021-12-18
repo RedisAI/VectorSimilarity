@@ -1013,7 +1013,7 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
     }
     tableint currObj = entrypoint_node_;
     dist_t cur_dist =
-            fstdistfunc_(query_data, getDataByInternalId(entrypoint_node_), dist_func_param_);
+        fstdistfunc_(query_data, getDataByInternalId(entrypoint_node_), dist_func_param_);
     for (int level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
@@ -1048,7 +1048,8 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
         return result;
 
     tableint bottom_layer_ep = searchBottomLayerEP(query_data);
-    CandidatesQueue<dist_t> top_candidates = searchLayer(bottom_layer_ep, query_data, 0, std::max(ef_, k));
+    CandidatesQueue<dist_t> top_candidates =
+        searchLayer(bottom_layer_ep, query_data, 0, std::max(ef_, k));
 
     while (top_candidates.size() > k) {
         top_candidates.pop();

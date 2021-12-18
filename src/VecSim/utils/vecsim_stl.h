@@ -25,8 +25,7 @@ using priority_queue = std::priority_queue<T, Container, Compare>;
 
 // min-heap
 template <typename T, typename Container = vecsim_stl::vector<T>,
-        typename Compare = std::greater<typename Container::value_type>>
+          typename Compare = std::greater<typename Container::value_type>>
 using min_priority_queue = std::priority_queue<T, Container, Compare>;
-
 
 } // namespace vecsim_stl
