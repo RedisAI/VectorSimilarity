@@ -28,6 +28,8 @@ public:
     // zero, we reset the tags of all the nodes (and use 1 as the fresh tag)
     tag_t getFreshTag();
 
+    inline tag_t *getElementsTags() { return elements_tags; }
+
     void reset();
 
     // Mark node_id with tag, to have an indication that this node has been visited.

@@ -357,8 +357,10 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
         size_t links_num = getListCount(node_ll);
         auto *node_links = (tableint *)(node_ll + 1);
 #ifdef USE_SSE
-        _mm_prefetch((char *)(visited_array + *(node_ll + 1)), _MM_HINT_T0);
-        _mm_prefetch((char *)(visited_array + *(node_ll + 1) + 64), _MM_HINT_T0);
+        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1)),
+                     _MM_HINT_T0);
+        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64),
+                     _MM_HINT_T0);
         _mm_prefetch(getDataByInternalId(*node_links), _MM_HINT_T0);
         _mm_prefetch(getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
 #endif
@@ -366,7 +368,8 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
         for (size_t j = 0; j < links_num; j++) {
             tableint candidate_id = *(node_links + j);
 #ifdef USE_SSE
-            _mm_prefetch((char *)(visited_array + *(node_links + j + 1)), _MM_HINT_T0);
+            _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_links + j + 1)),
+                         _MM_HINT_T0);
             _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
 #endif
             if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)

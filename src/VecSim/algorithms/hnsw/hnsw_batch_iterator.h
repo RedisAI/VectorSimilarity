@@ -32,6 +32,7 @@ private:
                             // returned before by the iterator).
     ushort cur_returned_visited_tag; // use to mark nodes that were returned in previous iteration,
                                      // and scanned in the current iteration
+    ushort iteration_num;
     bool depleted;
 
     CandidatesHeap scanGraph();

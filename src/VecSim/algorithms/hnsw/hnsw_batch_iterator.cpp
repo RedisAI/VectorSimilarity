@@ -5,6 +5,8 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
+#define MAX_ITERATIONS 500
+
 // Every tag which is greater than "tag_range_start" with an even difference,
 // was meant to mark returned nodes in previous iterations.
 inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
@@ -77,17 +79,18 @@ CandidatesHeap HNSW_BatchIterator::scanGraph() {
         ushort links_num = hnsw_index.getListCount(cur_node_links_header);
         auto *node_links = (uint *)(cur_node_links_header + 1);
 #ifdef USE_SSE
-        _mm_prefetch((char *)(visited_array + *(node_ll + 1)), _MM_HINT_T0);
-        _mm_prefetch((char *)(visited_array + *(node_ll + 1) + 64), _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*node_links), _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
+        _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links), _MM_HINT_T0);
+        _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links + 64), _MM_HINT_T0);
+        _mm_prefetch(hnsw_index.getDataByInternalId(*node_links), _MM_HINT_T0);
+        _mm_prefetch(hnsw_index.getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
 #endif
 
         for (size_t j = 0; j < links_num; j++) {
             uint candidate_id = *(node_links + j);
 #ifdef USE_SSE
-            _mm_prefetch((char *)(visited_array + *(node_links + j + 1)), _MM_HINT_T0);
-            _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
+            _mm_prefetch((char *)(visited_list->getElementsTags() + *(node_links + j + 1)),
+                         _MM_HINT_T0);
+            _mm_prefetch(hnsw_index.getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
 #endif
             if (this->hasVisitedInCurIteration(candidate_id)) {
                 continue;
@@ -103,7 +106,8 @@ CandidatesHeap HNSW_BatchIterator::scanGraph() {
             if (top_candidates.size() < hnsw_index.getEf() || lowerBound > candidate_dist) {
                 candidate_set.emplace(-candidate_dist, candidate_id);
 #ifdef USE_SSE
-                _mm_prefetch(getDataByInternalId(candidate_set.top().second), _MM_HINT_T0);
+                _mm_prefetch(hnsw_index.getDataByInternalId(candidate_set.top().second),
+                             _MM_HINT_T0);
 #endif
                 if (!this->hasReturned(candidate_id)) {
                     top_candidates.emplace(candidate_dist, candidate_id);
@@ -140,7 +144,7 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
                                        std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, std::move(allocator)),
       // the search_id and the visited list is determined in the first iteration.
-      index(hnsw_index), allow_returned_candidates(false), depleted(false),
+      index(hnsw_index), allow_returned_candidates(false), depleted(false), iteration_num(0),
       results(this->allocator) {
 
     this->entry_point = hnsw_index->getEntryPointId();
@@ -151,7 +155,7 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
     this->tag_range_start = this->visited_list->getFreshTag();
     // Note: we assume that the number of iterations will be at most 500. We want to ensure that
     // tags will not reset during the iterations
-    if (USHRT_MAX - this->tag_range_start < 1000) {
+    if (USHRT_MAX - this->tag_range_start < 2 * MAX_ITERATIONS) {
         this->visited_list->reset();
         this->tag_range_start = this->visited_list->getFreshTag();
     }
@@ -160,6 +164,9 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
                                                           VecSimQueryResult_Order order) {
 
+    if (++iteration_num > MAX_ITERATIONS) {
+        throw std::runtime_error("HNSW batch iterator is limited to 500 iterations");
+    }
     // In the first iteration, we search the graph from top bottom to find the initial entry point,
     // and then we scan the graph to get results (layer 0).
     if (this->getResultsCount() == 0) {
@@ -209,10 +216,11 @@ bool HNSW_BatchIterator::isDepleted() { return this->depleted && this->results.e
 
 void HNSW_BatchIterator::reset() {
     this->resetResultsCount();
+    this->iteration_num = 0;
     this->depleted = false;
     this->allow_returned_candidates = false;
     this->tag_range_start = this->visited_list->getFreshTag();
-    if (USHRT_MAX - this->tag_range_start < 1000) {
+    if (USHRT_MAX - this->tag_range_start < 2 * MAX_ITERATIONS) {
         this->visited_list->reset();
         this->tag_range_start = this->visited_list->getFreshTag();
     }
