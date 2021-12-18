@@ -588,11 +588,6 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
             .algo = VecSimAlgo_HNSWLIB};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    // run the test twice - for index of size 100, every iteration will run select-based search,
-    // as the number of results is 5, which is more than 0.1% of the index size. for index of size
-    // 10000, we will run the heap-based search until we return 5000 results, and then switch to
-    // select-based search.
-
     for (int i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -660,7 +655,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
 
     // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
-    // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
+    // every iteration. run this flow for 3 times, each time for 5 iteration, and reset the
     // iterator.
     size_t n_res = 100;
     size_t total_iteration = 5;
@@ -685,6 +680,43 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
         }
         VecSimBatchIterator_Reset(batchIterator);
     }
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, hnsw_batch_iterator_edge_case) {
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t M = 8;
+    size_t ef = 20;
+
+    VecSimParams params = {.hnswParams = {.initialCapacity = n, .M = M, .efConstruction = ef, .efRuntime = ef},
+            .type = VecSimType_FLOAT32,
+            .size = dim,
+            .metric = VecSimMetric_L2,
+            .algo = VecSimAlgo_HNSWLIB};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+
+    // Get all in first iteration, expect to use select search
+    size_t n_res = n;
+
+
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
