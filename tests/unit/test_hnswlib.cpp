@@ -792,5 +792,6 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
         iteration_num++;
     }
     ASSERT_EQ(iteration_num, n / n_res + 1);
+    VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
