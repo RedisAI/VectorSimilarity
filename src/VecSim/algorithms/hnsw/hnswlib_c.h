@@ -5,8 +5,13 @@
 #include <memory>
 
 class HNSWIndex : public VecSimIndex {
+protected:
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
+
 public:
-    HNSWIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() const override;

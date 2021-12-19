@@ -8,13 +8,6 @@ typedef uint idType;
 
 using namespace std;
 
-struct CompareByFirst {
-    constexpr bool operator()(pair<float, labelType> const &a,
-                              pair<float, labelType> const &b) const noexcept {
-        return a.first < b.first;
-    }
-};
-
 using CandidatesHeap = vecsim_stl::priority_queue<pair<float, labelType>>;
 using CandidatesMinHeap = vecsim_stl::min_priority_queue<pair<float, labelType>>;
 

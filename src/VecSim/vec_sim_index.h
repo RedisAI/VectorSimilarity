@@ -9,21 +9,12 @@
  *
  */
 class VecSimIndex : public VecsimBaseObject {
-protected:
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
-
 public:
     /**
      * @brief Construct a new Vec Sim Index object
      *
-     * @param params VecSimParams struct, the base object takes the vector dimensions, type and
-     * distance metric.
      */
-    VecSimIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), dim(params->size), vecType(params->type),
-          metric(params->metric) {}
+    VecSimIndex(std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator) {}
 
     /**
      * @brief Destroy the Vec Sim Index object
@@ -87,25 +78,4 @@ public:
      * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
-
-    /**
-     * @brief Get the vector dimension
-     *
-     * @return vector dimension
-     */
-    inline size_t getVectorDim() { return this->dim; }
-
-    /**
-     * @brief Get the vector metric
-     *
-     * @return Index metric
-     */
-    inline VecSimMetric getMetric() { return this->metric; }
-
-    /**
-     * @brief Get the vector type
-     *
-     * @return vector type
-     */
-    inline VecSimType getVectorType() { return this->vecType; }
 };

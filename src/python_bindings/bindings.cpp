@@ -106,13 +106,8 @@ protected:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params, const VecSimType type, size_t dim,
-                   const VecSimMetric metric) {
-        VecSimParams params = {.hnswParams = hnsw_params,
-                               .type = type,
-                               .size = dim,
-                               .metric = metric,
-                               .algo = VecSimAlgo_HNSWLIB};
+    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
     }
 
@@ -124,13 +119,8 @@ public:
 
 class PyBFIndex : public PyVecSimIndex {
 public:
-    PyBFIndex(const BFParams &bf_params, const VecSimType type, size_t dim,
-              const VecSimMetric metric) {
-        VecSimParams params = {.bfParams = bf_params,
-                               .type = type,
-                               .size = dim,
-                               .metric = metric,
-                               .algo = VecSimAlgo_BF};
+    PyBFIndex(const BFParams &bf_params) {
+        VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bf_params};
         this->index = VecSimIndex_New(&params);
     }
 };
@@ -161,6 +151,9 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<HNSWParams>(m, "HNSWParams")
         .def(py::init())
+        .def_readwrite("type", &HNSWParams::type)
+        .def_readwrite("dim", &HNSWParams::dim)
+        .def_readwrite("metric", &HNSWParams::metric)
         .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
         .def_readwrite("M", &HNSWParams::M)
         .def_readwrite("efConstruction", &HNSWParams::efConstruction)
@@ -168,15 +161,15 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
+        .def_readwrite("type", &BFParams::type)
+        .def_readwrite("dim", &BFParams::dim)
+        .def_readwrite("metric", &BFParams::metric)
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
         .def_readwrite("algo", &VecSimParams::algo)
-        .def_readwrite("type", &VecSimParams::type)
-        .def_readwrite("dim", &VecSimParams::size)
-        .def_readwrite("metric", &VecSimParams::metric)
         .def_readwrite("hnswParams", &VecSimParams::hnswParams)
         .def_readwrite("bfParams", &VecSimParams::bfParams);
 
@@ -193,16 +186,13 @@ PYBIND11_MODULE(VecSim, m) {
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
-        .def(py::init(
-                 [](const HNSWParams &params, const VecSimType type, size_t dim,
-                    VecSimMetric metric) { return new PyHNSWLibIndex(params, type, dim, metric); }),
-             py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"))
+        .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
+             py::arg("params"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
-        .def(py::init([](const BFParams &params, const VecSimType type, size_t dim,
-                         VecSimMetric metric) { return new PyBFIndex(params, type, dim, metric); }),
-             py::arg("params"), py::arg("data_type"), py::arg("data_dim"), py::arg("space_metric"));
+        .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
+             py::arg("params"));
 
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
