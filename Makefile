@@ -163,7 +163,8 @@ CMAKE_FLAGS += \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
-	$(CMAKE_VECSIM)
+	$(CMAKE_VECSIM) \
+	$(CMAKE_COV)
 
 #----------------------------------------------------------------------------------------------
 
