@@ -751,6 +751,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     // try to get results even though there are no vectors in the index.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     // insert one vector and query
@@ -758,6 +759,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     VecSimIndex_AddVector(index, query, 0);
     res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 1);
+    VecSimQueryResult_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     for (int i = 0; i < n; i++) {
