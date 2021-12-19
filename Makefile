@@ -15,6 +15,7 @@ endif
 
 ifeq ($(COV),1)
 override DEBUG ?= 1
+CMAKE_COV += -DUSE_COVERAGE=ON
 endif
 
 ifneq ($(SAN),)
