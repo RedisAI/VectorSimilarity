@@ -4,6 +4,7 @@
 #include "VecSim/utils/vecsim_stl.h"
 
 #include "VecSim/spaces/space_interface.h"
+#include "VecSim/utils/vec_utils.h"
 
 typedef size_t labelType;
 typedef size_t idType;
@@ -12,17 +13,9 @@ typedef size_t idType;
 
 struct VectorBlock;
 
-// TODO: unify this with HNSW
-struct CompareByFirst {
-    constexpr bool operator()(std::pair<float, labelType> const &a,
-                              std::pair<float, labelType> const &b) const noexcept {
-        return a.first < b.first;
-    }
-};
-
-using CandidatesHeap =
-    vecsim_stl::priority_queue<std::pair<float, labelType>,
-                               vecsim_stl::vector<std::pair<float, labelType>>, CompareByFirst>;
+using CandidatesHeap = vecsim_stl::priority_queue<std::pair<float, labelType>,
+                                                  vecsim_stl::vector<std::pair<float, labelType>>,
+                                                  CompareByFirst<float>>;
 
 struct VectorBlockMember : public VecsimBaseObject {
 public:

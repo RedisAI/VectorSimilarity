@@ -290,7 +290,7 @@ endif
 coverage:
 	$(SHOW)$(MAKE) build COV=1
 	$(SHOW)$(COVERAGE_RESET)
-	-$(SHOW)$(MAKE) unit_test COV=1
+	$(SHOW)$(MAKE) unit_test COV=1
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)
 
 show-cov:
