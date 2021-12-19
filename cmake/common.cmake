@@ -24,10 +24,9 @@ if (NOT DEFINED VECSIM_MARCH AND ARCH STREQUAL "x64")
 endif()
 message("# VECSIM_MARCH: " ${VECSIM_MARCH})
 
-
 if (USE_COVERAGE)
     if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG")
         message(FATAL_ERROR "Build type must be DEBUG for coverage")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -coverage")
+    set(COV_CXX_FLAGS "-coverage")
 endif()

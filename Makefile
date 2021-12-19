@@ -5,6 +5,10 @@ else
 DRY_RUN:=
 endif
 
+ifneq ($(filter coverage show-cov upload-cov,$(MAKECMDGOALS)),)
+COV=1
+endif
+
 ifneq ($(VG),)
 VALGRIND=$(VG)
 endif
@@ -288,6 +292,9 @@ endif
 .PHONY: platform
 
 #----------------------------------------------------------------------------------------------
+
+COV_EXCLUDE_DIRS += bin tests
+COV_EXCLUDE+=$(foreach D,$(COV_EXCLUDE_DIRS),'$(realpath $(ROOT))/$(D)/*')
 
 coverage:
 	$(SHOW)$(MAKE) build COV=1
