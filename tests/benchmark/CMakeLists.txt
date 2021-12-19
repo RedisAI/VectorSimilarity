@@ -7,6 +7,9 @@ project(VectorSimilarity_Benchmark)
 set(CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
+IF (USE_PROFILE)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+ENDIF()
 
 include_directories(${root}/src)
 
@@ -14,6 +17,6 @@ enable_testing()
 
 include(${root}/cmake/gtest.cmake)
 
-add_executable(bf_benchmark bf_google_benchmark.cpp)
+add_executable(bf_benchmark batch_iterator.cpp)
 
 target_link_libraries(bf_benchmark VectorSimilarity benchmark::benchmark)

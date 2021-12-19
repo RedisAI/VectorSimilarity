@@ -58,6 +58,7 @@ make build
   VG|VALGRIND=1    # build for Valgrind
   SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
   SLOW=1           # don't run build in parallel (for diagnostics)
+  PROFILE=1		   # enable profiling compile flags (and debug symbols) for release type.
 make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
@@ -144,6 +145,10 @@ else
 CMAKE_BUILD_TYPE=RelWithDebInfo
 endif
 CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+
+ifeq ($(PROFILE),1)
+CMAKE_FLAGS += -DUSE_PROFILE=on
+endif
 
 ifeq ($(VERBOSE),1)
 CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=on
