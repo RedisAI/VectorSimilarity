@@ -287,6 +287,22 @@ endif
 
 #----------------------------------------------------------------------------------------------
 
+coverage:
+	$(SHOW)$(MAKE) build COV=1
+	$(SHOW)$(COVERAGE_RESET)
+	-$(SHOW)$(MAKE) unit_test COV=1
+	$(SHOW)$(COVERAGE_COLLECT_REPORT)
+
+show-cov:
+	$(SHOW)lcov -l $(COV_INFO)
+
+upload-cov:
+	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f bin/linux-x64-debug-cov/cov.info
+
+.PHONY: coverage show-cov upload-cov
+
+#----------------------------------------------------------------------------------------------
+
 ifneq ($(wildcard /w/*),)
 SANBOX_ARGS += -v /w:/w
 endif

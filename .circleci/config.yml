@@ -148,13 +148,10 @@ jobs:
       - checkout-all
       - install-prerequisites
       - run:
-          name: Build for codecov
-          command: bash -l -c "make COV=1"
-      - run:
           name: Run codecov
           command: |
-            make unit_test COV=1
-            make cov-upload
+            make coverage
+            make upload-cov
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
