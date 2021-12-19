@@ -15,6 +15,7 @@ endif
 
 ifeq ($(COV),1)
 override DEBUG ?= 1
+CMAKE_COV += -DUSE_COVERAGE=ON
 endif
 
 ifneq ($(SAN),)
@@ -162,7 +163,8 @@ CMAKE_FLAGS += \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
-	$(CMAKE_VECSIM)
+	$(CMAKE_VECSIM) \
+	$(CMAKE_COV)
 
 #----------------------------------------------------------------------------------------------
 
