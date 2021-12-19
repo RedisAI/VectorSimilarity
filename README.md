@@ -1,4 +1,5 @@
 [![CircleCI](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main.svg?style=svg)](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main)
+[![codecov](https://codecov.io/gh/RedisAI/VectorSimilarity/branch/master/graph/badge.svg)](https://codecov.io/gh/RedisAI/VectorSimilarity)
 
 # VectorSimilarity
 
