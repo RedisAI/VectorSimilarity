@@ -7,6 +7,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/utils/vec_utils.h"
 
 #include <deque>
 #include <memory>
@@ -26,14 +27,6 @@ using namespace std;
 typedef size_t labeltype;
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
-
-template <typename dist_t>
-struct CompareByFirst {
-    constexpr bool operator()(pair<dist_t, tableint> const &a,
-                              pair<dist_t, tableint> const &b) const noexcept {
-        return a.first < b.first;
-    }
-};
 
 template <typename dist_t>
 using CandidatesQueue =
@@ -362,7 +355,7 @@ CandidatesQueue<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, con
             char *currObj1 = (getDataByInternalId(candidate_id));
 
             dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
-            if (top_candidates.size() < ef_construction_ || lowerBound > dist1) {
+            if (top_candidates.size() < ef || lowerBound > dist1) {
                 candidate_set.emplace(-dist1, candidate_id);
 #ifdef USE_SSE
                 _mm_prefetch(getDataByInternalId(candidate_set.top().second), _MM_HINT_T0);
