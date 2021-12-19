@@ -7,6 +7,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/utils/vec_utils.h"
 
 #include <deque>
 #include <memory>
@@ -26,14 +27,6 @@ using namespace std;
 typedef size_t labeltype;
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
-
-template <typename dist_t>
-struct CompareByFirst {
-    constexpr bool operator()(pair<dist_t, tableint> const &a,
-                              pair<dist_t, tableint> const &b) const noexcept {
-        return (a.first != b.first) ? a.first < b.first : a.second < b.second;
-    }
-};
 
 template <typename dist_t>
 using CandidatesQueue =
