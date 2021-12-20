@@ -18,11 +18,13 @@ public:
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  short max_iterations) override;
 
     void setEf(size_t ef);
-    hnswlib::tableint getEntryPointId() const;
 
+private:
     std::unique_ptr<SpaceInterface<float>> space;
     hnswlib::HierarchicalNSW<float> hnsw;
+    friend class HNSW_BatchIterator; // The batch iterator needs to access hnsw methods.
 };

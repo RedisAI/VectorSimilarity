@@ -27,7 +27,7 @@ VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res,
 
 VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     float upperBound = std::numeric_limits<float>::lowest();
-    CandidatesHeap TopCandidates(this->allocator);
+    vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
     unordered_map<size_t, size_t> TopCandidatesIndices(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {

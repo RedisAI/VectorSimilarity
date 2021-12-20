@@ -75,7 +75,8 @@ public:
      *
      * @param queryBlob binary representation of the vector. Blob size should match the index data
      * type and dimension.
+     * @param maxIterations maximum number of iterations to run before HNSW iterator gets depleted.
      * @return Fresh batch iterator
      */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob, short maxIterations) = 0;
 };

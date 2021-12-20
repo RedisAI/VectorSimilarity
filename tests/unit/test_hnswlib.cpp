@@ -631,6 +631,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
                                           .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
+    // For every i, add the vector (i,i,i,i) under the label i.
     for (int i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -640,16 +641,17 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
     float query[dim];
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, 500);
     size_t iteration_num = 0;
 
-    // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet,
-    // in every iteration. The order should be from the largest to the lowest id.
+    // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
+    // in every iteration. The results order should be sorted by their score (distance from the
+    // query vector), which means sorted from the largest id to the lowest.
     size_t n_res = 5;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         std::vector<size_t> expected_ids(n_res);
@@ -693,18 +695,16 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
     float query[dim];
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, 500);
 
-    // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
-    // every iteration. run this flow for 3 times, each time for 5 iteration, and reset the
-    // iterator.
+    // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
+    // every iteration. Run this flow for 3 times, and reset the iterator.
     size_t n_res = 100;
-    size_t total_iteration = 5;
     size_t re_runs = 3;
 
     for (size_t take = 0; take < re_runs; take++) {
@@ -719,21 +719,19 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
             iteration_num++;
-            if (iteration_num == total_iteration) {
-                break;
-            }
         }
+        ASSERT_EQ(iteration_num, n / n_res);
         VecSimBatchIterator_Reset(batchIterator);
     }
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
+TEST_F(HNSWLibTest, hnsw_batch_iterator_iterations_limit) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
-    size_t ef = 20;
+    size_t ef = 1;
 
     VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                            .hnswParams = {.type = VecSimType_FLOAT32,
@@ -741,26 +739,19 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
                                           .metric = VecSimMetric_L2,
                                           .initialCapacity = n,
                                           .M = M,
-                                          .efConstruction = 20,
+                                          .efConstruction = ef,
                                           .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    float query[] = {(float)0, (float)0, (float)0, (float)0};
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    float query[] = {(float)n, (float)n, (float)n, (float)n};
 
-    // try to get results even though there are no vectors in the index.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
-    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
-
-    // insert one vector and query
-    VecSimBatchIterator_Reset(batchIterator);
-    VecSimIndex_AddVector(index, query, 0);
-    res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 1);
-    VecSimQueryResult_Free(res);
-    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+    // Try to create batch iterator with an invalid max iterations parameter.
+    try {
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, -1);
+    } catch (std::exception &exception) {
+        ASSERT_TRUE(strcmp(exception.what(), "Invalid argument given for max_iterations: should be "
+                                             "a positive number lower than SHRT_MAX") == 0);
+    }
 
     for (int i = 0; i < n; i++) {
         float f[dim];
@@ -771,27 +762,98 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // reset the iterator after it was depleted
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, (short)(n / 2));
+    size_t iteration_num = 0;
+    size_t n_res = 1, expected_n_res = 1;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        iteration_num++;
+        // Expect to get results in the reverse order of ids - the order of the distance from the
+        // query vector. Get one result in every iteration.
+        auto verify_res = [&](int id, float score, size_t index) {
+            ASSERT_TRUE(id == n - iteration_num);
+        };
+        if (iteration_num == n / 2) {
+            expected_n_res = 0;
+        }
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
+    }
+
+    // Expect to get only n/2 results instead of n, since we exceed the max_iteration limit.
+    ASSERT_EQ(iteration_num, n / 2);
+    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t M = 8;
+    size_t ef = 1000;
+
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .dim = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = M,
+                                          .efConstruction = ef,
+                                          .efRuntime = ef}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    float query[] = {(float)n, (float)n, (float)n, (float)n};
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, 500);
+
+    // Try to get results even though there are no vectors in the index.
+    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+
+    // Insert one vector and query again. The internal id will be 0.
+    VecSimIndex_AddVector(index, query, n);
     VecSimBatchIterator_Reset(batchIterator);
+    res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 1);
+    VecSimQueryResult_Free(res);
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+
+    for (int i = 1; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
     size_t n_res = 7;
     size_t iteration_num = 0;
+
+    // Reset the iterator after it was depleted.
+    VecSimBatchIterator_Reset(batchIterator);
     while (VecSimBatchIterator_HasNext(batchIterator)) {
-        std::vector<size_t> expected_ids(n_res);
-        for (size_t i = 0; i < n_res; i++) {
-            expected_ids[i] = (iteration_num * n_res + i);
+        iteration_num++;
+        std::vector<size_t> expected_ids;
+        // We ask to get the results sorted by ID in a specific batch (in ascending order), but
+        // in every iteration the ids should be lower than the previous one, according to the
+        // distance from the query.
+        for (size_t i = 1; i <= n_res; i++) {
+            expected_ids.push_back(n - iteration_num * n_res + i);
         }
         auto verify_res = [&](int id, float score, size_t index) {
             ASSERT_TRUE(expected_ids[index] == id);
         };
-        if (iteration_num < n / n_res) {
+        if (iteration_num <= n / n_res) {
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
         } else {
-            // in the last iteration there are n%iteration_num results left to return
+            // In the last iteration there are n%iteration_num (=6) results left to return.
+            expected_ids.erase(expected_ids.begin()); // remove the first id
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n % n_res);
         }
-        iteration_num++;
     }
     ASSERT_EQ(iteration_num, n / n_res + 1);
     VecSimBatchIterator_Free(batchIterator);
