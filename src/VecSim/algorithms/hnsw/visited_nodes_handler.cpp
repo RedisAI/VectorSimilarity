@@ -2,7 +2,7 @@
 
 namespace hnswlib {
 
-VisitedNodesHandler::VisitedNodesHandler(uint cap,
+VisitedNodesHandler::VisitedNodesHandler(unsigned int cap,
                                          const std::shared_ptr<VecSimAllocator> &allocator)
     : VecsimBaseObject(allocator) {
     cur_tag = 0;
