@@ -336,6 +336,41 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndex_Free(index);
 }
 
+TEST_F(BruteForceTest, test_bf_info_iterator) {
+    size_t n = 100;
+    size_t d = 128;
+
+    // Build with default args
+    VecSimParams params = {
+        .algo = VecSimAlgo_BF,
+        .bfParams = {
+            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.dim, d);
+    // Default args
+    ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    VecSimIndex_Free(index);
+
+    d = 1280;
+    params = {.algo = VecSimAlgo_BF,
+              .bfParams = {.type = VecSimType_FLOAT32,
+                           .dim = d,
+                           .metric = VecSimMetric_L2,
+                           .initialCapacity = n,
+                           .blockSize = 1}};
+    index = VecSimIndex_New(&params);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.dim, d);
+    // User args
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
+    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    VecSimIndex_Free(index);
+}
+
 TEST_F(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     size_t dim = 4;
     size_t n = 100;
