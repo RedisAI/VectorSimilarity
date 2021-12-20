@@ -5,17 +5,13 @@
 
 class BM_Microbench : public benchmark::Fixture {
 
-
 public:
-    void SetUp(const ::benchmark::State &state) {
-    }
+    void SetUp(const ::benchmark::State &state) {}
 
     void TearDown(const ::benchmark::State &state) {}
 
-    ~BM_Microbench() { }
+    ~BM_Microbench() {}
 };
-
-
 
 BENCHMARK_DEFINE_F(BM_Microbench, base_ip)(benchmark::State &st) {
     size_t dim = 512;
@@ -26,8 +22,8 @@ BENCHMARK_DEFINE_F(BM_Microbench, base_ip)(benchmark::State &st) {
 
     std::uniform_real_distribution<> distrib;
     for (size_t i = 0; i < dim; ++i) {
-            vector1[i] = (float)distrib(rng);
-            vector2[i] = (float)distrib(rng);
+        vector1[i] = (float)distrib(rng);
+        vector2[i] = (float)distrib(rng);
     }
     for (auto _ : st) {
         InnerProduct(vector1, vector2, &dim);
@@ -43,8 +39,8 @@ BENCHMARK_DEFINE_F(BM_Microbench, avx_ip)(benchmark::State &st) {
 
     std::uniform_real_distribution<> distrib;
     for (size_t i = 0; i < dim; ++i) {
-            vector1[i] = (float)distrib(rng);
-            vector2[i] = (float)distrib(rng);
+        vector1[i] = (float)distrib(rng);
+        vector2[i] = (float)distrib(rng);
     }
     for (auto _ : st) {
         InnerProductSIMD16Ext_AVX(vector1, vector2, &dim);
