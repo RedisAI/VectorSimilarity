@@ -1,0 +1,15 @@
+extraction:
+  cpp:
+    prepare:    
+      packages:
+        - g++-10
+        - cmake
+    after_prepare:    
+      - export GNU_MAKE=make
+      - export GIT=true
+    configure:    
+      command:
+        - ./sbin/system-setup.py
+    index:    # Customizable step used by all languages.
+      build_command:
+        - $GNU_MAKE -j2 -s 
