@@ -21,6 +21,7 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 // Adds 'amount' vectors to the index. could be 0.
 void _add_vectors(VecSimIndex *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
+    size_t dim
     int64_t vec[indexInfo.d];
     for (int i = 0; i < indexInfo.d; i++)
         vec[i] = i;

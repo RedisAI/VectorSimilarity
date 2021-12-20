@@ -92,16 +92,16 @@ VecSimIndexInfo HNSWIndex::info() {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
-    info.d = this->dim;
-    info.type = this->vecType;
-    info.metric = this->metric;
+    info.hnswInfo.d = this->dim;
+    info.hnswInfo.type = this->vecType;
+    info.hnswInfo.metric = this->metric;
     info.hnswInfo.M = this->hnsw.getM();
     info.hnswInfo.efConstruction = this->hnsw.getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw.getEf();
     info.hnswInfo.indexSize = this->hnsw.getIndexSize();
     info.hnswInfo.levels = this->hnsw.getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw.getEntryPointLabel();
-    info.memory = this->allocator->getAllocationSize();
+    info.hnswInfo.memory = this->allocator->getAllocationSize();
     return info;
 }
 
