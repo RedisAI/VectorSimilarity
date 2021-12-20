@@ -3,6 +3,11 @@
 #include <cmath>
 #include <cassert>
 
+#ifndef __COMPAR_FN_T
+#define __COMPAR_FN_T
+typedef int (*__compar_fn_t)(const void *, const void *);
+#endif
+
 int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
 }
