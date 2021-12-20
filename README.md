@@ -1,5 +1,6 @@
 [![CircleCI](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main.svg?style=svg)](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main)
 [![codecov](https://codecov.io/gh/RedisAI/VectorSimilarity/branch/main/graph/badge.svg)](https://codecov.io/gh/RedisAI/VectorSimilarity)
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/RedisAI/VectorSimilarity.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/RedisAI/VectorSimilarity/alerts/)
 
 # VectorSimilarity
 
