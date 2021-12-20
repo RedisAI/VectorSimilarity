@@ -17,6 +17,6 @@ enable_testing()
 
 include(${root}/cmake/gtest.cmake)
 
-add_executable(bf_benchmark batch_iterator.cpp)
+add_executable(bf_benchmark bm_batch_iterator.cpp)
 
 target_link_libraries(bf_benchmark VectorSimilarity benchmark::benchmark)

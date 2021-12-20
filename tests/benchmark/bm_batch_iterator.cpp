@@ -52,7 +52,7 @@ BENCHMARK_DEFINE_F(BM_BatchIteratorBF, get_10000_total_results)(benchmark::State
 
     size_t n_res = st.range(0);
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data());
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data(), -1);
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
@@ -128,7 +128,7 @@ BENCHMARK_DEFINE_F(BM_BatchIteratorHNSW, get_10000_total_results)(benchmark::Sta
 
     size_t n_res = st.range(0);
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data(), 1000);
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
