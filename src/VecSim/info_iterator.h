@@ -11,7 +11,12 @@ extern "C" {
  */
 typedef struct VecSimInfoIterator VecSimInfoIterator;
 
-typedef enum { STR, INT64, UINT64, FLOAT64 } VecSim_InfoFieldType;
+typedef enum {
+    INFOFIELD_STR,
+    INFOFIELD_INT64,
+    INFOFIELD_UINT64,
+    INFOFIELD_FLOAT64
+} VecSim_InfoFieldType;
 
 /**
  * @brief A struct to hold field information. This struct contains three members:
@@ -20,14 +25,14 @@ typedef enum { STR, INT64, UINT64, FLOAT64 } VecSim_InfoFieldType;
  *  fieldValue - A union of string/integer/float values.
  */
 typedef struct {
-    VecSim_InfoFieldType fieldType; // Field type (in {STR, INT64, FLOAT64})
     const char *fieldName;          // Field name.
+    VecSim_InfoFieldType fieldType; // Field type (in {STR, INT64, FLOAT64})
     union {
         double floatingPointValue; // Floating point value. 64 bits float.
         int64_t integerValue;      // Integer value. Signed 64 bits integer.
-        uint64_t uintegerValue;    // Unsigned value. Unsigned 64 buts integer. 
+        u_int64_t uintegerValue;   // Unsigned value. Unsigned 64 buts integer.
         const char *stringValue;   // String value.
-    } fieldValue;
+    };
 } VecSim_InfoField;
 
 /**

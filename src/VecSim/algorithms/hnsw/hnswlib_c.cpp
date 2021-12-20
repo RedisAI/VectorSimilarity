@@ -92,7 +92,7 @@ VecSimIndexInfo HNSWIndex::info() {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
-    info.hnswInfo.d = this->dim;
+    info.hnswInfo.dim = this->dim;
     info.hnswInfo.type = this->vecType;
     info.hnswInfo.metric = this->metric;
     info.hnswInfo.M = this->hnsw.getM();
@@ -105,6 +105,43 @@ VecSimIndexInfo HNSWIndex::info() {
     return info;
 }
 
-VecSimInfoIterator *HNSWIndex::infoIterator() { return NULL; }
+VecSimInfoIterator *HNSWIndex::infoIterator() {
+    VecSimIndexInfo info = this->info();
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(1);
+
+    infoIterator->addInfoField(
+        {.fieldName = "ALGORITHM", .fieldType = INFOFIELD_STR, .stringValue = "HNSW"});
+    infoIterator->addInfoField({.fieldName = "TYPE",
+                                .fieldType = INFOFIELD_STR,
+                                .stringValue = VecSimType_ToString(info.hnswInfo.type)});
+    infoIterator->addInfoField({.fieldName = "DIMENSION",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.dim});
+    infoIterator->addInfoField({.fieldName = "METRIC",
+                                .fieldType = INFOFIELD_STR,
+                                .stringValue = VecSimMetric_ToString(info.hnswInfo.metric)});
+    infoIterator->addInfoField({.fieldName = "INDEX_SIZE",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.indexSize});
+    infoIterator->addInfoField(
+        {.fieldName = "M", .fieldType = INFOFIELD_UINT64, .uintegerValue = info.hnswInfo.M});
+    infoIterator->addInfoField({.fieldName = "efConstruction",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.efConstruction});
+    infoIterator->addInfoField({.fieldName = "efRuntime",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.efRuntime});
+    infoIterator->addInfoField({.fieldName = "LEVELS",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.levels});
+    infoIterator->addInfoField({.fieldName = "ENTRY_POINT",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.entrypoint});
+    infoIterator->addInfoField({.fieldName = "MEMORY",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.hnswInfo.memory});
+
+    return infoIterator;
+}
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }

@@ -24,10 +24,10 @@ void _add_vectors(VecSimIndex *index, long long amount) {
     size_t dim;
     switch (indexInfo.algo) {
     case VecSimAlgo_BF:
-        dim = indexInfo.bfInfo.d;
+        dim = indexInfo.bfInfo.dim;
         break;
     case VecSimAlgo_HNSWLIB:
-        dim = indexInfo.hnswInfo.d;
+        dim = indexInfo.hnswInfo.dim;
         break;
 
     default:

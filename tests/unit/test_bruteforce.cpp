@@ -313,7 +313,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.d, d);
+    ASSERT_EQ(info.bfInfo.dim, d);
     // Default args
     ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
@@ -329,7 +329,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.d, d);
+    ASSERT_EQ(info.bfInfo.dim, d);
     // User args
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);

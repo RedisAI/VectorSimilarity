@@ -294,7 +294,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.d, d);
+    ASSERT_EQ(info.hnswInfo.dim, d);
     // Default args
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
@@ -313,7 +313,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.d, d);
+    ASSERT_EQ(info.hnswInfo.dim, d);
     // User args
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);

@@ -41,3 +41,31 @@ void sort_results_by_score(VecSimQueryResult_List results) {
     qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultByScore);
 }
+
+const char *VecSimType_ToString(VecSimType vecsimType) {
+    switch (vecsimType) {
+    case VecSimType_FLOAT32:
+        return "FLOAT32";
+    case VecSimType_FLOAT64:
+        return "FLOAT64";
+    case VecSimType_INT32:
+        return "INT32";
+    case VecSimType_INT64:
+        return "INT64";
+    default:
+        return NULL;
+    }
+}
+
+const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
+    switch (vecsimMetric) {
+    case VecSimMetric_Cosine:
+        return "COSINE";
+    case VecSimMetric_IP:
+        return "IP";
+    case VecSimMetric_L2:
+        return "L2";
+    default:
+        return NULL;
+    }
+}

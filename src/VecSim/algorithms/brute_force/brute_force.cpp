@@ -205,7 +205,7 @@ VecSimIndexInfo BruteForceIndex::info() {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
-    info.bfInfo.d = this->dim;
+    info.bfInfo.dim = this->dim;
     info.bfInfo.type = this->vecType;
     info.bfInfo.metric = this->metric;
     info.bfInfo.indexSize = this->count;
@@ -214,7 +214,33 @@ VecSimIndexInfo BruteForceIndex::info() {
     return info;
 }
 
-VecSimInfoIterator *BruteForceIndex::infoIterator() { return NULL; }
+VecSimInfoIterator *BruteForceIndex::infoIterator() {
+    VecSimIndexInfo info = this->info();
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(7);
+
+    infoIterator->addInfoField(
+        {.fieldName = "ALGORITHM", .fieldType = INFOFIELD_STR, .stringValue = "FLAT"});
+    infoIterator->addInfoField({.fieldName = "TYPE",
+                                .fieldType = INFOFIELD_STR,
+                                .stringValue = VecSimType_ToString(info.bfInfo.type)});
+    infoIterator->addInfoField({.fieldName = "DIMENSION",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.dim});
+    infoIterator->addInfoField({.fieldName = "METRIC",
+                                .fieldType = INFOFIELD_STR,
+                                .stringValue = VecSimMetric_ToString(info.bfInfo.metric)});
+    infoIterator->addInfoField({.fieldName = "INDEX_SIZE",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.indexSize});
+    infoIterator->addInfoField({.fieldName = "BLOCK_SIZE",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.blockSize});
+    infoIterator->addInfoField({.fieldName = "MEMORY",
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.memory});
+
+    return infoIterator;
+}
 
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
