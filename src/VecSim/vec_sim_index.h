@@ -3,6 +3,7 @@
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
+#include "info_iterator_struct.h"
 
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
@@ -67,6 +68,13 @@ public:
      * @return Index general and specific meta-data.
      */
     virtual VecSimIndexInfo info() = 0;
+
+    /**
+     * @brief Returns an index information in an iterable structure.
+     *
+     * @return VecSimInfoIterator Index general and specific meta-data.
+     */
+    virtual VecSimInfoIterator *infoIterator() = 0;
 
     /**
      * @brief Create a new batch iterator for a specific index, for a specific query vector,

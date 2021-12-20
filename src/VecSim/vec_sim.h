@@ -7,6 +7,7 @@ extern "C" {
 #include <stdlib.h>
 #include "query_results.h"
 #include "vec_sim_common.h"
+#include "info_iterator.h"
 
 typedef struct VecSimIndex VecSimIndex;
 
@@ -72,6 +73,14 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
  * @return Index general and specific meta-data.
  */
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
+
+/**
+ * @brief Returns an info iterator for generic reply purposes.
+ *
+ * @param index this index to return its info.
+ * @return VecSimInfoIterator* An iterable containing the index general and specific meta-data.
+ */
+VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
 
 /**
  * @brief Create a new batch iterator for a specific index, for a specific query vector,

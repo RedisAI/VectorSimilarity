@@ -214,6 +214,8 @@ VecSimIndexInfo BruteForceIndex::info() {
     return info;
 }
 
+VecSimInfoIterator *BruteForceIndex::infoIterator() { return NULL; }
+
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }

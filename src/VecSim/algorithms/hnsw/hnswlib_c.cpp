@@ -105,4 +105,6 @@ VecSimIndexInfo HNSWIndex::info() {
     return info;
 }
 
+VecSimInfoIterator *HNSWIndex::infoIterator() { return NULL; }
+
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }
