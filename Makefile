@@ -5,12 +5,21 @@ else
 DRY_RUN:=
 endif
 
+ifneq ($(filter coverage show-cov upload-cov,$(MAKECMDGOALS)),)
+COV=1
+endif
+
 ifneq ($(VG),)
 VALGRIND=$(VG)
 endif
 
 ifeq ($(VALGRIND),1)
 override DEBUG ?= 1
+endif
+
+ifeq ($(COV),1)
+override DEBUG ?= 1
+CMAKE_COV += -DUSE_COVERAGE=ON
 endif
 
 ifneq ($(SAN),)
@@ -54,6 +63,7 @@ include $(ROOT)/deps/readies/mk/main
 define HELPTEXT
 make build
   DEBUG=1          # build debug variant
+  COV=1			   # build for code coverage
   VERBOSE=1        # print detailed build info
   VG|VALGRIND=1    # build for Valgrind
   SAN=type         # build with LLVM sanitizer (type=address|memory|leak|thread)
@@ -112,6 +122,10 @@ ifeq ($(ARCH),x64)
 ifeq ($(SAN),)
 ifneq ($(findstring centos,$(OSNICK)),)
 VECSIM_MARCH ?= skylake-avx512
+else ifneq ($(findstring xenial,$(OSNICK)),)
+VECSIM_MARCH ?= skylake-avx512
+else ifneq ($(findstring macos,$(OS)),)
+VECSIM_MARCH ?= skylake-avx512
 else
 VECSIM_MARCH ?= x86-64-v4
 endif
@@ -157,7 +171,8 @@ CMAKE_FLAGS += \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
-	$(CMAKE_VECSIM)
+	$(CMAKE_VECSIM) \
+	$(CMAKE_COV)
 
 #----------------------------------------------------------------------------------------------
 
@@ -224,12 +239,8 @@ valgrind:
 #----------------------------------------------------------------------------------------------
 
 flow_test:
-ifneq ($(VIRTUAL_ENV),)
-	$(SHOW)cd tests/flow && python3 -m pytest $(TEST)
-else
 	$(SHOW)$(MAKE) pybind
-	$(SHOW)python3 -m tox -e flowenv
-endif
+	$(SHOW)tox -e flowenv
 
 .PHONY: flow_test
 
@@ -283,6 +294,25 @@ ifeq ($(PUBLISH),1)
 endif
 
 .PHONY: platform
+
+#----------------------------------------------------------------------------------------------
+
+COV_EXCLUDE_DIRS += bin tests
+COV_EXCLUDE+=$(foreach D,$(COV_EXCLUDE_DIRS),'$(realpath $(ROOT))/$(D)/*')
+
+coverage:
+	$(SHOW)$(MAKE) build COV=1
+	$(SHOW)$(COVERAGE_RESET)
+	$(SHOW)$(MAKE) unit_test COV=1
+	$(SHOW)$(COVERAGE_COLLECT_REPORT)
+
+show-cov:
+	$(SHOW)lcov -l $(COV_INFO)
+
+upload-cov:
+	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f bin/linux-x64-debug-cov/cov.info
+
+.PHONY: coverage show-cov upload-cov
 
 #----------------------------------------------------------------------------------------------
 
