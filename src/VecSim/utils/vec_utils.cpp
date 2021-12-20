@@ -5,7 +5,7 @@
 
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
-typedef int (*__compar_fn_t) (const void *, const void *);
+typedef int (*__compar_fn_t)(const void *, const void *);
 #endif
 
 int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
