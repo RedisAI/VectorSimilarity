@@ -5,8 +5,6 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
-#define MAX_ITERATIONS 500
-
 // Every tag which is greater than "tag_range_start" with an even difference,
 // was meant to mark returned nodes in previous iterations.
 inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
@@ -35,14 +33,15 @@ inline void HNSW_BatchIterator::unmarkReturned(idType node_id) {
     this->visited_list->tagNode(node_id, cur_visited_tag);
 }
 
-CandidatesHeap HNSW_BatchIterator::scanGraph() {
+vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGraph() {
 
-    CandidatesHeap top_candidates(this->allocator);
+    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates(this->allocator);
     if (this->entry_point == -1) {
         this->depleted = true;
         return top_candidates;
     }
-    CandidatesHeap candidate_set(this->allocator);
+    bool ep_changed = false;
+    vecsim_stl::max_priority_queue<pair<float, idType>> candidate_set(this->allocator);
 
     auto &hnsw_index = this->index->hnsw;
     auto space = this->index->space.get();
@@ -61,8 +60,8 @@ CandidatesHeap HNSW_BatchIterator::scanGraph() {
         top_candidates.emplace(dist, this->entry_point);
         this->markReturned(this->entry_point);
     }
-    // the candidates distances are saved negatively, so we will have O(1) access to the closest
-    // candidate from the max heap, which is the one with the largest (negative) value
+    // The candidates distances are saved negatively, so we will have O(1) access to the closest
+    // candidate from the max heap, which is the one with the largest (negative) value.
     candidate_set.emplace(-dist, this->entry_point);
 
     while (!candidate_set.empty()) {
@@ -115,9 +114,10 @@ CandidatesHeap HNSW_BatchIterator::scanGraph() {
                 }
 
                 if (top_candidates.size() > hnsw_index.getEf()) {
-                    // set as entry point for next iterations the best node found but hasn't
-                    // returned
+                    // Set as entry point for next iterations the best node found but hasn't
+                    // returned.
                     this->entry_point = top_candidates.top().second;
+                    ep_changed = true;
                     this->unmarkReturned(top_candidates.top().second);
                     top_candidates.pop();
                 }
@@ -133,39 +133,49 @@ CandidatesHeap HNSW_BatchIterator::scanGraph() {
         if (!this->allow_returned_candidates) {
             this->allow_returned_candidates = true;
         } else {
-            // If this options was enabled already, there are no more reachable results
+            // If this options was enabled already, there are no more reachable results.
             this->depleted = true;
         }
+    }
+    // If the entry point hadn't changed, set it to be "worst" result that we return.
+    if (!ep_changed && !top_candidates.empty()) {
+        this->entry_point = top_candidates.top().second;
     }
     return top_candidates;
 }
 
 HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex *hnsw_index,
-                                       std::shared_ptr<VecSimAllocator> allocator)
+                                       std::shared_ptr<VecSimAllocator> allocator,
+                                       short max_iterations)
     : VecSimBatchIterator(query_vector, std::move(allocator)),
       // the search_id and the visited list is determined in the first iteration.
       index(hnsw_index), allow_returned_candidates(false), depleted(false), iteration_num(0),
       results(this->allocator) {
 
-    this->entry_point = hnsw_index->getEntryPointId();
+    this->entry_point = this->index->hnsw.getEntryPointId();
     // Save the current state of the visited list, and derive tags in which we are going to use
     // from the current tag. We will use these "fresh" tags to mark returned results and visited
     // nodes.
     this->visited_list = this->index->hnsw.getVisitedList();
     this->tag_range_start = this->visited_list->getFreshTag();
-    // Note: we assume that the number of iterations will be at most 500. We want to ensure that
-    // tags will not reset during the iterations
-    if (USHRT_MAX - this->tag_range_start < 2 * MAX_ITERATIONS) {
+    // The number of iterations is bounded, as we want to ensure that tags will not reset during the
+    // iterations.
+    if (USHRT_MAX - this->tag_range_start < 2 * max_iterations) {
         this->visited_list->reset();
         this->tag_range_start = this->visited_list->getFreshTag();
+    } else if (max_iterations <= 0) {
+        throw std::runtime_error("Invalid argument given for max_iterations: should be a positive "
+                                 "number lower than SHRT_MAX");
     }
+    this->max_iterations = max_iterations;
 }
 
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
                                                           VecSimQueryResult_Order order) {
 
-    if (++iteration_num > MAX_ITERATIONS) {
-        throw std::runtime_error("HNSW batch iterator is limited to 500 iterations");
+    auto *batch_results = array_new<VecSimQueryResult>(n_res);
+    if (++iteration_num == this->max_iterations) {
+        this->depleted = true;
     }
     // In the first iteration, we search the graph from top bottom to find the initial entry point,
     // and then we scan the graph to get results (layer 0).
@@ -175,28 +185,30 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
         auto top_candidates = this->scanGraph();
         // Get the results and insert them to a min heap.
         while (!top_candidates.empty()) {
-            results.emplace(top_candidates.top().first, top_candidates.top().second);
+            hnswlib::labeltype label =
+                this->index->hnsw.getExternalLabel(top_candidates.top().second);
+            this->results.emplace(top_candidates.top().first, label); // (distance, label)
             top_candidates.pop();
         }
     }
-    auto *batch_results = array_new<VecSimQueryResult>(n_res);
+
     while (array_len(batch_results) < n_res) {
         size_t iteration_res_num = array_len(batch_results);
-        size_t num_results_to_add = min(results.size(), n_res - iteration_res_num);
+        size_t num_results_to_add = min(this->results.size(), n_res - iteration_res_num);
         for (int i = 0; i < num_results_to_add; i++) {
             batch_results = array_append(batch_results, VecSimQueryResult{});
-            VecSimQueryResult_SetId(batch_results[iteration_res_num], results.top().second);
-            VecSimQueryResult_SetScore(batch_results[iteration_res_num++], results.top().first);
-            results.pop();
+            VecSimQueryResult_SetId(batch_results[iteration_res_num], this->results.top().second);
+            VecSimQueryResult_SetScore(batch_results[iteration_res_num++],
+                                       this->results.top().first);
+            this->results.pop();
         }
         if (iteration_res_num == n_res || this->depleted) {
             this->updateResultsCount(array_len(batch_results));
             if (this->getResultsCount() == this->index->indexSize()) {
                 this->depleted = true;
             }
-            if (order == BY_SCORE) {
-                sort_results_by_score(batch_results);
-            } else {
+            // By default, results are ordered by score.
+            if (order == BY_ID) {
                 sort_results_by_id(batch_results);
             }
             return batch_results;
@@ -205,7 +217,9 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
         auto top_candidates = this->scanGraph();
         // Get the results and insert them to a min heap.
         while (!top_candidates.empty()) {
-            results.emplace(top_candidates.top().first, top_candidates.top().second);
+            hnswlib::labeltype label =
+                this->index->hnsw.getExternalLabel(top_candidates.top().second);
+            this->results.emplace(top_candidates.top().first, label); // (distance, label)
             top_candidates.pop();
         }
     }
@@ -220,9 +234,10 @@ void HNSW_BatchIterator::reset() {
     this->depleted = false;
     this->allow_returned_candidates = false;
     this->tag_range_start = this->visited_list->getFreshTag();
-    if (USHRT_MAX - this->tag_range_start < 2 * MAX_ITERATIONS) {
+    if (USHRT_MAX - this->tag_range_start < 2 * max_iterations) {
         this->visited_list->reset();
         this->tag_range_start = this->visited_list->getFreshTag();
     }
-    this->results = CandidatesMinHeap(this->allocator); // clear the results queue
+    this->results = vecsim_stl::min_priority_queue<pair<float, labelType>>(
+        this->allocator); // clear the results queue
 }

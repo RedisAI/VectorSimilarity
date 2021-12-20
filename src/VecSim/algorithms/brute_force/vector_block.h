@@ -13,10 +13,6 @@ typedef size_t idType;
 
 struct VectorBlock;
 
-using CandidatesHeap = vecsim_stl::priority_queue<std::pair<float, labelType>,
-                                                  vecsim_stl::vector<std::pair<float, labelType>>,
-                                                  CompareByFirst<float>>;
-
 struct VectorBlockMember : public VecsimBaseObject {
 public:
     VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator);

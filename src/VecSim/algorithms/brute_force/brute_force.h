@@ -21,7 +21,8 @@ public:
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  short maxIterations = -1) override;
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
     virtual ~BruteForceIndex();
