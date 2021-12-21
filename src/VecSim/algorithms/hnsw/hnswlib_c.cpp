@@ -107,7 +107,7 @@ VecSimIndexInfo HNSWIndex::info() {
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(1);
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(11);
 
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
                                 .fieldType = INFOFIELD_STRING,
@@ -118,7 +118,7 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::DIMENSION_STRING,
                                 .fieldType = INFOFIELD_UINT64,
                                 .uintegerValue = info.hnswInfo.dim});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::METRIC_STRING,
                                 .fieldType = INFOFIELD_STRING,
                                 .stringValue = VecSimMetric_ToString(info.hnswInfo.metric)});
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,

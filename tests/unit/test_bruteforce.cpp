@@ -408,6 +408,8 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(1, info.bfInfo.blockSize);
+    ASSERT_EQ(0, info.bfInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -415,6 +417,7 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_AddVector(index, v, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(1, info.bfInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -422,6 +425,7 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(0, info.bfInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
