@@ -12,7 +12,7 @@ extern "C" {
 typedef struct VecSimInfoIterator VecSimInfoIterator;
 
 typedef enum {
-    INFOFIELD_STR,
+    INFOFIELD_STRING,
     INFOFIELD_INT64,
     INFOFIELD_UINT64,
     INFOFIELD_FLOAT64

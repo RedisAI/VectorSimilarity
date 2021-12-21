@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
 
 class BruteForceTest : public ::testing::Test {
@@ -336,38 +337,94 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, test_bf_info_iterator) {
+void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
+    ASSERT_EQ(7, VecSimInfoIterator_NumberOfFields(infoIter));
+    while (VecSimInfoIterator_HasNextField(infoIter)) {
+        VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
+        if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
+            // Algorithm type.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoFiled->stringValue, VecSimAlgo_ToString(info.algo));
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::TYPE_STRING)) {
+            // Vector type.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoFiled->stringValue, VecSimType_ToString(info.bfInfo.type));
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
+            // Vector dimension.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.dim);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::METRIC_STRING)) {
+            // Metric.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoFiled->stringValue, VecSimMetric_ToString(info.bfInfo.metric));
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
+            // Index size.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.indexSize);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
+            // Block size.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.blockSize);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
+            // Memory.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.memory);
+        } else {
+            ASSERT_TRUE(false);
+        }
+    }
+}
+
+TEST_F(BruteForceTest, test_basic_bf_info_iterator) {
     size_t n = 100;
     size_t d = 128;
+    VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
 
-    // Build with default args
+    for (size_t i = 0; i < 3; i++) {
+        // Build with default args
+        VecSimParams params = {
+            .algo = VecSimAlgo_BF,
+            .bfParams = {
+                .type = VecSimType_FLOAT32, .dim = d, .metric = metrics[i], .initialCapacity = n}};
+        VecSimIndex *index = VecSimIndex_New(&params);
+        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+        compareFlatIndexInfoToIterator(info, infoIter);
+        VecSimInfoIterator_Free(infoIter);
+        VecSimIndex_Free(index);
+    }
+}
+
+TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
+    size_t d = 128;
     VecSimParams params = {
         .algo = VecSimAlgo_BF,
         .bfParams = {
-            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = n}};
+            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .blockSize = 1}};
+    float v[d];
+    for (size_t i = 0; i < d; i++) {
+        v[i] = (float)i;
+    }
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.dim, d);
-    // Default args
-    ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(info.bfInfo.indexSize, 0);
-    VecSimIndex_Free(index);
+    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
 
-    d = 1280;
-    params = {.algo = VecSimAlgo_BF,
-              .bfParams = {.type = VecSimType_FLOAT32,
-                           .dim = d,
-                           .metric = VecSimMetric_L2,
-                           .initialCapacity = n,
-                           .blockSize = 1}};
-    index = VecSimIndex_New(&params);
+    // Add vector.
+    VecSimIndex_AddVector(index, v, 0);
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.dim, d);
-    // User args
-    ASSERT_EQ(info.bfInfo.blockSize, 1);
-    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    infoIter = VecSimIndex_InfoIterator(index);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Delete vector.
+    VecSimIndex_DeleteVector(index, 0);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
     VecSimIndex_Free(index);
 }
 
