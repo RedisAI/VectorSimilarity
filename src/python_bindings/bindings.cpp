@@ -95,7 +95,7 @@ public:
     PyBatchIterator createBatchIterator(py::object &query_blob) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
         float *vector_data = (float *)items.data(0);
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data));
+        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, 1000));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }

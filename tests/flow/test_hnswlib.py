@@ -146,7 +146,7 @@ def test_recall_for_hnswlib_index_with_deletion():
 
 def test_batch_iterator():
     dim = 128
-    num_elements = 100000
+    num_elements = 10000
     M = 16
     efConstruction = 100
     efRuntime = 100
@@ -191,23 +191,26 @@ def test_batch_iterator():
     batch_iterator.reset()
 
     # Run again in batches until depleted
-    batch_size = 1500
+    batch_size = 100
     returned_results_num = 0
     iterations = 0
     query_data = np.float32(np.random.random((num_queries, dim)))
-    for target_vector in query_data:
+    for target_vector in query_data[:1]:
         batch_iterator = hnsw_index.create_batch_iterator(target_vector)
         correct = 0
         # sort distances of every vector from the target vector and get actual k nearest vectors
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
         dists = sorted(dists)
+        accumulated_labels = []
         while batch_iterator.has_next():
             iterations += 1
             labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+            accumulated_labels.extend(labels[0])
             returned_results_num += len(labels[0])
             keys = [key for _, key in dists[:returned_results_num]]
 
-            for label in labels[0]:
+            correct = 0
+            for label in accumulated_labels:
                 for correct_label in keys:
                     if label == correct_label:
                         correct += 1
@@ -215,7 +218,9 @@ def test_batch_iterator():
             # Measure iteration recall
             recall = float(correct)/returned_results_num
             print(f'\nrecall in iteration {iterations} is: \n', recall)
+            if iterations == 10:
+                break
 
-    print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
+    #print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
     # assert (returned_results_num == num_elements)
     # assert (iterations == np.ceil(num_elements/batch_size))
