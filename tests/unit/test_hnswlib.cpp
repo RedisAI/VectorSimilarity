@@ -392,6 +392,7 @@ TEST_F(HNSWLibTest, test_basic_hnsw_info_iterator) {
         VecSimIndexInfo info = VecSimIndex_Info(index);
         VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
         compareHNSWIndexInfoToIterator(info, infoIter);
+        VecSimInfoIterator_Free(infoIter);
         VecSimIndex_Free(index);
     }
 }
