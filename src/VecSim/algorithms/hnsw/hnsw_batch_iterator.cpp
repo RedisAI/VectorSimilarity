@@ -5,32 +5,13 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 
-// Every tag which is greater than "tag_range_start" with an even difference,
-// was meant to mark returned nodes in previous iterations.
-inline bool HNSW_BatchIterator::hasReturned(idType node_id) const {
-    return (this->visited_list->getNodeTag(node_id) > this->tag_range_start) &&
-           ((this->visited_list->getNodeTag(node_id) - this->tag_range_start) % 2 == 0);
-}
-
-inline bool HNSW_BatchIterator::hasVisitedInCurIteration(idType node_id) const {
-    return (this->visited_list->getNodeTag(node_id) == this->cur_visited_tag) ||
-           (this->visited_list->getNodeTag(node_id) == this->cur_returned_visited_tag);
-}
 
 inline void HNSW_BatchIterator::visitNode(idType node_id) {
-    if (hasReturned(node_id)) {
-        this->visited_list->tagNode(node_id, cur_returned_visited_tag);
-    } else {
-        this->visited_list->tagNode(node_id, cur_visited_tag);
-    }
+    this->visited_list->tagNode(node_id, this->visited_tag);
 }
 
-inline void HNSW_BatchIterator::markReturned(idType node_id) {
-    this->visited_list->tagNode(node_id, cur_returned_visited_tag);
-}
-
-inline void HNSW_BatchIterator::unmarkReturned(idType node_id) {
-    this->visited_list->tagNode(node_id, cur_visited_tag);
+inline bool HNSW_BatchIterator::hasVisitedNode(idType node_id) const{
+    this->visited_list->getNodeTag(node_id) ==  this->visited_tag;
 }
 
 vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGraph() {
@@ -40,43 +21,59 @@ vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGrap
         this->depleted = true;
         return top_candidates;
     }
-    bool ep_changed = false;
-    vecsim_stl::max_priority_queue<pair<float, idType>> candidate_set(this->allocator);
 
     auto &hnsw_index = this->index->hnsw;
     auto space = this->index->space.get();
 
-    // Get fresh visited tag and returned_visited (different from the previous iteration).
-    this->cur_visited_tag = this->visited_list->getFreshTag();
-    this->cur_returned_visited_tag = this->visited_list->getFreshTag();
+    // Set the top candidate to be the top candidates that were found in the previous iteration,
+    // but not returned.
+    top_candidates = this->top_candidates_extras;
+    this->top_candidates_extras = vecsim_stl::max_priority_queue<pair<float, idType>>(this->allocator);
+    while (top_candidates.size() > hnsw_index.getEf()) {
+        this->top_candidates_extras.emplace(top_candidates.top().first, top_candidates.top().second);
+        top_candidates.pop();
+    }
+    if (top_candidates.size() == hnsw_index.getEf()) {
+        return top_candidates;
+    }
 
     auto dist_func = space->get_dist_func();
 
-    float dist = dist_func(this->getQueryBlob(), hnsw_index.getDataByInternalId(this->entry_point),
-                           space->get_data_dim());
-    float lowerBound = dist;
-    this->visitNode(this->entry_point);
-    if (!hasReturned(this->entry_point)) {
-        top_candidates.emplace(dist, this->entry_point);
-        this->markReturned(this->entry_point);
+    // In the first iteration,, add the entry point to the empty candidates set.
+    if (this->getResultsCount() == 0) {
+        float dist = dist_func(this->getQueryBlob(), hnsw_index.getDataByInternalId(this->entry_point),
+                               space->get_data_dim());
+        this->lower_bound = dist;
+        this->visitNode(this->entry_point);
+        this->candidates.emplace(dist, this->entry_point);
     }
-    // The candidates distances are saved negatively, so we will have O(1) access to the closest
-    // candidate from the max heap, which is the one with the largest (negative) value.
-    candidate_set.emplace(-dist, this->entry_point);
 
-    while (!candidate_set.empty()) {
-        pair<float, idType> curr_el_pair = candidate_set.top();
+    while (!this->candidates.empty()) {
+        float curr_node_dist = this->candidates.top().first;
+        idType curr_node_id = this->candidates.top().second;
         // If the closest element in the candidates set is further than the furthest element in the
-        // top candidates set, we finish the search.
-        if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= hnsw_index.getEf()) {
+        // top candidates set, and we have enough results, we finish the search.
+        if (curr_node_dist > this->lower_bound && top_candidates.size() >= hnsw_index.getEf()) {
             break;
         }
-        candidate_set.pop();
-        idType cur_node_id = curr_el_pair.second;
+        if (top_candidates.size() < hnsw_index.getEf() || this->lower_bound > curr_node_dist) {
+            top_candidates.emplace(curr_node_dist, curr_node_id);
+            if (top_candidates.size() > hnsw_index.getEf()) {
+                // If the top candidates queue is full, pass the "worst" results to the "extras",
+                // for the next iterations.
+                this->top_candidates_extras.emplace(top_candidates.top().first, top_candidates.top().second);
+                top_candidates.pop();
+            }
+            if (!top_candidates.empty()) {
+                this->lower_bound = top_candidates.top().first;
+            }
+        }
 
-        uint *cur_node_links_header = hnsw_index.get_linklist_at_level(cur_node_id, 0);
+        // Take the current node out of the candidates queue and go over his neighbours.
+        this->candidates.pop();
+        uint *cur_node_links_header = hnsw_index.get_linklist_at_level(curr_node_id, 0);
         ushort links_num = hnsw_index.getListCount(cur_node_links_header);
-        auto *node_links = (uint *)(cur_node_links_header + 1);
+        auto *node_links = (uint *) (cur_node_links_header + 1);
 #ifdef USE_SSE
         _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links), _MM_HINT_T0);
         _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links + 64), _MM_HINT_T0);
@@ -91,55 +88,20 @@ vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGrap
                          _MM_HINT_T0);
             _mm_prefetch(hnsw_index.getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
 #endif
-            if (this->hasVisitedInCurIteration(candidate_id)) {
-                continue;
-            }
-            if (!this->allow_returned_candidates && this->hasReturned(candidate_id)) {
+            if (this->hasVisitedNode(candidate_id)) {
                 continue;
             }
             this->visitNode(candidate_id);
-
             char *candidate_data = hnsw_index.getDataByInternalId(candidate_id);
-            float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
+            float candidate_dist = dist_func(this->getQueryBlob(), (const void *) candidate_data,
                                              space->get_data_dim());
-            if (top_candidates.size() < hnsw_index.getEf() || lowerBound > candidate_dist) {
-                candidate_set.emplace(-candidate_dist, candidate_id);
-#ifdef USE_SSE
-                _mm_prefetch(hnsw_index.getDataByInternalId(candidate_set.top().second),
-                             _MM_HINT_T0);
-#endif
-                if (!this->hasReturned(candidate_id)) {
-                    top_candidates.emplace(candidate_dist, candidate_id);
-                    this->markReturned(candidate_id);
-                }
-
-                if (top_candidates.size() > hnsw_index.getEf()) {
-                    // Set as entry point for next iterations the best node found but hasn't
-                    // returned.
-                    this->entry_point = top_candidates.top().second;
-                    ep_changed = true;
-                    this->unmarkReturned(top_candidates.top().second);
-                    top_candidates.pop();
-                }
-
-                if (!top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
+            this->candidates.emplace(candidate_dist, candidate_id);
         }
     }
 
-    // If we found fewer results than wanted, allow re-visiting nodes from previous iterations.
+    // If we found fewer results than wanted, mark the search as depleted.
     if (top_candidates.size() < hnsw_index.getEf()) {
-        if (!this->allow_returned_candidates) {
-            this->allow_returned_candidates = true;
-        } else {
-            // If this options was enabled already, there are no more reachable results.
-            this->depleted = true;
-        }
-    }
-    // If the entry point hadn't changed, set it to be "worst" result that we return.
-    if (!ep_changed && !top_candidates.empty()) {
-        this->entry_point = top_candidates.top().second;
+        this->depleted = true;
     }
     return top_candidates;
 }
@@ -149,34 +111,27 @@ HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, const HNSWIndex
                                        short max_iterations)
     : VecSimBatchIterator(query_vector, std::move(allocator)),
       // the search_id and the visited list is determined in the first iteration.
-      index(hnsw_index), allow_returned_candidates(false), depleted(false), iteration_num(0),
-      results(this->allocator) {
+      index(hnsw_index), depleted(false), results(this->allocator), candidates(this->allocator),
+      top_candidates_extras(this->allocator) {
 
     this->entry_point = this->index->hnsw.getEntryPointId();
     // Save the current state of the visited list, and derive tags in which we are going to use
     // from the current tag. We will use these "fresh" tags to mark returned results and visited
     // nodes.
     this->visited_list = this->index->hnsw.getVisitedList();
-    this->tag_range_start = this->visited_list->getFreshTag();
-    // The number of iterations is bounded, as we want to ensure that tags will not reset during the
-    // iterations.
-    if (USHRT_MAX - this->tag_range_start < 2 * max_iterations) {
-        this->visited_list->reset();
-        this->tag_range_start = this->visited_list->getFreshTag();
-    } else if (max_iterations <= 0) {
-        throw std::runtime_error("Invalid argument given for max_iterations: should be a positive "
-                                 "number lower than SHRT_MAX");
-    }
-    this->max_iterations = max_iterations;
+    this->visited_tag = this->visited_list->getFreshTag();
 }
 
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
                                                           VecSimQueryResult_Order order) {
 
     auto *batch_results = array_new<VecSimQueryResult>(n_res);
-    if (++iteration_num == this->max_iterations) {
-        this->depleted = true;
+    // If ef_runtime lower than the number of results to return, increase it.
+    size_t orig_ef = this->index->hnsw.getEf();
+    if (orig_ef < n_res) {
+        dynamic_cast<HNSWIndex*>(this->index)->setEf(n_res);
     }
+
     // In the first iteration, we search the graph from top bottom to find the initial entry point,
     // and then we scan the graph to get results (layer 0).
     if (this->getResultsCount() == 0) {
@@ -184,7 +139,7 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
         this->entry_point = bottom_layer_ep;
         auto top_candidates = this->scanGraph();
         // Get the results and insert them to a min heap.
-        while (!top_candidates.empty()) {
+        while (top_candidates.size() < n_res) {
             hnswlib::labeltype label =
                 this->index->hnsw.getExternalLabel(top_candidates.top().second);
             this->results.emplace(top_candidates.top().first, label); // (distance, label)
@@ -230,14 +185,13 @@ bool HNSW_BatchIterator::isDepleted() { return this->depleted && this->results.e
 
 void HNSW_BatchIterator::reset() {
     this->resetResultsCount();
-    this->iteration_num = 0;
     this->depleted = false;
-    this->allow_returned_candidates = false;
-    this->tag_range_start = this->visited_list->getFreshTag();
-    if (USHRT_MAX - this->tag_range_start < 2 * max_iterations) {
-        this->visited_list->reset();
-        this->tag_range_start = this->visited_list->getFreshTag();
-    }
+    this->visited_tag = this->visited_list->getFreshTag();
+    // Clear the queues.
     this->results = vecsim_stl::min_priority_queue<pair<float, labelType>>(
-        this->allocator); // clear the results queue
+        this->allocator);
+    this->candidates = vecsim_stl::min_priority_queue<pair<float, idType>>(
+            this->allocator);
+    this->top_candidates_extras = vecsim_stl::max_priority_queue<pair<float, idType>>(
+            this->allocator);
 }
