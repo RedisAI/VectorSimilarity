@@ -173,7 +173,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
 
     // Prepare for next assertion test
-     expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.bfInfo.memory;
     expectedAllocationDelta = 0;
 
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);

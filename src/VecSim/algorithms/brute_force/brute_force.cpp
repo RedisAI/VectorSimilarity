@@ -216,7 +216,9 @@ VecSimIndexInfo BruteForceIndex::info() {
 
 VecSimInfoIterator *BruteForceIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(7);
+    // For readability. Update this number when needed;
+    size_t numberOfInfoFields = 7;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
                                 .fieldType = INFOFIELD_STRING,

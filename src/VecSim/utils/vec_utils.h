@@ -37,7 +37,7 @@ public:
     static const char *HNSW_EF_RUNTIME_STRING;
     static const char *HNSW_EF_CONSTRUCTION_STRING;
     static const char *HNSW_M_STRING;
-    static const char *HNSW_LEVELS;
+    static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
 
     static const char *BLOCK_SIZE_STRING;

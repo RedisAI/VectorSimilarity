@@ -99,7 +99,7 @@ VecSimIndexInfo HNSWIndex::info() {
     info.hnswInfo.efConstruction = this->hnsw.getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw.getEf();
     info.hnswInfo.indexSize = this->hnsw.getIndexSize();
-    info.hnswInfo.levels = this->hnsw.getMaxLevel();
+    info.hnswInfo.max_level = this->hnsw.getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw.getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();
     return info;
@@ -107,7 +107,9 @@ VecSimIndexInfo HNSWIndex::info() {
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(11);
+    // For readability. Update this number when needed;
+    size_t numberOfInfoFields = 11;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
                                 .fieldType = INFOFIELD_STRING,
@@ -133,9 +135,9 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
                                 .fieldType = INFOFIELD_UINT64,
                                 .uintegerValue = info.hnswInfo.efRuntime});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_LEVELS,
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
                                 .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.levels});
+                                .uintegerValue = info.hnswInfo.max_level});
     infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
                                 .fieldType = INFOFIELD_UINT64,
                                 .uintegerValue = info.hnswInfo.entrypoint});

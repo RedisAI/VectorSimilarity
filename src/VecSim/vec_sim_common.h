@@ -79,7 +79,7 @@ typedef struct {
             size_t M;              // Number of allowed edges per node in graph.
             size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
             size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
-            size_t levels;         // Number of graph levels.
+            size_t max_level;      // Number of graph levels.
             size_t entrypoint;     // Entrypoint vector label.
             VecSimMetric metric;   // Index distance metric
             uint64_t memory;       // Index memory consumption.

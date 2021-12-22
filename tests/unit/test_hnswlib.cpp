@@ -1,6 +1,5 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
-#include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
 #include <climits>
 
@@ -322,61 +321,6 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     VecSimIndex_Free(index);
 }
 
-void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(11, VecSimInfoIterator_NumberOfFields(infoIter));
-    while (VecSimInfoIterator_HasNextField(infoIter)) {
-        VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
-        if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
-            // Algorithm type.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimAlgo_ToString(info.algo));
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::TYPE_STRING)) {
-            // Vector type.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimType_ToString(info.hnswInfo.type));
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
-            // Vector dimension.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.dim);
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::METRIC_STRING)) {
-            // Metric.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimMetric_ToString(info.hnswInfo.metric));
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
-            // Index size.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.indexSize);
-        } else if (!strcmp(infoFiled->fieldName,
-                           VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING)) {
-            // EF construction.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.efConstruction);
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
-            // EF runtime.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.efRuntime);
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_M_STRING)) {
-            // M.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.M);
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_LEVELS)) {
-            // Levels.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.levels);
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_ENTRYPOINT)) {
-            // Entrypoint.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.entrypoint);
-        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
-            // Memory.
-            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.memory);
-        } else {
-            ASSERT_TRUE(false);
-        }
-    }
-}
-
 TEST_F(HNSWLibTest, test_basic_hnsw_info_iterator) {
     size_t n = 100;
     size_t d = 128;
@@ -419,7 +363,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
     ASSERT_EQ(0, info.hnswInfo.indexSize);
-    ASSERT_EQ(-1, info.hnswInfo.levels);
+    ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
@@ -430,7 +374,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(1, info.hnswInfo.indexSize);
     ASSERT_EQ(1, info.hnswInfo.entrypoint);
-    ASSERT_GE(1, info.hnswInfo.levels);
+    ASSERT_GE(1, info.hnswInfo.max_level);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
