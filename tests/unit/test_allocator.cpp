@@ -226,19 +226,19 @@ TEST_F(AllocatorTest, test_hnsw) {
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
 
-    expectedAllocationSize = info.memory;
+    expectedAllocationSize = info.hnswInfo.memory;
 
     int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 2);
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
-    expectedAllocationSize = info.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
+    expectedAllocationSize = info.hnswInfo.memory;
 
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 1);
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
     VecSimIndex_Free(hnswIndex);
 }
