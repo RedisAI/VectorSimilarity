@@ -11,3 +11,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(int, float, int)> ResCB,
                                 VecSimQueryResult_Order order = BY_SCORE);
+
+void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
+
+void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);

@@ -57,6 +57,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/hnsw/hnswlib_c.cpp
     VecSim/vec_sim.cpp
     VecSim/query_results.cpp
+	VecSim/info_iterator.cpp
     VecSim/query_result_struct.cpp
     VecSim/utils/vec_utils.cpp
     VecSim/memory/vecsim_malloc.cpp
