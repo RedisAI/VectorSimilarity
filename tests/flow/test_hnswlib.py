@@ -145,14 +145,13 @@ def test_recall_for_hnswlib_index_with_deletion():
 
 
 def test_batch_iterator():
-    dim = 128
-    num_elements = 10000
+    dim = 100
+    num_elements = 100000
     M = 16
     efConstruction = 100
     efRuntime = 100
 
     num_queries = 10
-    k=10
 
     hnswparams = HNSWParams()
     hnswparams.M = M
@@ -166,14 +165,15 @@ def test_batch_iterator():
     hnsw_index = HNSWIndex(hnswparams)
 
     # Add 100k random vectors to the index
-    data = np.float32(np.random.random((num_elements, dim)))
+    rng = np.random.default_rng(seed=47)
+    data = np.float32(rng.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
         hnsw_index.add_vector(vector, i)
         vectors.append((i, vector))
 
     # Create a random query vector and create a batch iterator
-    query_data = np.float32(np.random.random((1, dim)))
+    query_data = np.float32(rng.random((1, dim)))
     batch_iterator = hnsw_index.create_batch_iterator(query_data)
     labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
     for i, _ in enumerate(labels_first_batch[0][:-1]):
@@ -192,12 +192,12 @@ def test_batch_iterator():
 
     # Run again in batches until depleted
     batch_size = 100
-    returned_results_num = 0
+    total_res = 10000
     iterations = 0
-    query_data = np.float32(np.random.random((num_queries, dim)))
-    for target_vector in query_data[:1]:
+    correct = 0
+    query_data = np.float32(rng.random((num_queries, dim)))
+    for target_vector in query_data:
         batch_iterator = hnsw_index.create_batch_iterator(target_vector)
-        correct = 0
         # sort distances of every vector from the target vector and get actual k nearest vectors
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
         dists = sorted(dists)
@@ -206,21 +206,23 @@ def test_batch_iterator():
             iterations += 1
             labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
             accumulated_labels.extend(labels[0])
-            returned_results_num += len(labels[0])
-            keys = [key for _, key in dists[:returned_results_num]]
-
-            correct = 0
-            for label in accumulated_labels:
-                for correct_label in keys:
-                    if label == correct_label:
-                        correct += 1
-                        break
-            # Measure iteration recall
-            recall = float(correct)/returned_results_num
-            print(f'\nrecall in iteration {iterations} is: \n', recall)
-            if iterations == 10:
+            returned_results_num = len(accumulated_labels)
+            if returned_results_num == total_res:
+                print("measure recall")
+                returned_results_num = len(accumulated_labels)
+                keys = [key for _, key in dists[:returned_results_num]]
+                correct += len(set(accumulated_labels).intersection(set(keys)))
+                # for label in accumulated_labels:
+                #     for correct_label in keys:
+                #         if label == correct_label:
+                #             correct += 1
+                #             break
+                # Measure iteration recall
+                # recall = float(correct)/returned_results_num
                 break
+    recall = float(correct) / (total_res*num_queries)
+    print(f'\nrecall is: ', recall)
 
-    #print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
+    # print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
     # assert (returned_results_num == num_elements)
     # assert (iterations == np.ceil(num_elements/batch_size))

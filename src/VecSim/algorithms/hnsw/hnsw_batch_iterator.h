@@ -27,6 +27,11 @@ private:
     short max_iterations; // The maximum number of iterations allowed before iterator will be
                           // depleted.
     bool depleted;
+    float lower_bound;
+
+    // experimental
+    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates_extras;
+    vecsim_stl::min_priority_queue<pair<float, idType>> candidates;
 
     vecsim_stl::max_priority_queue<pair<float, idType>> scanGraph();
     inline bool hasReturned(idType node_id) const;
