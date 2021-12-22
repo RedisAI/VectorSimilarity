@@ -102,85 +102,95 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
-    bfIndex->addVector(vec, 1);
-    uint64_t allocationDelta = 0;
-    allocationDelta += 2 * ((sizeof(VectorBlockMember *) +
-                             vecsimAllocationOverhead)); // resize idToVectorBlockMemberMapping to 2
-    allocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    allocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
-    allocationDelta += sizeof(VectorBlockMember *) +
-                       vecsimAllocationOverhead; // Pointer for the new vector block member
-    allocationDelta +=
+    int addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 1);
+    int64_t expectedAllocationDelta = 0;
+    expectedAllocationDelta +=
+        2 * ((sizeof(VectorBlockMember *) +
+              vecsimAllocationOverhead)); // resize idToVectorBlockMemberMapping to 2
+    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
+    expectedAllocationDelta += sizeof(VectorBlockMember *) +
+                               vecsimAllocationOverhead; // Pointer for the new vector block member
+    expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
-    allocationDelta +=
+    expectedAllocationDelta +=
         sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
-    allocationDelta +=
+    expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
-    ASSERT_TRUE(expectedAllocationSize + allocationDelta <= allocator->getAllocationSize() &&
-                allocator->getAllocationSize() <= expectedAllocationSize + allocationDelta * 2);
-
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
+    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+    ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
     info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
     // Prepare for next assertion test
     expectedAllocationSize = info.memory;
-    allocationDelta = 0;
+    expectedAllocationDelta = 0;
 
-    bfIndex->addVector(vec, 2);
-    allocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    allocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
-    allocationDelta += sizeof(VectorBlockMember *) +
-                       vecsimAllocationOverhead; // Pointer for the new vector block member
-    allocationDelta +=
+    addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
+    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
+    expectedAllocationDelta += sizeof(VectorBlockMember *) +
+                               vecsimAllocationOverhead; // Pointer for the new vector block member
+    expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
-    allocationDelta +=
+    expectedAllocationDelta +=
         sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
-    allocationDelta +=
+    expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
-    ASSERT_TRUE(expectedAllocationSize + allocationDelta <= allocator->getAllocationSize() &&
-                allocator->getAllocationSize() <= expectedAllocationSize + allocationDelta * 2);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
+    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+    ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
     info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
     // Prepare for next assertion test
     expectedAllocationSize = info.memory;
-    allocationDelta = 0;
+    expectedAllocationDelta = 0;
 
-    bfIndex->deleteVector(2);
-    allocationDelta -= (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    allocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
-    allocationDelta -= (sizeof(VectorBlockMember *) +
-                        vecsimAllocationOverhead); // Pointer for the new vector block member
-    allocationDelta -=
+    int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
+    expectedAllocationDelta -=
+        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+    expectedAllocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
+    expectedAllocationDelta -=
+        (sizeof(VectorBlockMember *) +
+         vecsimAllocationOverhead); // Pointer for the new vector block member
+    expectedAllocationDelta -=
         (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
 
     // Assert that the reclaiming of memory did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
-    ASSERT_TRUE(expectedAllocationSize >= allocator->getAllocationSize() &&
-                allocator->getAllocationSize() >= expectedAllocationSize + allocationDelta);
+    ASSERT_EQ(allocator->getAllocationSize(),
+              expectedAllocationSize + deleteCommandAllocationDelta);
+    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+    ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
 
     info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
     // Prepare for next assertion test
     expectedAllocationSize = info.memory;
-    allocationDelta = 0;
+    expectedAllocationDelta = 0;
 
-    bfIndex->deleteVector(1);
-    allocationDelta -= (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    allocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
-    allocationDelta -= (sizeof(VectorBlockMember *) +
-                        vecsimAllocationOverhead); //  Pointer for the new vector block member
-    allocationDelta -=
+    deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
+    expectedAllocationDelta -=
+        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+    expectedAllocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
+    expectedAllocationDelta -=
+        (sizeof(VectorBlockMember *) +
+         vecsimAllocationOverhead); //  Pointer for the new vector block member
+    expectedAllocationDelta -=
         (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
     // Assert that the reclaiming of memory did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
-    ASSERT_TRUE(expectedAllocationSize >= allocator->getAllocationSize() &&
-                allocator->getAllocationSize() >= expectedAllocationSize + allocationDelta);
+    ASSERT_EQ(allocator->getAllocationSize(),
+              expectedAllocationSize + deleteCommandAllocationDelta);
+    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+    ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
     info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     VecSimIndex_Free(bfIndex);
@@ -205,30 +215,30 @@ TEST_F(AllocatorTest, test_hnsw) {
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     expectedAllocationSize = info.memory;
 
-    hnswIndex->addVector(vec, 1);
-    ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
+    int addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 1);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     expectedAllocationSize = info.memory;
 
-    hnswIndex->addVector(vec, 2);
-    ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
+    addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 2);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
+    expectedAllocationSize = info.memory;
+
+    int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 2);
+    ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
+              allocator->getAllocationSize());
+    info = hnswIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
+    expectedAllocationSize = info.memory;
+
+    deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 1);
+    ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
+              allocator->getAllocationSize());
+    info = hnswIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     VecSimIndex_Free(hnswIndex);
-
-    // TODO: commented out since hnsw does not recalim memory
-    // current_memory = info.memory;
-
-    // hnswIndex->deleteVector(2);
-    // ASSERT_GE(current_memory, allocator->getAllocationSize());
-    // info = hnswIndex->info();
-    // ASSERT_EQ(allocator->getAllocationSize(), info.memory);
-    // current_memory = info.memory;
-
-    // hnswIndex->deleteVector(1);
-    // ASSERT_GE(current_memory, allocator->getAllocationSize());
-    // info = hnswIndex->info();
-    // ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 }
