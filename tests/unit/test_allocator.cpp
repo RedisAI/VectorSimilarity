@@ -215,30 +215,30 @@ TEST_F(AllocatorTest, test_hnsw) {
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     expectedAllocationSize = info.memory;
 
-    hnswIndex->addVector(vec, 1);
-    ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
+    int addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 1);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     expectedAllocationSize = info.memory;
 
-    hnswIndex->addVector(vec, 2);
-    ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
+    addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 2);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 
+    expectedAllocationSize = info.memory;
+
+    int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 2);
+    ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
+              allocator->getAllocationSize());
+    info = hnswIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
+    expectedAllocationSize = info.memory;
+
+    deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 1);
+    ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
+              allocator->getAllocationSize());
+    info = hnswIndex->info();
+    ASSERT_EQ(allocator->getAllocationSize(), info.memory);
     VecSimIndex_Free(hnswIndex);
-
-    // TODO: commented out since hnsw does not recalim memory
-    // current_memory = info.memory;
-
-    // hnswIndex->deleteVector(2);
-    // ASSERT_GE(current_memory, allocator->getAllocationSize());
-    // info = hnswIndex->info();
-    // ASSERT_EQ(allocator->getAllocationSize(), info.memory);
-    // current_memory = info.memory;
-
-    // hnswIndex->deleteVector(1);
-    // ASSERT_GE(current_memory, allocator->getAllocationSize());
-    // info = hnswIndex->info();
-    // ASSERT_EQ(allocator->getAllocationSize(), info.memory);
 }
