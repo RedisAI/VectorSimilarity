@@ -83,6 +83,7 @@ public:
      *
      * @param queryBlob binary representation of the vector. Blob size should match the index data
      * type and dimension.
+     * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
 };
