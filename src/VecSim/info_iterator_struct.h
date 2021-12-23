@@ -1,0 +1,25 @@
+#pragma once
+
+#include "info_iterator.h"
+#include "VecSim/utils/arr_cpp.h"
+
+struct VecSimInfoIterator {
+private:
+    VecSim_InfoField *fields;
+    size_t currentIndex;
+
+public:
+    VecSimInfoIterator(size_t len) : fields(array_new<VecSim_InfoField>(len)), currentIndex(0) {}
+
+    inline void addInfoField(VecSim_InfoField infoField) {
+        this->fields = array_append(this->fields, infoField);
+    }
+
+    inline bool hasNext() { return this->currentIndex < array_len(this->fields); }
+
+    inline VecSim_InfoField *next() { return this->fields + (this->currentIndex++); }
+
+    inline size_t numberOfFields() { return array_len(this->fields); }
+
+    virtual ~VecSimInfoIterator() { array_free(this->fields); }
+};

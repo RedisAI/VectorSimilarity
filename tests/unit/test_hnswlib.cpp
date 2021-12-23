@@ -294,7 +294,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.d, d);
+    ASSERT_EQ(info.hnswInfo.dim, d);
     // Default args
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
@@ -313,11 +313,79 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.d, d);
+    ASSERT_EQ(info.hnswInfo.dim, d);
     // User args
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, test_basic_hnsw_info_iterator) {
+    size_t n = 100;
+    size_t d = 128;
+
+    VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
+    for (size_t i = 0; i < 3; i++) {
+        // Build with default args
+        VecSimParams params = {
+            .algo = VecSimAlgo_HNSWLIB,
+            .hnswParams = {
+                .type = VecSimType_FLOAT32, .dim = d, .metric = metrics[i], .initialCapacity = n}};
+        VecSimIndex *index = VecSimIndex_New(&params);
+        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+        compareHNSWIndexInfoToIterator(info, infoIter);
+        VecSimInfoIterator_Free(infoIter);
+        VecSimIndex_Free(index);
+    }
+}
+
+TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
+    size_t n = 100;
+    size_t d = 128;
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .dim = d,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = 100,
+                                          .efConstruction = 250,
+                                          .efRuntime = 400}};
+    float v[d];
+    for (size_t i = 0; i < d; i++) {
+        v[i] = (float)i;
+    }
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(100, info.hnswInfo.M);
+    ASSERT_EQ(250, info.hnswInfo.efConstruction);
+    ASSERT_EQ(400, info.hnswInfo.efRuntime);
+    ASSERT_EQ(0, info.hnswInfo.indexSize);
+    ASSERT_EQ(-1, info.hnswInfo.max_level);
+    ASSERT_EQ(-1, info.hnswInfo.entrypoint);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Add vector.
+    VecSimIndex_AddVector(index, v, 1);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(1, info.hnswInfo.indexSize);
+    ASSERT_EQ(1, info.hnswInfo.entrypoint);
+    ASSERT_GE(1, info.hnswInfo.max_level);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Delete vector.
+    VecSimIndex_DeleteVector(index, 1);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(0, info.bfInfo.indexSize);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
     VecSimIndex_Free(index);
 }
 

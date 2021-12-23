@@ -21,8 +21,20 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 // Adds 'amount' vectors to the index. could be 0.
 void _add_vectors(VecSimIndex *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
-    int64_t vec[indexInfo.d];
-    for (int i = 0; i < indexInfo.d; i++)
+    size_t dim;
+    switch (indexInfo.algo) {
+    case VecSimAlgo_BF:
+        dim = indexInfo.bfInfo.dim;
+        break;
+    case VecSimAlgo_HNSWLIB:
+        dim = indexInfo.hnswInfo.dim;
+        break;
+
+    default:
+        break;
+    }
+    int64_t vec[dim];
+    for (int i = 0; i < dim; i++)
         vec[i] = i;
     for (long long j = 0; j < amount; j++)
         VecSimIndex_AddVector(index, vec, j);
@@ -100,7 +112,19 @@ int _VecSim_memory_create_check_impl(RedisModuleCtx *ctx, VecSimAlgo algo, long 
 
     // Actual test: verify that memory usage known to the server is at least the memory amount used
     // by the index.
-    if (indexInfo.memory <= endMemory - startMemory)
+    int64_t memory;
+    switch (indexInfo.algo) {
+    case VecSimAlgo_BF:
+        memory = indexInfo.bfInfo.memory;
+        break;
+    case VecSimAlgo_HNSWLIB:
+        memory = indexInfo.hnswInfo.memory;
+        break;
+
+    default:
+        break;
+    }
+    if (memory <= endMemory - startMemory)
         RedisModule_ReplyWithSimpleString(ctx, "OK");
     else
         RedisModule_ReplyWithError(ctx, "ERROR: some undeclared memory allocation detected.");
