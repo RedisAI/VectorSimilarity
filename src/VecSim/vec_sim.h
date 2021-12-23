@@ -80,11 +80,9 @@ VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
  * @param index the index in which the search will be done (in batches)
  * @param queryBlob binary representation of the vector. Blob size should match the index data type
  * and dimension.
- * @param maxIterations maximum number of iterations to run before HNSW iterator gets depleted.
  * @return Fresh batch iterator
  */
-VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
-                                             short maxIterations);
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.

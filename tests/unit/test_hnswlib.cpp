@@ -646,7 +646,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, 500);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
     size_t iteration_num = 0;
 
     // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
@@ -700,7 +700,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, 500);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
 
     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. Run this flow for 3 times, and reset the iterator.
@@ -727,11 +727,11 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator_iterations_limit) {
+TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
-    size_t ef = 1;
+    size_t ef = 2;
 
     VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                            .hnswParams = {.type = VecSimType_FLOAT32,
@@ -745,44 +745,30 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_iterations_limit) {
 
     float query[] = {(float)n, (float)n, (float)n, (float)n};
 
-    // Try to create batch iterator with an invalid max iterations parameter.
-    try {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, -1);
-    } catch (std::exception &exception) {
-        ASSERT_TRUE(strcmp(exception.what(), "Invalid argument given for max_iterations: should be "
-                                             "a positive number lower than SHRT_MAX") == 0);
-    }
-
     for (int i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        // Set labels to be different than the internal ids.
+        VecSimIndex_AddVector(index, (const void *)f, n - i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, (short)(n / 2));
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
     size_t iteration_num = 0;
     size_t n_res = 1, expected_n_res = 1;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         iteration_num++;
-        // Expect to get results in the reverse order of ids - the order of the distance from the
-        // query vector. Get one result in every iteration.
+        // Expect to get results in the reverse order of labels - which is the order of the distance
+        // from the query vector. Get one result in every iteration.
         auto verify_res = [&](int id, float score, size_t index) {
-            ASSERT_TRUE(id == n - iteration_num);
+            ASSERT_TRUE(id == iteration_num);
         };
-        if (iteration_num == n / 2) {
-            expected_n_res = 0;
-        }
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
     }
 
-    // Expect to get only n/2 results instead of n, since we exceed the max_iteration limit.
-    ASSERT_EQ(iteration_num, n / 2);
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(iteration_num, n);
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
@@ -804,7 +790,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     float query[] = {(float)n, (float)n, (float)n, (float)n};
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, 500);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
 
     // Try to get results even though there are no vectors in the index.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);

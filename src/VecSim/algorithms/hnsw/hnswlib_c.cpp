@@ -106,7 +106,6 @@ VecSimIndexInfo HNSWIndex::info() {
     return info;
 }
 
-VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob, short max_iterations) {
-    return new (this->allocator)
-        HNSW_BatchIterator(queryBlob, this, this->allocator, max_iterations);
+VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
+    return new (this->allocator) HNSW_BatchIterator(queryBlob, this, this->allocator);
 }

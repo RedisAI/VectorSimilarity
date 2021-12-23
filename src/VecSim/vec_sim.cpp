@@ -60,9 +60,8 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) {
 
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
 
-extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
-                                                        short maxIterations) {
-    return index->newBatchIterator(queryBlob, maxIterations);
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
+    return index->newBatchIterator(queryBlob);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
