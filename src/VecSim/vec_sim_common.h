@@ -79,19 +79,23 @@ typedef struct {
             size_t M;              // Number of allowed edges per node in graph.
             size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
             size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
-            size_t levels;         // Number of graph levels.
+            size_t max_level;      // Number of graph levels.
             size_t entrypoint;     // Entrypoint vector label.
+            VecSimMetric metric;   // Index distance metric
+            uint64_t memory;       // Index memory consumption.
+            VecSimType type;       // Datatype the index holds.
+            size_t dim;            // Vector size (dimension).
         } hnswInfo;
         struct {
-            size_t indexSize; // Current count of vectors.
-            size_t blockSize; // Brute force algorithm vector block (mini matrix) size
+            size_t indexSize;    // Current count of vectors.
+            size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
+            VecSimMetric metric; // Index distance metric
+            uint64_t memory;     // Index memory consumption.
+            VecSimType type;     // Datatype the index holds.
+            size_t dim;          // Vector size (dimension).
         } bfInfo;
     };
-    VecSimType type;     // Datatype the index holds.
-    size_t d;            // Vector size (dimension).
-    VecSimAlgo algo;     // Algorithm being used.
-    VecSimMetric metric; // Index distance metric
-    int64_t memory;      // Index memory consumption.
+    VecSimAlgo algo; // Algorithm being used.
 } VecSimIndexInfo;
 
 // Memory function declerations.

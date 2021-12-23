@@ -313,7 +313,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.d, d);
+    ASSERT_EQ(info.bfInfo.dim, d);
     // Default args
     ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
@@ -329,10 +329,67 @@ TEST_F(BruteForceTest, test_bf_info) {
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.d, d);
+    ASSERT_EQ(info.bfInfo.dim, d);
     // User args
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, test_basic_bf_info_iterator) {
+    size_t n = 100;
+    size_t d = 128;
+    VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
+
+    for (size_t i = 0; i < 3; i++) {
+        // Build with default args
+        VecSimParams params = {
+            .algo = VecSimAlgo_BF,
+            .bfParams = {
+                .type = VecSimType_FLOAT32, .dim = d, .metric = metrics[i], .initialCapacity = n}};
+        VecSimIndex *index = VecSimIndex_New(&params);
+        VecSimIndexInfo info = VecSimIndex_Info(index);
+        VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+        compareFlatIndexInfoToIterator(info, infoIter);
+        VecSimInfoIterator_Free(infoIter);
+        VecSimIndex_Free(index);
+    }
+}
+
+TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
+    size_t d = 128;
+    VecSimParams params = {
+        .algo = VecSimAlgo_BF,
+        .bfParams = {
+            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .blockSize = 1}};
+    float v[d];
+    for (size_t i = 0; i < d; i++) {
+        v[i] = (float)i;
+    }
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(1, info.bfInfo.blockSize);
+    ASSERT_EQ(0, info.bfInfo.indexSize);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Add vector.
+    VecSimIndex_AddVector(index, v, 0);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(1, info.bfInfo.indexSize);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Delete vector.
+    VecSimIndex_DeleteVector(index, 0);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(0, info.bfInfo.indexSize);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
     VecSimIndex_Free(index);
 }
 
@@ -585,7 +642,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
         }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, -1);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
         size_t iteration_num = 0;
 
         // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
@@ -638,7 +695,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
         }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, -1);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
         size_t iteration_num = 0;
 
         // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet, in
@@ -697,7 +754,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, -1);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
 
     // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
@@ -754,7 +811,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, -1);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
 
     // get all in first iteration, expect to use select search
     size_t n_res = n;

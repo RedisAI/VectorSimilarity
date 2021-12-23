@@ -12,3 +12,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
                                 std::function<void(int, float, int)> ResCB,
                                 VecSimQueryResult_Order order = BY_SCORE,
                                 size_t expected_n_res = -1);
+
+void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
+
+void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);

@@ -3,6 +3,7 @@
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
+#include "info_iterator_struct.h"
 
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
@@ -69,14 +70,20 @@ public:
     virtual VecSimIndexInfo info() = 0;
 
     /**
+     * @brief Returns an index information in an iterable structure.
+     *
+     * @return VecSimInfoIterator Index general and specific meta-data.
+     */
+    virtual VecSimInfoIterator *infoIterator() = 0;
+
+    /**
      * @brief Create a new batch iterator for a specific index, for a specific query vector,
      * using the Index_BatchIteratorNew method of the index. Should be released with
      * VecSimBatchIterator_Free call.
      *
      * @param queryBlob binary representation of the vector. Blob size should match the index data
      * type and dimension.
-     * @param maxIterations maximum number of iterations to run before HNSW iterator gets depleted.
      * @return Fresh batch iterator
      */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob, short maxIterations) = 0;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
 };

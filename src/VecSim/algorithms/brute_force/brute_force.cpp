@@ -205,16 +205,46 @@ VecSimIndexInfo BruteForceIndex::info() {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
-    info.d = this->dim;
-    info.type = this->vecType;
-    info.metric = this->metric;
+    info.bfInfo.dim = this->dim;
+    info.bfInfo.type = this->vecType;
+    info.bfInfo.metric = this->metric;
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
-    info.memory = this->allocator->getAllocationSize();
+    info.bfInfo.memory = this->allocator->getAllocationSize();
     return info;
 }
 
-VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
-                                                       short max_iterations) {
+VecSimInfoIterator *BruteForceIndex::infoIterator() {
+    VecSimIndexInfo info = this->info();
+    // For readability. Update this number when needed;
+    size_t numberOfInfoFields = 7;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                                .fieldType = INFOFIELD_STRING,
+                                .stringValue = VecSimAlgo_ToString(info.algo)});
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::TYPE_STRING,
+                                .fieldType = INFOFIELD_STRING,
+                                .stringValue = VecSimType_ToString(info.bfInfo.type)});
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.dim});
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::METRIC_STRING,
+                                .fieldType = INFOFIELD_STRING,
+                                .stringValue = VecSimMetric_ToString(info.bfInfo.metric)});
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.indexSize});
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.blockSize});
+    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::MEMORY_STRING,
+                                .fieldType = INFOFIELD_UINT64,
+                                .uintegerValue = info.bfInfo.memory});
+
+    return infoIterator;
+}
+
+VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }

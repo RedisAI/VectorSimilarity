@@ -29,11 +29,17 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    return index->addVector(blob, id);
+    int64_t before = index->getAllocator()->getAllocationSize();
+    index->addVector(blob, id);
+    int64_t after = index->getAllocator()->getAllocationSize();
+    return after - before;
 }
 
 extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
-    return index->deleteVector(id);
+    int64_t before = index->getAllocator()->getAllocationSize();
+    index->deleteVector(id);
+    int64_t after = index->getAllocator()->getAllocationSize();
+    return after - before;
 }
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
@@ -60,9 +66,12 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) {
 
 extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
 
-extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
-                                                        short maxIterations) {
-    return index->newBatchIterator(queryBlob, maxIterations);
+extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
+    return index->infoIterator();
+}
+
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
+    return index->newBatchIterator(queryBlob);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

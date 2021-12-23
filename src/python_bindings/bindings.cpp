@@ -95,7 +95,7 @@ public:
     PyBatchIterator createBatchIterator(py::object &query_blob) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
         float *vector_data = (float *)items.data(0);
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, 1000));
+        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
@@ -197,5 +197,6 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
         .def("get_next_results", &PyBatchIterator::getNextResults)
-        .def("reset", &PyBatchIterator::reset);
+        .def("reset", &PyBatchIterator::reset)
+        .def("max_extras", &PyBatchIterator::getMaxExtras);
 }

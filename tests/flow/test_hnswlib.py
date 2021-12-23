@@ -208,7 +208,7 @@ def test_batch_iterator():
             accumulated_labels.extend(labels[0])
             returned_results_num = len(accumulated_labels)
             if returned_results_num == total_res:
-                print("measure recall")
+                # print("measure recall")
                 returned_results_num = len(accumulated_labels)
                 keys = [key for _, key in dists[:returned_results_num]]
                 correct += len(set(accumulated_labels).intersection(set(keys)))
@@ -220,6 +220,7 @@ def test_batch_iterator():
                 # Measure iteration recall
                 # recall = float(correct)/returned_results_num
                 break
+        print("max_extras: ", batch_iterator.max_extras())
     recall = float(correct) / (total_res*num_queries)
     print(f'\nrecall is: ', recall)
 

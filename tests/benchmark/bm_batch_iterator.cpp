@@ -52,7 +52,7 @@ BENCHMARK_DEFINE_F(BM_BatchIteratorBF, get_10000_total_results)(benchmark::State
 
     size_t n_res = st.range(0);
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data(), -1);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data());
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
@@ -97,7 +97,7 @@ protected:
                         .efRuntime = ef}};
         hnsw_index = VecSimIndex_New(&params);
 
-        // Add 1M random vectors
+        // Add 100K random vectors
         std::vector<float> data(n_vectors * dim);
         rng.seed(47);
         std::uniform_real_distribution<> distrib;
@@ -128,7 +128,7 @@ BENCHMARK_DEFINE_F(BM_BatchIteratorHNSW, get_10000_total_results)(benchmark::Sta
 
     size_t n_res = st.range(0);
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data(), 1000);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
@@ -143,7 +143,7 @@ BENCHMARK_DEFINE_F(BM_BatchIteratorHNSW, get_10000_total_results)(benchmark::Sta
 
 BENCHMARK_REGISTER_F(BM_BatchIteratorHNSW, get_10000_total_results)
         ->Arg(100)
-//        ->Arg(1000)
+        ->Arg(1000)
         ->Iterations(100)
         ->Unit(benchmark::kMillisecond);
 

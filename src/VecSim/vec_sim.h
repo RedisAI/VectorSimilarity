@@ -7,6 +7,7 @@ extern "C" {
 #include <stdlib.h>
 #include "query_results.h"
 #include "vec_sim_common.h"
+#include "info_iterator.h"
 
 typedef struct VecSimIndex VecSimIndex;
 
@@ -74,17 +75,23 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
 
 /**
+ * @brief Returns an info iterator for generic reply purposes.
+ *
+ * @param index this index to return its info.
+ * @return VecSimInfoIterator* An iterable containing the index general and specific meta-data.
+ */
+VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
+
+/**
  * @brief Create a new batch iterator for a specific index, for a specific query vector,
  * using the Index_BatchIteratorNew method of the index. Should be released with
  * VecSimBatchIterator_Free call.
  * @param index the index in which the search will be done (in batches)
  * @param queryBlob binary representation of the vector. Blob size should match the index data type
  * and dimension.
- * @param maxIterations maximum number of iterations to run before HNSW iterator gets depleted.
  * @return Fresh batch iterator
  */
-VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
-                                             short maxIterations);
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.
