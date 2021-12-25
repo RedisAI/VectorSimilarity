@@ -24,7 +24,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
         } else if (dim > 16) {
             fstdistfunc_ = InnerProductSIMD16ExtResiduals_AVX;
         } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4Ext_AVX;
+            fstdistfunc_ = InnerProductSIMD4ExtResiduals_AVX;
         }
     } else if (arch_opt == ARCH_OPT_SSE) {
         if (dim % 16 == 0) {
@@ -34,7 +34,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
         } else if (dim > 16) {
             fstdistfunc_ = InnerProductSIMD16ExtResiduals_SSE;
         } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4Ext_SSE;
+            fstdistfunc_ = InnerProductSIMD4ExtResiduals_SSE;
         }
     }
 #endif // __x86_64__
