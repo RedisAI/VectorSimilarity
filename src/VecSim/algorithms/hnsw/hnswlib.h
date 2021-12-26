@@ -29,6 +29,9 @@ typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
+
+template <typename dist_t>
 class HierarchicalNSW : VecsimBaseObject {
 
     // Index build parameters
@@ -90,28 +93,27 @@ class HierarchicalNSW : VecsimBaseObject {
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, int level) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
-    void removeExtraLinks(linklistsizeint *node_ll,
-                          vecsim_stl::max_priority_queue<pair<dist_t, tableint>> candidates,
+    void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
                           const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
-    vecsim_stl::max_priority_queue<pair<dist_t, tableint>>
-    searchLayer(tableint ep_id, const void *data_point, int layer, size_t ef) const;
-    void
-    getNeighborsByHeuristic2(vecsim_stl::max_priority_queue<pair<dist_t, tableint>> &top_candidates,
-                             size_t M);
-    tableint mutuallyConnectNewElement(
-        tableint cur_c, vecsim_stl::max_priority_queue<pair<dist_t, tableint>> &top_candidates,
-        int level);
+    candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, int layer,
+                                          size_t ef) const;
+    void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
+    tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
+                                       int level);
     void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
                                       tableint *neighbours_list,
                                       tableint *neighbour_neighbours_list, int level);
+    HierarchicalNSW() = default;
 
 public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
                     size_t initial_pool_size = 1);
+
+    HierarchicalNSW(HierarchicalNSW<dist_t> &hnsw);
     ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -282,10 +284,11 @@ VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
  * helper functions
  */
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::removeExtraLinks(
-    linklistsizeint *node_ll, vecsim_stl::max_priority_queue<pair<dist_t, tableint>> candidates,
-    size_t Mcurmax, tableint *node_neighbors, const vecsim_stl::set<tableint> &orig_neighbors,
-    tableint *removed_links, size_t *removed_links_num) {
+void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
+                                               candidatesMaxHeap<dist_t> candidates, size_t Mcurmax,
+                                               tableint *node_neighbors,
+                                               const vecsim_stl::set<tableint> &orig_neighbors,
+                                               tableint *removed_links, size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
@@ -313,9 +316,9 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(
 }
 
 template <typename dist_t>
-vecsim_stl::max_priority_queue<pair<dist_t, tableint>>
-HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point, int layer,
-                                     size_t ef) const {
+candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
+                                                               const void *data_point, int layer,
+                                                               size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -324,8 +327,8 @@ HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point, int
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    vecsim_stl::max_priority_queue<pair<dist_t, tableint>> top_candidates(this->allocator);
-    vecsim_stl::max_priority_queue<pair<dist_t, tableint>> candidate_set(this->allocator);
+    candidatesMaxHeap<dist_t> top_candidates(this->allocator);
+    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
     dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
     dist_t lowerBound = dist;
@@ -392,13 +395,13 @@ HierarchicalNSW<dist_t>::searchLayer(tableint ep_id, const void *data_point, int
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(
-    vecsim_stl::max_priority_queue<pair<dist_t, tableint>> &top_candidates, const size_t M) {
+void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates,
+                                                       const size_t M) {
     if (top_candidates.size() < M) {
         return;
     }
 
-    vecsim_stl::max_priority_queue<std::pair<dist_t, tableint>> queue_closest(this->allocator);
+    candidatesMaxHeap<dist_t> queue_closest(this->allocator);
     vecsim_stl::vector<std::pair<dist_t, tableint>> return_list(this->allocator);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
@@ -440,8 +443,7 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(
 
 template <typename dist_t>
 tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
-    tableint cur_c, vecsim_stl::max_priority_queue<pair<dist_t, tableint>> &top_candidates,
-    int level) {
+    tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates, int level) {
     size_t Mcurmax = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
     if (top_candidates.size() > M_)
@@ -498,7 +500,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             setListCount(ll_other, sz_link_list_other + 1);
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
-            vecsim_stl::max_priority_queue<pair<dist_t, tableint>> candidates(this->allocator);
+            candidatesMaxHeap<dist_t> candidates(this->allocator);
             vecsim_stl::set<tableint> orig_neighbors_set(this->allocator);
             dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c),
                                         getDataByInternalId(selectedNeighbor), dist_func_param_);
@@ -557,7 +559,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
                                                            int level) {
 
     // put the deleted element's neighbours in the candidates.
-    vecsim_stl::max_priority_queue<pair<dist_t, tableint>> candidates(this->allocator);
+    candidatesMaxHeap<dist_t> candidates(this->allocator);
     vecsim_stl::set<tableint> candidates_set(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (tableint *)(neighbours_list + 1);
@@ -978,7 +980,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             if (level > maxlevelcopy || level < 0) // possible?
                 throw std::runtime_error("Level error");
 
-            vecsim_stl::max_priority_queue<pair<dist_t, tableint>> top_candidates =
+            candidatesMaxHeap<dist_t> top_candidates =
                 searchLayer(currObj, data_point, level, ef_construction_);
             currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
         }
