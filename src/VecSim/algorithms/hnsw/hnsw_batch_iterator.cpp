@@ -44,6 +44,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         this->depleted = true;
         return top_candidates;
     }
+    auto dist_func = this->space->get_dist_func();
 
     // Move extras from previous iteration to the top candidates.
     while (top_candidates.size() < this->hnsw_index->getEf() && !top_candidates_extras.empty()) {
@@ -54,8 +55,6 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
     if (top_candidates.size() == this->hnsw_index->getEf()) {
         return top_candidates;
     }
-
-    auto dist_func = this->space->get_dist_func();
 
     // In the first iteration, add the entry point to the empty candidates set.
     if (this->getResultsCount() == 0) {
