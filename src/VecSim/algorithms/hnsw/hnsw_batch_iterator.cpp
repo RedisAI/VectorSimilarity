@@ -13,35 +13,24 @@ inline bool HNSW_BatchIterator::hasVisitedNode(idType node_id) const {
     return this->visited_list->getNodeTag(node_id) == this->visited_tag;
 }
 
-void HNSW_BatchIterator::prepareResults(
-    VecSimQueryResult_List batch_results,
-    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates, size_t n_res,
-    VecSimQueryResult_Order order) {
-    size_t initial_results_num = array_len(batch_results);
+VecSimQueryResult_List HNSW_BatchIterator::prepareResults(
+    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates, size_t n_res) {
+    // size_t initial_results_num = array_len(batch_results);
     // Put the "spare" results (if exist) in the results heap.
-    while (top_candidates.size() > n_res - initial_results_num) {
-        labelType label = this->index->hnsw.getExternalLabel(top_candidates.top().second);
-        this->results.emplace(top_candidates.top().first, label); // (distance, label)
+    while (top_candidates.size() > n_res) {
+        this->top_candidates_extras.emplace(top_candidates.top().first, top_candidates.top().second); // (distance, label)
         top_candidates.pop();
     }
+    auto *batch_results = array_new_len<VecSimQueryResult>(top_candidates.size(), top_candidates.size());
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
-    for (int i = (int)(top_candidates.size() + initial_results_num - 1);
-         i >= (int)initial_results_num; i--) {
-        array_grow(batch_results);
+    for (int i = (int)(top_candidates.size() - 1); i >= 0; i--) {
         labelType label = this->index->hnsw.getExternalLabel(top_candidates.top().second);
         VecSimQueryResult_SetId(batch_results[i], label);
         VecSimQueryResult_SetScore(batch_results[i], top_candidates.top().first);
         top_candidates.pop();
     }
-    this->updateResultsCount(array_len(batch_results));
-    if (this->getResultsCount() == this->index->indexSize()) {
-        this->depleted = true;
-    }
-    // By default, results are ordered by score.
-    if (order == BY_ID) {
-        sort_results_by_id(batch_results);
-    }
+    return batch_results;
 }
 
 vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGraph() {
@@ -55,15 +44,11 @@ vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGrap
     auto &hnsw_index = this->index->hnsw;
     auto space = this->index->space.get();
 
-    // Set the top candidate to be the top candidates that were found in the previous iteration,
-    // but not returned.
-    top_candidates = this->top_candidates_extras;
-    this->top_candidates_extras =
-        vecsim_stl::max_priority_queue<pair<float, idType>>(this->allocator);
-    while (top_candidates.size() > hnsw_index.getEf()) {
-        this->top_candidates_extras.emplace(top_candidates.top().first,
-                                            top_candidates.top().second);
-        top_candidates.pop();
+    // Move extras from previous iteration to the top candidates.
+    while (top_candidates.size() < hnsw_index.getEf() && !this->top_candidates_extras.empty()) {
+        top_candidates.emplace(this->top_candidates_extras.top().first,
+                                            this->top_candidates_extras.top().second);
+        this->top_candidates_extras.pop();
     }
     if (top_candidates.size() == hnsw_index.getEf()) {
         return top_candidates;
@@ -71,7 +56,7 @@ vecsim_stl::max_priority_queue<pair<float, idType>> HNSW_BatchIterator::scanGrap
 
     auto dist_func = space->get_dist_func();
 
-    // In the first iteration,, add the entry point to the empty candidates set.
+    // In the first iteration, add the entry point to the empty candidates set.
     if (this->getResultsCount() == 0) {
         float dist =
             dist_func(this->getQueryBlob(), hnsw_index.getDataByInternalId(this->entry_point),
@@ -161,7 +146,6 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
     if (orig_ef < n_res) {
         dynamic_cast<HNSWIndex *>(this->index)->setEf(n_res);
     }
-    auto *batch_results = array_new<VecSimQueryResult>(n_res);
 
     // In the first iteration, we search the graph from top bottom to find the initial entry point,
     // and then we scan the graph to get results (layer 0).
@@ -169,30 +153,25 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
         idType bottom_layer_ep = this->index->hnsw.searchBottomLayerEP(this->getQueryBlob());
         this->entry_point = bottom_layer_ep;
     }
+    // We ask for at least n_res candidate from the scan. In fact, at most ef results will return, and
+    // it could be that ef > n_res.
+    auto top_candidates = this->scanGraph();
+    // Move the spare results to the "extras" queue if needed, and create the batch results array.
+    auto batch_results = this->prepareResults(top_candidates, n_res);
 
-    // First, take results from the "spare" results of previous iteration.
-    size_t num_results_to_add = min(this->results.size(), n_res);
-    for (int i = 0; i < num_results_to_add; i++) {
-        batch_results = array_append(batch_results, VecSimQueryResult{});
-        VecSimQueryResult_SetId(batch_results[i], this->results.top().second);
-        VecSimQueryResult_SetScore(batch_results[i], this->results.top().first);
-        this->results.pop();
+    this->updateResultsCount(array_len(batch_results));
+    if (this->getResultsCount() == this->index->indexSize()) {
+        this->depleted = true;
     }
-    size_t iteration_res_num = array_len(batch_results);
-
-    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates(this->allocator);
-    if (iteration_res_num < n_res) {
-        // Scan graph for more results (at least n_res, if exist), and save them.
-        top_candidates = this->scanGraph();
+    // By default, results are ordered by score.
+    if (order == BY_ID) {
+        sort_results_by_id(batch_results);
     }
-    // Update the batch_results and the spare results if needed, sort by id if needed.
-    this->prepareResults(batch_results, top_candidates, n_res, order);
-
     dynamic_cast<HNSWIndex *>(this->index)->setEf(orig_ef);
     return batch_results;
 }
 
-bool HNSW_BatchIterator::isDepleted() { return this->depleted && this->results.empty(); }
+bool HNSW_BatchIterator::isDepleted() { return this->depleted && this->top_candidates_extras.empty(); }
 
 void HNSW_BatchIterator::reset() {
     this->resetResultsCount();
@@ -202,5 +181,5 @@ void HNSW_BatchIterator::reset() {
     this->results = vecsim_stl::min_priority_queue<pair<float, labelType>>(this->allocator);
     this->candidates = vecsim_stl::min_priority_queue<pair<float, idType>>(this->allocator);
     this->top_candidates_extras =
-        vecsim_stl::max_priority_queue<pair<float, idType>>(this->allocator);
+        vecsim_stl::min_priority_queue<pair<float, idType>>(this->allocator);
 }

@@ -785,7 +785,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
             auto verify_res = [&](int id, float score, size_t index) {
                 ASSERT_TRUE(expected_ids[index] == id);
             };
-            runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
             iteration_num++;
         }
         ASSERT_EQ(iteration_num, n / n_res);

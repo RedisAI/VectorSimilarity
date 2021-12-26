@@ -20,13 +20,12 @@ private:
 
     // Data structure that holds the search state between iterations.
     float lower_bound;
-    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates_extras;
+    vecsim_stl::min_priority_queue<pair<float, idType>> top_candidates_extras;
     vecsim_stl::min_priority_queue<pair<float, idType>> candidates;
 
     vecsim_stl::max_priority_queue<pair<float, idType>> scanGraph();
-    void prepareResults(VecSimQueryResult_List batch_results,
-                        vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates,
-                        size_t n_res, VecSimQueryResult_Order order);
+    VecSimQueryResult_List prepareResults(vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates,
+                        size_t n_res);
     inline void visitNode(idType node_id);
     inline bool hasVisitedNode(idType node_id) const;
 
