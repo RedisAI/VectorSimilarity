@@ -32,7 +32,7 @@ template <typename dist_t>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
 
 template <typename dist_t>
-class HierarchicalNSW : VecsimBaseObject {
+class HierarchicalNSW : public VecsimBaseObject {
 
     // Index build parameters
     size_t max_elements_;
@@ -112,8 +112,6 @@ public:
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
                     size_t initial_pool_size = 1);
-
-    HierarchicalNSW(HierarchicalNSW<dist_t> &hnsw);
     ~HierarchicalNSW();
 
     void setEf(size_t ef);
