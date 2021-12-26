@@ -25,13 +25,13 @@ protected:
         size_t M = 32;
         size_t ef = 200;
         params = {.algo = VecSimAlgo_HNSWLIB,
-                .hnswParams = {.type = VecSimType_FLOAT32,
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .initialCapacity = n_vectors,
-                        .M = M,
-                        .efConstruction = ef,
-                        .efRuntime = ef}};
+                  .hnswParams = {.type = VecSimType_FLOAT32,
+                                 .dim = dim,
+                                 .metric = VecSimMetric_L2,
+                                 .initialCapacity = n_vectors,
+                                 .M = M,
+                                 .efConstruction = ef,
+                                 .efRuntime = ef}};
         hnsw_index = VecSimIndex_New(&params);
 
         // Add 1M random vectors
@@ -89,7 +89,6 @@ BENCHMARK_REGISTER_F(BM_BatchIterator, get_10000_results_BF)
     ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 
-
 BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_HNSW)(benchmark::State &st) {
 
     size_t n_res = st.range(0);
@@ -108,9 +107,9 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_HNSW)(benchmark::State &s
 }
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, get_10000_results_HNSW)
-        ->Arg(100)
-        ->Arg(1000)
-        ->Iterations(100)
-        ->Unit(benchmark::kMillisecond);
+    ->Arg(100)
+    ->Arg(1000)
+    ->Iterations(100)
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

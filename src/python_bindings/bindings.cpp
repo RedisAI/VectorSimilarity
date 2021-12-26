@@ -197,6 +197,5 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
         .def("get_next_results", &PyBatchIterator::getNextResults)
-        .def("reset", &PyBatchIterator::reset)
-        .def("max_extras", &PyBatchIterator::getMaxExtras);
+        .def("reset", &PyBatchIterator::reset);
 }
