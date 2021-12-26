@@ -22,9 +22,10 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
 
     void setEf(size_t ef);
+    inline hnswlib::HierarchicalNSW<float> *getHNSWIndex() { return &hnsw; }
+    inline std::unique_ptr<SpaceInterface<float>> getSpace() { return std::move(space); }
 
 private:
     std::unique_ptr<SpaceInterface<float>> space;
     hnswlib::HierarchicalNSW<float> hnsw;
-    friend class HNSW_BatchIterator; // The batch iterator needs to access hnsw methods.
 };

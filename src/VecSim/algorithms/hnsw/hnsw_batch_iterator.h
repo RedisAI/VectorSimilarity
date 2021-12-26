@@ -8,25 +8,30 @@ typedef uint idType;
 
 using namespace std;
 
+using candidatesMinHeap = vecsim_stl::min_priority_queue<pair<float, idType>>;
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<float, idType>>;
+
 class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
-    HNSWIndex *index;
-    vecsim_stl::min_priority_queue<pair<float, labelType>>
-        results;        // Results to return immediately in the next iteration.
-    idType entry_point; // Internal id of the node to begin the scan from.
+    HNSWIndex *index_wrapper;
+    std::unique_ptr<SpaceInterface<float>> space;
+    hnswlib::HierarchicalNSW<float> *hnsw_index;
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     ushort visited_tag;                         // Used to mark nodes that were scanned.
+    idType entry_point;                         // Internal id of the node to begin the scan from.
     bool depleted;
 
     // Data structure that holds the search state between iterations.
     float lower_bound;
-    vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates_extras;
-    vecsim_stl::min_priority_queue<pair<float, idType>> candidates;
+    candidatesMinHeap top_candidates_extras;
+    candidatesMinHeap candidates;
 
-    vecsim_stl::max_priority_queue<pair<float, idType>> scanGraph();
-    void prepareResults(VecSimQueryResult_List batch_results,
-                        vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates,
-                        size_t n_res, VecSimQueryResult_Order order);
+    candidatesMaxHeap scanGraph(candidatesMinHeap &candidates,
+                                candidatesMinHeap &spare_top_candidates, float &lower_bound,
+                                idType entry_point);
+    VecSimQueryResult_List
+    prepareResults(vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates,
+                   size_t n_res);
     inline void visitNode(idType node_id);
     inline bool hasVisitedNode(idType node_id) const;
 
