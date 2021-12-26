@@ -270,7 +270,7 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-	$(SHOW)$(BINDIR)/benchmark/bf_benchmark
+	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
 
 toxenv:
 ifeq ($(wildcard .tox),)

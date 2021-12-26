@@ -43,6 +43,7 @@ def test_sanity_hnswlib_index_L2():
     assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
     assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
 
+
 def test_sanity_hnswlib_index_cosine():
     dim = 16
     num_elements = 10000
@@ -82,7 +83,6 @@ def test_sanity_hnswlib_index_cosine():
     redis_labels, redis_distances = index.knn_query(query_data, 10)
     assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
     assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
-
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
@@ -147,10 +147,9 @@ def test_recall_for_hnswlib_index_with_deletion():
 def test_batch_iterator():
     dim = 100
     num_elements = 100000
-    M = 16
-    efConstruction = 100
-    efRuntime = 100
-
+    M = 24
+    efConstruction = 150
+    efRuntime = 150
     num_queries = 10
 
     hnswparams = HNSWParams()
@@ -177,28 +176,28 @@ def test_batch_iterator():
     batch_iterator = hnsw_index.create_batch_iterator(query_data)
     labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
     for i, _ in enumerate(labels_first_batch[0][:-1]):
-        # assert sorting by id
+        # Assert sorting by id
         assert(labels_first_batch[0][i] < labels_first_batch[0][i+1])
 
     labels_second_batch, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
     for i, dist in enumerate(distances_second_batch[0][:-1]):
-        # assert sorting by score
+        # Assert sorting by score
         assert(distances_second_batch[0][i] < distances_second_batch[0][i+1])
-        # assert that every distance in the second batch is higher than any distance of the first batch
+        # Assert that every distance in the second batch is higher than any distance of the first batch
         assert(len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) == 0)
 
-    # reset
+    # Reset
     batch_iterator.reset()
 
-    # Run again in batches until depleted
+    # Run in batches of 100 until we reach 10000 results and measure recall
     batch_size = 100
-    total_res = 10000
-    iterations = 0
+    total_res = 1000
     correct = 0
     query_data = np.float32(rng.random((num_queries, dim)))
     for target_vector in query_data:
         batch_iterator = hnsw_index.create_batch_iterator(target_vector)
-        # sort distances of every vector from the target vector and get actual k nearest vectors
+        iterations = 0
+        # Sort distances of every vector from the target vector and get the actual order
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
         dists = sorted(dists)
         accumulated_labels = []
@@ -208,22 +207,25 @@ def test_batch_iterator():
             accumulated_labels.extend(labels[0])
             returned_results_num = len(accumulated_labels)
             if returned_results_num == total_res:
-                # print("measure recall")
                 returned_results_num = len(accumulated_labels)
                 keys = [key for _, key in dists[:returned_results_num]]
                 correct += len(set(accumulated_labels).intersection(set(keys)))
-                # for label in accumulated_labels:
-                #     for correct_label in keys:
-                #         if label == correct_label:
-                #             correct += 1
-                #             break
-                # Measure iteration recall
-                # recall = float(correct)/returned_results_num
                 break
-        print("max_extras: ", batch_iterator.max_extras())
+        assert iterations == np.ceil(total_res/batch_size)
     recall = float(correct) / (total_res*num_queries)
-    print(f'\nrecall is: ', recall)
+    print(f'\nRecall for {total_res} results in index of size {num_elements} with dim={dim} is: ', recall)
+    assert recall > 0.9
 
-    # print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
-    # assert (returned_results_num == num_elements)
-    # assert (iterations == np.ceil(num_elements/batch_size))
+    # Run again a single query in batches until it is depleted.
+    batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
+    iterations = 0
+    accumulated_labels = set()
+
+    while batch_iterator.has_next():
+        iterations += 1
+        labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+        # Verify that we got new scores in each iteration.
+        assert len(accumulated_labels.intersection(set(labels[0]))) == 0
+        accumulated_labels = accumulated_labels.union(set(labels[0]))
+    assert len(accumulated_labels) >= 0.95*num_elements
+    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
