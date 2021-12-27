@@ -7,7 +7,7 @@
 
 namespace hnswlib {
 
-typedef ushort tag_t;
+typedef unsigned short tag_t;
 
 /**
  * Used as a singleton that is responsible for marking nodes that were visited in the graph scan.
