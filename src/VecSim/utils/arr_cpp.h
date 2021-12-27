@@ -45,13 +45,13 @@ T *array_ensure_cap(T *arr, size_t cap) {
 }
 
 template <typename T>
-T *array_grow(T *arr, size_t cap) {
+T *array_grow(T *arr) {
     return array_ensure_cap(arr, ++array_hdr(arr)->len);
 }
 
 template <typename T>
 T *array_append(T *arr, T val) {
-    arr = array_grow(arr, array_hdr(arr)->len);
+    arr = array_grow(arr);
     arr[array_hdr(arr)->len - 1] = val;
     return arr;
 }

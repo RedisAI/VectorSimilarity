@@ -31,9 +31,11 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
  */
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(int, float, int)> ResCB,
-                                VecSimQueryResult_Order order) {
+                                VecSimQueryResult_Order order, size_t expected_n_res) {
+    if (expected_n_res == -1)
+        expected_n_res = n_res;
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
-    ASSERT_EQ(VecSimQueryResult_Len(res), n_res);
+    ASSERT_EQ(VecSimQueryResult_Len(res), expected_n_res);
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
@@ -42,7 +44,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
         float score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
-    ASSERT_EQ(res_ind, n_res);
+    ASSERT_EQ(res_ind, expected_n_res);
     VecSimQueryResult_IteratorFree(iterator);
     VecSimQueryResult_Free(res);
 }

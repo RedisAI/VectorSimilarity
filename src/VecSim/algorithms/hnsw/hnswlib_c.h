@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "VecSim/vec_sim_index.h"
@@ -23,6 +22,8 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
 
     void setEf(size_t ef);
+    inline hnswlib::HierarchicalNSW<float> *getHNSWIndex() { return &hnsw; }
+    inline std::unique_ptr<SpaceInterface<float>> getSpace() { return std::move(space); }
 
 private:
     std::unique_ptr<SpaceInterface<float>> space;
