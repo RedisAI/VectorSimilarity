@@ -46,7 +46,7 @@ TEST_F(SpacesTest, l2_17) {
     }
 }
 
-// This test will trigger the "Residuals" function for dimension < 9, for each optimization.
+// This test will trigger the "Residuals" function for dimension < 16, for each optimization.
 TEST_F(SpacesTest, l2_9) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 9;
@@ -96,7 +96,7 @@ TEST_F(SpacesTest, ip_17) {
     }
 }
 
-// This test will trigger the "Residuals" function for dimension < 9, for each optimization.
+// This test will trigger the "Residuals" function for dimension < 16, for each optimization.
 TEST_F(SpacesTest, ip_9) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 9;
