@@ -105,7 +105,6 @@ class HierarchicalNSW : public VecsimBaseObject {
     void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
                                       tableint *neighbours_list,
                                       tableint *neighbour_neighbours_list, int level);
-    HierarchicalNSW() = default;
 
 public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
