@@ -17,7 +17,7 @@ private:
     std::unique_ptr<SpaceInterface<float>> space;
     hnswlib::HierarchicalNSW<float> *hnsw_index;
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
-    ushort visited_tag;                         // Used to mark nodes that were scanned.
+    unsigned short visited_tag;                         // Used to mark nodes that were scanned.
     idType entry_point;                         // Internal id of the node to begin the scan from.
     bool depleted;
 
