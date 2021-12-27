@@ -166,7 +166,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     }
 
     float upperBound = std::numeric_limits<float>::lowest();
-    CandidatesHeap TopCandidates(this->allocator);
+    vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
         size_t block_size = vectorBlock->getLength();

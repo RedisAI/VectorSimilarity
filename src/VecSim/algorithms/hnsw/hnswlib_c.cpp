@@ -4,6 +4,7 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
 #include <deque>
 #include <memory>
@@ -70,7 +71,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                 hnsw.setEf(queryParams->hnswRuntimeParams.efRuntime);
             }
         }
-        typedef vecsim_stl::priority_queue<pair<float, size_t>> knn_queue_t;
+        typedef vecsim_stl::max_priority_queue<pair<float, size_t>> knn_queue_t;
         auto knn_res = make_unique<knn_queue_t>(std::move(hnsw.searchKnn(query_data, k)));
         auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = (int)knn_res->size() - 1; i >= 0; --i) {
@@ -103,6 +104,10 @@ VecSimIndexInfo HNSWIndex::info() {
     info.hnswInfo.entrypoint = this->hnsw.getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();
     return info;
+}
+
+VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
+    return new (this->allocator) HNSW_BatchIterator(queryBlob, this, this->allocator);
 }
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {
@@ -147,5 +152,3 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
 
     return infoIterator;
 }
-
-VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) { return nullptr; }

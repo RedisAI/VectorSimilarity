@@ -62,7 +62,9 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/utils/vec_utils.cpp
     VecSim/memory/vecsim_malloc.cpp
     VecSim/memory/vecsim_base.cpp
-    VecSim/algorithms/brute_force/bf_batch_iterator.cpp)
+    VecSim/algorithms/brute_force/bf_batch_iterator.cpp
+	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
+  )
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
@@ -78,7 +80,7 @@ endif()
 if(BUILD_TESTS)
 	add_subdirectory(${root}/tests/unit unit_tests)
 	add_subdirectory(${root}/tests/module module_tests)
-	
+
 	if (NOT(USE_ASAN OR USE_MSAN))
 		add_subdirectory(${root}/tests/benchmark benchmark)
 	endif()

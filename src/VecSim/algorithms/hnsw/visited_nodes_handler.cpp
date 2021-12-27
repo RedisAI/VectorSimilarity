@@ -10,10 +10,15 @@ VisitedNodesHandler::VisitedNodesHandler(unsigned int cap,
     elements_tags = reinterpret_cast<tag_t *>(allocator->callocate(sizeof(tag_t) * num_elements));
 }
 
+void VisitedNodesHandler::reset() {
+    memset(elements_tags, 0, sizeof(tag_t) * num_elements);
+    cur_tag = 0;
+}
+
 tag_t VisitedNodesHandler::getFreshTag() {
     cur_tag++;
     if (cur_tag == 0) {
-        memset(elements_tags, 0, sizeof(tag_t) * num_elements);
+        this->reset();
         cur_tag++;
     }
     return cur_tag;
