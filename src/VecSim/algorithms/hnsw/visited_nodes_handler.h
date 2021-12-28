@@ -7,7 +7,7 @@
 
 namespace hnswlib {
 
-typedef ushort tag_t;
+typedef unsigned short tag_t;
 
 /**
  * Used as a singleton that is responsible for marking nodes that were visited in the graph scan.
@@ -19,10 +19,10 @@ class VisitedNodesHandler : public VecsimBaseObject {
 private:
     tag_t cur_tag;
     tag_t *elements_tags;
-    uint num_elements;
+    unsigned int num_elements;
 
 public:
-    VisitedNodesHandler(uint cap, const std::shared_ptr<VecSimAllocator> &allocator);
+    VisitedNodesHandler(unsigned int cap, const std::shared_ptr<VecSimAllocator> &allocator);
 
     // Return unused tag for marking the visited nodes. The tags are cyclic, so whenever we reach
     // zero, we reset the tags of all the nodes (and use 1 as the fresh tag)
@@ -33,10 +33,10 @@ public:
     void reset();
 
     // Mark node_id with tag, to have an indication that this node has been visited.
-    inline void tagNode(uint node_id, tag_t tag) { elements_tags[node_id] = tag; }
+    inline void tagNode(unsigned int node_id, tag_t tag) { elements_tags[node_id] = tag; }
 
     // Get the tag in which node_id is marked currently.
-    inline tag_t getNodeTag(uint node_id) { return elements_tags[node_id]; }
+    inline tag_t getNodeTag(unsigned int node_id) { return elements_tags[node_id]; }
 
     ~VisitedNodesHandler() override;
 };
@@ -49,7 +49,7 @@ class VisitedNodesHandlerPool : public VecsimBaseObject {
 private:
     std::deque<VisitedNodesHandler *, VecsimSTLAllocator<VisitedNodesHandler *>> pool;
     std::mutex pool_guard;
-    uint num_elements;
+    unsigned int num_elements;
 
 public:
     VisitedNodesHandlerPool(int initial_pool_size, int cap,
