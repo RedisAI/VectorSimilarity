@@ -7,9 +7,6 @@ project(VectorSimilarity_Benchmark)
 set(CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
-IF (USE_PROFILE)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-ENDIF()
 
 include_directories(${root}/src)
 

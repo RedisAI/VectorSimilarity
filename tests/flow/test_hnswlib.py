@@ -147,9 +147,9 @@ def test_recall_for_hnswlib_index_with_deletion():
 def test_batch_iterator():
     dim = 100
     num_elements = 100000
-    M = 24
-    efConstruction = 150
-    efRuntime = 150
+    M = 26
+    efConstruction = 180
+    efRuntime = 180
     num_queries = 10
 
     hnswparams = HNSWParams()
@@ -189,12 +189,13 @@ def test_batch_iterator():
     # Reset
     batch_iterator.reset()
 
-    # Run in batches of 100 until we reach 10000 results and measure recall
+    # Run in batches of 100 until we reach 1000 results and measure recall
     batch_size = 100
     total_res = 1000
-    correct = 0
+    total_recall = 0
     query_data = np.float32(rng.random((num_queries, dim)))
     for target_vector in query_data:
+        correct = 0
         batch_iterator = hnsw_index.create_batch_iterator(target_vector)
         iterations = 0
         # Sort distances of every vector from the target vector and get the actual order
@@ -207,14 +208,14 @@ def test_batch_iterator():
             accumulated_labels.extend(labels[0])
             returned_results_num = len(accumulated_labels)
             if returned_results_num == total_res:
-                returned_results_num = len(accumulated_labels)
                 keys = [key for _, key in dists[:returned_results_num]]
                 correct += len(set(accumulated_labels).intersection(set(keys)))
                 break
         assert iterations == np.ceil(total_res/batch_size)
-    recall = float(correct) / (total_res*num_queries)
-    print(f'\nRecall for {total_res} results in index of size {num_elements} with dim={dim} is: ', recall)
-    assert recall > 0.9
+        recall = float(correct) / total_res
+        assert recall >= 0.9
+        total_recall += recall
+    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ', total_recall/num_queries)
 
     # Run again a single query in batches until it is depleted.
     batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
