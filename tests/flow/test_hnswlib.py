@@ -43,6 +43,7 @@ def test_sanity_hnswlib_index_L2():
     assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
     assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
 
+
 def test_sanity_hnswlib_index_cosine():
     dim = 16
     num_elements = 10000
@@ -82,7 +83,6 @@ def test_sanity_hnswlib_index_cosine():
     redis_labels, redis_distances = index.knn_query(query_data, 10)
     assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
     assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
-
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
@@ -142,3 +142,91 @@ def test_recall_for_hnswlib_index_with_deletion():
     recall = float(correct)/(k*num_queries)
     print("\nrecall is: \n", recall)
     assert(recall > 0.9)
+
+
+def test_batch_iterator():
+    dim = 100
+    num_elements = 100000
+    M = 26
+    efConstruction = 180
+    efRuntime = 180
+    num_queries = 10
+
+    hnswparams = HNSWParams()
+    hnswparams.M = M
+    hnswparams.efConstruction = efConstruction
+    hnswparams.initialCapacity = num_elements
+    hnswparams.efRuntime = efRuntime
+    hnswparams.dim = dim
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.metric = VecSimMetric_L2
+
+    hnsw_index = HNSWIndex(hnswparams)
+
+    # Add 100k random vectors to the index
+    rng = np.random.default_rng(seed=47)
+    data = np.float32(rng.random((num_elements, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        hnsw_index.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    # Create a random query vector and create a batch iterator
+    query_data = np.float32(rng.random((1, dim)))
+    batch_iterator = hnsw_index.create_batch_iterator(query_data)
+    labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
+    for i, _ in enumerate(labels_first_batch[0][:-1]):
+        # Assert sorting by id
+        assert(labels_first_batch[0][i] < labels_first_batch[0][i+1])
+
+    labels_second_batch, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
+    for i, dist in enumerate(distances_second_batch[0][:-1]):
+        # Assert sorting by score
+        assert(distances_second_batch[0][i] < distances_second_batch[0][i+1])
+        # Assert that every distance in the second batch is higher than any distance of the first batch
+        assert(len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) == 0)
+
+    # Reset
+    batch_iterator.reset()
+
+    # Run in batches of 100 until we reach 1000 results and measure recall
+    batch_size = 100
+    total_res = 1000
+    total_recall = 0
+    query_data = np.float32(rng.random((num_queries, dim)))
+    for target_vector in query_data:
+        correct = 0
+        batch_iterator = hnsw_index.create_batch_iterator(target_vector)
+        iterations = 0
+        # Sort distances of every vector from the target vector and get the actual order
+        dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
+        dists = sorted(dists)
+        accumulated_labels = []
+        while batch_iterator.has_next():
+            iterations += 1
+            labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+            accumulated_labels.extend(labels[0])
+            returned_results_num = len(accumulated_labels)
+            if returned_results_num == total_res:
+                keys = [key for _, key in dists[:returned_results_num]]
+                correct += len(set(accumulated_labels).intersection(set(keys)))
+                break
+        assert iterations == np.ceil(total_res/batch_size)
+        recall = float(correct) / total_res
+        assert recall >= 0.9
+        total_recall += recall
+    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ', total_recall/num_queries)
+
+    # Run again a single query in batches until it is depleted.
+    batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
+    iterations = 0
+    accumulated_labels = set()
+
+    while batch_iterator.has_next():
+        iterations += 1
+        labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+        # Verify that we got new scores in each iteration.
+        assert len(accumulated_labels.intersection(set(labels[0]))) == 0
+        accumulated_labels = accumulated_labels.union(set(labels[0]))
+    assert len(accumulated_labels) >= 0.95*num_elements
+    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")

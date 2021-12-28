@@ -32,7 +32,7 @@ template <typename dist_t>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
 
 template <typename dist_t>
-class HierarchicalNSW : VecsimBaseObject {
+class HierarchicalNSW : public VecsimBaseObject {
 
     // Index build parameters
     size_t max_elements_;
