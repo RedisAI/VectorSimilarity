@@ -226,7 +226,8 @@ workflows:
           name: sanitize-<< matrix.san-type >>
           matrix:
             parameters:
-              san-type: [address, memory]
+#               san-type: [address, memory]
+              san-type: [address]
           <<: *on-any-branch
       - codecov:
           <<: *on-any-branch
@@ -246,4 +247,5 @@ workflows:
           name: sanitize-<< matrix.san-type >>
           matrix:
             parameters:
-              san-type: [address, memory]
+#               san-type: [address, memory]
+              san-type: [address]
