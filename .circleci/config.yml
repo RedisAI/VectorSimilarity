@@ -133,6 +133,7 @@ jobs:
       - run:
           name: Benchmark
           command: bash -l -c "make benchmark"
+          no_output_timeout: 90m
       - run:
           name: Redis tests
           command: bash -l -c "tox -e modtest"
