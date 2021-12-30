@@ -24,8 +24,8 @@ endif()
 
 if (BUILD_TESTS)
 	include(${root}/cmake/gtest.cmake)
+	option(BUILD_TESTING "" ON)
 endif()
-
 #----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
@@ -40,10 +40,6 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 IF (USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
-
-if(ARCH STREQUAL "x64")
-	add_compile_options(-march=x86-64)
-endif()
 
 if(VECSIM_STATIC)
 	set(VECSIM_LIBTYPE STATIC)
