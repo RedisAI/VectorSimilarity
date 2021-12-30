@@ -2,6 +2,7 @@ project(VectorSimilarity_Spaces)
 
 include(FetchContent)
 option(BUILD_TESTING "" OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_Declare(
 	cpu_features
 	GIT_REPOSITORY  https://github.com/google/cpu_features.git
