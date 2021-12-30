@@ -1,6 +1,5 @@
 project(VectorSimilarity_Spaces)
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 include(FetchContent)
 option(BUILD_TESTING "" OFF)
 FetchContent_Declare(
@@ -37,5 +36,4 @@ else()
 endif()
 
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
-
 target_link_libraries(VectorSimilaritySpaces cpu_features)

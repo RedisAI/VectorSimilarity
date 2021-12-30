@@ -7,14 +7,11 @@ option(VECSIM_STATIC "Build as static library" OFF)
 option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
 option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
 
-if(NOT DEFINED root)
-	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
-endif()
+get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
-if(NOT DEFINED binroot)
-	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
-endif()
+get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
+message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 
 include(${root}/cmake/common.cmake)
 
