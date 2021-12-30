@@ -22,9 +22,3 @@ FetchContent_Declare(
 	URL https://github.com/google/benchmark/archive/refs/tags/v1.6.0.zip
 )
 FetchContent_MakeAvailable(google_benchmark)
-
-FetchContent_Declare(
-	cpu_features
-	GIT_REPOSITORY  https://github.com/google/cpu_features.git
-)
-FetchContent_MakeAvailable(cpu_features)

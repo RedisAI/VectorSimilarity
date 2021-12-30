@@ -1,5 +1,12 @@
 project(VectorSimilarity_Spaces)
 
+include(FetchContent)
+option(BUILD_TESTING "" OFF)
+FetchContent_Declare(
+	cpu_features
+	GIT_REPOSITORY  https://github.com/google/cpu_features.git
+)
+FetchContent_MakeAvailable(cpu_features)
 if (VECSIM_MARCH)
 	add_compile_options(-march=${VECSIM_MARCH})
 endif()
