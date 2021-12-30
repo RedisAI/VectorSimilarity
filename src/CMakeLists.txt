@@ -41,10 +41,6 @@ IF (USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
 
-if(ARCH STREQUAL "x64")
-	add_compile_options(-march=x86-64)
-endif()
-
 if(VECSIM_STATIC)
 	set(VECSIM_LIBTYPE STATIC)
 else()
