@@ -22,9 +22,7 @@ if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
 endif()
 
-if (BUILD_TESTS)
-	include(${root}/cmake/gtest.cmake)
-endif()
+include(${root}/cmake/google.cmake)
 
 #----------------------------------------------------------------------------------------------
 project(VectorSimilarity)

@@ -1,7 +1,5 @@
-
 project(VectorSimilarity_Spaces)
 
-include(${root}/cmake/cpu_features.cmake)
 if (VECSIM_MARCH)
 	add_compile_options(-march=${VECSIM_MARCH})
 endif()
