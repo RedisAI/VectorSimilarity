@@ -20,6 +20,7 @@ include(${root}/cmake/common.cmake)
 
 if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
+	option(VECSIM_STATIC "Build as static library" ON)
 endif()
 
 if (BUILD_TESTS)
