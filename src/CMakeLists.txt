@@ -1,20 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 
-option(BUILD_TESTS "Build tests" ON)
+option(VECSIM_BUILD_TESTS "Build tests" ON)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
 option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
 option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
 
-if(NOT DEFINED root)
-	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
-endif()
+get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
-if(NOT DEFINED binroot)
-	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
-endif()
+get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
+message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 
 include(${root}/cmake/common.cmake)
 
@@ -22,7 +19,7 @@ if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
 endif()
 
-if (BUILD_TESTS)
+if (VECSIM_BUILD_TESTS)
 	include(${root}/cmake/gtest.cmake)
 	option(BUILD_TESTING "" ON)
 endif()
@@ -76,7 +73,7 @@ if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
 
-if(BUILD_TESTS)
+if(VECSIM_BUILD_TESTS)
 	add_subdirectory(${root}/tests/unit unit_tests)
 	add_subdirectory(${root}/tests/module module_tests)
 
