@@ -41,7 +41,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
                                                 float &lower_bound, idType entry_point) {
 
     candidatesMaxHeap top_candidates(this->allocator);
-    if (entry_point == INVALID_ID) {
+    if (entry_point == HNSW_INVALID_ID) {
         this->depleted = true;
         return top_candidates;
     }

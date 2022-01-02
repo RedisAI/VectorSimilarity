@@ -24,6 +24,9 @@ namespace hnswlib {
 
 using namespace std;
 
+#define HNSW_INVALID_ID UINT_MAX
+#define HNSW_INVALID_LEVEL SIZE_MAX
+
 typedef size_t labeltype;
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
@@ -60,14 +63,14 @@ class HierarchicalNSW : public VecsimBaseObject {
 
     // Index state
     size_t cur_element_count;
-    int max_id;
-    int maxlevel_;
+    tableint max_id;
+    size_t maxlevel_;
 
     // Index data structures
-    int entrypoint_node_;
+    tableint entrypoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
-    vecsim_stl::vector<int> element_levels_;
+    vecsim_stl::vector<size_t> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
     std::unique_ptr<VisitedNodesHandler> visited_nodes_handler;
@@ -87,9 +90,9 @@ class HierarchicalNSW : public VecsimBaseObject {
 
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
-    int getRandomLevel(double reverse_size);
-    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, int level) const;
-    void setIncomingEdgesPtr(tableint internal_id, int level, void *set_ptr);
+    size_t getRandomLevel(double reverse_size);
+    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
+    void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, int level) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
@@ -101,7 +104,7 @@ class HierarchicalNSW : public VecsimBaseObject {
                                           size_t ef) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
     tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
-                                       int level);
+                                       size_t level);
     void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
                                       tableint *neighbours_list,
                                       tableint *neighbour_neighbours_list, int level);
@@ -177,7 +180,7 @@ size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
 
 template <typename dist_t>
 size_t HierarchicalNSW<dist_t>::getEntryPointLabel() const {
-    if (entrypoint_node_ != -1)
+    if (entrypoint_node_ != HNSW_INVALID_ID)
         return (size_t)getExternalLabel(entrypoint_node_);
     return -1;
 }
@@ -209,15 +212,15 @@ char *HierarchicalNSW<dist_t>::getDataByInternalId(tableint internal_id) const {
 }
 
 template <typename dist_t>
-int HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
+size_t HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(level_generator_)) * reverse_size;
-    return (int)r;
+    return (size_t)r;
 }
 
 template <typename dist_t>
 vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
-                                                                        int level) const {
+                                                                        size_t level) const {
     if (level == 0) {
         return reinterpret_cast<vecsim_stl::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
@@ -229,7 +232,7 @@ vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, int level, void *set_ptr) {
+void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr) {
     if (level == 0) {
         memcpy(data_level0_memory_ + internal_id * size_data_per_element_ + incoming_links_offset0,
                &set_ptr, sizeof(void *));
@@ -440,7 +443,7 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
 
 template <typename dist_t>
 tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
-    tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates, int level) {
+    tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates, size_t level) {
     size_t Mcurmax = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
     if (top_candidates.size() > M_)
@@ -726,7 +729,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 
 template <typename dist_t>
 HierarchicalNSW<dist_t>::~HierarchicalNSW() {
-    for (int id = 0; id <= max_id; id++) {
+    for (tableint id = 0; id <= max_id; id++) {
         if (available_ids.find(id) != available_ids.end()) {
             continue;
         }
@@ -904,13 +907,13 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
 #endif
     // choose randomly the maximum level in which the new element will be in the index.
-    int element_max_level = getRandomLevel(mult_);
+    size_t element_max_level = getRandomLevel(mult_);
     element_levels_[cur_c] = element_max_level;
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> entry_point_lock(global);
 #endif
-    int maxlevelcopy = maxlevel_;
+    size_t maxlevelcopy = maxlevel_;
 
 #ifdef ENABLE_PARALLELIZATION
     if (element_max_level <= maxlevelcopy)
@@ -934,11 +937,11 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     }
 
     // this condition only means that we are not inserting the first element.
-    if (entrypoint_node_ != -1) {
+    if (entrypoint_node_ != HNSW_INVALID_ID) {
         if (element_max_level < maxlevelcopy) {
             dist_t cur_dist =
                 fstdistfunc_(data_point, getDataByInternalId(currObj), dist_func_param_);
-            for (int level = maxlevelcopy; level > element_max_level; level--) {
+            for (size_t level = maxlevelcopy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
                 // a greedy search in the graph starting from the entry point
@@ -973,7 +976,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             }
         }
 
-        for (int level = std::min(element_max_level, maxlevelcopy); level >= 0; level--) {
+        for (size_t level = std::min(element_max_level, maxlevelcopy); level != HNSW_INVALID_LEVEL; level--) {
             if (level > maxlevelcopy || level < 0) // possible?
                 throw std::runtime_error("Level error");
 
@@ -992,7 +995,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         entrypoint_node_ = cur_c;
         maxlevel_ = element_max_level;
         // create the incoming edges set for the new levels.
-        for (int level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
+        for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
