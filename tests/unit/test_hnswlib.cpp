@@ -958,4 +958,7 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    VecSimIndex_Free(index);
+    array_free(rparams);
 }
