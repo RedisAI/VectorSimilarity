@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-option(BUILD_TESTS "Build tests" ON)
+option(VECSIM_BUILD_TESTS "Build tests" ON)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
@@ -19,7 +19,7 @@ if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
 endif()
 
-if (BUILD_TESTS)
+if (VECSIM_BUILD_TESTS)
 	include(${root}/cmake/gtest.cmake)
 	option(BUILD_TESTING "" ON)
 endif()
