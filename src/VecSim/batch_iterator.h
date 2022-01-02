@@ -7,8 +7,8 @@
  * An abstract class for performing search in batches. Every index type should implement its own
  * batch iterator class.
  */
-class VecSimBatchIterator : public VecsimBaseObject {
-
+struct VecSimBatchIterator : public VecsimBaseObject {
+private:
     const void *query_vector;
     size_t returned_results_count;
 

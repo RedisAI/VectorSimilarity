@@ -20,8 +20,9 @@ if (USE_ASAN OR USE_MSAN)
 endif()
 
 if (VECSIM_BUILD_TESTS)
+	option(BUILD_TESTING "" OFF)
 	include(${root}/cmake/gtest.cmake)
-	option(BUILD_TESTING "" ON)
+
 endif()
 #----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
