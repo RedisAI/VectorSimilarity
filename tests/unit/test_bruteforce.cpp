@@ -88,9 +88,9 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     auto verify_res = [&](size_t id, float score, size_t index) {
-        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
-        ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
-                    (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
     };
     float query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
@@ -459,9 +459,9 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     auto verify_res = [&](size_t id, float score, size_t index) {
-        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
-        ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
-                    (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
     };
     float query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
@@ -815,7 +815,9 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
     // get all in first iteration, expect to use select search
     size_t n_res = n;
-    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_TRUE(id == n - 1 - index); };
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_TRUE(id == n - 1 - index);
+    };
     runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 

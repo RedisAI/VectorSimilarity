@@ -59,9 +59,9 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
 
     float query[] = {50, 50, 50, 50};
     auto verify_res = [&](size_t id, float score, size_t index) {
-        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
-        ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
-                    (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
     };
     runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
@@ -414,9 +414,9 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     auto verify_res = [&](size_t id, float score, size_t index) {
-        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
-        ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
-                    (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
     };
     float query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
@@ -469,9 +469,9 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     auto verify_res = [&](size_t id, float score, size_t index) {
-        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
-        ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
-                    (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
     };
     float query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
@@ -677,7 +677,9 @@ TEST_F(HNSWLibTest, hnsw_override) {
     // This is testing a bug fix - before we had the seconder sorting by id in CompareByFirst,
     // the graph got disconnected due to the deletion of some node followed by a bad repairing of
     // one of its neighbours. Here, we ensure that we get all the nodes in the graph as results.
-    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_TRUE(id == n - 1 - index); };
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_TRUE(id == n - 1 - index);
+    };
     runTopKSearchTest(index, query, 300, verify_res);
 
     VecSimIndex_Free(index);

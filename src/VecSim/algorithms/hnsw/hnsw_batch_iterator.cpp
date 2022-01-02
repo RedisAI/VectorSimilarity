@@ -129,12 +129,8 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
 
 HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, HNSWIndex *index_wrapper,
                                        std::shared_ptr<VecSimAllocator> allocator)
-    :
-    VecSimBatchIterator(query_vector, std::move(allocator)),
-    index_wrapper(index_wrapper),
-    depleted(false),
-    top_candidates_extras(this->allocator),
-    candidates(this->allocator) {
+    : VecSimBatchIterator(query_vector, std::move(allocator)), index_wrapper(index_wrapper),
+      depleted(false), top_candidates_extras(this->allocator), candidates(this->allocator) {
     this->space = index_wrapper->getSpace();
 
     this->hnsw_index = index_wrapper->getHNSWIndex();
