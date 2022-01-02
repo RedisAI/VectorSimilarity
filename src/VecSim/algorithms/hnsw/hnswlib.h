@@ -1258,30 +1258,29 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
 
     auto pos = input.tellg();
 
-    /// Optional - check if index is ok
-    // Set the position to be right after layer 0 data of the graph.
-    input.seekg(cur_element_count * size_data_per_element_, std::ifstream::cur);
-    // Set the position to be right after the available ids set.
-    size_t available_ids_count;
-    readBinaryPOD(input, available_ids_count);
-    input.seekg(available_ids_count * sizeof(tableint), std::ifstream::cur);
-
-    for (size_t i = 0; i < cur_element_count; i++) {
-        // Sanity check - position is in the expected scope.
-        if (input.tellg() < 0 || input.tellg() >= total_filesize){
-            throw std::runtime_error("Index seems to be corrupted or unsupported");
-        }
-        unsigned int linkListSize;
-        readBinaryPOD(input, linkListSize);
-        if (linkListSize != 0) {
-            input.seekg(linkListSize, std::ifstream::cur);
-        }
-    }
-
-    // Expect that in this point we went over the entire file.
-    if (input.tellg() != total_filesize)
-        throw std::runtime_error("Index seems to be corrupted or unsupported");
-    input.clear();
+//    /// Optional - check if index is ok
+//    // Set the position to be right after the available ids set.
+//    size_t available_ids_count;
+//    readBinaryPOD(input, available_ids_count);
+//    input.seekg(available_ids_count * sizeof(tableint), std::ifstream::cur);
+//    // Set the position to be right after layer 0 data of the graph.
+//    input.seekg(cur_element_count * size_data_per_element_, std::ifstream::cur);
+//    for (size_t i = 0; i < cur_element_count; i++) {
+//        // Sanity check - position is in the expected scope.
+//        if (input.tellg() < 0 || input.tellg() >= total_filesize){
+//            throw std::runtime_error("Index seems to be corrupted or unsupported");
+//        }
+//        unsigned int linkListSize;
+//        readBinaryPOD(input, linkListSize);
+//        if (linkListSize != 0) {
+//            input.seekg(linkListSize, std::ifstream::cur);
+//        }
+//    }
+//
+//    // Expect that in this point we went over the entire file.
+//    if (input.tellg() != total_filesize)
+//        throw std::runtime_error("Index seems to be corrupted or unsupported");
+//    input.clear();
     /// Optional check end
 
     // Reset to the position where we stopped before the check
@@ -1289,6 +1288,8 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
 
     // Restore the available ids
     available_ids.clear();
+    size_t available_ids_count;
+    readBinaryPOD(input, available_ids_count);
     for (size_t i = 0; i < available_ids_count; i++) {
         tableint next_id;
         readBinaryPOD(input, next_id);
@@ -1302,7 +1303,7 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
         if (available_ids.find(i) != available_ids.end()) {
             continue;
         }
-        auto *set_ptr = new set<tableint>();
+        auto *set_ptr = new vecsim_stl::set<tableint>(this->allocator);
         unsigned int set_size;
         readBinaryPOD(input, set_size);
         for (size_t j = 0; j < set_size; j++) {
@@ -1310,7 +1311,7 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
             readBinaryPOD(input, next_edge);
             set_ptr->insert(next_edge);
         }
-        setIncomingEdgesPtr(i, 0, set_ptr);
+        setIncomingEdgesPtr(i, 0, (void *)set_ptr);
     }
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1323,7 +1324,8 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    linkLists_ = (char **)this->allocator->allocate(sizeof(void *) * max_elements_);    if (linkLists_ == nullptr)
+    linkLists_ = (char **)this->allocator->allocate(sizeof(void *) * max_elements_);
+    if (linkLists_ == nullptr)
         throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
     element_levels_ = vecsim_stl::vector<int>(max_elements_, this->allocator);
     label_lookup_.clear();
@@ -1345,12 +1347,15 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklist");
             input.read(linkLists_[i], linkListSize);
             for (size_t j = 1; j <= element_levels_[i]; j++) {
-                auto *set_ptr = getIncomingEdgesPtr(i, j);
-                unsigned int set_size = set_ptr->size();
+                auto *set_ptr = new vecsim_stl::set<tableint>(this->allocator);
+                unsigned int set_size;
                 readBinaryPOD(input, set_size);
-                for (auto id : *set_ptr) {
-                    readBinaryPOD(input, id);
+                for (size_t k = 0; k < set_size; k++) {
+                    tableint next_edge;
+                    readBinaryPOD(input, next_edge);
+                    set_ptr->insert(next_edge);
                 }
+                setIncomingEdgesPtr(i, j, (void *)set_ptr);
             }
         }
     }
