@@ -20,7 +20,7 @@ if (USE_ASAN OR USE_MSAN)
 endif()
 
 if (VECSIM_BUILD_TESTS)
-	option(BUILD_TESTING "" OFF)
+	option(BUILD_TESTING "" ON)
 	include(${root}/cmake/gtest.cmake)
 
 endif()
