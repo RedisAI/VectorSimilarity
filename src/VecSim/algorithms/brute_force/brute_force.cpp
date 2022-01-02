@@ -177,7 +177,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         for (size_t i = 0; i < block_size; i++) {
             scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
         }
-        for (int i = 0; i < scores.size(); i++) {
+        for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.
             if (TopCandidates.size() < k) {
                 TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
