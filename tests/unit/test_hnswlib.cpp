@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
+#include "VecSim/algorithms/hnsw/hnswlib_c.h"
 #include <climits>
 
 class HNSWLibTest : public ::testing::Test {
@@ -911,5 +912,46 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     }
     ASSERT_EQ(iteration_num, n / n_res + 1);
     VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, hnsw_serialization) {
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t M = 8;
+    size_t ef = 10;
+
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+            .hnswParams = {.type = VecSimType_FLOAT32,
+                    .dim = dim,
+                    .metric = VecSimMetric_L2,
+                    .initialCapacity = n,
+                    .M = M,
+                    .efConstruction = ef,
+                    .efRuntime = ef}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (int i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+
+    char *location = get_current_dir_name();
+    auto file_name = std::string(location) + "/dump";
+    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->saveIndex(file_name);
+
+    VecSimIndex_Free(index);
+    index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    auto space = new (allocator) L2Space(dim, allocator);
+    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->loadIndex(file_name, space);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    free(location);
     VecSimIndex_Free(index);
 }
