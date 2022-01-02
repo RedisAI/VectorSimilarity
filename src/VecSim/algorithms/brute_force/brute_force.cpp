@@ -61,7 +61,6 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     }
 
     idType id = 0;
-    bool update = false;
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
