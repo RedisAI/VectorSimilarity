@@ -992,7 +992,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         entrypoint_node_ = cur_c;
         maxlevel_ = element_max_level;
         // create the incoming edges set for the new levels.
-        for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
+        for (int level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
