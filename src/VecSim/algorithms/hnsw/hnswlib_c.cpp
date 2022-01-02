@@ -53,14 +53,16 @@ int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
 int HNSWIndex::resolveParams(VecSimRawParam *rparams, VecSimQueryParams *qparams) {
     bzero(qparams, sizeof(VecSimQueryParams));
     for (int i = 0; i < array_len(rparams); i++) {
-        if (!strncasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING, rparams[i].nameLen)) {
+        if (!strncasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
+                         rparams[i].nameLen)) {
             if (qparams->hnswRuntimeParams.efRuntime != 0) { // Already been set.
                 return false;
             } else {
                 char *ep;
                 errno = 0;
                 long long val = strtoll(rparams[i].value, &ep, 0);
-                if (val <= 0 || val == LLONG_MAX || errno != 0 || (rparams[i].value + rparams[i].valLen) != ep) {
+                if (val <= 0 || val == LLONG_MAX || errno != 0 ||
+                    (rparams[i].value + rparams[i].valLen) != ep) {
                     return false;
                 }
                 qparams->hnswRuntimeParams.efRuntime = (size_t)val;

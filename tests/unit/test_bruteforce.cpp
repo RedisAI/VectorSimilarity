@@ -856,6 +856,7 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
 
     ASSERT_TRUE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
-    array_append(rparams, (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    array_append(rparams, (VecSimRawParam){
+                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 }

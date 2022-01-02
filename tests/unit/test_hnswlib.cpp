@@ -936,22 +936,26 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
 
     ASSERT_TRUE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
-    array_append(rparams, (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    array_append(rparams, (VecSimRawParam){
+                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
     ASSERT_TRUE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
-    array_append(rparams, (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    array_append(rparams, (VecSimRawParam){
+                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
     array_hdr(rparams)->len--;
     rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
-    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
+    rparams[0] =
+        (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 
-    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
+    rparams[0] =
+        (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
     ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 }

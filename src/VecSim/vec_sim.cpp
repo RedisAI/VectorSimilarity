@@ -44,7 +44,8 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
-extern "C" int VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams, VecSimQueryParams *qparams) { 
+extern "C" int VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
+                                         VecSimQueryParams *qparams) {
     return index->resolveParams(rparams, qparams);
 }
 
