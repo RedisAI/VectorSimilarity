@@ -51,6 +51,15 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 size_t VecSimIndex_IndexSize(VecSimIndex *index);
 
 /**
+ * @brief Resolves VecSimRawParam array and generate VecSimQueryParams struct.
+ * @param index the index whose size is requested.
+ * @param rparams array of raw params to resolve.
+ * @param qparams pointer to VecSimQueryParams struct to set.
+ * @return true if the resolve was successful, false if not (bad raw params).
+ */
+int VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams, VecSimQueryParams *qparams);
+
+/**
  * @brief Search for the k closest vectors to a given vector in the index. The results can be
  * ordered by their score or id.
  * @param index the index to query in.

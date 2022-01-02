@@ -27,6 +27,18 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
 /**
+ * @brief Query Runtime raw parameters.
+ * Use VecSimIndex_ResolveParams to generate VecSimQueryParams from array of VecSimRawParams.
+ *
+ */
+typedef struct {
+    const char *name;
+    size_t nameLen;
+    const char *value;
+    size_t valLen;
+} VecSimRawParam;
+
+/**
  * @brief Index initialization parameters.
  *
  */

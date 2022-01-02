@@ -18,6 +18,7 @@ public:
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual size_t indexSize() const override;
+    virtual int resolveParams(VecSimRawParam *rparams, VecSimQueryParams *qparams) override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() override;

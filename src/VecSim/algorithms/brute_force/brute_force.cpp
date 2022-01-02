@@ -154,6 +154,11 @@ int BruteForceIndex::deleteVector(size_t label) {
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
 
+int BruteForceIndex::resolveParams(VecSimRawParam *rparams, VecSimQueryParams *qparams) {
+    bzero(qparams, sizeof(VecSimQueryParams));
+    return (array_len(rparams) == 0);
+}
+
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
