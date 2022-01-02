@@ -2,6 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include <climits>
+#include "VecSim/utils/arr_cpp.h"
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -912,4 +913,45 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     ASSERT_EQ(iteration_num, n / n_res + 1);
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, hnsw_resolve_params) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 2;
+
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .dim = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 0,
+                                          .M = M,
+                                          .efConstruction = ef,
+                                          .efRuntime = ef}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    VecSimQueryParams qparams;
+
+    VecSimRawParam *rparams = array_new<VecSimRawParam>(2);
+
+    ASSERT_TRUE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    array_append(rparams, (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    ASSERT_TRUE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    array_append(rparams, (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    array_hdr(rparams)->len--;
+    rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
+    ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
+    ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
+    ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
+    ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
 }
