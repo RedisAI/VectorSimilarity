@@ -73,7 +73,7 @@ if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
 
-if(BUILD_TESTS)
+if(VECSIM_BUILD_TESTS)
 	add_subdirectory(${root}/tests/unit unit_tests)
 	add_subdirectory(${root}/tests/module module_tests)
 
