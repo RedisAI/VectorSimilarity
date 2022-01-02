@@ -788,7 +788,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     element_internal_id = label_lookup_[label];
 
     // go over levels from the top and repair connections
-    int element_top_level = element_levels_[element_internal_id];
+    size_t element_top_level = element_levels_[element_internal_id];
     for (int level = element_top_level; level >= 0; level--) {
         linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);

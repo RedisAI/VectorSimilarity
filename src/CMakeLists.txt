@@ -31,7 +31,7 @@ set(CMAKE_CXX_STANDARD 14)
 include_directories(${root}/src)
 include_directories(${root}/deps)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 IF (USE_PROFILE)
@@ -46,6 +46,8 @@ endif()
 
 add_subdirectory(VecSim/spaces)
 
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
     VecSim/algorithms/brute_force/vector_block.cpp

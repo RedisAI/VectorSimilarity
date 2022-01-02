@@ -48,7 +48,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
                                           .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
@@ -58,8 +58,8 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](int id, float score, size_t index) {
-        int diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
         ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
                     (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
     };
@@ -81,7 +81,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
                                           .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
@@ -91,7 +91,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](int id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
+    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
@@ -111,7 +111,7 @@ TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
                                           .efConstruction = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)(i / 10);
@@ -122,7 +122,7 @@ TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](int id, float score, size_t index) {
+    auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -155,7 +155,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](int id, float score, size_t index) {
+    auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -204,7 +204,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](int id, float score, size_t index) {
+    auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -261,7 +261,7 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
             expected_ids.insert(i * iter);
         }
-        auto verify_res = [&](int id, float score, size_t index) {
+        auto verify_res = [&](size_t id, float score, size_t index) {
             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
             expected_ids.erase(id);
         };
@@ -413,8 +413,8 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    auto verify_res = [&](int id, float score, size_t index) {
-        int diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
         ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
                     (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
     };
@@ -468,8 +468,8 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    auto verify_res = [&](int id, float score, size_t index) {
-        int diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        size_t diff_id = ((id - 50) > 0) ? (id - 50) : (50 - id);
         ASSERT_TRUE(((diff_id == (index + 1) / 2)) &&
                     (score == (4 * ((index + 1) / 2) * ((index + 1) / 2))));
     };
@@ -562,7 +562,7 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
     VecSimIndex_AddVector(index, "abbdefgh", 4);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
-    auto verify_res = [&](int id, float score, size_t index) {
+    auto verify_res = [&](size_t id, float score, size_t index) {
         if (index == 0) {
             ASSERT_EQ(1, id);
         } else if (index == 1) {
@@ -620,7 +620,7 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
     ASSERT_TRUE(index != NULL);
 
     int64_t vec[dim];
-    for (int i = 0; i < dim; i++)
+    for (size_t i = 0; i < dim; i++)
         vec[i] = i;
     for (size_t j = 0; j < n; j++)
         VecSimIndex_AddVector(index, vec, j);
@@ -677,7 +677,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
     // This is testing a bug fix - before we had the seconder sorting by id in CompareByFirst,
     // the graph got disconnected due to the deletion of some node followed by a bad repairing of
     // one of its neighbours. Here, we ensure that we get all the nodes in the graph as results.
-    auto verify_res = [&](int id, float score, size_t index) { ASSERT_TRUE(id == n - 1 - index); };
+    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_TRUE(id == n - 1 - index); };
     runTopKSearchTest(index, query, 300, verify_res);
 
     VecSimIndex_Free(index);
@@ -700,7 +700,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // For every i, add the vector (i,i,i,i) under the label i.
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
@@ -726,7 +726,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
         for (size_t i = 0; i < n_res; i++) {
             expected_ids[i] = (n - iteration_num * n_res - i - 1);
         }
-        auto verify_res = [&](int id, float score, size_t index) {
+        auto verify_res = [&](size_t id, float score, size_t index) {
             ASSERT_TRUE(expected_ids[index] == id);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
@@ -754,7 +754,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
                                           .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
@@ -782,7 +782,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
             for (size_t i = 0; i < n_res; i++) {
                 expected_ids[i] = (n - iteration_num * n_res - i - 1);
             }
-            auto verify_res = [&](int id, float score, size_t index) {
+            auto verify_res = [&](size_t id, float score, size_t index) {
                 ASSERT_TRUE(expected_ids[index] == id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
@@ -813,7 +813,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
 
     float query[] = {(float)n, (float)n, (float)n, (float)n};
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
@@ -830,7 +830,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
         iteration_num++;
         // Expect to get results in the reverse order of labels - which is the order of the distance
         // from the query vector. Get one result in every iteration.
-        auto verify_res = [&](int id, float score, size_t index) {
+        auto verify_res = [&](size_t id, float score, size_t index) {
             ASSERT_TRUE(id == iteration_num);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
@@ -874,7 +874,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     VecSimQueryResult_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
-    for (int i = 1; i < n; i++) {
+    for (size_t i = 1; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
@@ -898,7 +898,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
         for (size_t i = 1; i <= n_res; i++) {
             expected_ids.push_back(n - iteration_num * n_res + i);
         }
-        auto verify_res = [&](int id, float score, size_t index) {
+        auto verify_res = [&](size_t id, float score, size_t index) {
             ASSERT_TRUE(expected_ids[index] == id);
         };
         if (iteration_num <= n / n_res) {
