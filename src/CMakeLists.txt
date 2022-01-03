@@ -1,20 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 
-option(BUILD_TESTS "Build tests" ON)
+option(VECSIM_BUILD_TESTS "Build tests" ON)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
 option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
 option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
 
-if(NOT DEFINED root)
-	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
-endif()
+get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
-if(NOT DEFINED binroot)
-	get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
-endif()
+get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
+message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 
 include(${root}/cmake/common.cmake)
 
@@ -22,10 +19,11 @@ if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)
 endif()
 
-if (BUILD_TESTS)
-	include(${root}/cmake/gtest.cmake)
-endif()
+if (VECSIM_BUILD_TESTS)
+include(${root}/cmake/gtest.cmake)
+option(BUILD_TESTING "" ON)
 
+endif()
 #----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
@@ -41,10 +39,6 @@ IF (USE_PROFILE)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
 
-if(ARCH STREQUAL "x64")
-	add_compile_options(-march=x86-64)
-endif()
-
 if(VECSIM_STATIC)
 	set(VECSIM_LIBTYPE STATIC)
 else()
@@ -53,6 +47,8 @@ endif()
 
 add_subdirectory(VecSim/spaces)
 
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
     VecSim/algorithms/brute_force/vector_block.cpp
@@ -80,7 +76,7 @@ if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES SUFFIX ".so")
 endif()
 
-if(BUILD_TESTS)
+if(VECSIM_BUILD_TESTS)
 	add_subdirectory(${root}/tests/unit unit_tests)
 	add_subdirectory(${root}/tests/module module_tests)
 

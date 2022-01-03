@@ -16,10 +16,9 @@ using namespace std;
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
-      vectorBlockSize(params->blockSize ? params->blockSize : BF_DEFAULT_BLOCK_SIZE), count(0),
       labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator), deletedIds(allocator),
       vectorBlocks(allocator),
-
+      vectorBlockSize(params->blockSize ? params->blockSize : BF_DEFAULT_BLOCK_SIZE), count(0),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
                                                            L2Space(params->dim, allocator))
@@ -57,7 +56,6 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     }
 
     idType id = 0;
-    bool update = false;
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
@@ -174,7 +172,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         for (size_t i = 0; i < block_size; i++) {
             scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
         }
-        for (int i = 0; i < scores.size(); i++) {
+        for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.
             if (TopCandidates.size() < k) {
                 TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);

@@ -9,7 +9,7 @@
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
-class VecSimIndex : public VecsimBaseObject {
+struct VecSimIndex : public VecsimBaseObject {
 public:
     /**
      * @brief Construct a new Vec Sim Index object

@@ -4,6 +4,7 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
+#include <limits>
 
 inline void HNSW_BatchIterator::visitNode(idType node_id) {
     this->visited_list->tagNode(node_id, this->visited_tag);
@@ -40,7 +41,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
                                                 float &lower_bound, idType entry_point) {
 
     candidatesMaxHeap top_candidates(this->allocator);
-    if (entry_point == -1) {
+    if (entry_point == HNSW_INVALID_ID) {
         this->depleted = true;
         return top_candidates;
     }
@@ -129,10 +130,10 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
 HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, HNSWIndex *index_wrapper,
                                        std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, std::move(allocator)), index_wrapper(index_wrapper),
-      depleted(false), candidates(this->allocator), top_candidates_extras(this->allocator) {
+      depleted(false), top_candidates_extras(this->allocator), candidates(this->allocator) {
+    this->space = index_wrapper->getSpace();
 
     this->hnsw_index = index_wrapper->getHNSWIndex();
-    this->space = index_wrapper->getSpace();
     this->entry_point = hnsw_index->getEntryPointId();
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = hnsw_index->getVisitedList();
