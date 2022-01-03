@@ -153,7 +153,8 @@ int BruteForceIndex::deleteVector(size_t label) {
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
 
-VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum, VecSimQueryParams *qparams) {
+VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
+                                                 VecSimQueryParams *qparams) {
     if (!qparams) {
         return VecSimErr_MissingParamStruct;
     }

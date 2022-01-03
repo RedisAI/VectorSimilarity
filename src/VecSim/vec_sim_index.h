@@ -55,7 +55,8 @@ public:
      * @param qparams pointer to VecSimQueryParams struct to set.
      * @return true if the resolve was successful, false if not (bad raw params).
      */
-    virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum, VecSimQueryParams *qparams) = 0;
+    virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
+                                            VecSimQueryParams *qparams) = 0;
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.

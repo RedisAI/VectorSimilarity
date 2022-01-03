@@ -49,7 +49,8 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
 
-VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum, VecSimQueryParams *qparams) {
+VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
+                                           VecSimQueryParams *qparams) {
     if (!qparams) {
         return VecSimErr_MissingParamStruct;
     }
