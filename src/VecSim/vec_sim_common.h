@@ -42,7 +42,7 @@ typedef struct {
 
 typedef enum {
     VecSimParamResolver_OK = VecSim_OK, // for returning VecSim_OK as an enum value
-    VecSimParamResolverErr_MissingParamStruct,
+    VecSimParamResolverErr_NullParam,
     VecSimParamResolverErr_AlreadySet,
     VecSimParamResolverErr_UnknownParam,
     VecSimParamResolverErr_BadValue

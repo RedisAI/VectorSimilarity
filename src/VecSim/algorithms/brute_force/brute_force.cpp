@@ -155,8 +155,8 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 
 VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
                                                  VecSimQueryParams *qparams) {
-    if (!qparams) {
-        return VecSimParamResolverErr_MissingParamStruct;
+    if (!qparams || (!rparams && (paramNum != 0))) {
+        return VecSimParamResolverErr_NullParam;
     }
     bzero(qparams, sizeof(VecSimQueryParams));
     if (paramNum != 0) {

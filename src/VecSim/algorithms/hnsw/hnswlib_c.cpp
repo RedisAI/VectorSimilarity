@@ -51,8 +51,8 @@ int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
 
 VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
                                            VecSimQueryParams *qparams) {
-    if (!qparams) {
-        return VecSimParamResolverErr_MissingParamStruct;
+    if (!qparams || (!rparams && (paramNum != 0))) {
+        return VecSimParamResolverErr_NullParam;
     }
     bzero(qparams, sizeof(VecSimQueryParams));
     for (int i = 0; i < paramNum; i++) {
@@ -61,9 +61,12 @@ VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum
             if (qparams->hnswRuntimeParams.efRuntime != 0) {
                 return VecSimParamResolverErr_AlreadySet;
             } else {
-                char *ep; // for checking strtoll used all rparams[i].valLen chars.
+                char *ep; // For checking that strtoll used all rparams[i].valLen chars.
                 errno = 0;
                 long long val = strtoll(rparams[i].value, &ep, 0);
+                // Here we verify that val is positive and strtoll was successful.
+                // The last test checks that the entire rparams[i].value was used.
+                // We catch here inputs like "3.14", "123text" and so on.
                 if (val <= 0 || val == LLONG_MAX || errno != 0 ||
                     (rparams[i].value + rparams[i].valLen) != ep) {
                     return VecSimParamResolverErr_BadValue;
