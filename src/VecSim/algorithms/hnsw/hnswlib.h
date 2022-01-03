@@ -1089,7 +1089,7 @@ struct HierarchicalNSW<dist_t>::IndexMetaData HierarchicalNSW<dist_t>::checkInte
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->allocator->getAllocationSize();
     size_t connections_checked = 0, double_connections = 0;
-    vecsim_stl::vector<int> inbound_connections_num(max_id, 0, this->allocator);
+    vecsim_stl::vector<int> inbound_connections_num(max_id+1, 0, this->allocator);
     size_t incoming_edges_sets_sizes = 0;
 
     for (size_t i = 0; i <= max_id; i++) {
