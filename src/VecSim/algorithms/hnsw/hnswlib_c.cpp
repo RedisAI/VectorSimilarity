@@ -73,7 +73,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
             }
         }
         typedef vecsim_stl::max_priority_queue<pair<float, size_t>> knn_queue_t;
-        auto knn_res = make_unique<knn_queue_t>(std::move(hnsw->searchKnn(query_data, k)));
+        auto knn_res = make_unique<knn_queue_t>(hnsw->searchKnn(query_data, k));
         auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
         for (int i = (int)knn_res->size() - 1; i >= 0; --i) {
             VecSimQueryResult_SetId(results[i], knn_res->top().second);

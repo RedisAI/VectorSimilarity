@@ -90,8 +90,7 @@ VecSimQueryResult *BF_BatchIterator::selectBasedSearch(size_t n_res) {
 
 BF_BatchIterator::BF_BatchIterator(const void *query_vector, const BruteForceIndex *bf_index,
                                    std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimBatchIterator(query_vector, allocator), id(BF_BatchIterator::next_id), index(bf_index),
-      scores_valid_start_pos(0) {
+    : VecSimBatchIterator(query_vector, allocator), index(bf_index), scores_valid_start_pos(0) {
     BF_BatchIterator::next_id++;
 }
 

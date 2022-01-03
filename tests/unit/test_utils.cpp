@@ -7,7 +7,7 @@
  * the id, score and index of a result, and performs test-specific logic for each.
  */
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
-                       std::function<void(int, float, int)> ResCB, VecSimQueryParams *params,
+                       std::function<void(size_t, float, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
     VecSimQueryResult_List res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
@@ -30,9 +30,9 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
  * that takes the id, score and index of a result, and performs test-specific logic for each.
  */
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
-                                std::function<void(int, float, int)> ResCB,
+                                std::function<void(size_t, float, size_t)> ResCB,
                                 VecSimQueryResult_Order order, size_t expected_n_res) {
-    if (expected_n_res == -1)
+    if (expected_n_res == SIZE_MAX)
         expected_n_res = n_res;
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), expected_n_res);

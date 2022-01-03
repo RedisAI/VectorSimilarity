@@ -9,7 +9,6 @@ using namespace std;
 class BF_BatchIterator : public VecSimBatchIterator {
 private:
     const BruteForceIndex *index;
-    unsigned char id;
     vector<pair<float, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.

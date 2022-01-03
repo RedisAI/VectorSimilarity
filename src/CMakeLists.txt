@@ -20,8 +20,9 @@ if (USE_ASAN OR USE_MSAN)
 endif()
 
 if (VECSIM_BUILD_TESTS)
-	include(${root}/cmake/gtest.cmake)
-	option(BUILD_TESTING "" ON)
+include(${root}/cmake/gtest.cmake)
+option(BUILD_TESTING "" ON)
+
 endif()
 #----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
@@ -46,6 +47,8 @@ endif()
 
 add_subdirectory(VecSim/spaces)
 
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
     VecSim/algorithms/brute_force/vector_block.cpp

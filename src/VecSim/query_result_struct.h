@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <limits>
 
-#define INVALID_ID -1
+#define INVALID_ID UINT_MAX
 // Use the "not a number" value to represent invalid score. This is for distinguishing the invalid
 // scroe from "inf" score (which is valid).
 #define INVALID_SCORE std::numeric_limits<float>::quiet_NaN()

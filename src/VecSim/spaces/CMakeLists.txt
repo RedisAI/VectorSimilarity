@@ -29,6 +29,6 @@ else()
 		IP_space.cpp
 		IP/IP.cpp)
 endif()
-
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
 target_link_libraries(VectorSimilaritySpaces cpu_features)

@@ -17,6 +17,8 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+option(BENCHMARK_ENABLE_GTEST_TESTS "" OFF)
+option(BENCHMARK_ENABLE_TESTING  "" OFF)
 FetchContent_Declare(
 	google_benchmark
 	URL https://github.com/google/benchmark/archive/refs/tags/v1.6.0.zip
