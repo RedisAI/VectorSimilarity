@@ -2,6 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
+//#include "VecSim/vec_sim_common.h"
 #include <climits>
 
 class HNSWLibTest : public ::testing::Test {
@@ -938,21 +939,54 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
+    VecSimIndexInfo info = VecSimIndex_Info(index);
 
+    // Persist index, delete and restore it.
     char *location = get_current_dir_name();
     auto file_name = std::string(location) + "/dump";
     reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->saveIndex(file_name);
 
     VecSimIndex_Free(index);
+    VecSimIndex *new_index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
+
+    auto space = reinterpret_cast<HNSWIndex *>(new_index)->getSpace().get();
+    reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->loadIndex(file_name, space);
+
+    // Validate that the new loaded index has the same meta-data as the original.
+    ASSERT_EQ(VecSimIndex_IndexSize(new_index), n);
+    VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
+    // The memory field is the only one that shouldn't be equal before and after, so we make them equal before
+    // we memcmp the entire info struct.
+    new_info.hnswInfo.memory = info.hnswInfo.memory;
+    ASSERT_TRUE(memcmp((void *)&info, (void *)&new_info, sizeof(VecSimIndexInfo)) == 0);
+    hnswlib::HierarchicalNSW<float>::IndexMetaData res = reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->checkIntegrity();
+    ASSERT_TRUE(res.valid_state);
+
+    // Add 1000 random vectors, override the existing ones to trigger deletions.
+    std::vector<float> data(n * dim);
+    std::mt19937 rng;
+    rng.seed(47);
+    std::uniform_real_distribution<> distrib;
+    for (size_t i = 0; i < n * dim; ++i) {
+        data[i] = (float)distrib(rng);
+    }
+    for (size_t i = 0; i < n; ++i) {
+        VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
+    }
+
+    // Persist index, delete it from memory and restore.
+    reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->saveIndex(file_name);
+    VecSimIndex_Free(new_index);
     index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    auto allocator = reinterpret_cast<VecsimBaseObject*>(index)->getAllocator();
-    auto space = new (allocator) L2Space(dim, allocator);
+    space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
     reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->loadIndex(file_name, space);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    res = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->checkIntegrity();
+    ASSERT_TRUE(res.valid_state);
 
+    remove(file_name.c_str());
     free(location);
     VecSimIndex_Free(index);
-    delete space;
 }

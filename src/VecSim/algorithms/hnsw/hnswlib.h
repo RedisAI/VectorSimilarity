@@ -134,7 +134,18 @@ public:
     tableint searchBottomLayerEP(const void *query_data) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
                                                                       size_t k) const;
-    void checkIntegrity();
+
+    // This struct and the following "checkIntegrity" methods are used for debugging
+    struct IndexMetaData {
+        bool valid_state;
+        long memory_usage;  // in bytes
+        size_t double_connections;
+        size_t unidirectional_connections;
+        size_t min_in_degree;
+        size_t max_in_degree;
+    };
+
+    struct IndexMetaData checkIntegrity();
     void saveIndex(const std::string &location);
     void loadIndex(const std::string &location, SpaceInterface<dist_t> *s);
 };
@@ -1060,12 +1071,11 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::checkIntegrity() {
+struct HierarchicalNSW<dist_t>::IndexMetaData HierarchicalNSW<dist_t>::checkIntegrity() {
+    struct IndexMetaData res = {0};
 
-    struct rusage self_ru {};
-    getrusage(RUSAGE_SELF, &self_ru);
-    std::cerr << "memory usage is : " << self_ru.ru_maxrss << std::endl;
-
+    // Save the current memory usage (before we use additional memory for the integrity check).
+    res.memory_usage = this->allocator->getAllocationSize();
     int connections_checked = 0;
     int double_connections = 0;
     vecsim_stl::vector<int> inbound_connections_num(max_id, 0, this->allocator);
@@ -1081,13 +1091,16 @@ void HierarchicalNSW<dist_t>::checkIntegrity() {
             auto *data = (tableint *)(ll_cur + 1);
             vecsim_stl::set<tableint> s(this->allocator);
             for (int j = 0; j < size; j++) {
-                assert(data[j] >= 0);
-                assert(data[j] <= cur_element_count);
-                assert(data[j] != i);
+                // Check if we found an invalid neighbor.
+                if (data[j] > max_id || data[j] == i) {
+                    res.valid_state = false;
+                    return res;
+                }
                 inbound_connections_num[data[j]]++;
                 s.insert(data[j]);
                 connections_checked++;
-                // check if this is bidirectional
+
+                // Check if this connection is bidirectional.
                 linklistsizeint *ll_other = get_linklist_at_level(data[j], l);
                 int size_other = getListCount(ll_other);
                 auto *data_other = (tableint *)(ll_other + 1);
@@ -1098,21 +1111,28 @@ void HierarchicalNSW<dist_t>::checkIntegrity() {
                     }
                 }
             }
-            assert(s.size() == size);
+            // Check if a certain neighbor appeared more than once.
+            if (s.size() != size) {
+                res.valid_state = false;
+                return res;
+            }
             incoming_edges_sets_sizes += getIncomingEdgesPtr(i, l)->size();
         }
     }
-    assert(incoming_edges_sets_sizes + double_connections == connections_checked);
-    std::cout << "uni-directional connections: " << incoming_edges_sets_sizes << std::endl;
-    std::cout << "connections: " << connections_checked << std::endl;
-    std::cout << "double connections: " << double_connections << std::endl;
-    std::cout << "min in-degree: "
-              << *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
-              << std::endl;
-    std::cout << "max in-degree: "
-              << *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
-              << std::endl;
-    std::cout << "integrity ok\n";
+    res.double_connections = double_connections;
+    res.unidirectional_connections = incoming_edges_sets_sizes;
+    res.min_in_degree = *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end());
+    res.max_in_degree = *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end());
+    if (incoming_edges_sets_sizes + double_connections != connections_checked) {
+        res.valid_state = false;
+        return res;
+    }
+    res.valid_state = true;
+    std::cout << "Integrity OK\n";
+    std::cout << "***Index meta-data:***\n" << "memory usage: " << res.memory_usage << "\ndouble connections: "
+    << res.double_connections << "\nunidirectional connections: " << res.unidirectional_connections <<
+    "\nmin in-degree: " << res.min_in_degree << "\nmax in-degree: " << res.max_in_degree << std::endl;
+    return res;
 }
 
 // Helper functions for serializing the index.
@@ -1168,7 +1188,7 @@ void HierarchicalNSW<dist_t>::saveIndex(const std::string &location) {
         writeBinaryPOD(output, available_id);
     }
 
-    // Save level 0 data (graph layer 0 + labels)
+    // Save level 0 data (graph layer 0 + labels + vectors data)
     output.write(data_level0_memory_, cur_element_count * size_data_per_element_);
     // Save the incoming edge sets.
     for (size_t i = 0; i < cur_element_count; i++) {
@@ -1257,34 +1277,6 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
     readBinaryPOD(input, entrypoint_node_);
 
     auto pos = input.tellg();
-
-//    /// Optional - check if index is ok
-//    // Set the position to be right after the available ids set.
-//    size_t available_ids_count;
-//    readBinaryPOD(input, available_ids_count);
-//    input.seekg(available_ids_count * sizeof(tableint), std::ifstream::cur);
-//    // Set the position to be right after layer 0 data of the graph.
-//    input.seekg(cur_element_count * size_data_per_element_, std::ifstream::cur);
-//    for (size_t i = 0; i < cur_element_count; i++) {
-//        // Sanity check - position is in the expected scope.
-//        if (input.tellg() < 0 || input.tellg() >= total_filesize){
-//            throw std::runtime_error("Index seems to be corrupted or unsupported");
-//        }
-//        unsigned int linkListSize;
-//        readBinaryPOD(input, linkListSize);
-//        if (linkListSize != 0) {
-//            input.seekg(linkListSize, std::ifstream::cur);
-//        }
-//    }
-//
-//    // Expect that in this point we went over the entire file.
-//    if (input.tellg() != total_filesize)
-//        throw std::runtime_error("Index seems to be corrupted or unsupported");
-//    input.clear();
-    /// Optional check end
-
-    // Reset to the position where we stopped before the check
-    input.seekg(pos, std::ifstream::beg);
 
     // Restore the available ids
     available_ids.clear();
