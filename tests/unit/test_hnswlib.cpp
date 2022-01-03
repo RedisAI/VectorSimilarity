@@ -971,6 +971,9 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
               VecSimErr_AlreadySet);
 
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
+              VecSimErr_MissingParamStruct);
+
     VecSimIndex_Free(index);
     array_free(rparams);
 }

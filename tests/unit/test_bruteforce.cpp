@@ -864,6 +864,9 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
               VecSimErr_UnknownParam);
 
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
+              VecSimErr_MissingParamStruct);
+
     VecSimIndex_Free(index);
     array_free(rparams);
 }
