@@ -1297,7 +1297,6 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
     }
 
     // Restore graph layer 0
-    data_level0_memory_ = (char *)this->allocator->allocate(max_elements_ * size_data_per_element_);
     input.read(data_level0_memory_, cur_element_count * size_data_per_element_);
     for (size_t i = 0; i < cur_element_count; i++) {
         if (available_ids.find(i) != available_ids.end()) {
@@ -1324,9 +1323,6 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    linkLists_ = (char **)this->allocator->allocate(sizeof(void *) * max_elements_);
-    if (linkLists_ == nullptr)
-        throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
     element_levels_ = vecsim_stl::vector<int>(max_elements_, this->allocator);
     label_lookup_.clear();
 

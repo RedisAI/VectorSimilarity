@@ -947,11 +947,12 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    auto allocator = reinterpret_cast<VecsimBaseObject*>(index)->getAllocator();
     auto space = new (allocator) L2Space(dim, allocator);
     reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->loadIndex(file_name, space);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     free(location);
     VecSimIndex_Free(index);
+    delete space;
 }
