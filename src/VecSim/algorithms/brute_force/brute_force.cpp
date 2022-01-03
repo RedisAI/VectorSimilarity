@@ -156,13 +156,13 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
                                                  VecSimQueryParams *qparams) {
     if (!qparams) {
-        return VecSimErr_MissingParamStruct;
+        return VecSimParamResolverErr_MissingParamStruct;
     }
     bzero(qparams, sizeof(VecSimQueryParams));
     if (paramNum != 0) {
-        return VecSimErr_UnknownParam;
+        return VecSimParamResolverErr_UnknownParam;
     }
-    return VecSimErr_OK;
+    return (VecSimResolveCode)VecSim_OK;
 }
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,

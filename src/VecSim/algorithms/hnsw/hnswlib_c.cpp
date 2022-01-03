@@ -52,29 +52,29 @@ int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
 VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
                                            VecSimQueryParams *qparams) {
     if (!qparams) {
-        return VecSimErr_MissingParamStruct;
+        return VecSimParamResolverErr_MissingParamStruct;
     }
     bzero(qparams, sizeof(VecSimQueryParams));
     for (int i = 0; i < paramNum; i++) {
         if (!strncasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
                          rparams[i].nameLen)) {
             if (qparams->hnswRuntimeParams.efRuntime != 0) {
-                return VecSimErr_AlreadySet;
+                return VecSimParamResolverErr_AlreadySet;
             } else {
                 char *ep; // for checking strtoll used all rparams[i].valLen chars.
                 errno = 0;
                 long long val = strtoll(rparams[i].value, &ep, 0);
                 if (val <= 0 || val == LLONG_MAX || errno != 0 ||
                     (rparams[i].value + rparams[i].valLen) != ep) {
-                    return VecSimErr_BadValue;
+                    return VecSimParamResolverErr_BadValue;
                 }
                 qparams->hnswRuntimeParams.efRuntime = (size_t)val;
             }
         } else {
-            return VecSimErr_UnknownParam;
+            return VecSimParamResolverErr_UnknownParam;
         }
     }
-    return VecSimErr_OK;
+    return (VecSimResolveCode)VecSim_OK;
 }
 
 size_t HNSWIndex::indexSize() const { return this->hnsw->getIndexSize(); }

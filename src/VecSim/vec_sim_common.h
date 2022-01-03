@@ -38,12 +38,14 @@ typedef struct {
     size_t valLen;
 } VecSimRawParam;
 
+#define VecSim_OK 0
+
 typedef enum {
-    VecSimErr_OK = 0,
-    VecSimErr_MissingParamStruct,
-    VecSimErr_AlreadySet,
-    VecSimErr_UnknownParam,
-    VecSimErr_BadValue
+    VecSimParamResolver_OK = VecSim_OK, // for returning VecSim_OK as an enum value
+    VecSimParamResolverErr_MissingParamStruct,
+    VecSimParamResolverErr_AlreadySet,
+    VecSimParamResolverErr_UnknownParam,
+    VecSimParamResolverErr_BadValue
 } VecSimResolveCode;
 
 /**
