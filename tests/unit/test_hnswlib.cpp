@@ -2,8 +2,6 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
-//#include "VecSim/vec_sim_common.h"
-#include <climits>
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -925,13 +923,13 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     size_t ef = 10;
 
     VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-            .hnswParams = {.type = VecSimType_FLOAT32,
-                    .dim = dim,
-                    .metric = VecSimMetric_L2,
-                    .initialCapacity = n,
-                    .M = M,
-                    .efConstruction = ef,
-                    .efRuntime = ef}};
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .dim = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = n,
+                                          .M = M,
+                                          .efConstruction = ef,
+                                          .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (int i = 0; i < n; i++) {
@@ -958,11 +956,12 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     // Validate that the new loaded index has the same meta-data as the original.
     ASSERT_EQ(VecSimIndex_IndexSize(new_index), n);
     VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
-    // The memory field is the only one that shouldn't be equal before and after, so we make them equal before
-    // we memcmp the entire info struct.
+    // The memory field is the only one that shouldn't be equal before and after, so we make them
+    // equal before we memcmp the entire info struct.
     new_info.hnswInfo.memory = info.hnswInfo.memory;
     ASSERT_TRUE(memcmp((void *)&info, (void *)&new_info, sizeof(VecSimIndexInfo)) == 0);
-    hnswlib::HierarchicalNSW<float>::IndexMetaData res = reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->checkIntegrity();
+    hnswlib::HierarchicalNSW<float>::IndexMetaData res =
+        reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 
     // Add 1000 random vectors, override the existing ones to trigger deletions.

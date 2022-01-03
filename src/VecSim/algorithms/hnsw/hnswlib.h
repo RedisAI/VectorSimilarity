@@ -141,7 +141,7 @@ public:
     // This struct and the following "checkIntegrity" methods are used for debugging
     struct IndexMetaData {
         bool valid_state;
-        long memory_usage;  // in bytes
+        long memory_usage; // in bytes
         size_t double_connections;
         size_t unidirectional_connections;
         size_t min_in_degree;
@@ -1133,32 +1133,37 @@ struct HierarchicalNSW<dist_t>::IndexMetaData HierarchicalNSW<dist_t>::checkInte
     }
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
-    res.min_in_degree = *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end());
-    res.max_in_degree = *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end());
+    res.min_in_degree =
+        *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end());
+    res.max_in_degree =
+        *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end());
     if (incoming_edges_sets_sizes + double_connections != connections_checked) {
         res.valid_state = false;
         return res;
     }
     res.valid_state = true;
     std::cout << "Integrity OK\n";
-    std::cout << "***Index meta-data:***\n" << "memory usage: " << res.memory_usage << "\ndouble connections: "
-    << res.double_connections << "\nunidirectional connections: " << res.unidirectional_connections <<
-    "\nmin in-degree: " << res.min_in_degree << "\nmax in-degree: " << res.max_in_degree << std::endl;
+    std::cout << "***Index meta-data:***\n"
+              << "memory usage: " << res.memory_usage
+              << "\ndouble connections: " << res.double_connections
+              << "\nunidirectional connections: " << res.unidirectional_connections
+              << "\nmin in-degree: " << res.min_in_degree
+              << "\nmax in-degree: " << res.max_in_degree << std::endl;
     return res;
 }
 
 // Helper functions for serializing the index.
-template<typename T>
+template <typename T>
 static void writeBinaryPOD(std::ostream &out, const T &podRef) {
-    out.write((char *) &podRef, sizeof(T));
+    out.write((char *)&podRef, sizeof(T));
 }
 
-template<typename T>
+template <typename T>
 static void readBinaryPOD(std::istream &in, T &podRef) {
-    in.read((char *) &podRef, sizeof(T));
+    in.read((char *)&podRef, sizeof(T));
 }
 
-template<typename dist_t>
+template <typename dist_t>
 void HierarchicalNSW<dist_t>::saveIndex(const std::string &location) {
     std::ofstream output(location, std::ios::binary);
     std::streampos position;
@@ -1216,13 +1221,14 @@ void HierarchicalNSW<dist_t>::saveIndex(const std::string &location) {
     }
 
     // Save all graph layers other than layer 0: for every id of a vector in the graph,
-    // store (<size>, data), where <size> is the data size, and the data is the concatenated adjacency lists in the graph
-    // Then, store the sets of the incoming edges in every level.
+    // store (<size>, data), where <size> is the data size, and the data is the concatenated
+    // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
     for (size_t i = 0; i < cur_element_count; i++) {
         if (available_ids.find(i) != available_ids.end()) {
             continue;
         }
-        unsigned int linkListSize = element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;
+        unsigned int linkListSize =
+            element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;
         writeBinaryPOD(output, linkListSize);
         if (linkListSize)
             output.write(linkLists_[i], linkListSize);
@@ -1238,7 +1244,7 @@ void HierarchicalNSW<dist_t>::saveIndex(const std::string &location) {
     output.close();
 }
 
-template<typename dist_t>
+template <typename dist_t>
 void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterface<dist_t> *s) {
     std::ifstream input(location, std::ios::binary);
 
@@ -1319,11 +1325,12 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
 
 #ifdef ENABLE_PARALLELIZATION
     pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
-        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
 #else
     visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
-            new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
+        new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
@@ -1344,7 +1351,8 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
             element_levels_[i] = linkListSize / size_links_per_element_;
             linkLists_[i] = (char *)this->allocator->allocate(linkListSize);
             if (linkLists_[i] == nullptr)
-                throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklist");
+                throw std::runtime_error(
+                    "Not enough memory: loadIndex failed to allocate linklist");
             input.read(linkLists_[i], linkListSize);
             for (size_t j = 1; j <= element_levels_[i]; j++) {
                 auto *set_ptr = new vecsim_stl::set<tableint>(this->allocator);
