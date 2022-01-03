@@ -932,7 +932,7 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
                                           .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (int i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;

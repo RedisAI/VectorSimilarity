@@ -1088,21 +1088,20 @@ struct HierarchicalNSW<dist_t>::IndexMetaData HierarchicalNSW<dist_t>::checkInte
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->allocator->getAllocationSize();
-    int connections_checked = 0;
-    int double_connections = 0;
+    size_t connections_checked = 0, double_connections = 0;
     vecsim_stl::vector<int> inbound_connections_num(max_id, 0, this->allocator);
     size_t incoming_edges_sets_sizes = 0;
 
-    for (int i = 0; i <= max_id; i++) {
+    for (size_t i = 0; i <= max_id; i++) {
         if (available_ids.find(i) != available_ids.end()) {
             continue;
         }
-        for (int l = 0; l <= element_levels_[i]; l++) {
+        for (size_t l = 0; l <= element_levels_[i]; l++) {
             linklistsizeint *ll_cur = get_linklist_at_level(i, l);
-            int size = getListCount(ll_cur);
+            unsigned int size = getListCount(ll_cur);
             auto *data = (tableint *)(ll_cur + 1);
             vecsim_stl::set<tableint> s(this->allocator);
-            for (int j = 0; j < size; j++) {
+            for (unsigned int j = 0; j < size; j++) {
                 // Check if we found an invalid neighbor.
                 if (data[j] > max_id || data[j] == i) {
                     res.valid_state = false;
@@ -1334,7 +1333,7 @@ void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterf
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    element_levels_ = vecsim_stl::vector<int>(max_elements_, this->allocator);
+    element_levels_ = vecsim_stl::vector<size_t>(max_elements_, this->allocator);
     label_lookup_.clear();
 
     for (size_t i = 0; i < cur_element_count; i++) {
