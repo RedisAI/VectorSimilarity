@@ -850,15 +850,17 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
                                         .blockSize = 5}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    VecSimQueryParams qparams;
+    VecSimQueryParams qparams, zero;
+    bzero(&zero, sizeof(VecSimQueryParams));
 
     VecSimRawParam *rparams = array_new<VecSimRawParam>(1);
 
-    ASSERT_TRUE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSimErr_OK);
+    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     array_append(rparams, (VecSimRawParam){
                               .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_FALSE(VecSimIndex_ResolveParams(index, rparams, &qparams));
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSimErr_UnknownParam);
 
     VecSimIndex_Free(index);
     array_free(rparams);
