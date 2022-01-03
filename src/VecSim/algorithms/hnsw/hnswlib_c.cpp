@@ -1,5 +1,4 @@
 #include "VecSim/algorithms/hnsw/hnswlib_c.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
@@ -50,28 +49,31 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
 
-int HNSWIndex::resolveParams(VecSimRawParam *rparams, VecSimQueryParams *qparams) {
+VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum, VecSimQueryParams *qparams) {
+    if (!qparams) {
+        return VecSimErr_MissingParamStruct;
+    }
     bzero(qparams, sizeof(VecSimQueryParams));
-    for (int i = 0; i < array_len(rparams); i++) {
+    for (int i = 0; i < paramNum; i++) {
         if (!strncasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
                          rparams[i].nameLen)) {
-            if (qparams->hnswRuntimeParams.efRuntime != 0) { // Already been set.
-                return false;
+            if (qparams->hnswRuntimeParams.efRuntime != 0) {
+                return VecSimErr_AlreadySet;
             } else {
-                char *ep;
+                char *ep; // for checking strtoll used all rparams[i].valLen chars.
                 errno = 0;
                 long long val = strtoll(rparams[i].value, &ep, 0);
                 if (val <= 0 || val == LLONG_MAX || errno != 0 ||
                     (rparams[i].value + rparams[i].valLen) != ep) {
-                    return false;
+                    return VecSimErr_BadValue;
                 }
                 qparams->hnswRuntimeParams.efRuntime = (size_t)val;
             }
         } else {
-            return false;
+            return VecSimErr_UnknownParam;
         }
     }
-    return true;
+    return VecSimErr_OK;
 }
 
 size_t HNSWIndex::indexSize() const { return this->hnsw->getIndexSize(); }

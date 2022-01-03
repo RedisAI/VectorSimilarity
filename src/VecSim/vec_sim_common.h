@@ -38,6 +38,8 @@ typedef struct {
     size_t valLen;
 } VecSimRawParam;
 
+typedef enum { VecSimErr_OK = 0, VecSimErr_MissingParamStruct, VecSimErr_AlreadySet, VecSimErr_UnknownParam, VecSimErr_BadValue } VecSimResolveCode;
+
 /**
  * @brief Index initialization parameters.
  *
