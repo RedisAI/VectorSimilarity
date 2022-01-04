@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
-#include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -939,6 +939,7 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
+    // Get index info and copy it, so it will be available after the index is deleted.
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
     // Persist index, delete and restore it.
@@ -954,12 +955,18 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->loadIndex(file_name, space);
 
     // Validate that the new loaded index has the same meta-data as the original.
-    ASSERT_EQ(VecSimIndex_IndexSize(new_index), n);
     VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
-    // The memory field is the only one that shouldn't be equal before and after, so we make them
-    // equal before we memcmp the entire info struct.
-    new_info.hnswInfo.memory = info.hnswInfo.memory;
-    ASSERT_TRUE(memcmp((void *)&info, (void *)&new_info, sizeof(VecSimIndexInfo)) == 0);
+    ASSERT_EQ(info.algo, new_info.algo);
+    ASSERT_EQ(info.hnswInfo.M, new_info.hnswInfo.M);
+    ASSERT_EQ(info.hnswInfo.efConstruction, new_info.hnswInfo.efConstruction);
+    ASSERT_EQ(info.hnswInfo.efRuntime, new_info.hnswInfo.efRuntime);
+    ASSERT_EQ(info.hnswInfo.indexSize, new_info.hnswInfo.indexSize);
+    ASSERT_EQ(info.hnswInfo.max_level, new_info.hnswInfo.max_level);
+    ASSERT_EQ(info.hnswInfo.entrypoint, new_info.hnswInfo.entrypoint);
+    ASSERT_EQ(info.hnswInfo.metric, new_info.hnswInfo.metric);
+    ASSERT_EQ(info.hnswInfo.type, new_info.hnswInfo.type);
+    ASSERT_EQ(info.hnswInfo.dim, new_info.hnswInfo.dim);
+
     hnswlib::HierarchicalNSW<float>::IndexMetaData res =
         reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->checkIntegrity();
     ASSERT_TRUE(res.valid_state);

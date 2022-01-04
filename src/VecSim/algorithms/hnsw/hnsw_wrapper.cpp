@@ -1,4 +1,4 @@
-#include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/L2_space.h"

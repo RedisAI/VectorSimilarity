@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VecSim/batch_iterator.h"
-#include "hnswlib_c.h"
+#include "hnsw_wrapper.h"
 
 typedef size_t labelType;
 typedef unsigned int idType;

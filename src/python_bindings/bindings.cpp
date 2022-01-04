@@ -1,6 +1,6 @@
 
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
