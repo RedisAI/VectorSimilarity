@@ -2,7 +2,6 @@
 #include "brute_force.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
@@ -151,6 +150,18 @@ int BruteForceIndex::deleteVector(size_t label) {
 }
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
+
+VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
+                                                 VecSimQueryParams *qparams) {
+    if (!qparams || (!rparams && (paramNum != 0))) {
+        return VecSimParamResolverErr_NullParam;
+    }
+    bzero(qparams, sizeof(VecSimQueryParams));
+    if (paramNum != 0) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
+    return (VecSimResolveCode)VecSim_OK;
+}
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {

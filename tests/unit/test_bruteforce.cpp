@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
+#include "VecSim/utils/arr_cpp.h"
 
 class BruteForceTest : public ::testing::Test {
 protected:
@@ -838,4 +839,35 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, brute_force_resolve_params) {
+    size_t dim = 4;
+
+    VecSimParams params = {.algo = VecSimAlgo_BF,
+                           .bfParams = {.type = VecSimType_FLOAT32,
+                                        .dim = dim,
+                                        .metric = VecSimMetric_L2,
+                                        .initialCapacity = 0,
+                                        .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    VecSimQueryParams qparams, zero;
+    bzero(&zero, sizeof(VecSimQueryParams));
+
+    VecSimRawParam *rparams = array_new<VecSimRawParam>(1);
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
+
+    array_append(rparams, (VecSimRawParam){
+                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_UnknownParam);
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
+              VecSimParamResolverErr_NullParam);
+
+    VecSimIndex_Free(index);
+    array_free(rparams);
 }
