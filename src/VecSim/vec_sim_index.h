@@ -54,7 +54,7 @@ public:
      * @param rparams array of raw params to resolve.
      * @param paramNum number of params in rparams (or number of parames in rparams to resolve).
      * @param qparams pointer to VecSimQueryParams struct to set.
-     * @return true if the resolve was successful, false if not (bad raw params).
+     * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
      */
     virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
                                             VecSimQueryParams *qparams) = 0;
