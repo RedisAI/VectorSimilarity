@@ -21,7 +21,7 @@ protected:
     void TearDown() override {}
 };
 
-#ifdef CPU_FEATURES_ARCH_X86
+#ifdef CPU_FEATURES_ARCH_X86_64
 // This test will trigger the "Residuals" function for dimension > 16, for each optimization.
 TEST_F(SpacesTest, l2_17) {
     Arch_Optimization optimization = getArchitectureOptimization();
@@ -121,4 +121,4 @@ TEST_F(SpacesTest, ip_9) {
         ASSERT_TRUE(false);
     }
 }
-#endif // CPU_FEATURES_ARCH_X86
+#endif // CPU_FEATURES_ARCH_X86_64

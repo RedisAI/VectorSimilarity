@@ -1,8 +1,9 @@
 #include "space_aux.h"
+#include "cpu
 
 Arch_Optimization getArchitectureOptimization() {
 
-#ifdef CPU_FEATURES_ARCH_X86
+#ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"
     cpu_features::X86Features features = cpu_features::GetX86Info().features;
     if (features.avx512f) {
@@ -13,7 +14,7 @@ Arch_Optimization getArchitectureOptimization() {
                features.sse4_2 || features.sse4a) {
         return ARCH_OPT_SSE;
     }
-#endif // CPU_FEATURES_ARCH_X86
+#endif // CPU_FEATURES_ARCH_X86_64
 
     return ARCH_OPT_NONE;
 }
