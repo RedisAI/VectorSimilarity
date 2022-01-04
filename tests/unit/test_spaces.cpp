@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "cpu_features_macros.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
