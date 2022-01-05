@@ -21,8 +21,8 @@
 #include <sys/resource.h>
 #include <fstream>
 
-namespace hnswlib {
 
+namespace hnswlib {
 using namespace std;
 
 #define HNSW_INVALID_ID    UINT_MAX
@@ -37,7 +37,7 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>
 
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
-
+private:
     // Index build parameters
     size_t max_elements_;
     size_t M_;
@@ -74,7 +74,7 @@ class HierarchicalNSW : public VecsimBaseObject {
     vecsim_stl::vector<size_t> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
-    std::unique_ptr<VisitedNodesHandler> visited_nodes_handler;
+    std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
@@ -88,7 +88,10 @@ class HierarchicalNSW : public VecsimBaseObject {
     // callback for computing distance between two points in the underline space.
     DISTFUNC<dist_t> fstdistfunc_;
     void *dist_func_param_;
+    friend class HNSWIndexSerializer;
 
+    HierarchicalNSW() {} // default constructor
+    HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
@@ -115,7 +118,7 @@ public:
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
                     size_t initial_pool_size = 1);
-    ~HierarchicalNSW();
+    virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
     size_t getEf() const;
@@ -137,20 +140,6 @@ public:
     tableint searchBottomLayerEP(const void *query_data) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
                                                                       size_t k) const;
-
-    // This struct and the following "checkIntegrity" methods are used for debugging
-    struct IndexMetaData {
-        bool valid_state;
-        long memory_usage; // in bytes
-        size_t double_connections;
-        size_t unidirectional_connections;
-        size_t min_in_degree;
-        size_t max_in_degree;
-    };
-
-    struct IndexMetaData checkIntegrity();
-    void saveIndex(const std::string &location);
-    void loadIndex(const std::string &location, SpaceInterface<dist_t> *s);
 };
 
 /**
@@ -1080,293 +1069,6 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
         top_candidates.pop();
     }
     return result;
-}
-
-template <typename dist_t>
-struct HierarchicalNSW<dist_t>::IndexMetaData HierarchicalNSW<dist_t>::checkIntegrity() {
-    struct IndexMetaData res = {0};
-
-    // Save the current memory usage (before we use additional memory for the integrity check).
-    res.memory_usage = this->allocator->getAllocationSize();
-    size_t connections_checked = 0, double_connections = 0;
-    vecsim_stl::vector<int> inbound_connections_num(max_id + 1, 0, this->allocator);
-    size_t incoming_edges_sets_sizes = 0;
-
-    for (size_t i = 0; i <= max_id; i++) {
-        if (available_ids.find(i) != available_ids.end()) {
-            continue;
-        }
-        for (size_t l = 0; l <= element_levels_[i]; l++) {
-            linklistsizeint *ll_cur = get_linklist_at_level(i, l);
-            unsigned int size = getListCount(ll_cur);
-            auto *data = (tableint *)(ll_cur + 1);
-            vecsim_stl::set<tableint> s(this->allocator);
-            for (unsigned int j = 0; j < size; j++) {
-                // Check if we found an invalid neighbor.
-                if (data[j] > max_id || data[j] == i) {
-                    res.valid_state = false;
-                    return res;
-                }
-                inbound_connections_num[data[j]]++;
-                s.insert(data[j]);
-                connections_checked++;
-
-                // Check if this connection is bidirectional.
-                linklistsizeint *ll_other = get_linklist_at_level(data[j], l);
-                int size_other = getListCount(ll_other);
-                auto *data_other = (tableint *)(ll_other + 1);
-                for (int r = 0; r < size_other; r++) {
-                    if (data_other[r] == (tableint)i) {
-                        double_connections++;
-                        break;
-                    }
-                }
-            }
-            // Check if a certain neighbor appeared more than once.
-            if (s.size() != size) {
-                res.valid_state = false;
-                return res;
-            }
-            incoming_edges_sets_sizes += getIncomingEdgesPtr(i, l)->size();
-        }
-    }
-    res.double_connections = double_connections;
-    res.unidirectional_connections = incoming_edges_sets_sizes;
-    res.min_in_degree =
-        *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end());
-    res.max_in_degree =
-        *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end());
-    if (incoming_edges_sets_sizes + double_connections != connections_checked) {
-        res.valid_state = false;
-        return res;
-    }
-    res.valid_state = true;
-    std::cout << "Integrity OK\n";
-    std::cout << "***Index meta-data:***\n"
-              << "memory usage: " << res.memory_usage
-              << "\ndouble connections: " << res.double_connections
-              << "\nunidirectional connections: " << res.unidirectional_connections
-              << "\nmin in-degree: " << res.min_in_degree
-              << "\nmax in-degree: " << res.max_in_degree << std::endl;
-    return res;
-}
-
-// Helper functions for serializing the index.
-template <typename T>
-static void writeBinaryPOD(std::ostream &out, const T &podRef) {
-    out.write((char *)&podRef, sizeof(T));
-}
-
-template <typename T>
-static void readBinaryPOD(std::istream &in, T &podRef) {
-    in.read((char *)&podRef, sizeof(T));
-}
-
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::saveIndex(const std::string &location) {
-    std::ofstream output(location, std::ios::binary);
-    std::streampos position;
-
-    // Save index build parameters
-    writeBinaryPOD(output, max_elements_);
-    writeBinaryPOD(output, M_);
-    writeBinaryPOD(output, maxM_);
-    writeBinaryPOD(output, maxM0_);
-    writeBinaryPOD(output, ef_construction_);
-
-    // Save index search parameter
-    writeBinaryPOD(output, ef_);
-
-    // Save index meta-data
-    writeBinaryPOD(output, data_size_);
-    writeBinaryPOD(output, size_data_per_element_);
-    writeBinaryPOD(output, size_links_per_element_);
-    writeBinaryPOD(output, size_links_level0_);
-    writeBinaryPOD(output, label_offset_);
-    writeBinaryPOD(output, offsetData_);
-    writeBinaryPOD(output, offsetLevel0_);
-    writeBinaryPOD(output, incoming_links_offset0);
-    writeBinaryPOD(output, incoming_links_offset);
-    writeBinaryPOD(output, mult_);
-
-    // Save index level generator of the top level for a new element
-    writeBinaryPOD(output, level_generator_);
-
-    // Save index state
-    writeBinaryPOD(output, cur_element_count);
-    writeBinaryPOD(output, max_id);
-    writeBinaryPOD(output, maxlevel_);
-    writeBinaryPOD(output, entrypoint_node_);
-
-    // Save the available ids for reuse
-    writeBinaryPOD(output, available_ids.size());
-    for (auto available_id : available_ids) {
-        writeBinaryPOD(output, available_id);
-    }
-
-    // Save level 0 data (graph layer 0 + labels + vectors data)
-    output.write(data_level0_memory_, cur_element_count * size_data_per_element_);
-    // Save the incoming edge sets.
-    for (size_t i = 0; i < cur_element_count; i++) {
-        if (available_ids.find(i) != available_ids.end()) {
-            continue;
-        }
-        auto *set_ptr = getIncomingEdgesPtr(i, 0);
-        unsigned int set_size = set_ptr->size();
-        writeBinaryPOD(output, set_size);
-        for (auto id : *set_ptr) {
-            writeBinaryPOD(output, id);
-        }
-    }
-
-    // Save all graph layers other than layer 0: for every id of a vector in the graph,
-    // store (<size>, data), where <size> is the data size, and the data is the concatenated
-    // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
-    for (size_t i = 0; i < cur_element_count; i++) {
-        if (available_ids.find(i) != available_ids.end()) {
-            continue;
-        }
-        unsigned int linkListSize =
-            element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;
-        writeBinaryPOD(output, linkListSize);
-        if (linkListSize)
-            output.write(linkLists_[i], linkListSize);
-        for (size_t j = 1; j <= element_levels_[i]; j++) {
-            auto *set_ptr = getIncomingEdgesPtr(i, j);
-            unsigned int set_size = set_ptr->size();
-            writeBinaryPOD(output, set_size);
-            for (auto id : *set_ptr) {
-                writeBinaryPOD(output, id);
-            }
-        }
-    }
-    output.close();
-}
-
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::loadIndex(const std::string &location, SpaceInterface<dist_t> *s) {
-    std::ifstream input(location, std::ios::binary);
-
-    if (!input.is_open())
-        throw std::runtime_error("Cannot open file");
-
-    // Get file size
-    input.seekg(0, std::ifstream::end);
-    std::streampos total_filesize = input.tellg();
-
-    input.seekg(0, std::ifstream::beg);
-
-    // Restore index build parameters
-    readBinaryPOD(input, max_elements_);
-    readBinaryPOD(input, M_);
-    readBinaryPOD(input, maxM_);
-    readBinaryPOD(input, maxM0_);
-    readBinaryPOD(input, ef_construction_);
-
-    // Restore index search parameter
-    readBinaryPOD(input, ef_);
-
-    // Restore index meta-data
-    readBinaryPOD(input, data_size_);
-    readBinaryPOD(input, size_data_per_element_);
-    readBinaryPOD(input, size_links_per_element_);
-    readBinaryPOD(input, size_links_level0_);
-    readBinaryPOD(input, label_offset_);
-    readBinaryPOD(input, offsetData_);
-    readBinaryPOD(input, offsetLevel0_);
-    readBinaryPOD(input, incoming_links_offset0);
-    readBinaryPOD(input, incoming_links_offset);
-    readBinaryPOD(input, mult_);
-
-    if (s->get_data_size() != data_size_) {
-        throw std::runtime_error("Index data is corrupted or does not match the given space");
-    }
-    fstdistfunc_ = s->get_dist_func();
-    dist_func_param_ = s->get_data_dim();
-
-    // Restore index level generator of the top level for a new element
-    readBinaryPOD(input, level_generator_);
-
-    // Restore index state
-    readBinaryPOD(input, cur_element_count);
-    readBinaryPOD(input, max_id);
-    readBinaryPOD(input, maxlevel_);
-    readBinaryPOD(input, entrypoint_node_);
-
-    auto pos = input.tellg();
-
-    // Restore the available ids
-    available_ids.clear();
-    size_t available_ids_count;
-    readBinaryPOD(input, available_ids_count);
-    for (size_t i = 0; i < available_ids_count; i++) {
-        tableint next_id;
-        readBinaryPOD(input, next_id);
-        available_ids.insert(next_id);
-    }
-
-    // Restore graph layer 0
-    input.read(data_level0_memory_, cur_element_count * size_data_per_element_);
-    for (size_t i = 0; i < cur_element_count; i++) {
-        if (available_ids.find(i) != available_ids.end()) {
-            continue;
-        }
-        auto *set_ptr = new vecsim_stl::set<tableint>(this->allocator);
-        unsigned int set_size;
-        readBinaryPOD(input, set_size);
-        for (size_t j = 0; j < set_size; j++) {
-            tableint next_edge;
-            readBinaryPOD(input, next_edge);
-            set_ptr->insert(next_edge);
-        }
-        setIncomingEdgesPtr(i, 0, (void *)set_ptr);
-    }
-
-#ifdef ENABLE_PARALLELIZATION
-    pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
-        new (this->allocator)
-            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
-#else
-    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
-        new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
-#endif
-
-    // Restore the rest of the graph layers, along with the label and max_level lookups.
-    element_levels_ = vecsim_stl::vector<size_t>(max_elements_, this->allocator);
-    label_lookup_.clear();
-
-    for (size_t i = 0; i < cur_element_count; i++) {
-        if (available_ids.find(i) != available_ids.end()) {
-            continue;
-        }
-        label_lookup_[getExternalLabel(i)] = i;
-        unsigned int linkListSize;
-        readBinaryPOD(input, linkListSize);
-        if (linkListSize == 0) {
-            element_levels_[i] = 0;
-            linkLists_[i] = nullptr;
-        } else {
-            element_levels_[i] = linkListSize / size_links_per_element_;
-            linkLists_[i] = (char *)this->allocator->allocate(linkListSize);
-            if (linkLists_[i] == nullptr)
-                throw std::runtime_error(
-                    "Not enough memory: loadIndex failed to allocate linklist");
-            input.read(linkLists_[i], linkListSize);
-            for (size_t j = 1; j <= element_levels_[i]; j++) {
-                auto *set_ptr = new vecsim_stl::set<tableint>(this->allocator);
-                unsigned int set_size;
-                readBinaryPOD(input, set_size);
-                for (size_t k = 0; k < set_size; k++) {
-                    tableint next_edge;
-                    readBinaryPOD(input, next_edge);
-                    set_ptr->insert(next_edge);
-                }
-                setIncomingEdgesPtr(i, j, (void *)set_ptr);
-            }
-        }
-    }
-    input.close();
 }
 
 } // namespace hnswlib

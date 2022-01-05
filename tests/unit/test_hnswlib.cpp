@@ -1,7 +1,9 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+#include "VecSim/algorithms/hnsw/serialization.h"
+
+using namespace hnswlib;
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -942,17 +944,20 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     // Get index info and copy it, so it will be available after the index is deleted.
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
-    // Persist index, delete and restore it.
+    // Persist index with the serializer, and delete it.
     char *location = get_current_dir_name();
     auto file_name = std::string(location) + "/dump";
-    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->saveIndex(file_name);
-
+    auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+    serializer.saveIndex(file_name);
     VecSimIndex_Free(index);
-    VecSimIndex *new_index = VecSimIndex_New(&params);
+
+    // Create new index, set it into the serializer and extract the data to it.
+    auto new_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
 
     auto space = reinterpret_cast<HNSWIndex *>(new_index)->getSpace().get();
-    reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->loadIndex(file_name, space);
+    serializer.reset(reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex());
+    serializer.loadIndex(file_name, space);
 
     // Validate that the new loaded index has the same meta-data as the original.
     VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
@@ -967,8 +972,7 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     ASSERT_EQ(info.hnswInfo.type, new_info.hnswInfo.type);
     ASSERT_EQ(info.hnswInfo.dim, new_info.hnswInfo.dim);
 
-    hnswlib::HierarchicalNSW<float>::IndexMetaData res =
-        reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->checkIntegrity();
+    auto res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 
     // Add 1000 random vectors, override the existing ones to trigger deletions.
@@ -984,17 +988,22 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     }
 
     // Persist index, delete it from memory and restore.
-    reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->saveIndex(file_name);
+    serializer.saveIndex(file_name);
     VecSimIndex_Free(new_index);
-    index = VecSimIndex_New(&params);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-    space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
-    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->loadIndex(file_name, space);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    res = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->checkIntegrity();
+
+    auto restored_index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
+
+    space = reinterpret_cast<HNSWIndex *>(restored_index)->getSpace().get();
+    serializer.reset(reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex());
+    serializer.loadIndex(file_name, space);
+    ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
+    res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 
+    // Clean-up.
     remove(file_name.c_str());
     free(location);
-    VecSimIndex_Free(index);
+    VecSimIndex_Free(restored_index);
+    serializer.reset();
 }
