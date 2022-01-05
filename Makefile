@@ -22,6 +22,10 @@ override DEBUG ?= 1
 CMAKE_COV += -DUSE_COVERAGE=ON
 endif
 
+ifeq ($(NO_TESTS),1)
+CMAKE_TESTS += -DVECSIM_BUILD_TESTS=off
+endif
+
 ifneq ($(SAN),)
 override DEBUG ?= 1
 export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
@@ -177,7 +181,9 @@ CMAKE_FLAGS += \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
 	$(CMAKE_VECSIM) \
-	$(CMAKE_COV)
+	$(CMAKE_COV) \
+	$(CMAKE_) \
+	$(CMAKE_TESTS)
 
 #----------------------------------------------------------------------------------------------
 
