@@ -49,6 +49,17 @@ public:
     virtual size_t indexSize() const = 0;
 
     /**
+     * @brief Resolves VecSimRawParam array and generate VecSimQueryParams struct.
+     * @param index the index whose size is requested.
+     * @param rparams array of raw params to resolve.
+     * @param paramNum number of params in rparams (or number of parames in rparams to resolve).
+     * @param qparams pointer to VecSimQueryParams struct to set.
+     * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
+     */
+    virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
+                                            VecSimQueryParams *qparams) = 0;
+
+    /**
      * @brief Search for the k closest vectors to a given vector in the index.
      *
      * @param queryBlob binary representation of the query vector. Blob size should match the index

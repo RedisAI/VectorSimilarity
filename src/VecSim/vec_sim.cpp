@@ -44,6 +44,11 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
+extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
+                                                       int paramNum, VecSimQueryParams *qparams) {
+    return index->resolveParams(rparams, paramNum, qparams);
+}
+
 extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
                                                         size_t k, VecSimQueryParams *queryParams,
                                                         VecSimQueryResult_Order order) {

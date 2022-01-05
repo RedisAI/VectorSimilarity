@@ -2,6 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
+#include <climits>
 
 using namespace hnswlib;
 
@@ -916,6 +917,67 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     ASSERT_EQ(iteration_num, n / n_res + 1);
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, hnsw_resolve_params) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 2;
+
+    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                           .hnswParams = {.type = VecSimType_FLOAT32,
+                                          .dim = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .initialCapacity = 0,
+                                          .M = M,
+                                          .efConstruction = ef,
+                                          .efRuntime = ef}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    VecSimQueryParams qparams, zero;
+    bzero(&zero, sizeof(VecSimQueryParams));
+
+    VecSimRawParam *rparams = array_new<VecSimRawParam>(2);
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
+
+    array_append(rparams, (VecSimRawParam){
+                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 100);
+    qparams.hnswRuntimeParams.efRuntime = 0;
+    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
+
+    rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_UnknownParam);
+
+    rparams[0] =
+        (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_BadValue);
+
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_BadValue);
+
+    rparams[0] =
+        (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_BadValue);
+
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
+    array_append(rparams, (VecSimRawParam){
+                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_AlreadySet);
+
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
+              VecSimParamResolverErr_NullParam);
+
+    VecSimIndex_Free(index);
+    array_free(rparams);
 }
 
 TEST_F(HNSWLibTest, hnsw_serialization) {
