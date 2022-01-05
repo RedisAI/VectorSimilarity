@@ -21,6 +21,11 @@ namespace hnswlib {
     private:
         std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index;
 
+        void saveIndexFields(std::ofstream &output);
+        void saveGraph(std::ofstream &output);
+        void restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s);
+        void restoreGraph(std::ifstream &input);
+
     public:
         // Wrap hnsw index.
         explicit HNSWIndexSerializer(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index);
