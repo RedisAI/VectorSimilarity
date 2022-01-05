@@ -21,7 +21,6 @@
 #include <sys/resource.h>
 #include <fstream>
 
-
 namespace hnswlib {
 using namespace std;
 
@@ -90,7 +89,7 @@ private:
     void *dist_func_param_;
     friend class HNSWIndexSerializer;
 
-    HierarchicalNSW() {} // default constructor
+    HierarchicalNSW() {}                                // default constructor
     HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
