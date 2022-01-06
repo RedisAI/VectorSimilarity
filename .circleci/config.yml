@@ -114,9 +114,11 @@ jobs:
       - abort_for_docs
       - abort_for_noci
       - checkout-all
+      - install-prerequisites
       - run:
           name: Run & build tests
-          command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make SAN=<<parameters.san-type>> build unit_test
 
   nightly_flow:
     resource_class: large
