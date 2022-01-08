@@ -681,7 +681,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
         this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
 #else
-    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+    visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements, this->allocator));
 #endif
 

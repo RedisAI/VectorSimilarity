@@ -152,6 +152,7 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterfac
 
 void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
+    hnsw_index->data_level0_memory_ = (char *)hnsw_index->allocator->reallocate(hnsw_index->data_level0_memory_, hnsw_index->cur_element_count * hnsw_index->size_data_per_element_);
     input.read(hnsw_index->data_level0_memory_,
                hnsw_index->cur_element_count * hnsw_index->size_data_per_element_);
     for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
@@ -181,6 +182,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
+    hnsw_index->linkLists_ = (char **)hnsw_index->allocator->reallocate(hnsw_index->linkLists_, sizeof(void *) * hnsw_index->max_elements_);
     hnsw_index->element_levels_ =
         vecsim_stl::vector<size_t>(hnsw_index->max_elements_, hnsw_index->allocator);
     hnsw_index->label_lookup_.clear();

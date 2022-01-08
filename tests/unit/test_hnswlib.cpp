@@ -1048,11 +1048,14 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     for (size_t i = 0; i < n; ++i) {
         VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
     }
+    // Delete arbitrary vector to have an available id to restore.
+    //VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * n));
 
     // Persist index, delete it from memory and restore.
     serializer.saveIndex(file_name);
     VecSimIndex_Free(new_index);
 
+    params.hnswParams.initialCapacity = n/2; // to ensure that we resize in load time.
     auto restored_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
 
