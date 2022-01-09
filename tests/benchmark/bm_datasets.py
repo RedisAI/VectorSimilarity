@@ -79,7 +79,7 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
 
     # Measure recall and times
     hnsw_index.set_ef(ef_runtime)
-    print("Running queries with ef_runtime =", ef_runtime)
+    print("\nRunning queries with ef_runtime =", ef_runtime, "...")
     correct = 0
     bf_total_time = 0
     hnsw_total_time = 0
@@ -97,12 +97,13 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
                     break
     # Measure recall
     recall = float(correct)/(k*num_queries)
-    print("\nrecall is:", recall)
+    print("recall is:", recall)
     print("BF query per seconds: ", num_queries/bf_total_time)
     print("HNSW query per seconds: ", num_queries/hnsw_total_time)
 
 
-def run_benchmark(dataset_name, ef_construction, M, ef_values):
+def run_benchmark(dataset_name, ef_construction, M, ef_values, k=10):
+    print("\nRunning benchmark for:", dataset_name)
     dataset = get_data_set(dataset_name)
     hnsw_index = create_hnsw_index(dataset, ef_construction, M)
     index_file_name = os.path.join('data', '%s-M=%s-ef=%s.hnsw' % (dataset_name, M, ef_construction))
@@ -110,14 +111,19 @@ def run_benchmark(dataset_name, ef_construction, M, ef_values):
     populate_save_index(hnsw_index, index_file_name, np.array(dataset['train']))
     hnsw_index.load_index(index_file_name)
     for ef_runtime in ef_values:
-        measure_recall_per_second(hnsw_index, dataset, num_queries=1000, k=10, ef_runtime=ef_runtime)
+        measure_recall_per_second(hnsw_index, dataset, num_queries=1000, k=k, ef_runtime=ef_runtime)
 
 
 if __name__ == "__main__":
-    DATASETS = ['glove-100-angular', 'glove-200-angular', 'mnist-784-euclidean', 'sift-128-euclidean']
-    dataset_params = {'glove-100-angular': (250, 36, [150, 300, 500]),
+    DATASETS = ['glove-25-angular', 'glove-50-angular', 'glove-100-angular', 'glove-200-angular',
+                'mnist-784-euclidean', 'sift-128-euclidean']
+    # for every dataset the params are: (ef_construction, M, ef_runtime).
+    dataset_params = {'glove-25-angular': (100, 16, [50, 100, 200]),
+                      'glove-50-angular': (150, 24, [100, 200, 300]),
+                      'glove-100-angular': (250, 36, [150, 300, 500]),
                       'glove-200-angular': (350, 48, [200, 350, 600]),
                       'mnist-784-euclidean': (200, 36, [100, 200, 350]),
                       'sift-128-euclidean': (250, 36, [150, 300, 500])}
+    k = 100
     for d_name in DATASETS:
-        run_benchmark(d_name, *dataset_params[d_name])
+        run_benchmark(d_name, *dataset_params[d_name], k)

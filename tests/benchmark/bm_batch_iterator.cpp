@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 #include <random>
+#include <iostream>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 
@@ -13,7 +14,7 @@ protected:
 
     BM_BatchIterator() {
         // Initialize BF index with dim=100
-        dim = 100;
+        dim = 128;
         size_t n_vectors = 1000000;
         VecSimParams params = {.algo = VecSimAlgo_BF,
                                .bfParams = {.type = VecSimType_FLOAT32,
@@ -22,7 +23,7 @@ protected:
                                             .initialCapacity = n_vectors}};
         bf_index = VecSimIndex_New(&params);
 
-        size_t M = 32;
+        size_t M = 36;
         size_t ef = 200;
         params = {.algo = VecSimAlgo_HNSWLIB,
                   .hnswParams = {.type = VecSimType_FLOAT32,
@@ -86,19 +87,56 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_BF)(benchmark::State &st)
 BENCHMARK_REGISTER_F(BM_BatchIterator, get_10000_results_BF)
     ->Arg(100)
     ->Arg(1000)
-    ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
+
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_HNSW)(benchmark::State &st) {
 
     size_t n_res = st.range(0);
+    size_t total_res_num = 10000;
+    auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
+    VecSimQueryResult_List accumulated_results[total_res_num];
+    size_t batch_num = 0, res_num = 0;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
+        res_num += VecSimQueryResult_Len(res);
+        accumulated_results[batch_num++] = res;
+        if (res_num == total_res_num) {
+            break;
+        }
+    }
+
+    // measure recall:
+    size_t correct = 0;
+    for (size_t i = 0; i < batch_num; i++) {
+        auto hnsw_results = accumulated_results[i];
+        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+                if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
+                    correct++;
+                    break;
+                }
+            }
+            VecSimQueryResult_IteratorFree(bf_it);
+        }
+        VecSimQueryResult_IteratorFree(hnsw_it);
+        VecSimQueryResult_Free(hnsw_results);
+    }
+    st.counters["Recall"] = (float)correct / total_res_num;
+    VecSimQueryResult_Free(bf_results);
+
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
-        size_t res_num = 0;
+        batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
+        res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
             res_num += VecSimQueryResult_Len(res);
-            if (res_num == 10000) {
+            if (res_num == total_res_num) {
                 break;
             }
         }
@@ -109,7 +147,32 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_HNSW)(benchmark::State &s
 BENCHMARK_REGISTER_F(BM_BatchIterator, get_10000_results_HNSW)
     ->Arg(100)
     ->Arg(1000)
-    ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
+
+
+BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_BF)(benchmark::State &st) {
+    size_t k = st.range(0);
+    for (auto _: st) {
+        VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+    }
+}
+
+BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
+    size_t k = st.range(0);
+    for (auto _: st) {
+        VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
+    }
+}
+
+// Register the function as a benchmark
+BENCHMARK_REGISTER_F(BM_BatchIterator, TopK_BF)
+        ->Arg(10)
+        ->Arg(10000)
+        ->Unit(benchmark::kMillisecond);
+
+BENCHMARK_REGISTER_F(BM_BatchIterator, TopK_HNSW)
+        ->Arg(10)
+        ->Arg(10000)
+        ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

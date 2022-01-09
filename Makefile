@@ -275,6 +275,7 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
+	$(SHOW)$(BINDIR)/benchmark/bm_basics
 	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
 
 toxenv:
