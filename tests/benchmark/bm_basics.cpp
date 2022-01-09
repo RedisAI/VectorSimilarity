@@ -1,6 +1,5 @@
 #include <benchmark/benchmark.h>
 #include <random>
-#include <iostream>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
@@ -18,7 +17,7 @@ protected:
     BM_VecSimBasics() {
         // Initialize BF and HNSW indices.
         dim = 128;
-        n_vectors = 10000;
+        n_vectors = 1000000;
         VecSimParams params = {.algo = VecSimAlgo_BF,
                 .bfParams = {.type = VecSimType_FLOAT32,
                         .dim = dim,
@@ -26,13 +25,13 @@ protected:
                         .initialCapacity = n_vectors}};
         bf_index = VecSimIndex_New(&params);
 
-        size_t M = 32;
+        size_t M = 36;
         size_t ef = 200;
         params = {.algo = VecSimAlgo_HNSWLIB,
                 .hnswParams = {.type = VecSimType_FLOAT32,
                         .dim = dim,
                         .metric = VecSimMetric_L2,
-                        .initialCapacity = n_vectors,
+                        .initialCapacity = n_vectors+1,
                         .M = M,
                         .efConstruction = ef,
                         .efRuntime = ef}};
@@ -76,10 +75,11 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
         VecSimIndex_AddVector(hnsw_index, query.data(), n_vectors);
         st.PauseTiming();
         VecSimIndex_DeleteVector(hnsw_index, n_vectors);
+        st.ResumeTiming();
     }
 }
 
-BENCHMARK_DEFINE_F(BM_VecSimBasics, deleteVectorHNSW)(benchmark::State &st) {
+BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
 
     for (auto _: st) {
         st.PauseTiming();
@@ -132,7 +132,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)
         ->Unit(benchmark::kMillisecond);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, deleteVectorHNSW)
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)
         ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
@@ -148,4 +148,3 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
         ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
-
