@@ -15,7 +15,7 @@ protected:
     BM_BatchIterator() {
         // Initialize BF index with dim=100
         dim = 128;
-        size_t n_vectors = 1000000;
+        size_t n_vectors = 100000;
         VecSimParams params = {.algo = VecSimAlgo_BF,
                                .bfParams = {.type = VecSimType_FLOAT32,
                                             .dim = dim,
@@ -159,6 +159,29 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_BF)(benchmark::State &st) {
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
     size_t k = st.range(0);
+    auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
+
+    // measure recall:
+    auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+    size_t correct = 0;
+    while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+        auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+        auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+        while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+            auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+            if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
+                correct++;
+                break;
+            }
+        }
+        VecSimQueryResult_IteratorFree(bf_it);
+    }
+    VecSimQueryResult_IteratorFree(hnsw_it);
+    st.counters["Recall"] = (float)correct / k;
+
+    VecSimQueryResult_Free(bf_results);
+    VecSimQueryResult_Free(hnsw_results);
     for (auto _: st) {
         VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
     }

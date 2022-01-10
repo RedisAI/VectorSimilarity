@@ -17,7 +17,7 @@ protected:
     BM_VecSimBasics() {
         // Initialize BF and HNSW indices.
         dim = 128;
-        n_vectors = 1000000;
+        n_vectors = 100000;
         VecSimParams params = {.algo = VecSimAlgo_BF,
                 .bfParams = {.type = VecSimType_FLOAT32,
                         .dim = dim,

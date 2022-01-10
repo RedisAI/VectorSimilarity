@@ -124,6 +124,6 @@ if __name__ == "__main__":
                       'glove-200-angular': (350, 48, [200, 350, 600]),
                       'mnist-784-euclidean': (200, 36, [100, 200, 350]),
                       'sift-128-euclidean': (250, 36, [150, 300, 500])}
-    k = 100
+    k = 10
     for d_name in DATASETS:
         run_benchmark(d_name, *dataset_params[d_name], k)
