@@ -229,27 +229,29 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
     size_t numberOfInfoFields = 7;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-                                .fieldType = INFOFIELD_STRING,
-                                .stringValue = VecSimAlgo_ToString(info.algo)});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::TYPE_STRING,
-                                .fieldType = INFOFIELD_STRING,
-                                .stringValue = VecSimType_ToString(info.bfInfo.type)});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::DIMENSION_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.bfInfo.dim});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::METRIC_STRING,
-                                .fieldType = INFOFIELD_STRING,
-                                .stringValue = VecSimMetric_ToString(info.bfInfo.metric)});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.bfInfo.indexSize});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.bfInfo.blockSize});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::MEMORY_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.bfInfo.memory});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                                                .fieldType = INFOFIELD_STRING,
+                                                .stringValue = VecSimAlgo_ToString(info.algo)});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TYPE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimType_ToString(info.bfInfo.type)});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.bfInfo.dim});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::METRIC_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimMetric_ToString(info.bfInfo.metric)});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.bfInfo.indexSize});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.bfInfo.blockSize});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.bfInfo.memory});
 
     return infoIterator;
 }
