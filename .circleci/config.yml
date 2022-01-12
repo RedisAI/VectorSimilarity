@@ -109,10 +109,6 @@ jobs:
   build-macos:
       macos:
         xcode: 11.6.0
-#     machine:
-#       enabled: true
-#       image: ubuntu-2004:202010-01
-#       resource_class: xlarge
       steps:
        - build-steps
 
