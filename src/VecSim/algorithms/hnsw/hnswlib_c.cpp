@@ -146,39 +146,43 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
     size_t numberOfInfoFields = 11;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-                                .fieldType = INFOFIELD_STRING,
-                                .stringValue = VecSimAlgo_ToString(info.algo)});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::TYPE_STRING,
-                                .fieldType = INFOFIELD_STRING,
-                                .stringValue = VecSimType_ToString(info.hnswInfo.type)});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::DIMENSION_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.dim});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::METRIC_STRING,
-                                .fieldType = INFOFIELD_STRING,
-                                .stringValue = VecSimMetric_ToString(info.hnswInfo.metric)});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.indexSize});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_M_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.M});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.efConstruction});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.efRuntime});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.max_level});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.entrypoint});
-    infoIterator->addInfoField({.fieldName = VecSimCommonStrings::MEMORY_STRING,
-                                .fieldType = INFOFIELD_UINT64,
-                                .uintegerValue = info.hnswInfo.memory});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                                                .fieldType = INFOFIELD_STRING,
+                                                .stringValue = VecSimAlgo_ToString(info.algo)});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TYPE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimType_ToString(info.hnswInfo.type)});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.hnswInfo.dim});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::METRIC_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimMetric_ToString(info.hnswInfo.metric)});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.hnswInfo.indexSize});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.hnswInfo.M});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .uintegerValue = info.hnswInfo.efConstruction});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .uintegerValue = info.hnswInfo.efRuntime});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.hnswInfo.max_level});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.hnswInfo.entrypoint});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.hnswInfo.memory});
 
     return infoIterator;
 }

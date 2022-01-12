@@ -125,8 +125,6 @@ ifneq ($(findstring centos,$(OSNICK)),)
 VECSIM_MARCH ?= skylake-avx512
 else ifneq ($(findstring xenial,$(OSNICK)),)
 VECSIM_MARCH ?= skylake-avx512
-else ifneq ($(findstring macos,$(OS)),)
-VECSIM_MARCH ?= skylake-avx512
 else
 VECSIM_MARCH ?= x86-64-v4
 endif
