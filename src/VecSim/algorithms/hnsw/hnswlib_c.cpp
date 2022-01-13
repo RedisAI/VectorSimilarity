@@ -56,8 +56,8 @@ VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum
     }
     bzero(qparams, sizeof(VecSimQueryParams));
     for (int i = 0; i < paramNum; i++) {
-        if (!strncasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
-                         rparams[i].nameLen)) {
+        if ((rparams[i].nameLen == strlen(VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) &&
+            (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING))) {
             if (qparams->hnswRuntimeParams.efRuntime != 0) {
                 return VecSimParamResolverErr_AlreadySet;
             } else {
