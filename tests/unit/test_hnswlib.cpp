@@ -953,6 +953,11 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
               VecSimParamResolverErr_UnknownParam);
 
+    // Testing for legal prefix but only partial parameter name.
+    rparams[0] = (VecSimRawParam){.name = "ef_run", .nameLen = 6, .value = "100", .valLen = 3};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_UnknownParam);
+
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
