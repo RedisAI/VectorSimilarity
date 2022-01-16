@@ -33,8 +33,8 @@ float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, con
     return 1.0f - sum;
 }
 
-float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
-                                            const void *qty_ptr) {
+extern float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
+                                                   const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     size_t qty16 = qty >> 4 << 4;
     float res = InnerProductSIMD16Ext_AVX512(pVect1v, pVect2v, &qty16);

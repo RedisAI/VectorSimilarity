@@ -65,12 +65,8 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
   )
 
-if(VECSIM_BUILD_TESTS)
-	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
-	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
-endif()
 
-target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
+target_link_libraries(VectorSimilarity PUBLIC VectorSimilaritySpaces)
 
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
@@ -82,6 +78,8 @@ if(NOT VECSIM_STATIC)
 endif()
 
 if(VECSIM_BUILD_TESTS)
+    add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
+    target_link_libraries(VectorSimilarity PUBLIC VectorSimilaritySerialization)
 	add_subdirectory(${root}/tests/unit unit_tests)
 	add_subdirectory(${root}/tests/module module_tests)
 
