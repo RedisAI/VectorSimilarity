@@ -41,9 +41,11 @@ class VecSimSetup(paella.Setup):
         self.install_gnu_utils()
         self.run("%s/bin/getgcc --modern" % READIES)
 
+    def linux_last(self):
+        self.run("%s/bin/getclang" % READIES)
+
     def common_last(self):
         self.run("python3 %s/bin/getrmpytools" % READIES)
-        self.run("%s/bin/getclang" % READIES)
         self.run("NO_PY2=1 %s/bin/getpudb" % READIES)
         self.pip_install("-r %s/sbin/requirements.txt" % ROOT)
 
