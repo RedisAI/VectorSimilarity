@@ -40,6 +40,7 @@ class VecSimSetup(paella.Setup):
     def macos(self):
         self.install_gnu_utils()
         self.run("%s/bin/getgcc --modern" % READIES)
+        self.install("clang-format")
 
     def linux_last(self):
         self.run("%s/bin/getclang" % READIES)
