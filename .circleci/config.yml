@@ -98,7 +98,7 @@ jobs:
   build-ubuntu:
     resource_class: large
     docker:
-      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+      - image: circleci/python:3.8
 #     machine:
 #       enabled: true
 #       image: ubuntu-2004:202010-01
