@@ -83,6 +83,7 @@ commands:
       - run:
           name: Flow tests
           command: |
+            rm -rf /root/.local/lib/python*/site-packages
             pip install -r sbin/requirements.txt
             bash -l -c "make flow_test"
       - save_cache:
