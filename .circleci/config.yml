@@ -61,7 +61,7 @@ commands:
       - checkout-all
       - restore_cache: # Download and cache dependencies
           keys:
-          - v2-dependencies-{{ checksum "pyproject.toml" }}
+          - v2-dependencies-{{ checksum "pyproject.toml" }}-{{ CIRCLE_STAGE }}
           # fallback to using the latest cache if no exact match is found
           - v2-dependencies-
       - install-prerequisites
@@ -90,7 +90,7 @@ commands:
             - ./.tox
             - ~/.cache/pip
             - ~/.cache/pypoetry
-          key: v2-dependencies-{{ checksum "pyproject.toml" }}
+          key: v2-dependencies-{{ checksum "pyproject.toml" }}-{{ CIRCLE_STAGE }}
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
