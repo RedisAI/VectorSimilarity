@@ -3,7 +3,7 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
-#include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/spaces/space_interface.h"
 
 class AllocatorTest : public ::testing::Test {

@@ -1,6 +1,7 @@
 
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/hnsw/hnswlib_c.h"
+#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+#include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
@@ -112,8 +113,19 @@ public:
     }
 
     void setDefaultEf(size_t ef) {
-        HNSWIndex *hnsw = reinterpret_cast<HNSWIndex *>(index);
+        auto *hnsw = reinterpret_cast<HNSWIndex *>(index);
         hnsw->setEf(ef);
+    }
+    void saveIndex(const std::string &location) {
+        auto serializer =
+            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        serializer.saveIndex(location);
+    }
+    void loadIndex(const std::string &location) {
+        auto serializer =
+            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        auto space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
+        serializer.loadIndex(location, space);
     }
 };
 
@@ -188,7 +200,9 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        .def("set_ef", &PyHNSWLibIndex::setDefaultEf);
+        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
+        .def("save_index", &PyHNSWLibIndex::saveIndex)
+        .def("load_index", &PyHNSWLibIndex::loadIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

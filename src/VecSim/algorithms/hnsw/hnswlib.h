@@ -19,9 +19,9 @@
 #include <algorithm>
 #include <unordered_map>
 #include <sys/resource.h>
+#include <fstream>
 
 namespace hnswlib {
-
 using namespace std;
 
 #define HNSW_INVALID_ID    UINT_MAX
@@ -36,7 +36,7 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>
 
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
-
+private:
     // Index build parameters
     size_t max_elements_;
     size_t M_;
@@ -73,7 +73,7 @@ class HierarchicalNSW : public VecsimBaseObject {
     vecsim_stl::vector<size_t> element_levels_;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
-    std::unique_ptr<VisitedNodesHandler> visited_nodes_handler;
+    std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
@@ -87,7 +87,10 @@ class HierarchicalNSW : public VecsimBaseObject {
     // callback for computing distance between two points in the underline space.
     DISTFUNC<dist_t> fstdistfunc_;
     void *dist_func_param_;
+    friend class HNSWIndexSerializer;
 
+    HierarchicalNSW() {}                                // default constructor
+    HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
@@ -114,7 +117,7 @@ public:
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
                     size_t initial_pool_size = 1);
-    ~HierarchicalNSW();
+    virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
     size_t getEf() const;
@@ -136,7 +139,6 @@ public:
     tableint searchBottomLayerEP(const void *query_data) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
                                                                       size_t k) const;
-    void checkIntegrity();
 };
 
 /**
@@ -1066,62 +1068,6 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
         top_candidates.pop();
     }
     return result;
-}
-
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::checkIntegrity() {
-
-    struct rusage self_ru {};
-    getrusage(RUSAGE_SELF, &self_ru);
-    std::cerr << "memory usage is : " << self_ru.ru_maxrss << std::endl;
-
-    int connections_checked = 0;
-    int double_connections = 0;
-    vecsim_stl::vector<int> inbound_connections_num(max_id, 0, this->allocator);
-    size_t incoming_edges_sets_sizes = 0;
-
-    for (int i = 0; i <= max_id; i++) {
-        if (available_ids.find(i) != available_ids.end()) {
-            continue;
-        }
-        for (int l = 0; l <= element_levels_[i]; l++) {
-            linklistsizeint *ll_cur = get_linklist_at_level(i, l);
-            int size = getListCount(ll_cur);
-            auto *data = (tableint *)(ll_cur + 1);
-            vecsim_stl::set<tableint> s(this->allocator);
-            for (int j = 0; j < size; j++) {
-                assert(data[j] >= 0);
-                assert(data[j] <= cur_element_count);
-                assert(data[j] != i);
-                inbound_connections_num[data[j]]++;
-                s.insert(data[j]);
-                connections_checked++;
-                // check if this is bidirectional
-                linklistsizeint *ll_other = get_linklist_at_level(data[j], l);
-                int size_other = getListCount(ll_other);
-                auto *data_other = (tableint *)(ll_other + 1);
-                for (int r = 0; r < size_other; r++) {
-                    if (data_other[r] == (tableint)i) {
-                        double_connections++;
-                        break;
-                    }
-                }
-            }
-            assert(s.size() == size);
-            incoming_edges_sets_sizes += getIncomingEdgesPtr(i, l)->size();
-        }
-    }
-    assert(incoming_edges_sets_sizes + double_connections == connections_checked);
-    std::cout << "uni-directional connections: " << incoming_edges_sets_sizes << std::endl;
-    std::cout << "connections: " << connections_checked << std::endl;
-    std::cout << "double connections: " << double_connections << std::endl;
-    std::cout << "min in-degree: "
-              << *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
-              << std::endl;
-    std::cout << "max in-degree: "
-              << *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
-              << std::endl;
-    std::cout << "integrity ok\n";
 }
 
 } // namespace hnswlib

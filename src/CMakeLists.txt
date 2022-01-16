@@ -53,7 +53,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
     VecSim/algorithms/brute_force/vector_block.cpp
 	VecSim/algorithms/hnsw/visited_nodes_handler.cpp
-    VecSim/algorithms/hnsw/hnswlib_c.cpp
+	VecSim/algorithms/hnsw/hnsw_wrapper.cpp
     VecSim/vec_sim.cpp
     VecSim/query_results.cpp
 	VecSim/info_iterator.cpp
@@ -64,6 +64,11 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/bf_batch_iterator.cpp
 	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
   )
+
+if(VECSIM_BUILD_TESTS)
+	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
+	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
+endif()
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 

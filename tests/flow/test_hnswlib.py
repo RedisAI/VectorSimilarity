@@ -1,3 +1,4 @@
+import os
 from common import *
 import hnswlib
 
@@ -230,3 +231,78 @@ def test_batch_iterator():
         accumulated_labels = accumulated_labels.union(set(labels[0]))
     assert len(accumulated_labels) >= 0.95*num_elements
     print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+
+
+def test_serialization():
+    dim = 16
+    num_elements = 10000
+    M = 16
+    efConstruction = 100
+
+    num_queries = 10
+    k = 10
+    efRuntime = 50
+
+    hnswparams = HNSWParams()
+    hnswparams.M = M
+    hnswparams.efConstruction = efConstruction
+    hnswparams.initialCapacity = num_elements
+    hnswparams.efRuntime = efRuntime
+    hnswparams.dim = dim
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.metric = VecSimMetric_L2
+
+    hnsw_index = HNSWIndex(hnswparams)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        hnsw_index.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    query_data = np.float32(np.random.random((num_queries, dim)))
+    correct = 0
+    correct_labels = []  # cache these
+    for target_vector in query_data:
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
+        dists = sorted(dists)
+        keys = [key for _, key in dists[:k]]
+        correct_labels.append(keys)
+
+        for label in hnswlib_labels[0]:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct += 1
+                    break
+    # Measure recall
+    recall = float(correct)/(k*num_queries)
+    print("\nrecall is: \n", recall)
+
+    # Persist, delete and restore index.
+    file_name = os.getcwd()+"/dump"
+    hnsw_index.save_index(file_name)
+
+    new_hnsw_index = HNSWIndex(hnswparams)
+    assert new_hnsw_index.index_size() == 0
+    new_hnsw_index.load_index(file_name)
+    os.remove(file_name)
+    assert new_hnsw_index.index_size() == num_elements
+
+    # Check recall
+    correct_after = 0
+    for i, target_vector in enumerate(query_data):
+        hnswlib_labels, hnswlib_distances = new_hnsw_index.knn_query(target_vector, 10)
+        correct_labels_cur = correct_labels[i]
+        for label in hnswlib_labels[0]:
+            for correct_label in correct_labels_cur:
+                if label == correct_label:
+                    correct_after += 1
+                    break
+
+    # Compare recall after reloading the index
+    recall_after = float(correct_after)/(k*num_queries)
+    print("\nrecall after is: \n", recall_after)
+    assert recall == recall_after
