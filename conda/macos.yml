@@ -1,0 +1,10 @@
+name: vecsim
+channels:
+  - defaults
+dependencies:
+  - make
+  - cmake
+  - clang-format
+  - clangxx_osx-64
+  - python=3.8
+
