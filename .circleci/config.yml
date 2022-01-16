@@ -10,7 +10,7 @@ commands:
               echo "Identifies as documents PR, no testing required"
               circleci step halt
             fi
-            
+
   abort_for_noci:
     steps:
       - run:
@@ -82,7 +82,9 @@ commands:
           command: bash -l -c "make pybind"
       - run:
           name: Flow tests
-          command: bash -l -c "make flow_test"
+          command: |
+            pip install -r sbin/requirements.txt
+            bash -l -c "make flow_test"
       - save_cache:
           paths:
             - ./.tox
@@ -233,7 +235,7 @@ workflows:
       - codecov:
           <<: *on-any-branch
 
-  
+
   nightly:
     triggers:
       - schedule:
