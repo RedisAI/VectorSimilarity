@@ -57,8 +57,8 @@ VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum
     }
     bzero(qparams, sizeof(VecSimQueryParams));
     for (int i = 0; i < paramNum; i++) {
-        if (!strncasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
-                         rparams[i].nameLen)) {
+        if ((rparams[i].nameLen == strlen(VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) &&
+            (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING))) {
             if (qparams->hnswRuntimeParams.efRuntime != 0) {
                 return VecSimParamResolverErr_AlreadySet;
             } else {
@@ -103,13 +103,12 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                 hnsw->setEf(queryParams->hnswRuntimeParams.efRuntime);
             }
         }
-        typedef vecsim_stl::max_priority_queue<pair<float, size_t>> knn_queue_t;
-        auto knn_res = make_unique<knn_queue_t>(hnsw->searchKnn(query_data, k));
-        auto *results = array_new_len<VecSimQueryResult>(knn_res->size(), knn_res->size());
-        for (int i = (int)knn_res->size() - 1; i >= 0; --i) {
-            VecSimQueryResult_SetId(results[i], knn_res->top().second);
-            VecSimQueryResult_SetScore(results[i], knn_res->top().first);
-            knn_res->pop();
+        auto knn_res = hnsw->searchKnn(query_data, k);
+        auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
+        for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
+            VecSimQueryResult_SetId(results[i], knn_res.top().second);
+            VecSimQueryResult_SetScore(results[i], knn_res.top().first);
+            knn_res.pop();
         }
         // Restore efRuntime
         hnsw->setEf(originalEF);
