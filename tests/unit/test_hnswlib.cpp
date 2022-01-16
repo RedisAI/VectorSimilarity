@@ -3,6 +3,7 @@
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
 #include <climits>
+#include <unistd.h>
 
 using namespace hnswlib;
 
@@ -991,14 +992,14 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     size_t M = 8;
     size_t ef = 10;
 
-    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                           .hnswParams = {.type = VecSimType_FLOAT32,
-                                          .dim = dim,
-                                          .metric = VecSimMetric_L2,
-                                          .initialCapacity = n,
-                                          .M = M,
-                                          .efConstruction = ef,
-                                          .efRuntime = ef}};
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .M = M,
+                                                 .efConstruction = ef,
+                                                 .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -1012,7 +1013,7 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
     // Persist index with the serializer, and delete it.
-    char *location = get_current_dir_name();
+    char *location = getcwd(NULL, 0);
     auto file_name = std::string(location) + "/dump";
     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
     serializer.saveIndex(file_name);
