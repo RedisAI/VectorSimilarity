@@ -115,9 +115,10 @@ jobs:
           command: |
             brew install wget
             wget https://repo.anaconda.com/archive/Anaconda3-2021.11-MacOSX-x86_64.sh -O ~/anaconda.sh
-            bash ~/anaconda.sh -b -p $HOME/anaconda 
+            bash ~/anaconda.sh -b -p $HOME/anaconda -y
             yes
             conda env create -f ./conda/macos.yml
+            conda activate vecsim
        - run:
           name: build
           command: make
