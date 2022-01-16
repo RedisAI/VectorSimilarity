@@ -110,7 +110,29 @@ jobs:
       macos:
         xcode: 11.6.0
       steps:
-       - build-steps
+       - run:
+          name: get conda
+          command: |
+            wget https://repo.anaconda.com/archive/Anaconda3-2021.11-MacOSX-x86_64.sh -O ~/anaconda.sh
+            bash ~/anaconda.sh -b -p $HOME/anaconda 
+            yes
+            conda env create -f ./conda/macos.yml
+       - run:
+          name: build
+          run: make
+       - run:
+          name: unit test
+          run: make unit_test
+       - run: 
+          name: install poetry
+          run: pip install poetry
+       - run:
+          name: flow test
+          run: |
+            poetry build
+            poetry install
+            tox -e flowenv
+
 
 
   sanitize:
