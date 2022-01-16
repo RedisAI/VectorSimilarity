@@ -119,16 +119,16 @@ jobs:
             conda env create -f ./conda/macos.yml
        - run:
           name: build
-          run: make
+          command: make
        - run:
           name: unit test
-          run: make unit_test
+          command: make unit_test
        - run: 
           name: install poetry
-          run: pip install poetry
+          command: pip install poetry
        - run:
           name: flow test
-          run: |
+          command: |
             poetry build
             poetry install
             tox -e flowenv
