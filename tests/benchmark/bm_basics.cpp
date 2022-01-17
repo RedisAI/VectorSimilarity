@@ -11,7 +11,7 @@ static void GetHNSWIndex(VecSimIndex *hnsw_index, size_t n_vectors, size_t dim,
 
     // Load the index file, if it exists in the expected path.
     char *location = get_current_dir_name();
-    auto file_name = std::string(location) + "/tests/benchmark/data/random-1k-100-l2.hnsw";
+    auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
