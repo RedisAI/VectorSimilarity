@@ -110,9 +110,7 @@ jobs:
       macos:
         xcode: 11.6.0
       steps:
-       - run: 
-          name: checkout submodules
-          command: git submodule update --init --recursive
+       - checkout-all
        - run:
           name: get conda
           command: |
