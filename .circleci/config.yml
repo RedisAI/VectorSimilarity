@@ -77,7 +77,7 @@ commands:
           # temporary - to remove
       - run:
           name: Download pre-generated index
-          command: wget -q https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1k-100-l2.hnsw
+          command: wget -q -P tests/benchmark/data https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1k-100-l2.hnsw
       - run:
            name: Benchmark
            command: bash -l -c "make benchmark"
@@ -140,9 +140,12 @@ jobs:
       - abort_for_docs
       - abort_for_noci
       - build-steps
+#      - restore_cache: # Download pre-generated indices
+#            keys:
+#              - benchmark-dependencies
       - run:
           name: Download pre-generated index
-          command: wget -q https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1M-100-l2.hnsw
+          command: wget -q -P tests/benchmark/data https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1M-100-l2.hnsw
       - run:
           name: Benchmark
           command: bash -l -c "make benchmark"
@@ -150,6 +153,10 @@ jobs:
       - run:
           name: Redis tests
           command: bash -l -c "tox -e modtest"
+#      - save_cache:
+#          paths:
+#            - ./tests/benchmark/data
+#          key: benchmark-dependencies
 
   codecov:
     resource_class: large
