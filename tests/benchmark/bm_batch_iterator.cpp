@@ -73,16 +73,17 @@ public:
     }
 };
 
-BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_BF)(benchmark::State &st) {
+BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
 
-    size_t n_res = st.range(0);
+    size_t batch_size = st.range(0);
+    size_t total_res_count = st.range(1);
     for (auto _ : st) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data());
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
+            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_SCORE);
             res_num += VecSimQueryResult_Len(res);
-            if (res_num == 10000) {
+            if (res_num == total_res_count) {
                 break;
             }
         }
@@ -91,16 +92,19 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_BF)(benchmark::State &st)
 }
 
 // Register the function as a benchmark
-BENCHMARK_REGISTER_F(BM_BatchIterator, get_10000_results_BF)
-    ->Arg(100)
-    ->Arg(1000)
+BENCHMARK_REGISTER_F(BM_BatchIterator, BatchedSearch_BF)
+// {batch_size, total_results_count}
+    ->Args({10, 1000})
+    ->Args({100, 1000})
+    ->Args({100, 10000})
+    ->Args({1000, 10000})
     ->Unit(benchmark::kMillisecond);
 
 
-BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_HNSW)(benchmark::State &st) {
+BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
 
     size_t n_res = st.range(0);
-    size_t total_res_num = 10000;
+    size_t total_res_num = st.range(1);
     auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
     VecSimQueryResult_List accumulated_results[total_res_num];
@@ -151,9 +155,12 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, get_10000_results_HNSW)(benchmark::State &s
     }
 }
 
-BENCHMARK_REGISTER_F(BM_BatchIterator, get_10000_results_HNSW)
-    ->Arg(100)
-    ->Arg(1000)
+BENCHMARK_REGISTER_F(BM_BatchIterator, BatchedSearch_HNSW)
+// {batch_size, total_results_count}
+        ->Args({10, 1000})
+        ->Args({100, 1000})
+        ->Args({100, 10000})
+        ->Args({1000, 10000})
     ->Unit(benchmark::kMillisecond);
 
 
@@ -196,10 +203,12 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_BatchIterator, TopK_BF)
+        ->Arg(1000)
         ->Arg(10000)
         ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, TopK_HNSW)
+        ->Arg(1000)
         ->Arg(10000)
         ->Unit(benchmark::kMillisecond);
 
