@@ -115,3 +115,7 @@ This will create a new tox environment, install the wheel and execute the python
 ```
 tox -e flowenv
 ```
+
+# Benchmark
+
+To benchmark the capabilities of this library, follow the instructions in the [benchmark docs section](benchmarks.md). 
