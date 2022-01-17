@@ -250,7 +250,7 @@ valgrind:
 
 flow_test:
 	$(SHOW)$(MAKE) pybind
-	$(SHOW)tox -e flowenv
+	$(SHOW)python3 -m tox -e flowenv
 
 .PHONY: flow_test
 
