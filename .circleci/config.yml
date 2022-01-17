@@ -118,22 +118,24 @@ jobs:
             wget https://repo.anaconda.com/archive/Anaconda3-2021.11-MacOSX-x86_64.sh -O ~/anaconda.sh
             bash ~/anaconda.sh -b -p $HOME/anaconda
             source ~/anaconda/bin/activate
-            conda init bash
-            source ~/.bashrc
+            source ~/.zshrc
             conda env create -f ./conda/macos.yml
        - run:
           name: build
           command: |
+            source ~/.zshrc
             conda activate vecsim
             make
        - run:
           name: unit test
           command: |
+            source ~/.zshrc
             conda activate vecsim
             make unit_test
        - run:
           name: flow test
           command: |
+            source ~/.zshrc
             conda activate vecsim
             pip install poetry
             poetry build
