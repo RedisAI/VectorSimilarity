@@ -78,7 +78,7 @@ commands:
       - run:
           name: Download pre-generated index
           command: wget -q https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1k-100-l2.hnsw
-       - run:
+      - run:
            name: Benchmark
            command: bash -l -c "make benchmark"
            no_output_timeout: 180m
