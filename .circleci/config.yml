@@ -110,30 +110,31 @@ jobs:
       macos:
         xcode: 11.6.0
       steps:
-       - run:
-          name: get conda
+      - run: 
+          name: checkout submodules
+          command: |
+            git submodule update --init --recursive          name: get conda
           command: |
             brew install wget
             wget https://repo.anaconda.com/archive/Anaconda3-2021.11-MacOSX-x86_64.sh -O ~/anaconda.sh
             bash ~/anaconda.sh -b -p $HOME/anaconda
             source ~/anaconda/bin/activate
             source ~/.zshrc
-            conda env create -f ./project/conda/macos.yml
+            conda env create -f ./conda/macos.yml
             conda activate vecsim
-            ls project
+       - run:
        - run:
           name: build
-          command: make -C project
+          command: make
        - run:
           name: unit test
-          command: make -C project unit_test
+          command: make unit_test
        - run: 
           name: install poetry
           command: pip install poetry
        - run:
           name: flow test
           command: |
-            cd project
             poetry build
             poetry install
             tox -e flowenv
