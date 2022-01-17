@@ -37,7 +37,7 @@ protected:
                                  .efRuntime = ef}};
         hnsw_index = VecSimIndex_New(&params);
 
-        // Add 1M random vectors
+        // Add 1M random vectors to Flat index.
         std::vector<float> data(n_vectors * dim);
         rng.seed(47);
         std::uniform_real_distribution<> distrib;
@@ -46,13 +46,15 @@ protected:
         }
         for (size_t i = 0; i < n_vectors; ++i) {
             VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
-            //VecSimIndex_AddVector(hnsw_index, data.data() + dim * i, i);
         }
+
+        // Loading pre-generated HNSW index with the se vectors.
         char *location = get_current_dir_name();
-        auto serializer = hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
         auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
-        //serializer.saveIndex(file_name);
-        serializer.loadIndex(file_name, reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
+        auto serializer =
+            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
+        serializer.loadIndex(file_name,
+                             reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
         query.reserve(dim);
     }
 
@@ -81,7 +83,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data());
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_SCORE);
+            VecSimQueryResult_List res =
+                VecSimBatchIterator_Next(batchIterator, batch_size, BY_SCORE);
             res_num += VecSimQueryResult_Len(res);
             if (res_num == total_res_count) {
                 break;
@@ -93,19 +96,19 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_BatchIterator, BatchedSearch_BF)
-// {batch_size, total_results_count}
+    // {batch_size, total_results_count}
     ->Args({10, 1000})
     ->Args({100, 1000})
     ->Args({100, 10000})
     ->Args({1000, 10000})
     ->Unit(benchmark::kMillisecond);
 
-
 BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
 
     size_t n_res = st.range(0);
     size_t total_res_num = st.range(1);
-    auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
+    auto bf_results =
+        VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
     VecSimQueryResult_List accumulated_results[total_res_num];
     size_t batch_num = 0, res_num = 0;
@@ -128,7 +131,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
             auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
             while (VecSimQueryResult_IteratorHasNext(bf_it)) {
                 auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-                if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
+                if (VecSimQueryResult_GetId(hnsw_res_item) ==
+                    VecSimQueryResult_GetId(bf_res_item)) {
                     correct++;
                     break;
                 }
@@ -156,17 +160,16 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
 }
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, BatchedSearch_HNSW)
-// {batch_size, total_results_count}
-        ->Args({10, 1000})
-        ->Args({100, 1000})
-        ->Args({100, 10000})
-        ->Args({1000, 10000})
+    // {batch_size, total_results_count}
+    ->Args({10, 1000})
+    ->Args({100, 1000})
+    ->Args({100, 10000})
+    ->Args({1000, 10000})
     ->Unit(benchmark::kMillisecond);
-
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
-    for (auto _: st) {
+    for (auto _ : st) {
         VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
     }
 }
@@ -196,20 +199,20 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
 
     VecSimQueryResult_Free(bf_results);
     VecSimQueryResult_Free(hnsw_results);
-    for (auto _: st) {
+    for (auto _ : st) {
         VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
     }
 }
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_BatchIterator, TopK_BF)
-        ->Arg(1000)
-        ->Arg(10000)
-        ->Unit(benchmark::kMillisecond);
+    ->Arg(1000)
+    ->Arg(10000)
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, TopK_HNSW)
-        ->Arg(1000)
-        ->Arg(10000)
-        ->Unit(benchmark::kMillisecond);
+    ->Arg(1000)
+    ->Arg(10000)
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

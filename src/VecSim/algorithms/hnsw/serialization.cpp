@@ -63,6 +63,9 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // Save level 0 data (graph layer 0 + labels + vectors data)
     output.write(hnsw_index->data_level0_memory_,
                  hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
+    if (hnsw_index->max_id == HNSW_INVALID_ID) {
+        return; // Index is empty.
+    }
     // Save the incoming edge sets.
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
@@ -157,6 +160,9 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
     input.read(hnsw_index->data_level0_memory_,
                hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
+    if (hnsw_index->max_id == HNSW_INVALID_ID) {
+        return; // Index is empty.
+    }
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
@@ -270,7 +276,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
     size_t incoming_edges_sets_sizes = 0;
 
-    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
+    for (size_t i = 0; i <= hnsw_index->max_id && hnsw_index->max_id != HNSW_INVALID_ID; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
@@ -311,9 +317,13 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
     res.min_in_degree =
-        *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end());
+        !inbound_connections_num.empty()
+            ? *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
+            : 0;
     res.max_in_degree =
-        *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end());
+        !inbound_connections_num.empty()
+            ? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
+            : 0;
     if (incoming_edges_sets_sizes + double_connections != connections_checked) {
         res.valid_state = false;
         return res;
