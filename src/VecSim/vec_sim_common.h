@@ -78,15 +78,17 @@ typedef struct {
     };
 } VecSimParams;
 
+typedef struct {
+    size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
+} HNSWRuntimeParams;
+
 /**
  * @brief Query Runtime parameters.
  *
  */
 typedef struct {
     union {
-        struct {
-            size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
-        } hnswRuntimeParams;
+        HNSWRuntimeParams hnswRuntimeParams;
     };
 } VecSimQueryParams;
 

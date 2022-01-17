@@ -61,11 +61,11 @@ commands:
       - abort_for_docs
       - abort_for_noci
       - checkout-all
-      - restore_cache: # Download and cache dependencies
-          keys:
-          - v2-dependencies-{{ checksum "pyproject.toml" }}
-          # fallback to using the latest cache if no exact match is found
-          - v2-dependencies-
+      # restore_cache: # Download and cache dependencies
+      #   keys:
+      #   - v2-dependencies-{{ checksum "pyproject.toml" }}-{{ .Environment.CIRCLE_STAGE }}
+      #   # fallback to using the latest cache if no exact match is found
+      #   - v2-dependencies-
       - install-prerequisites
       - run:
           name: Check format
@@ -92,7 +92,7 @@ commands:
             - ./.tox
             - ~/.cache/pip
             - ~/.cache/pypoetry
-          key: v2-dependencies-{{ checksum "pyproject.toml" }}
+          key: v2-dependencies-{{ checksum "pyproject.toml" }}-{{ .Environment.CIRCLE_STAGE }}
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -107,6 +107,45 @@ jobs:
 #       resource_class: xlarge
     steps:
       - build-steps
+
+  build-macos:
+      macos:
+        xcode: 11.6.0
+      steps:
+       - checkout-all
+       - run:
+          name: get conda
+          command: |
+            brew install wget
+            wget https://repo.anaconda.com/archive/Anaconda3-2021.11-MacOSX-x86_64.sh -O ~/anaconda.sh
+            bash ~/anaconda.sh -b -p $HOME/anaconda
+            source ~/anaconda/bin/activate
+            conda init zsh
+            source ~/.zshrc
+            conda env create -f ./conda/macos.yml
+       - run:
+          name: build
+          command: |
+            source ~/.zshrc
+            conda activate vecsim
+            make
+       - run:
+          name: unit test
+          command: |
+            source ~/.zshrc
+            conda activate vecsim
+            make unit_test
+       - run:
+          name: flow test
+          command: |
+            source ~/.zshrc
+            conda activate vecsim
+            pip install poetry
+            poetry build
+            poetry install
+            tox -e flowenv
+
+
 
   sanitize:
     docker:
@@ -226,6 +265,8 @@ workflows:
   default_flow:
     jobs:
       - build-ubuntu:
+          <<: *on-any-branch
+      - build-macos:
           <<: *on-any-branch
       - sanitize:
           name: sanitize-<< matrix.san-type >>
