@@ -1051,23 +1051,24 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
         data[i] = (float)distrib(rng);
     }
     for (size_t i = 0; i < n; ++i) {
+        VecSimIndex_DeleteVector(new_index, i);
         VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
     }
     // Delete arbitrary vector to have an available id to restore.
-    //VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * n));
+    VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * n));
 
     // Persist index, delete it from memory and restore.
     serializer.saveIndex(file_name);
     VecSimIndex_Free(new_index);
 
-    params.hnswParams.initialCapacity = n/2; // to ensure that we resize in load time.
+    params.hnswParams.initialCapacity = n / 2; // to ensure that we resize in load time.
     auto restored_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
 
     space = reinterpret_cast<HNSWIndex *>(restored_index)->getSpace().get();
     serializer.reset(reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex());
     serializer.loadIndex(file_name, space);
-    ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n - 1);
     res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 

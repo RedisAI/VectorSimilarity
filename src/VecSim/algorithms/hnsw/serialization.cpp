@@ -62,9 +62,9 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
 void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // Save level 0 data (graph layer 0 + labels + vectors data)
     output.write(hnsw_index->data_level0_memory_,
-                 hnsw_index->cur_element_count * hnsw_index->size_data_per_element_);
+                 hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
     // Save the incoming edge sets.
-    for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
+    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
@@ -79,7 +79,7 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // Save all graph layers other than layer 0: for every id of a vector in the graph,
     // store (<size>, data), where <size> is the data size, and the data is the concatenated
     // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
-    for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
+    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
@@ -152,10 +152,12 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterfac
 
 void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
-    hnsw_index->data_level0_memory_ = (char *)hnsw_index->allocator->reallocate(hnsw_index->data_level0_memory_, hnsw_index->cur_element_count * hnsw_index->size_data_per_element_);
+    hnsw_index->data_level0_memory_ = (char *)hnsw_index->allocator->reallocate(
+        hnsw_index->data_level0_memory_,
+        hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
     input.read(hnsw_index->data_level0_memory_,
-               hnsw_index->cur_element_count * hnsw_index->size_data_per_element_);
-    for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
+               hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
+    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
@@ -182,13 +184,15 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    hnsw_index->linkLists_ = (char **)hnsw_index->allocator->reallocate(hnsw_index->linkLists_, sizeof(void *) * hnsw_index->max_elements_);
+    hnsw_index->linkLists_ = (char **)hnsw_index->allocator->reallocate(
+        hnsw_index->linkLists_, sizeof(void *) * hnsw_index->max_elements_);
     hnsw_index->element_levels_ =
         vecsim_stl::vector<size_t>(hnsw_index->max_elements_, hnsw_index->allocator);
     hnsw_index->label_lookup_.clear();
 
-    for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
+    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
+            hnsw_index->element_levels_[i] = HNSW_INVALID_LEVEL;
             continue;
         }
         hnsw_index->label_lookup_[hnsw_index->getExternalLabel(i)] = i;

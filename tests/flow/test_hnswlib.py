@@ -262,6 +262,7 @@ def test_serialization():
 
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
+    correct_labels = []  # cache these
     for target_vector in query_data:
         hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
 
@@ -269,6 +270,7 @@ def test_serialization():
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
         dists = sorted(dists)
         keys = [key for _, key in dists[:k]]
+        correct_labels.append(keys)
 
         for label in hnswlib_labels[0]:
             for correct_label in keys:
@@ -291,16 +293,11 @@ def test_serialization():
 
     # Check recall
     correct_after = 0
-    for target_vector in query_data:
+    for i, target_vector in enumerate(query_data):
         hnswlib_labels, hnswlib_distances = new_hnsw_index.knn_query(target_vector, 10)
-
-        # sort distances of every vector from the target vector and get actual k nearest vectors
-        dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
-        dists = sorted(dists)
-        keys = [key for _, key in dists[:k]]
-
+        correct_labels_cur = correct_labels[i]
         for label in hnswlib_labels[0]:
-            for correct_label in keys:
+            for correct_label in correct_labels_cur:
                 if label == correct_label:
                     correct_after += 1
                     break
