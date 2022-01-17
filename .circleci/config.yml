@@ -110,10 +110,12 @@ jobs:
       macos:
         xcode: 11.6.0
       steps:
-      - run: 
+       - run: 
           name: checkout submodules
           command: |
-            git submodule update --init --recursive          name: get conda
+            git submodule update --init --recursive
+       - run:
+          name: get conda
           command: |
             brew install wget
             wget https://repo.anaconda.com/archive/Anaconda3-2021.11-MacOSX-x86_64.sh -O ~/anaconda.sh
@@ -122,7 +124,6 @@ jobs:
             source ~/.zshrc
             conda env create -f ./conda/macos.yml
             conda activate vecsim
-       - run:
        - run:
           name: build
           command: make
