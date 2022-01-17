@@ -52,7 +52,9 @@ commands:
       - setup-automation
       - run:
           name: System setup
-          command: ./sbin/system-setup.py
+          command: |
+            ./sbin/system-setup.py
+            python3 -m pip list -v
 
   build-steps:
     steps:
@@ -83,7 +85,7 @@ commands:
       - run:
           name: Flow tests
           command: |
-            pip install -r sbin/requirements.txt
+            python3 -m pip install -r sbin/requirements.txt
             bash -l -c "make flow_test"
       - save_cache:
           paths:
