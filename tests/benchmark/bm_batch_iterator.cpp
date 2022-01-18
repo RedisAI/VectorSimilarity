@@ -18,23 +18,23 @@ protected:
         // Initialize BF index with dim=100
         dim = 100;
         size_t n_vectors = 1000000;
-        VecSimParams params = {.algo = VecSimAlgo_BF,
-                               .bfParams = {.type = VecSimType_FLOAT32,
-                                            .dim = dim,
-                                            .metric = VecSimMetric_L2,
-                                            .initialCapacity = n_vectors}};
+        VecSimParams params{.algo = VecSimAlgo_BF,
+                            .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n_vectors}};
         bf_index = VecSimIndex_New(&params);
 
         size_t M = 50;
         size_t ef = 350;
         params = {.algo = VecSimAlgo_HNSWLIB,
-                  .hnswParams = {.type = VecSimType_FLOAT32,
-                                 .dim = dim,
-                                 .metric = VecSimMetric_L2,
-                                 .initialCapacity = n_vectors,
-                                 .M = M,
-                                 .efConstruction = ef,
-                                 .efRuntime = ef}};
+                  .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                           .dim = dim,
+                                           .metric = VecSimMetric_L2,
+                                           .initialCapacity = n_vectors,
+                                           .M = M,
+                                           .efConstruction = ef,
+                                           .efRuntime = ef}};
         hnsw_index = VecSimIndex_New(&params);
 
         // Add 1M random vectors to Flat index.

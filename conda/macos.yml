@@ -1,0 +1,10 @@
+name: vecsim
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - make
+  - cmake
+  - clangxx_osx-64
+  - python=3.8
+  - clang-format
