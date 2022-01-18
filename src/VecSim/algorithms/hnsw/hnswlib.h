@@ -712,11 +712,12 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     label_offset_ = size_links_level0_ + data_size_;
     offsetLevel0_ = 0;
 
-    data_level0_memory_ = (char *)this->allocator->allocate(max_elements_ * size_data_per_element_);
+    data_level0_memory_ =
+        (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
     if (data_level0_memory_ == nullptr)
         throw std::runtime_error("Not enough memory");
 
-    linkLists_ = (char **)this->allocator->allocate(sizeof(void *) * max_elements_);
+    linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
     if (linkLists_ == nullptr)
         throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate linklists");
 
