@@ -6,29 +6,22 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
 
-static void GetHNSWIndex(VecSimIndex *hnsw_index, size_t n_vectors, size_t dim) {
+static void GetHNSWIndex(VecSimIndex *hnsw_index) {
 
     // Load the index file, if it exists in the expected path.
     char *location = get_current_dir_name();
     auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
-    // auto file_name =
-    // std::string("/home/alon/Repositories/VectorSimilarity/tests/benchmark/data/random-1M-100-l2.hnsw");
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-        std::cout << "HNSW index loaded from: " << file_name << std::endl;
-        auto res = serializer.checkIntegrity();
-        if (!res.valid_state) {
-            std::cerr << "Error occurred in loading index. Exiting..." << std::endl;
-            exit(1);
-        }
     } else {
         std::cerr << "HNSW index file was not found in path. Exiting..." << std::endl;
         exit(1);
     }
+    free(location);
 }
 
 class BM_VecSimBasics : public benchmark::Fixture {
@@ -44,6 +37,10 @@ protected:
         dim = 100;
         n_vectors = 1000000;
         query.reserve(dim);
+    }
+
+public:
+    void SetUp(const ::benchmark::State &state) {
         rng.seed(47);
         std::vector<float> data(n_vectors * dim);
         std::uniform_real_distribution<> distrib;
@@ -61,43 +58,40 @@ protected:
         for (size_t i = 0; i < n_vectors; ++i) {
             VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
         }
-    }
-
-public:
-    void SetUp(const ::benchmark::State &state) {
-        // Initialize BF and HNSW indices.
+        // Initialize and load HNSW index.
         size_t M = 50;
         size_t ef_c = 350;
         size_t ef_r = 500;
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                               .hnswParams = {.type = VecSimType_FLOAT32,
-                                              .dim = dim,
-                                              .metric = VecSimMetric_L2,
-                                              .initialCapacity = n_vectors + 1,
-                                              .M = M,
-                                              .efConstruction = ef_c,
-                                              .efRuntime = ef_r}};
+        params = {.algo = VecSimAlgo_HNSWLIB,
+                  .hnswParams = {.type = VecSimType_FLOAT32,
+                                 .dim = dim,
+                                 .metric = VecSimMetric_L2,
+                                 .initialCapacity = n_vectors + 1,
+                                 .M = M,
+                                 .efConstruction = ef_c,
+                                 .efRuntime = ef_r}};
         hnsw_index = VecSimIndex_New(&params);
 
-        // Load pre-generated HNSW index containing the same vectors, or create it in-place.
-        GetHNSWIndex(hnsw_index, n_vectors, dim);
+        // Load pre-generated HNSW index containing the same vectors as the Flat index.
+        GetHNSWIndex(hnsw_index);
 
         // Generate random query vector before test.
-        std::uniform_real_distribution<> distrib;
         for (size_t i = 0; i < dim; ++i) {
             query[i] = (float)distrib(rng);
         }
     }
 
-    void TearDown(const ::benchmark::State &state) { VecSimIndex_Free(hnsw_index); }
+    void TearDown(const ::benchmark::State &state) {
+        VecSimIndex_Free(hnsw_index);
+        VecSimIndex_Free(bf_index);
+    }
 
-    ~BM_VecSimBasics() { VecSimIndex_Free(bf_index); }
+    ~BM_VecSimBasics() {}
 };
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
 
     // Add a single vector to the index.
-    std::cout << "Running add vector benchmark" << std::endl;
     for (auto _ : st) {
         VecSimIndex_AddVector(hnsw_index, query.data(), n_vectors);
         st.PauseTiming();
@@ -107,7 +101,6 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
-    std::cout << "Running delete vector benchmark" << std::endl;
     for (auto _ : st) {
         st.PauseTiming();
         VecSimIndex_AddVector(hnsw_index, query.data(), n_vectors);
@@ -117,7 +110,6 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
-    std::cout << "Running TopK BF benchmark" << std::endl;
     size_t k = st.range(0);
     for (auto _ : st) {
         VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
@@ -125,7 +117,6 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
-    std::cout << "Running TopK HNSW benchmark" << std::endl;
     size_t k = st.range(0);
     auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
     auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
@@ -165,7 +156,6 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
     ->Arg(10)
     ->Arg(100)
     ->Arg(500)
-    ->Iterations(10)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)

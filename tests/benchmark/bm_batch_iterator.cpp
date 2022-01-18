@@ -12,18 +12,34 @@ protected:
     VecSimIndex *bf_index;
     VecSimIndex *hnsw_index;
     size_t dim;
+    size_t n_vectors;
     std::vector<float> query;
 
     BM_BatchIterator() {
-        // Initialize BF index with dim=100
         dim = 100;
-        size_t n_vectors = 1000000;
-        VecSimParams params{.algo = VecSimAlgo_BF,
-                            .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .initialCapacity = n_vectors}};
+        n_vectors = 1000000;
+        query.reserve(dim);
+    }
+
+public:
+    void SetUp(const ::benchmark::State &state) {
+        rng.seed(47);
+        std::vector<float> data(n_vectors * dim);
+        std::uniform_real_distribution<> distrib;
+        for (size_t i = 0; i < n_vectors * dim; ++i) {
+            data[i] = (float)distrib(rng);
+        }
+        VecSimParams params = {.algo = VecSimAlgo_BF,
+                               .bfParams = {.type = VecSimType_FLOAT32,
+                                            .dim = dim,
+                                            .metric = VecSimMetric_L2,
+                                            .initialCapacity = n_vectors}};
         bf_index = VecSimIndex_New(&params);
+
+        // Add random vectors to Flat index.
+        for (size_t i = 0; i < n_vectors; ++i) {
+            VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
+        }
 
         size_t M = 50;
         size_t ef = 350;
@@ -37,42 +53,26 @@ protected:
                                            .efRuntime = ef}};
         hnsw_index = VecSimIndex_New(&params);
 
-        // Add 1M random vectors to Flat index.
-        std::vector<float> data(n_vectors * dim);
-        rng.seed(47);
-        std::uniform_real_distribution<> distrib;
-        for (size_t i = 0; i < n_vectors * dim; ++i) {
-            data[i] = (float)distrib(rng);
-        }
-        for (size_t i = 0; i < n_vectors; ++i) {
-            VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
-        }
-
-        // Loading pre-generated HNSW index with the se vectors.
+        // Load pre-generated HNSW index containing the same vectors as the Flat index.
         char *location = get_current_dir_name();
         auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-        query.reserve(dim);
-    }
 
-public:
-    void SetUp(const ::benchmark::State &state) {
-        // Generate random query vector before every iteration
-        std::uniform_real_distribution<> distrib;
+        // Generate random query vector test.
         for (size_t i = 0; i < dim; ++i) {
             query[i] = (float)distrib(rng);
         }
     }
 
-    void TearDown(const ::benchmark::State &state) {}
-
-    ~BM_BatchIterator() {
+    void TearDown(const ::benchmark::State &state) {
         VecSimIndex_Free(bf_index);
         VecSimIndex_Free(hnsw_index);
     }
+
+    ~BM_BatchIterator() {}
 };
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
@@ -144,6 +144,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
     }
     st.counters["Recall"] = (float)correct / total_res_num;
     VecSimQueryResult_Free(bf_results);
+    VecSimBatchIterator_Free(batchIterator);
 
     for (auto _ : st) {
         batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
