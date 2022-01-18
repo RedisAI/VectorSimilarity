@@ -1007,7 +1007,7 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
     // Save and load an empty index.
     serializer.saveIndex(file_name);
-    serializer.loadIndex(file_name,reinterpret_cast<HNSWIndex *>(index)->getSpace().get());
+    serializer.loadIndex(file_name, reinterpret_cast<HNSWIndex *>(index)->getSpace().get());
     auto res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 
