@@ -329,13 +329,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
         return res;
     }
     res.valid_state = true;
-    std::cout << "Integrity OK\n";
-    std::cout << "***Index meta-data:***\n"
-              << "memory usage: " << res.memory_usage
-              << "\ndouble connections: " << res.double_connections
-              << "\nunidirectional connections: " << res.unidirectional_connections
-              << "\nmin in-degree: " << res.min_in_degree
-              << "\nmax in-degree: " << res.max_in_degree << std::endl;
+    std::cout << "HNSW index integrity OK\n";
     return res;
 }
 } // namespace hnswlib
