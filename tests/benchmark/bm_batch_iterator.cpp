@@ -54,12 +54,13 @@ public:
         hnsw_index = VecSimIndex_New(&params);
 
         // Load pre-generated HNSW index containing the same vectors as the Flat index.
-        char *location = get_current_dir_name();
+        char *location = getcwd(NULL, 0);
         auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
+        free(location);
 
         // Generate random query vector test.
         for (size_t i = 0; i < dim; ++i) {
