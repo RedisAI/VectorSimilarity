@@ -901,7 +901,7 @@ TEST_F(BruteForceTest, brute_get_distance) {
     distances = {0, 3.254628852688946e+33, 1.627314426344473e+33, 1.4542929723017879e+26};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_FLOAT_EQ(dist, distances[i]);
     }
 
     // VecSimMetric_IP
@@ -909,14 +909,14 @@ TEST_F(BruteForceTest, brute_get_distance) {
                  648750694400};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_FLOAT_EQ(dist, distances[i]);
     }
 
     // VecSimMetric_Cosine
     distances = {0, 2, 1.7069573402404785, 2};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_FLOAT_EQ(dist, distances[i]);
     }
 
     // Bad values
