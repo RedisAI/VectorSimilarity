@@ -44,6 +44,18 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
 /**
+ * @brief Calculate the distance of a vector from an index to a vector.
+ * @param index the index from which the first vector is located, and that defines the distance
+ * metric.
+ * @param id the id of the vector in the index.
+ * @param blob binary representation of the second vector. Blob size should match the index data
+ * type and dimension.
+ * @return The distance (according to the index's distance metric) between `blob` and the vector
+ * with id `id`.
+ */
+double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob);
+
+/**
  * @brief Return the number of vectors in the index.
  * @param index the index whose size is requested.
  * @return index size.

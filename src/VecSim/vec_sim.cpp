@@ -42,6 +42,10 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
     return after - before;
 }
 
+extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob) {
+    return index->getDistanceFrom(id, blob);
+}
+
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,

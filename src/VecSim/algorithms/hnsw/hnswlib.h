@@ -8,6 +8,7 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/query_result_struct.h"
 
 #include <deque>
 #include <memory>
@@ -136,6 +137,7 @@ public:
     void resizeIndex(size_t new_max_elements);
     bool removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
+    dist_t getDistanceByLabelFromPoint(labeltype label, const void *data_point);
     tableint searchBottomLayerEP(const void *query_data) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
                                                                       size_t k) const;
@@ -218,6 +220,17 @@ size_t HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(level_generator_)) * reverse_size;
     return (size_t)r;
+}
+
+template <typename dist_t>
+dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
+                                                            const void *data_point) {
+    if (label_lookup_.find(label) == label_lookup_.end()) {
+        return INVALID_SCORE;
+    }
+    dist_t t =
+        fstdistfunc_(data_point, getDataByInternalId(label_lookup_[label]), dist_func_param_);
+    return t;
 }
 
 template <typename dist_t>

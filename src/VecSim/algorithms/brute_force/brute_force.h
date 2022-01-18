@@ -17,6 +17,7 @@ public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
+    virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
     virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
                                             VecSimQueryParams *qparams) override;
