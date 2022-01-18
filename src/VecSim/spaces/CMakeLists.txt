@@ -41,7 +41,7 @@ L2/L2.cpp
 IP_space.cpp
 IP/IP.cpp)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -static-libgcc -static-libstdc++")
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
 target_link_libraries(VectorSimilaritySpaces cpu_features)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
