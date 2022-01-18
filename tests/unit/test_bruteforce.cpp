@@ -2,6 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/utils/arr_cpp.h"
+#include <cmath>
 
 class BruteForceTest : public ::testing::Test {
 protected:
@@ -870,4 +871,62 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
 
     VecSimIndex_Free(index);
     array_free(rparams);
+}
+
+TEST_F(BruteForceTest, brute_get_distance) {
+    size_t n = 4;
+    size_t dim = 2;
+    size_t numIndex = 3;
+    VecSimIndex *index[numIndex];
+    std::vector<double> distances;
+
+    VecSimParams params{
+        .algo = VecSimAlgo_BF,
+        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = dim, .initialCapacity = n}};
+
+    for (size_t i = 0; i < numIndex; i++) {
+        params.bfParams.metric = (VecSimMetric)i;
+        index[i] = VecSimIndex_New(&params);
+        VecSimIndex_AddVector(index[i], "\100\055\370\124\100\055\370\124", 1); //  pi, pi
+        VecSimIndex_AddVector(index[i], "\100\111\017\333\100\111\017\333", 2); //   e,  e
+        VecSimIndex_AddVector(index[i], "\100\055\370\124\100\111\017\333", 3); //  pi,  e
+        VecSimIndex_AddVector(index[i], "\277\317\033\275\077\317\033\275", 4); // -gr, gr
+        ASSERT_EQ(VecSimIndex_IndexSize(index[i]), 4);
+    }
+
+    const char *query = "\100\055\370\124\100\055\370\124";
+    double dist;
+
+    // VecSimMetric_L2
+    distances = {0, 3.254628852688946e+33, 1.627314426344473e+33, 1.4542929723017879e+26};
+    for (size_t i = 0; i < n; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
+    }
+
+    // VecSimMetric_IP
+    distances = {-1.4542929723017879e+26, 6.8783602560985513e+29, 3.4384528836109137e+29,
+                 648750694400};
+    for (size_t i = 0; i < n; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
+    }
+
+    // VecSimMetric_Cosine
+    distances = {0, 2, 1.7069573402404785, 2};
+    for (size_t i = 0; i < n; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
+    }
+
+    // Bad values
+    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, query);
+    ASSERT_TRUE(std::isnan(dist));
+    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], 46, query);
+    ASSERT_TRUE(std::isnan(dist));
+
+    // Clean-up.
+    for (size_t i = 0; i < numIndex; i++) {
+        VecSimIndex_Free(index[i]);
+    }
 }
