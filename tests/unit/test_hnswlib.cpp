@@ -1088,10 +1088,10 @@ TEST_F(HNSWLibTest, hnsw_get_distance) {
     VecSimIndex *index[numIndex];
     std::vector<double> distances;
 
-    float v1[dim] = {M_PI, M_PI};
-    float v2[dim] = {M_E, M_E};
-    float v3[dim] = {M_PI, M_E};
-    float v4[dim] = {M_SQRT2, -M_SQRT2};
+    float v1[] = {M_PI, M_PI};
+    float v2[] = {M_E, M_E};
+    float v3[] = {M_PI, M_E};
+    float v4[] = {M_SQRT2, -M_SQRT2};
 
     VecSimParams params{
         .algo = VecSimAlgo_HNSWLIB,
@@ -1125,7 +1125,7 @@ TEST_F(HNSWLibTest, hnsw_get_distance) {
     }
 
     // VecSimMetric_Cosine
-    distances = {0, 0, 0.0025991201400756836, 1};
+    distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
         ASSERT_DOUBLE_EQ(dist, distances[i]);
