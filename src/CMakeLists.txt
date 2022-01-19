@@ -13,6 +13,7 @@ message("# VectorSimilarity root: " ${root})
 get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
 message("# VectorSimilarity static build: " ${VECSIM_STATIC})
+message("# VectorSimilarity static libstdc++: " ${STATIC_LIBSTDCXX})
 
 include(${root}/cmake/common.cmake)
 
@@ -21,8 +22,8 @@ if (USE_ASAN OR USE_MSAN)
 endif()
 
 if (VECSIM_BUILD_TESTS)
-include(${root}/cmake/gtest.cmake)
-option(BUILD_TESTING "" ON)
+	include(${root}/cmake/gtest.cmake)
+	option(BUILD_TESTING "" ON)
 endif()
 
 #----------------------------------------------------------------------------------------------
@@ -38,10 +39,11 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 if(USE_PROFILE)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-enidf()
+endif()
 
 if(STATIC_LIBSTDCXX)
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_STATIC_LIBSTDCXX_FLAGS}")
+	set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${CMAKE_STATIC_LIBSTDCXX_FLAGS}")
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_STATIC_LIBSTDCXX_FLAGS}")
 endif()
 
 if(VECSIM_STATIC)

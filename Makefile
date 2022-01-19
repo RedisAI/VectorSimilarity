@@ -52,6 +52,8 @@ endif
 export SAN
 endif # SAN
 
+STATIC_LIBSTDCXX ?= 0
+
 #----------------------------------------------------------------------------------------------
 
 ROOT=.
@@ -67,12 +69,12 @@ include $(ROOT)/deps/readies/mk/main
 define HELPTEXT
 make build
   DEBUG=1              # build debug variant
-  COV=1			       # build for code coverage
+  COV=1	               # build for code coverage
   VERBOSE=1            # print detailed build info
   VG|VALGRIND=1        # build for Valgrind
   SAN=type             # build with LLVM sanitizer (type=address|memory|leak|thread)
   SLOW=1               # don't run build in parallel (for diagnostics)
-  PROFILE=1		       # enable profiling compile flags (and debug symbols) for release type
+  PROFILE=1              # enable profiling compile flags (and debug symbols) for release type
   STATIC_LIBSTDCXX=1   # link libstdc++ statically (default: 0)
 
 make pybind        # build Python bindings
@@ -173,7 +175,9 @@ CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=on
 endif
 
 ifeq ($(STATIC_LIBSTDCXX),1)
-CMAKE_FLAGS += -DVESCIM_STATIC_LIBSTDCXX=on
+CMAKE_FLAGS += -DSTATIC_LIBSTDCXX=on
+else
+CMAKE_FLAGS += -DSTATIC_LIBSTDCXX=off
 endif
 
 CMAKE_FLAGS += \
