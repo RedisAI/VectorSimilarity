@@ -36,11 +36,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 IF (USE_PROFILE)
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -static-libgcc -static-libstdc++")
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 ENDIF()
 
 if(VECSIM_STATIC)
 	set(VECSIM_LIBTYPE STATIC)
+
 else()
 	set(VECSIM_LIBTYPE SHARED)
 endif()
@@ -71,6 +72,10 @@ if(VECSIM_BUILD_TESTS)
 endif()
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
+
+if(VESCIM_LINK_RUNTIME)
+	target_link_libraries(VectorSimilarity -static-libgcc -static-libstdc++)
+endif()
 
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
