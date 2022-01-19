@@ -177,7 +177,7 @@ jobs:
           no_output_timeout: 180m
       - run:
           name: Redis tests
-          command: bash -l -c "tox -e modtest"
+          command: python3 -m tox -e modtest
 
   codecov:
     resource_class: large
