@@ -884,39 +884,43 @@ TEST_F(BruteForceTest, brute_get_distance) {
         .algo = VecSimAlgo_BF,
         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = dim, .initialCapacity = n}};
 
+    float v1[dim] = {M_PI, M_PI};
+    float v2[dim] = {M_E, M_E};
+    float v3[dim] = {M_PI, M_E};
+    float v4[dim] = {M_SQRT2, -M_SQRT2};
+
     for (size_t i = 0; i < numIndex; i++) {
         params.bfParams.metric = (VecSimMetric)i;
         index[i] = VecSimIndex_New(&params);
-        VecSimIndex_AddVector(index[i], "\100\055\370\124\100\055\370\124", 1); //  pi, pi
-        VecSimIndex_AddVector(index[i], "\100\111\017\333\100\111\017\333", 2); //   e,  e
-        VecSimIndex_AddVector(index[i], "\100\055\370\124\100\111\017\333", 3); //  pi,  e
-        VecSimIndex_AddVector(index[i], "\277\317\033\275\077\317\033\275", 4); // -gr, gr
+        VecSimIndex_AddVector(index[i], v1, 1);
+        VecSimIndex_AddVector(index[i], v2, 2);
+        VecSimIndex_AddVector(index[i], v3, 3);
+        VecSimIndex_AddVector(index[i], v4, 4);
         ASSERT_EQ(VecSimIndex_IndexSize(index[i]), 4);
     }
 
-    const char *query = "\100\055\370\124\100\055\370\124";
-    float dist;
+    void *query = v1;
+    double dist;
 
     // VecSimMetric_L2
-    distances = {0, 3.254628852688946e+33, 1.627314426344473e+33, 1.4542929723017879e+26};
+    distances = {0, 0.3583844006061554, 0.1791922003030777, 23.739208221435547};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
-        ASSERT_FLOAT_EQ(dist, (float)distances[i]);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // VecSimMetric_IP
-    distances = {-1.4542929723017879e+26, 6.8783602560985513e+29, 3.4384528836109137e+29,
-                 648750694400};
+    distances = {-18.73921012878418, -16.0794677734375, -17.409339904785156, 1};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
-        ASSERT_FLOAT_EQ(dist, (float)distances[i]);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // VecSimMetric_Cosine
-    distances = {0, 2, 1.7069573402404785, 2};
+    distances = {0, 0, 0.0025991201400756836, 1};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
-        ASSERT_FLOAT_EQ(dist, (float)distances[i]);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // Bad values
