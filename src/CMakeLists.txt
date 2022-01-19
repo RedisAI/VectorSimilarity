@@ -74,7 +74,9 @@ endif()
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if(VESCIM_LINK_RUNTIME)
-	target_link_libraries(VectorSimilarity -static-libgcc -static-libstdc++)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		target_link_libraries(VectorSimilarity -static-libgcc -static-libstdc++)
+	endif()
 endif()
 
 # Needed for build as ExternalProject (like RediSearch does)
