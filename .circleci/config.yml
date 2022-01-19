@@ -83,8 +83,8 @@ commands:
       - run:
           name: Flow tests
           command: |
-            pip install -r sbin/requirements.txt
-            bash -l -c "make flow_test"
+            python3 -m pip install -r sbin/requirements.txt
+            python3 -m tox -e flowenv
       - save_cache:
           paths:
             - ./.tox
