@@ -39,15 +39,15 @@ The purpose of this test suit is to benchmark the batched search feature. The ba
 6. Run `Top_K` query over the HNSW index in batches of 100 results, until 1000 results are obtained.
 7. Run `Top_K` query over the HNSW index in batches of 100 results, until 10000 results are obtained, using `ef_runtime=500` in every batch.
 8. Run `Top_K` query over the HNSW index in batches of 1000 results, until 10000 results are obtained, using `ef_runtime=500` in every batch.
-9. Run regular `Top_K` query over the flat for `k=1000`. 
-10. Run regular `Top_K` query over the HNSW for `k=1000`, using `ef_runtime=500`.
-11. Run regular `Top_K` query over the flat for `k=10000`.
-12. Run regular `Top_K` query over the HNSW for `k=10000`, using `ef_runtime=500`.
+9. Run regular `Top_K` query over the flat index for `k=1000`. 
+10. Run regular `Top_K` query over the HNSW index for `k=1000`, using `ef_runtime=500`.
+11. Run regular `Top_K` query over the flat index for `k=10000`.
+12. Run regular `Top_K` query over the HNSW index for `k=10000`, using `ef_runtime=500`.
 
 
 ## ANN-Benchmark
 
-[ANN-Benchmarks](http://ann-benchmarks.com/) is a benchmarking environment for approximate nearest neighbor algorithms search. Each algorithm is benchmarked on pre-generated commonly use datasets (in HDF5 formats).
+[ANN-Benchmarks](http://ann-benchmarks.com/) is a benchmarking environment for approximate nearest neighbor algorithms search (for additional information, refer to the project's [github repository](https://github.com/erikbern/ann-benchmarks)).  Each algorithm is benchmarked on pre-generated commonly use datasets (in HDF5 formats).
 The `bm_dataset.py` script uses some of ANN-Benchmark datasets to measure this library performance in the same manner. The following datasets are downloaded and benchmarked:
 
 1. glove-25-angular
@@ -57,8 +57,13 @@ The `bm_dataset.py` script uses some of ANN-Benchmark datasets to measure this l
 5. mnist-784-euclidean
 6. sift-128-euclidean
 
-For each dataset, the script will build an HNSW index with pre-defined build parameters, and persist it to a local file in `tests/benchmark/data` directory (index file name for example: `glove-25-angular-M=16-ef=100.hnsw`). Note that if the file already exists in this path, the entire index will be loaded instead of rebuilding it. Then, for 3 different pre-defined `ef_runtime` values, 1000 `Top_K` queries will be executed for `k=10` (these parameters can be modified easily in the script). For every configuration, the script outputs the following statistics:
+For each dataset, the script will build an HNSW index with pre-defined build parameters, and persist it to a local file in `./data` directory that will be generated (index file name for example: `glove-25-angular-M=16-ef=100.hnsw`). Note that if the file already exists in this path, the entire index will be loaded instead of rebuilding it. Then, for 3 different pre-defined `ef_runtime` values, 1000 `Top_K` queries will be executed for `k=10` (these parameters can be modified easily in the script). For every configuration, the script outputs the following statistics:
 
 - Average recall
 - Query-per-second when running in brute-force mode
 - Query-per-second when running with HNSW index
+
+To reproduce this benchmark, first install the project's python bindings, and then invoke the script. From the project's root directory, you should run:
+```py
+python3 tests/benchmark/bm_datasets.py
+```

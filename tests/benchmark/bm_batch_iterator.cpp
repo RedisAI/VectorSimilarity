@@ -143,7 +143,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
         VecSimQueryResult_IteratorFree(hnsw_it);
         VecSimQueryResult_Free(hnsw_results);
     }
-    st.counters["Recall"] = (float)correct / total_res_num;
+    st.counters["Intersection ratio"] = (float)correct / total_res_num;
     VecSimQueryResult_Free(bf_results);
     VecSimBatchIterator_Free(batchIterator);
 

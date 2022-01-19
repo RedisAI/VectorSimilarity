@@ -4,7 +4,9 @@ import numpy as np
 import time
 from VecSim import *
 import h5py
-from scipy import spatial
+
+# This script is partially based on the work that was made in:
+# https://github.com/erikbern/ann-benchmarks/blob/master/ann_benchmarks/datasets.py
 
 
 def get_vecsim_metric(dataset_metric):
@@ -50,14 +52,14 @@ def create_hnsw_index(dataset, ef_construction, M):
 def populate_save_index(hnsw_index, index_file_name, X_train):
     if os.path.exists(index_file_name):
         print("Index already exist. Remove index file first to override it")
-        return index_file_name
+        hnsw_index.load_index(index_file_name)
+        return
     # Build the index by inserting vectors to it one by one.
     t0 = time.time()
     for i, vector in enumerate(X_train):
         hnsw_index.add_vector(vector, i)
     print('Built index time:', (time.time() - t0)/60, "minutes")
     hnsw_index.save_index(index_file_name)
-    return index_file_name
 
 
 def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
@@ -90,14 +92,10 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
         start = time.time()
         bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
         bf_total_time += (time.time() - start)
-        for label in hnsw_labels[0]:
-            for correct_label in bf_labels[0]:
-                if label == correct_label:
-                    correct += 1
-                    break
+        correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
     # Measure recall
     recall = float(correct)/(k*num_queries)
-    print("recall is:", recall)
+    print("Average recall is:", recall)
     print("BF query per seconds: ", num_queries/bf_total_time)
     print("HNSW query per seconds: ", num_queries/hnsw_total_time)
 
@@ -109,7 +107,6 @@ def run_benchmark(dataset_name, ef_construction, M, ef_values, k=10):
     index_file_name = os.path.join('data', '%s-M=%s-ef=%s.hnsw' % (dataset_name, M, ef_construction))
     # If we are using existing index, we just take the existing file.
     populate_save_index(hnsw_index, index_file_name, np.array(dataset['train']))
-    hnsw_index.load_index(index_file_name)
     for ef_runtime in ef_values:
         measure_recall_per_second(hnsw_index, dataset, num_queries=1000, k=k, ef_runtime=ef_runtime)
 

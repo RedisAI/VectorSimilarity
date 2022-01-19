@@ -275,8 +275,10 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     size_t connections_checked = 0, double_connections = 0;
     std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
     size_t incoming_edges_sets_sizes = 0;
-
-    for (size_t i = 0; i <= hnsw_index->max_id && hnsw_index->max_id != HNSW_INVALID_ID; i++) {
+    if (hnsw_index->max_id == HNSW_INVALID_ID) {
+        goto report_stats; // Index is empty
+    }
+    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
@@ -314,6 +316,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
             incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
         }
     }
+report_stats:
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
     res.min_in_degree =

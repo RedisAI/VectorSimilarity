@@ -90,22 +90,26 @@ public:
 };
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
-
-    // Add a single vector to the index.
+    // Add a new single vector to the index, with the minimal unused id.
+    size_t vec_id = n_vectors;
     for (auto _ : st) {
-        VecSimIndex_AddVector(hnsw_index, query.data(), n_vectors);
+        VecSimIndex_AddVector(hnsw_index, query.data(), vec_id);
         st.PauseTiming();
-        VecSimIndex_DeleteVector(hnsw_index, n_vectors);
+        // Remove the vector, so we won't override it in the next iteration.
+        VecSimIndex_DeleteVector(hnsw_index, vec_id);
         st.ResumeTiming();
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
+    // Remove a single vector from the index.
+    size_t vec_id = n_vectors;
     for (auto _ : st) {
+        // First insert a new vector with the minimal unused id in every iteration.
         st.PauseTiming();
-        VecSimIndex_AddVector(hnsw_index, query.data(), n_vectors);
+        VecSimIndex_AddVector(hnsw_index, query.data(), vec_id);
         st.ResumeTiming();
-        VecSimIndex_DeleteVector(hnsw_index, n_vectors);
+        VecSimIndex_DeleteVector(hnsw_index, vec_id);
     }
 }
 
