@@ -1088,14 +1088,14 @@ TEST_F(HNSWLibTest, hnsw_get_distance) {
     VecSimIndex *index[numIndex];
     std::vector<double> distances;
 
-    VecSimParams params{
-        .algo = VecSimAlgo_HNSWLIB,
-        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = dim, .initialCapacity = n}};
-
     float v1[dim] = {M_PI, M_PI};
     float v2[dim] = {M_E, M_E};
     float v3[dim] = {M_PI, M_E};
     float v4[dim] = {M_SQRT2, -M_SQRT2};
+
+    VecSimParams params{
+        .algo = VecSimAlgo_HNSWLIB,
+        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = dim, .initialCapacity = n}};
 
     for (size_t i = 0; i < numIndex; i++) {
         params.bfParams.metric = (VecSimMetric)i;

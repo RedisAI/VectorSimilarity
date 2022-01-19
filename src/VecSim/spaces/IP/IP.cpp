@@ -5,9 +5,12 @@
 
 float InnerProduct(const void *pVect1, const void *pVect2, const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
-    float res = 0;
+    double res = 0;
+    double e1, e2;
     for (unsigned i = 0; i < qty; i++) {
-        res += ((float *)pVect1)[i] * ((float *)pVect2)[i];
+        e1 = ((float *)pVect1)[i];
+        e2 = ((float *)pVect2)[i];
+        res += e1 * e2;
     }
     return 1.0f - res;
 }
