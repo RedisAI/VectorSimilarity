@@ -91,7 +91,7 @@ make unit_test SAN=address
 ## Python bindings
 
 Examples for using the python bindings to run vector similarity search can be found in `tests/flow`. 
-To build the python wheel, first create a dedicated virtualenv using python 3.6 and higher. Then, activate the environment, install the dependencies and build the package. Please note, due to the way poetry generates a setup.py, you may have to erase it prior to re-running *poetry build*.
+To build the python wheel, first create a dedicated virtualenv using python 3.7 and higher. Then, activate the environment, install the dependencies and build the package. Please note, due to the way poetry generates a setup.py, you may have to erase it prior to re-running *poetry build*.
 
 ```
 python -m venv venv
