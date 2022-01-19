@@ -6,6 +6,7 @@ option(VECSIM_STATIC "Build as static library" OFF)
 
 option(USE_ASAN "Use AddressSanitizer (clang)" OFF)
 option(USE_MSAN "Use MemorySanitizer (clang)" OFF)
+option(STATIC_LIBSTDCXX "Link libstdc++ statically" OFF)
 
 get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
@@ -22,8 +23,8 @@ endif()
 if (VECSIM_BUILD_TESTS)
 include(${root}/cmake/gtest.cmake)
 option(BUILD_TESTING "" ON)
-
 endif()
+
 #----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
@@ -35,9 +36,13 @@ include_directories(${root}/deps)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
-IF (USE_PROFILE)
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -static-libgcc -static-libstdc++")
-ENDIF()
+if(USE_PROFILE)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+enidf()
+
+if(STATIC_LIBSTDCXX)
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_STATIC_LIBSTDCXX_FLAGS}")
+endif()
 
 if(VECSIM_STATIC)
 	set(VECSIM_LIBTYPE STATIC)

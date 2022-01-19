@@ -30,3 +30,5 @@ if (USE_COVERAGE)
     endif()
     set(COV_CXX_FLAGS "-coverage")
 endif()
+
+SET(CMAKE_STATIC_LIBSTDCXX_FLAGS "-static-libgcc -static-libstdc++")

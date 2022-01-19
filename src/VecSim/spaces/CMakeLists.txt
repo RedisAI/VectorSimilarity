@@ -33,7 +33,6 @@ project(VectorSimilarity_Spaces)
 
 include(${root}/cmake/cpu_features.cmake)
 
-
 set(SPACES_SOURCES
 space_aux.cpp
 L2_space.cpp
@@ -41,8 +40,10 @@ L2/L2.cpp
 IP_space.cpp
 IP/IP.cpp)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -static-libgcc -static-libstdc++")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
+
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
+
 target_link_libraries(VectorSimilaritySpaces cpu_features)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx512 VectorSimilaritySpaces_avx VectorSimilaritySpaces_sse)
