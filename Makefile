@@ -273,8 +273,9 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-	$(SHOW)$(BINDIR)/benchmark/bm_basics
-	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
+#	$(SHOW)$(BINDIR)/benchmark/bm_basics
+#	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
+	cd tests/benchmark && python3 bm_datasets.py
 
 toxenv:
 ifeq ($(wildcard .tox),)

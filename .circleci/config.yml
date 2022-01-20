@@ -76,8 +76,11 @@ commands:
           command: bash -l -c "make unit_test"
           # temporary - to remove before merging the PR
       - run:
-          name: Download pre-generated index
-          command: wget -q -P tests/benchmark/data https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1M-100-l2.hnsw
+          name: Build Python bindings
+          command: bash -l -c "make pybind"
+      - run:
+          name: Download pre-generated indices
+          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
       - run:
            name: Benchmark
            command: bash -l -c "make benchmark"
@@ -85,9 +88,6 @@ commands:
       - run:
           name: Valgrind test
           command: bash -l -c "make VG=1 build unit_test"
-      - run:
-          name: Build Python bindings
-          command: bash -l -c "make pybind"
       - run:
           name: Flow tests
           command: |

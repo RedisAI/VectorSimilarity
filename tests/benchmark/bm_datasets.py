@@ -22,8 +22,6 @@ def download(src, dst):
 
 # Download dataset from ann-benchmarks, save the file locally
 def get_data_set(dataset_name):
-    if not os.path.exists('data'):
-        os.mkdir('data')
     hdf5_filename = os.path.join('data', '%s.hdf5' % dataset_name)
     url = 'http://ann-benchmarks.com/%s.hdf5' % dataset_name
     download(url, hdf5_filename)
@@ -119,8 +117,8 @@ if __name__ == "__main__":
                       'glove-50-angular': (150, 24, [100, 200, 300]),
                       'glove-100-angular': (250, 36, [150, 300, 500]),
                       'glove-200-angular': (350, 48, [200, 350, 600]),
-                      'mnist-784-euclidean': (200, 36, [100, 200, 350]),
-                      'sift-128-euclidean': (250, 36, [150, 300, 500])}
+                      'mnist-784-euclidean': (150, 32, [100, 200, 350]),
+                      'sift-128-euclidean': (200, 32, [150, 300, 500])}
     k = 10
     for d_name in DATASETS:
         run_benchmark(d_name, *dataset_params[d_name], k)
