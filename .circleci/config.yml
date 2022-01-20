@@ -172,6 +172,12 @@ jobs:
       - abort_for_noci
       - build-steps
       - run:
+          name: Build Python bindings
+          command: bash -l -c "make pybind"
+      - run:
+          name: Download pre-generated indices
+          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+      - run:
           name: Benchmark
           command: bash -l -c "make benchmark"
           no_output_timeout: 180m
