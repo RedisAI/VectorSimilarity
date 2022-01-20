@@ -31,9 +31,9 @@ public:
         }
         VecSimParams params = {.algo = VecSimAlgo_BF,
                                .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                            .dim = dim,
-                                            .metric = VecSimMetric_L2,
-                                            .initialCapacity = n_vectors}};
+                                                    .dim = dim,
+                                                    .metric = VecSimMetric_L2,
+                                                    .initialCapacity = n_vectors}};
         bf_index = VecSimIndex_New(&params);
 
         // Add random vectors to Flat index.

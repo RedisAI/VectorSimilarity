@@ -49,9 +49,9 @@ public:
         }
         VecSimParams params = {.algo = VecSimAlgo_BF,
                                .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                            .dim = dim,
-                                            .metric = VecSimMetric_L2,
-                                            .initialCapacity = n_vectors}};
+                                                    .dim = dim,
+                                                    .metric = VecSimMetric_L2,
+                                                    .initialCapacity = n_vectors}};
         bf_index = VecSimIndex_New(&params);
 
         // Add random vectors to Flat index.
@@ -64,12 +64,12 @@ public:
         size_t ef_r = 500;
         params = {.algo = VecSimAlgo_HNSWLIB,
                   .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                 .dim = dim,
-                                 .metric = VecSimMetric_L2,
-                                 .initialCapacity = n_vectors + 1,
-                                 .M = M,
-                                 .efConstruction = ef_c,
-                                 .efRuntime = ef_r}};
+                                           .dim = dim,
+                                           .metric = VecSimMetric_L2,
+                                           .initialCapacity = n_vectors + 1,
+                                           .M = M,
+                                           .efConstruction = ef_c,
+                                           .efRuntime = ef_r}};
         hnsw_index = VecSimIndex_New(&params);
 
         // Load pre-generated HNSW index containing the same vectors as the Flat index.
