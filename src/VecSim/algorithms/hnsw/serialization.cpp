@@ -283,7 +283,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
             for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
-                auto *data = (tableint *) (ll_cur + 1);
+                auto *data = (tableint *)(ll_cur + 1);
                 std::set<tableint> s;
                 for (unsigned int j = 0; j < size; j++) {
                     // Check if we found an invalid neighbor.
@@ -298,9 +298,9 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                     // Check if this connection is bidirectional.
                     linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
                     int size_other = hnsw_index->getListCount(ll_other);
-                    auto *data_other = (tableint *) (ll_other + 1);
+                    auto *data_other = (tableint *)(ll_other + 1);
                     for (int r = 0; r < size_other; r++) {
-                        if (data_other[r] == (tableint) i) {
+                        if (data_other[r] == (tableint)i) {
                             double_connections++;
                             break;
                         }
