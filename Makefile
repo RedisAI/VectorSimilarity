@@ -216,7 +216,7 @@ endif
 
 pybind:
 	$(SHOW)python3 -m poetry build
-
+	$(SHOW)python3 -m poetry install
 .PHONY: pybind
 
 #----------------------------------------------------------------------------------------------
