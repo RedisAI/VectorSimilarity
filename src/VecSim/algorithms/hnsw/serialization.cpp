@@ -63,6 +63,9 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // Save level 0 data (graph layer 0 + labels + vectors data)
     output.write(hnsw_index->data_level0_memory_,
                  hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
+    if (hnsw_index->max_id == HNSW_INVALID_ID) {
+        return; // Index is empty.
+    }
     // Save the incoming edge sets.
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
@@ -157,6 +160,9 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
     input.read(hnsw_index->data_level0_memory_,
                hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
+    if (hnsw_index->max_id == HNSW_INVALID_ID) {
+        return; // Index is empty.
+    }
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
@@ -269,63 +275,62 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     size_t connections_checked = 0, double_connections = 0;
     std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
     size_t incoming_edges_sets_sizes = 0;
+    if (hnsw_index->max_id != HNSW_INVALID_ID) {
+        for (size_t i = 0; i <= hnsw_index->max_id; i++) {
+            if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
+                continue;
+            }
+            for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
+                linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
+                unsigned int size = hnsw_index->getListCount(ll_cur);
+                auto *data = (tableint *)(ll_cur + 1);
+                std::set<tableint> s;
+                for (unsigned int j = 0; j < size; j++) {
+                    // Check if we found an invalid neighbor.
+                    if (data[j] > hnsw_index->max_id || data[j] == i) {
+                        res.valid_state = false;
+                        return res;
+                    }
+                    inbound_connections_num[data[j]]++;
+                    s.insert(data[j]);
+                    connections_checked++;
 
-    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            continue;
-        }
-        for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
-            linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
-            unsigned int size = hnsw_index->getListCount(ll_cur);
-            auto *data = (tableint *)(ll_cur + 1);
-            std::set<tableint> s;
-            for (unsigned int j = 0; j < size; j++) {
-                // Check if we found an invalid neighbor.
-                if (data[j] > hnsw_index->max_id || data[j] == i) {
+                    // Check if this connection is bidirectional.
+                    linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
+                    int size_other = hnsw_index->getListCount(ll_other);
+                    auto *data_other = (tableint *)(ll_other + 1);
+                    for (int r = 0; r < size_other; r++) {
+                        if (data_other[r] == (tableint)i) {
+                            double_connections++;
+                            break;
+                        }
+                    }
+                }
+                // Check if a certain neighbor appeared more than once.
+                if (s.size() != size) {
                     res.valid_state = false;
                     return res;
                 }
-                inbound_connections_num[data[j]]++;
-                s.insert(data[j]);
-                connections_checked++;
-
-                // Check if this connection is bidirectional.
-                linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
-                int size_other = hnsw_index->getListCount(ll_other);
-                auto *data_other = (tableint *)(ll_other + 1);
-                for (int r = 0; r < size_other; r++) {
-                    if (data_other[r] == (tableint)i) {
-                        double_connections++;
-                        break;
-                    }
-                }
+                incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
             }
-            // Check if a certain neighbor appeared more than once.
-            if (s.size() != size) {
-                res.valid_state = false;
-                return res;
-            }
-            incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
         }
     }
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
     res.min_in_degree =
-        *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end());
+        !inbound_connections_num.empty()
+            ? *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
+            : 0;
     res.max_in_degree =
-        *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end());
+        !inbound_connections_num.empty()
+            ? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
+            : 0;
     if (incoming_edges_sets_sizes + double_connections != connections_checked) {
         res.valid_state = false;
         return res;
     }
     res.valid_state = true;
-    std::cout << "Integrity OK\n";
-    std::cout << "***Index meta-data:***\n"
-              << "memory usage: " << res.memory_usage
-              << "\ndouble connections: " << res.double_connections
-              << "\nunidirectional connections: " << res.unidirectional_connections
-              << "\nmin in-degree: " << res.min_in_degree
-              << "\nmax in-degree: " << res.max_in_degree << std::endl;
+    std::cout << "HNSW index integrity OK\n";
     return res;
 }
 } // namespace hnswlib
