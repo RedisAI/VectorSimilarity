@@ -216,7 +216,6 @@ endif
 
 pybind:
 	$(SHOW)python3 -m poetry build
-	$(SHOW)python3 -m poetry install
 .PHONY: pybind
 
 #----------------------------------------------------------------------------------------------
@@ -275,7 +274,7 @@ mod_test:
 benchmark:
 #	$(SHOW)$(BINDIR)/benchmark/bm_basics
 #	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
-	cd tests/benchmark && python3 bm_datasets.py
+	$(SHOW)tox -e benchmark
 
 toxenv:
 ifeq ($(wildcard .tox),)
