@@ -272,8 +272,8 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-#	$(SHOW)$(BINDIR)/benchmark/bm_basics
-#	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
+	$(SHOW)$(BINDIR)/benchmark/bm_basics
+	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
 	$(SHOW)python3 -m tox -e benchmark
 
 toxenv:

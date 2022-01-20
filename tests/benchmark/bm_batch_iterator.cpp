@@ -30,7 +30,7 @@ public:
             data[i] = (float)distrib(rng);
         }
         VecSimParams params = {.algo = VecSimAlgo_BF,
-                               .bfParams = {.type = VecSimType_FLOAT32,
+                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                             .dim = dim,
                                             .metric = VecSimMetric_L2,
                                             .initialCapacity = n_vectors}};

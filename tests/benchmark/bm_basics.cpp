@@ -48,7 +48,7 @@ public:
             data[i] = (float)distrib(rng);
         }
         VecSimParams params = {.algo = VecSimAlgo_BF,
-                               .bfParams = {.type = VecSimType_FLOAT32,
+                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                             .dim = dim,
                                             .metric = VecSimMetric_L2,
                                             .initialCapacity = n_vectors}};
@@ -63,7 +63,7 @@ public:
         size_t ef_c = 350;
         size_t ef_r = 500;
         params = {.algo = VecSimAlgo_HNSWLIB,
-                  .hnswParams = {.type = VecSimType_FLOAT32,
+                  .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                  .dim = dim,
                                  .metric = VecSimMetric_L2,
                                  .initialCapacity = n_vectors + 1,
