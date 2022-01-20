@@ -47,9 +47,9 @@ int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQuery
 }
 
 void float_vector_normalize(float *x, size_t dim) {
-    float sum = 0;
+    double sum = 0;
     for (size_t i = 0; i < dim; i++) {
-        sum += x[i] * x[i];
+        sum += (double)x[i] * (double)x[i];
     }
     float norm = sqrt(sum);
     if (norm == 0)

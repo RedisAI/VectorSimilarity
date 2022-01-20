@@ -2,6 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/query_result_struct.h"
 #include <climits>
 #include <unistd.h>
 
@@ -1084,4 +1085,66 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     free(location);
     VecSimIndex_Free(restored_index);
     serializer.reset();
+}
+
+TEST_F(HNSWLibTest, hnsw_get_distance) {
+    size_t n = 4;
+    size_t dim = 2;
+    size_t numIndex = 3;
+    VecSimIndex *index[numIndex];
+    std::vector<double> distances;
+
+    float v1[] = {M_PI, M_PI};
+    float v2[] = {M_E, M_E};
+    float v3[] = {M_PI, M_E};
+    float v4[] = {M_SQRT2, -M_SQRT2};
+
+    VecSimParams params{
+        .algo = VecSimAlgo_HNSWLIB,
+        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = dim, .initialCapacity = n}};
+
+    for (size_t i = 0; i < numIndex; i++) {
+        params.bfParams.metric = (VecSimMetric)i;
+        index[i] = VecSimIndex_New(&params);
+        VecSimIndex_AddVector(index[i], v1, 1);
+        VecSimIndex_AddVector(index[i], v2, 2);
+        VecSimIndex_AddVector(index[i], v3, 3);
+        VecSimIndex_AddVector(index[i], v4, 4);
+        ASSERT_EQ(VecSimIndex_IndexSize(index[i]), 4);
+    }
+
+    void *query = v1;
+    double dist;
+
+    // VecSimMetric_L2
+    distances = {0, 0.3583844006061554, 0.1791922003030777, 23.739208221435547};
+    for (size_t i = 0; i < n; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
+    }
+
+    // VecSimMetric_IP
+    distances = {-18.73921012878418, -16.0794677734375, -17.409339904785156, 1};
+    for (size_t i = 0; i < n; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
+    }
+
+    // VecSimMetric_Cosine
+    distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
+    for (size_t i = 0; i < n; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
+        ASSERT_DOUBLE_EQ(dist, distances[i]);
+    }
+
+    // Bad values
+    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, query);
+    ASSERT_TRUE(std::isnan(dist));
+    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], 46, query);
+    ASSERT_TRUE(std::isnan(dist));
+
+    // Clean-up.
+    for (size_t i = 0; i < numIndex; i++) {
+        VecSimIndex_Free(index[i]);
+    }
 }

@@ -122,4 +122,32 @@ TEST_F(SpacesTest, ip_9) {
         ASSERT_TRUE(false);
     }
 }
+
+// This test will trigger the function for dimension % 16 == 0 and dimension % 4 == 0, for each
+// optimization.
+TEST_F(SpacesTest, ip_16) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 16;
+    float v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+    }
+
+    float baseline = InnerProduct(v, v, &dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, InnerProductSIMD16Ext_AVX512(v, v, &dim));
+        optimization = ARCH_OPT_AVX;
+    case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, InnerProductSIMD16Ext_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, InnerProductSIMD4Ext_AVX(v, v, &dim));
+        optimization = ARCH_OPT_SSE;
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, InnerProductSIMD16Ext_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, InnerProductSIMD4Ext_SSE(v, v, &dim));
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
 #endif // CPU_FEATURES_ARCH_X86_64

@@ -42,6 +42,18 @@ public:
     virtual int deleteVector(size_t id) = 0;
 
     /**
+     * @brief Calculate the distance of a vector from an index to a vector.
+     * @param index the index from which the first vector is located, and that defines the distance
+     * metric.
+     * @param id the id of the vector in the index.
+     * @param blob binary representation of the second vector. Blob size should match the index data
+     * type and dimension.
+     * @return The distance (according to the index's distance metric) between `blob` and the vector
+     * with id `id`.
+     */
+    virtual double getDistanceFrom(size_t id, const void *blob) = 0;
+
+    /**
      * @brief Return the number of vectors in the index using irs SizeFn.
      *
      * @return index size.

@@ -5,7 +5,8 @@
 
 #include <stdlib.h>
 
-float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float InnerProductSIMD16Ext_AVX512_impl(const void *pVect1v, const void *pVect2v,
+                                        const void *qty_ptr) {
     float PORTABLE_ALIGN64 TmpRes[16];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
@@ -30,18 +31,22 @@ float InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, con
                 TmpRes[7] + TmpRes[8] + TmpRes[9] + TmpRes[10] + TmpRes[11] + TmpRes[12] +
                 TmpRes[13] + TmpRes[14] + TmpRes[15];
 
-    return 1.0f - sum;
+    return sum;
+}
+
+float InnerProductSIMD16Ext_AVX512(const void *pVect1, const void *pVect2, const void *qty_ptr) {
+    return 1.0f - InnerProductSIMD16Ext_AVX512_impl(pVect1, pVect2, qty_ptr);
 }
 
 float InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
                                             const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     size_t qty16 = qty >> 4 << 4;
-    float res = InnerProductSIMD16Ext_AVX512(pVect1v, pVect2v, &qty16);
+    float res = InnerProductSIMD16Ext_AVX512_impl(pVect1v, pVect2v, &qty16);
     float *pVect1 = (float *)pVect1v + qty16;
     float *pVect2 = (float *)pVect2v + qty16;
 
     size_t qty_left = qty - qty16;
-    float res_tail = InnerProduct(pVect1, pVect2, &qty_left);
-    return res + res_tail - 1.0f;
+    float res_tail = InnerProduct_impl(pVect1, pVect2, &qty_left);
+    return 1.0f - (res + res_tail);
 }
