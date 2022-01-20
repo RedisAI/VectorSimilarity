@@ -74,20 +74,12 @@ commands:
       - run:
           name: Unit test
           command: bash -l -c "make unit_test"
-          # temporary - to remove before merging the PR
-      - run:
-          name: Build Python bindings
-          command: bash -l -c "make pybind"
-      - run:
-          name: Download pre-generated indices
-          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-      - run:
-           name: Benchmark
-           command: bash -l -c "make benchmark"
-           no_output_timeout: 180m
       - run:
           name: Valgrind test
           command: bash -l -c "make VG=1 build unit_test"
+      - run:
+          name: Build Python bindings
+          command: bash -l -c "make pybind"
       - run:
           name: Flow tests
           command: |
@@ -191,7 +183,7 @@ jobs:
           no_output_timeout: 180m
       - run:
           name: Redis tests
-          command: bash -l -c "tox -e modtest"
+          command: python3 -m tox -e modtest
 
   codecov:
     resource_class: large
