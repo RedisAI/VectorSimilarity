@@ -8,15 +8,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("# VectorSimilarity/spaces: building with AVX512 (-march=x86-64-v4)")
 		set(VectorSimilaritySpaces_libs ${VectorSimilaritySpaces_libs} VectorSimilaritySpaces_avx512)
 		project(VectorSimilaritySpaces_avx512)
-#			if (VECSIM_MARCH)
-#				add_compile_options(-march=${VECSIM_MARCH})
-#			else()
-				add_compile_options(-march=x86-64-v4)
-#			endif()
-
+			add_compile_options(-march=x86-64-v4)
 			add_library(VectorSimilaritySpaces_avx512 STATIC
 				L2/L2_AVX512.cpp
 				IP/IP_AVX512.cpp)
+	else()
+		message("# VectorSimilarity/spaces: building without AVX512")
 	endif()
 
 	if (HAVE_MARCH_X86_64_V3)
@@ -27,6 +24,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 			add_library(VectorSimilaritySpaces_avx STATIC
 				L2/L2_AVX.cpp
 				IP/IP_AVX.cpp)
+	else()
+		message("# VectorSimilarity/spaces: building without AVX")
 	endif()
 
 	if (HAVE_MARCH_X86_64_V2)
@@ -37,10 +36,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 			add_library(VectorSimilaritySpaces_sse STATIC
 				L2/L2_SSE.cpp
 				IP/IP_SSE.cpp)
+	else()
+		message("# VectorSimilarity/spaces: building without SSE")
 	endif()
 endif()
 
-project(VectorSimilarity_Spaces)
+project(VectorSimilaritySpaces)
 
 include(${root}/cmake/cpu_features.cmake)
 
@@ -53,8 +54,4 @@ set(SPACES_SOURCES
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
-target_link_libraries(VectorSimilaritySpaces cpu_features)
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
-	target_link_libraries(VectorSimilaritySpaces ${VectorSimilaritySpaces_libs})
-endif()
+target_link_libraries(VectorSimilaritySpaces cpu_features ${VectorSimilaritySpaces_libs})
