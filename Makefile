@@ -122,6 +122,10 @@ endif
 
 #----------------------------------------------------------------------------------------------
 
+HAVE_MARCH_OPTS:=$(shell $(ROOT)/sbin/cc-have-march-opts)
+CMAKE_CXX_MARCH_FLAGS=$(foreach opt,$(HAVE_MARCH_OPTS),-D$(opt))
+CMAKE_HAVE_MARCH_OPTS=$(foreach opt,$(HAVE_MARCH_OPTS),-D$(opt)=on) -DMARCH_CXX_FLAGS="$(CMAKE_CXX_MARCH_FLAGS)"
+
 ifeq ($(ARCH),x64)
 
 ifeq ($(SAN),)
@@ -175,10 +179,12 @@ CMAKE_FLAGS += \
 	-DCMAKE_WARN_DEPRECATED=OFF \
 	-Wno-dev \
 	--no-warn-unused-cli \
+	-DOS=$(OS) \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
 	$(CMAKE_VECSIM) \
+	$(CMAKE_HAVE_MARCH_OPTS) \
 	$(CMAKE_COV) \
 	$(CMAKE_TESTS)
 
