@@ -40,9 +40,8 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
             fstdistfunc_ = L2SqrSIMD4ExtResiduals_SSE;
         }
     } else
-#else
-	{ (void) arch_opt; }
 #endif
+	{ (void) arch_opt; }
 #endif // __x86_64__
     dim_ = dim;
     data_size_ = dim * sizeof(float);
