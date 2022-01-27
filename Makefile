@@ -57,8 +57,8 @@ endif # SAN
 ROOT=.
 MK.pyver:=3
 
-ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
-$(shell mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
+ifeq ($(wildcard $(ROOT)/deps/readies/*),)
+___:=$(shell mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
 endif
 include $(ROOT)/deps/readies/mk/main
 

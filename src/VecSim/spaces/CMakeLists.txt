@@ -1,7 +1,6 @@
 
 # build SSE/AVX* code only on x64 processors
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
-
+if (${ARCH} STREQUAL "x64")
 	set(VectorSimilaritySpaces_libs "")
 	
 	if (HAVE_MARCH_X86_64_V4)
@@ -39,7 +38,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	else()
 		message("# VectorSimilarity/spaces: building without SSE")
 	endif()
-endif()
+
+endif() # ARCH == x64
 
 project(VectorSimilaritySpaces)
 
