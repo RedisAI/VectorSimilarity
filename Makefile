@@ -74,6 +74,8 @@ make build
   SLOW=1           # don't run build in parallel (for diagnostics)
   PROFILE=1		   # enable profiling compile flags (and debug symbols) for release type.
 make pybind        # build Python bindings
+make install-wheel # install VecSim wheel
+  FORCE=1            # allow wheel installation outside virtualenv
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
@@ -165,19 +167,34 @@ CMAKE_FLAGS += \
 	$(CMAKE_COV) \
 	$(CMAKE_TESTS)
 
-#	$(CMAKE_VECSIM)
+CMAKE_FILES=\
+	src/CMakeLists.txt \
+	src/VecSim/spaces/CMakeLists.txt \
+	src/python_bindings/CMakeLists.txt \
+	deps/pybind11/CMakeLists.txt \
+	tests/unit/CMakeLists.txt \
+	tests/benchmark/CMakeLists.txt \
+	tests/module/CMakeLists.txt
 
 #----------------------------------------------------------------------------------------------
 
 include $(MK)/defs
 
+all: bindirs $(TARGET)
+
+.PHONY: all
+
 include $(MK)/rules
 
 #----------------------------------------------------------------------------------------------
 
+ifeq ($(FORCE),1)
 .PHONY: __force
 
 $(BINDIR)/Makefile: __force
+else
+$(BINDIR)/Makefile : $(CMAKE_FILES)
+endif
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
 
 $(TARGET): $(BINDIR)/Makefile
@@ -199,9 +216,26 @@ endif
 
 #----------------------------------------------------------------------------------------------
 
-pybind:
-	$(SHOW)python3 -m poetry build
-.PHONY: pybind
+pybind: $(TARGET)
+	$(SHOW)VECSIM_LIB=$(TARGET) python3 setup.py build --build-temp $(BINDIR)/pybind-tmp --build-lib $(BINDIR)/pybind
+	$(SHOW)cd $(BINDIR) ;\
+	VECSIM_LIB=$(TARGET) python3 $(ROOT)/setup.py bdist_wheel --skip-build --bdist-dir $(BINDIR)/pybind --dist-dir $(BINDIR)
+
+#	$(SHOW)python3 -m poetry build
+
+ifeq ($(FORCE),1)
+install-wheel:
+	$(SHOW)bash -c 'ls -t $(BINDIR)/*.whl 2> /dev/null | head -1 | xargs python3 -m pip install --force-reinstall'
+else
+install-wheel:
+ifneq ($(VIRTUAL_ENV),)
+	$(SHOW)bash -c 'ls -t $(BINDIR)/*.whl 2> /dev/null | head -1 | xargs python3 -m pip install --force-reinstall'
+else
+	@echo "Not in virtual environment: will not install wheel"
+endif
+endif
+
+.PHONY: pybind install-wheel
 
 #----------------------------------------------------------------------------------------------
 
