@@ -1,49 +1,75 @@
 
-# build SSE/AVX* code only on x64 processors
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
-	project(VectorSimilaritySpaces_avx512)
-
-	if (VECSIM_MARCH)
-		add_compile_options(-march=${VECSIM_MARCH})
-	else()
-		add_compile_options(-march=x86-64-v4)
-	endif()
-
-	add_library(VectorSimilaritySpaces_avx512 STATIC
-		L2/L2_AVX512.cpp
-		IP/IP_AVX512.cpp
-		)
-
-	project(VectorSimilaritySpaces_avx)
-	add_compile_options(-march=x86-64-v3)
-	add_library(VectorSimilaritySpaces_avx STATIC
-		L2/L2_AVX.cpp
-		IP/IP_AVX.cpp
-		)
-
-	project(VectorSimilaritySpaces_sse)
-	add_compile_options(-march=x86-64-v2)
-	add_library(VectorSimilaritySpaces_sse STATIC
-		L2/L2_SSE.cpp
-		IP/IP_SSE.cpp
-		)
-endif()
+project(VectorSimilaritySpaces_no_optimization)
+	add_library(VectorSimilaritySpaces_no_optimization STATIC
+	L2/L2.cpp
+	IP/IP.cpp
+	)
 
 project(VectorSimilarity_Spaces)
 
 include(${root}/cmake/cpu_features.cmake)
 
-
-set(SPACES_SOURCES
-space_aux.cpp
-L2_space.cpp
-L2/L2.cpp
-IP_space.cpp
-IP/IP.cpp)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+	# build SSE/AVX* code only on x64 processors
+	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
+	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
+	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
+	if(CXX_AVX512F)
+		add_compile_options(-mavx512f)
+		message("Building with AVX512")
+	endif()
+	if(CXX_AVX)
+		add_compile_options(-mavx)
+		message("Building with AVX")
+	endif()
+	if(CXX_SSE)
+		add_compile_options(-msse)
+		message("Building with SSE")
+	endif()
+endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
-add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
-target_link_libraries(VectorSimilaritySpaces cpu_features)
+add_library(VectorSimilaritySpaces STATIC 
+	space_aux.cpp
+	L2_space.cpp
+	IP_space.cpp
+	)
+
+target_link_libraries(VectorSimilaritySpaces cpu_features VectorSimilaritySpaces_no_optimization)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
-	target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx512 VectorSimilaritySpaces_avx VectorSimilaritySpaces_sse)
+	# build SSE/AVX* code only on x64 processors
+	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
+	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
+	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
+
+	if(CXX_AVX512F)
+			project(VectorSimilaritySpaces_avx512)
+				add_library(VectorSimilaritySpaces_avx512 STATIC
+					L2/L2_AVX512.cpp
+					IP/IP_AVX512.cpp
+					)
+		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx512)
+	else()
+		message("Building without AVX512")
+	endif()
+	if(CXX_AVX)
+		project(VectorSimilaritySpaces_avx)
+			add_library(VectorSimilaritySpaces_avx STATIC
+				L2/L2_AVX.cpp
+				IP/IP_AVX.cpp
+				)
+		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx)
+	else()
+		message("Building without AVX")
+	endif()
+	if(CXX_SSE)
+		project(VectorSimilaritySpaces_sse)
+			add_library(VectorSimilaritySpaces_sse STATIC
+				L2/L2_SSE.cpp
+				IP/IP_SSE.cpp
+				)
+		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_sse)
+	else()
+		message("Building without SSE")
+	endif()
 endif()

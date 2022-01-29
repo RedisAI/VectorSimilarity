@@ -2,9 +2,6 @@
 #include "L2_space.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/L2/L2_SSE.h"
-#include "VecSim/spaces/L2/L2_AVX.h"
-#include "VecSim/spaces/L2/L2_AVX512.h"
 
 L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
     : SpaceInterface(allocator) {
@@ -12,18 +9,26 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
 #if defined(__x86_64__)
     Arch_Optimization arch_opt = getArchitectureOptimization();
     if (arch_opt == ARCH_OPT_AVX512) {
+#ifdef __AVX512F__
+#include "VecSim/spaces/L2/L2_AVX512.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_AVX512;
         } else {
             fstdistfunc_ = L2SqrSIMD16ExtResiduals_AVX512;
         }
+#endif
     } else if (arch_opt == ARCH_OPT_AVX) {
+#ifdef __AVX__
+#include "VecSim/spaces/L2/L2_AVX.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_AVX;
         } else {
             fstdistfunc_ = L2SqrSIMD16ExtResiduals_AVX;
         }
+#endif
     } else if (arch_opt == ARCH_OPT_SSE) {
+#ifdef __SSE__
+#include "VecSim/spaces/L2/L2_SSE.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_SSE;
         } else if (dim % 4 == 0) {
@@ -33,6 +38,7 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
         } else if (dim > 4) {
             fstdistfunc_ = L2SqrSIMD4ExtResiduals_SSE;
         }
+#endif
     }
 #endif // __x86_64__
     dim_ = dim;

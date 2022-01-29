@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 option(VECSIM_BUILD_TESTS "Build tests" ON)
+option(VECSIM_PY_BIND "Build pybind" ON)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
@@ -12,6 +13,7 @@ message("# VectorSimilarity root: " ${root})
 get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
 message("# VectorSimilarity static build: " ${VECSIM_STATIC})
+message("# VectorSimilarity build test: " ${VECSIM_BUILD_TESTS})
 
 include(${root}/cmake/common.cmake)
 
@@ -65,7 +67,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
   )
 
-if(VECSIM_BUILD_TESTS)
+if(VECSIM_BUILD_TESTS OR VECSIM_PY_BIND)
 	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
 	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
 endif()
