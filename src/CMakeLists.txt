@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
 option(VECSIM_BUILD_TESTS "Build tests" ON)
-option(VECSIM_PY_BIND "Build pybind" ON)
 
 option(VECSIM_STATIC "Build as static library" OFF)
 
@@ -67,7 +66,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
   )
 
-if(VECSIM_BUILD_TESTS OR VECSIM_PY_BIND)
+if(VECSIM_BUILD_TESTS)
 	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
 	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
 endif()
