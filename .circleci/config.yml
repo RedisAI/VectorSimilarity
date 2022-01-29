@@ -69,6 +69,22 @@ commands:
           command: |
             yum install -y git
 
+  tiny-build-steps:
+    steps:
+      - abort_for_docs
+      - abort_for_noci
+      - checkout-all
+      - install-prerequisites
+      - run:
+          name: Build
+          command: bash -l -c "make build"
+      - run:
+          name: Unit test
+          command: bash -l -c "make unit_test"
+      - run:
+          name: Valgrind test
+          command: bash -l -c "make VG=1 build unit_test"
+
   build-steps:
     steps:
       - abort_for_docs
@@ -80,9 +96,9 @@ commands:
       #   # fallback to using the latest cache if no exact match is found
       #   - v2-dependencies-
       - install-prerequisites
-      # - run:
-      #     name: Check format
-      #     command: bash -l -c "make check-format"
+      - run:
+          name: Check format
+          command: bash -l -c "make check-format"
       - run:
           name: Build
           command: bash -l -c "make build"
@@ -128,7 +144,7 @@ jobs:
       - image: ubuntu:bionic
     steps:
       - setup-ubuntu
-      - build-steps
+      - tiny-build-steps
 
   build-xenial:
     resource_class: large
@@ -136,7 +152,7 @@ jobs:
       - image: ubuntu:xenial
     steps:
       - setup-ubuntu
-      - build-steps
+      - tiny-build-steps
 
   build-centos7:
     resource_class: large
@@ -144,7 +160,7 @@ jobs:
       - image: centos:centos7
     steps:
       - setup-centos
-      - build-steps
+      - tiny-build-steps
 
   build-centos8:
     resource_class: large
@@ -152,7 +168,7 @@ jobs:
       - image: centos:centos7
     steps:
       - setup-centos
-      - build-steps
+      - tiny-build-steps
 
   build-macos:
       macos:
