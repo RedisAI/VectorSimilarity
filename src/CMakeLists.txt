@@ -45,8 +45,11 @@ else()
 	set(VECSIM_LIBTYPE SHARED)
 endif()
 
-add_subdirectory(VecSim/spaces)
-
+if (${OSNICK} STREQUAL "xenial")
+	add_subdirectory(VecSim/spaces/ext)
+else()
+	add_subdirectory(VecSim/spaces)
+endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
@@ -73,8 +76,8 @@ endif()
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 # Needed for build as ExternalProject (like RediSearch does)
-install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
+# install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
+# install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 if(NOT VECSIM_STATIC)
     set_target_properties(VectorSimilarity PROPERTIES PREFIX "lib")

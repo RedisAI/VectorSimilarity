@@ -55,3 +55,5 @@ set(SPACES_SOURCES
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
 target_link_libraries(VectorSimilaritySpaces cpu_features ${VectorSimilaritySpaces_libs})
+
+install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
