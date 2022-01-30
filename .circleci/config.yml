@@ -117,7 +117,8 @@ commands:
           name: Flow tests
           shell: /bin/bash -l -eo pipefail
           command: |
-            make flow_test
+            python3 -m pip install -r sbin/requirements.txt
+            python3 -m tox -e flowenv
       - save_cache:
           paths:
             - ./.tox
