@@ -36,6 +36,13 @@ commands:
       - run:
           name: Setup automation
           command: |
+            if is_command apt-get &> /dev/null; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y git
+            elif is_command yum &> /dev/null; then
+              yum install -y git
+            fi
             (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
             ./deps/readies/bin/getpy3
 
@@ -50,8 +57,9 @@ commands:
               apt-get update -qq
               apt-get install -y git
             elif is_command yum &> /dev/null; then
-              runn yum install -y git
+              yum install -y git
             fi
+            git submodule update --init --recursive
 
   install-prerequisites:
     steps:
