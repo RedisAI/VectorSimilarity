@@ -18,7 +18,6 @@ RUN ./deps/readies/bin/getpy3
 RUN ./sbin/system-setup.py
 
 RUN /usr/local/bin/redis-server --version
-RUN make fetch
 
 RUN make build SHOW=1
 

@@ -33,7 +33,7 @@ if (${ARCH} STREQUAL "x64")
 
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 	if (CXX_SSE)
-		message("# VectorSimilarity/spaces: building with SSE (-march=x86-64-v2)")
+		message("# VectorSimilarity/spaces: building with SSE (-msse)")
 		list(APPEND VectorSimilaritySpaces_libs VectorSimilaritySpaces_sse)
 		project(VectorSimilaritySpaces_sse)
 			add_compile_options(-msse)

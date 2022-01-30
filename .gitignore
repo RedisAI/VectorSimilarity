@@ -3,12 +3,10 @@
 
 /.tox/
 /bin/
-/build/
 /dist/
 /venv/
 /deps/readies/
 /1/
-**/build/
 
 # Prerequisites
 *.d
@@ -48,7 +46,9 @@
 
 # Python
 *.egg*
-dist/**
+/build/lib.*/
+/build/temp.*/
+/dist/**
 poetry.lock
 *.pyc
 __pycache__/
