@@ -1,4 +1,5 @@
 
+# Build non optimized code in a single project without architecture optimization flag.
 project(VectorSimilaritySpaces_no_optimization)
 	add_library(VectorSimilaritySpaces_no_optimization STATIC
 	L2/L2.cpp
@@ -10,7 +11,9 @@ project(VectorSimilarity_Spaces)
 include(${root}/cmake/cpu_features.cmake)
 include(CheckCXXCompilerFlag)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
-	# build SSE/AVX* code only on x64 processors
+	# build SSE/AVX* code only on x64 processors. 
+	# Check that the compiler supports instructions flag. 
+	# This will add the relevant flag both the the space selector and the optimization.
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
 	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
@@ -29,6 +32,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
+# Here we are compiling the space selectors with the relevant optimization flag.
 add_library(VectorSimilaritySpaces STATIC 
 	space_aux.cpp
 	L2_space.cpp
@@ -37,11 +41,7 @@ add_library(VectorSimilaritySpaces STATIC
 
 target_link_libraries(VectorSimilaritySpaces cpu_features VectorSimilaritySpaces_no_optimization)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
-	# build SSE/AVX* code only on x64 processors
-	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
-	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
-	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
-
+	# Build and link the relevant optimization for X86.
 	if(CXX_AVX512F)
 			project(VectorSimilaritySpaces_avx512)
 				add_library(VectorSimilaritySpaces_avx512 STATIC
