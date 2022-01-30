@@ -12,7 +12,6 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
 
 #if defined(__AVX512F__)
     if (arch_opt == ARCH_OPT_AVX512) {
-#ifdef __AVX512F__
 #		include "VecSim/spaces/IP/IP_AVX512.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = InnerProductSIMD16Ext_AVX512;
@@ -48,7 +47,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
             fstdistfunc_ = InnerProductSIMD4ExtResiduals_SSE;
         }
     } else
-#else
+#endif
 
 	{ (void) arch_opt; }
 #endif // __x86_64__

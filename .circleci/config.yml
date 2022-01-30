@@ -198,7 +198,7 @@ jobs:
   build-centos7:
     resource_class: large
     docker:
-      - image: centos:centos7
+      - image: centos:7
     steps:
       - setup-centos
       - tiny-build-steps
@@ -206,14 +206,14 @@ jobs:
   build-centos8:
     resource_class: large
     docker:
-      - image: centos:centos7
+      - image: centos:8
     steps:
       - setup-centos
       - tiny-build-steps
 
   build-macos:
       macos:
-        xcode: 11.6.0
+        xcode: 12.4.0
       steps:
        - checkout-all
        - run:
