@@ -53,12 +53,10 @@ class CMakeBuild(build_ext):
             "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}".format(extdir),
             "-DPYTHON_EXECUTABLE={}".format(sys.executable),
             "-DCMAKE_BUILD_TYPE={}".format(cfg),
+            "-DBUILD_TESTING=OFF ",
             "-Wno-dev",
             "--no-warn-unused-cli",
-            "-DBUILD_TESTS=OFF",
-            f"-DOS={platform.os}",
-            f"-DOSNICK={platform.osnick}",
-            f"-DARCH={platform.arch}",
+
         ]
         build_args = []
 

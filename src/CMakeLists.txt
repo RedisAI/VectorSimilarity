@@ -12,6 +12,7 @@ message("# VectorSimilarity root: " ${root})
 get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
 message("# VectorSimilarity binroot: " ${binroot})
 message("# VectorSimilarity static build: " ${VECSIM_STATIC})
+message("# VectorSimilarity build test: " ${VECSIM_BUILD_TESTS})
 
 include(${root}/cmake/common.cmake)
 
