@@ -54,6 +54,37 @@ commands:
           name: System setup
           command: ./sbin/system-setup.py
 
+  setup-ubuntu:
+    steps:
+      - run:
+          name: basic install
+          command: |
+            apt-get update
+            apt-get install -y git
+
+  setup-centos:
+    steps:
+      - run:
+          name: basic install
+          command: |
+            yum install -y git
+
+  tiny-build-steps:
+    steps:
+      - abort_for_docs
+      - abort_for_noci
+      - checkout-all
+      - install-prerequisites
+      - run:
+          name: Build
+          command: bash -l -c "make build"
+      - run:
+          name: Unit test
+          command: bash -l -c "make unit_test"
+      - run:
+          name: Valgrind test
+          command: bash -l -c "make VG=1 build unit_test"
+
   build-steps:
     steps:
       - abort_for_docs
@@ -95,16 +126,49 @@ commands:
 #----------------------------------------------------------------------------------------------------------------------------------
 
 jobs:
-  build-ubuntu:
+  build-focal:
     resource_class: large
     docker:
-      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+      - image: ubuntu:focal
 #     machine:
 #       enabled: true
 #       image: ubuntu-2004:202010-01
 #       resource_class: xlarge
     steps:
+      - setup-ubuntu
       - build-steps
+
+  build-bionic:
+    resource_class: large
+    docker:
+      - image: ubuntu:bionic
+    steps:
+      - setup-ubuntu
+      - tiny-build-steps
+
+  build-xenial:
+    resource_class: large
+    docker:
+      - image: ubuntu:xenial
+    steps:
+      - setup-ubuntu
+      - tiny-build-steps
+
+  build-centos7:
+    resource_class: large
+    docker:
+      - image: centos:centos7
+    steps:
+      - setup-centos
+      - tiny-build-steps
+
+  build-centos8:
+    resource_class: large
+    docker:
+      - image: centos:centos7
+    steps:
+      - setup-centos
+      - tiny-build-steps
 
   build-macos:
       macos:
@@ -268,7 +332,15 @@ workflows:
 
   default_flow:
     jobs:
-      - build-ubuntu:
+      - build-focal:
+          <<: *on-any-branch
+      - build-bionic:
+          <<: *on-any-branch
+      - build-xenial:
+          <<: *on-any-branch
+      - build-centos7:
+          <<: *on-any-branch
+      - build-centos8:
           <<: *on-any-branch
       - build-macos:
           <<: *on-any-branch
