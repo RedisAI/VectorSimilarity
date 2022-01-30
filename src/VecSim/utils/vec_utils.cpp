@@ -40,8 +40,14 @@ int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryRes
 }
 
 int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
-           !std::isnan(VecSimQueryResult_GetScore(res2)));
+#ifndef __INTEL_LLVM_COMPILER
+#define _isnan(x) std::isnan(x)
+#else
+#define _isnan(x) isnan(x)
+#endif
+    assert(!_isnan(VecSimQueryResult_GetScore(res1)) &&
+           !_isnan(VecSimQueryResult_GetScore(res2)));
+
     // Compare floats
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
 }

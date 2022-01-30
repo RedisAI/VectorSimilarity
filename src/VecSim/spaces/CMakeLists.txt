@@ -1,3 +1,12 @@
+cmake_minimum_required(VERSION 3.10)
+
+get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/../../.. ABSOLUTE)
+message("# VectorSimilarity/spaces root: " ${root})
+get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
+message("# VectorSimilarity/spaces binroot: " ${binroot})
+
+include_directories(${root}/src)
+include_directories(${root}/src/VecSim/spaces)
 
 # build SSE/AVX* code only on x64 processors
 if (${ARCH} STREQUAL "x64")
@@ -53,7 +62,8 @@ set(SPACES_SOURCES
 	IP/IP.cpp)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
+
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
 target_link_libraries(VectorSimilaritySpaces cpu_features ${VectorSimilaritySpaces_libs})
 
-install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(TARGETS VectorSimilaritySpaces ${VectorSimilaritySpaces_libs} cpu_features DESTINATION ${CMAKE_INSTALL_PREFIX})
