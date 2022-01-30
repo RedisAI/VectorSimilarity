@@ -44,7 +44,14 @@ commands:
       - checkout
       - run:
           name: Checkout submodules
-          command: git submodule update --init --recursive
+          command: |
+            if is_command apt-get &> /dev/null; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y git
+            elif is_command yum &> /dev/null; then
+              runn yum install -y git
+            fi
 
   install-prerequisites:
     steps:
