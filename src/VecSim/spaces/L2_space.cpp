@@ -15,7 +15,7 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
 #if defined(__AVX512F__)
     if (arch_opt == ARCH_OPT_AVX512) {
 #ifdef __AVX512F__
-#include "VecSim/spaces/L2/L2_AVX512.h"
+#		include "VecSim/spaces/L2/L2_AVX512.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_AVX512;
         } else {
@@ -25,6 +25,7 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
 
 #elif defined(__AVX__)
     if (arch_opt == ARCH_OPT_AVX) {
+#		include "VecSim/spaces/L2/L2_AVX.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_AVX;
         } else {
@@ -34,6 +35,7 @@ L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
 
 #elif defined(__SSE__)
     if (arch_opt == ARCH_OPT_SSE) {
+#		include "VecSim/spaces/L2/L2_SSE.h"
         if (dim % 16 == 0) {
             fstdistfunc_ = L2SqrSIMD16Ext_SSE;
         } else if (dim % 4 == 0) {
