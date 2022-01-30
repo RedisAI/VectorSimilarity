@@ -45,8 +45,7 @@ int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQuery
 #else
 #define _isnan(x) isnan(x)
 #endif
-    assert(!_isnan(VecSimQueryResult_GetScore(res1)) &&
-           !_isnan(VecSimQueryResult_GetScore(res2)));
+    assert(!_isnan(VecSimQueryResult_GetScore(res1)) && !_isnan(VecSimQueryResult_GetScore(res2)));
 
     // Compare floats
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;

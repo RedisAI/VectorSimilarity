@@ -29,6 +29,7 @@ class VecSimSetup(paella.Setup):
     def debian_compat(self):
         self.run("%s/bin/getgcc --modern" % READIES)
         if self.osnick == "xenial":
+            print("OSNICK=" + str(self.osnick))
             self.run("GCC=1 POST=0 %s/bin/getconda" % READIES)
         self.install("python3-dev clang-format valgrind")
 
