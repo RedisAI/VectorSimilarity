@@ -43,7 +43,7 @@ commands:
             elif command -v yum &> /dev/null; then
               yum install -y git
             fi
-            (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git  -b ck-pypypip)
+            (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git  -b ck-python3ism)
             ./deps/readies/bin/getpy3
 
   checkout-all:
