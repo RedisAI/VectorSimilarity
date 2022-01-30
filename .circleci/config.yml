@@ -176,7 +176,6 @@ jobs:
 #       image: ubuntu-2004:202010-01
 #       resource_class: xlarge
     steps:
-      - setup-ubuntu
       - build-steps
 
   build-bionic:
@@ -184,7 +183,6 @@ jobs:
     docker:
       - image: ubuntu:bionic
     steps:
-      - setup-ubuntu
       - tiny-build-steps
 
   build-xenial:
@@ -192,7 +190,6 @@ jobs:
     docker:
       - image: ubuntu:xenial
     steps:
-      - setup-ubuntu
       - tiny-build-steps
 
   build-centos7:
@@ -200,7 +197,6 @@ jobs:
     docker:
       - image: centos:7
     steps:
-      - setup-centos
       - tiny-build-steps
 
   build-centos8:
@@ -208,7 +204,6 @@ jobs:
     docker:
       - image: centos:8
     steps:
-      - setup-centos
       - tiny-build-steps
 
   build-macos:

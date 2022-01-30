@@ -18,8 +18,6 @@ class VecSimSetup(paella.Setup):
 
     def common_first(self):
         self.install_downloaders()
-        self.pip_install("wheel")
-        self.pip_install("setuptools --upgrade")
 
         self.install("git")
 
@@ -28,7 +26,7 @@ class VecSimSetup(paella.Setup):
 
     def debian_compat(self):
         self.run("%s/bin/getgcc --modern" % READIES)
-        self.install("python3-dev clang-format valgrind")
+        self.install("python3-dev valgrind")
 
     def redhat_compat(self):
         self.install("redhat-lsb-core")
@@ -40,13 +38,10 @@ class VecSimSetup(paella.Setup):
     def macos(self):
         self.install_gnu_utils()
         self.run("%s/bin/getgcc --modern" % READIES)
-        self.install("clang-format")
-
-    def linux_last(self):
-        self.run("%s/bin/getclang" % READIES)
 
     def common_last(self):
-        self.run("python3 %s/bin/getrmpytools" % READIES)
+        self.run("%s/bin/getclang --format" % READIES)
+        self.run("{PYTHON} {READIES}/bin/getrmpytools --reinstall".format(PYTHON=self.python, READIES=READIES))
         self.run("NO_PY2=1 %s/bin/getpudb" % READIES)
         self.pip_install("-r %s/sbin/requirements.txt" % ROOT)
 
