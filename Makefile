@@ -120,29 +120,6 @@ else
 MAKE_J:=-j$(shell nproc)
 endif
 
-#----------------------------------------------------------------------------------------------
-
-ifeq ($(ARCH),x64)
-
-ifeq ($(SAN),)
-ifneq ($(findstring centos,$(OSNICK)),)
-VECSIM_MARCH ?= skylake-avx512
-else ifneq ($(findstring xenial,$(OSNICK)),)
-VECSIM_MARCH ?= skylake-avx512
-else
-VECSIM_MARCH ?= x86-64-v4
-endif
-else
-VECSIM_MARCH ?= skylake-avx512
-endif
-
-CMAKE_VECSIM=-DVECSIM_MARCH=$(VECSIM_MARCH)
-
-else # ARCH != x64
-
-CMAKE_VECSIM=
-
-endif # ARCH
 
 #----------------------------------------------------------------------------------------------
 
@@ -175,12 +152,21 @@ CMAKE_FLAGS += \
 	-DCMAKE_WARN_DEPRECATED=OFF \
 	-Wno-dev \
 	--no-warn-unused-cli \
+	-DOS=$(OS) \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
-	$(CMAKE_VECSIM) \
 	$(CMAKE_COV) \
 	$(CMAKE_TESTS)
+
+CMAKE_FILES=\
+	src/CMakeLists.txt \
+	src/VecSim/spaces/CMakeLists.txt \
+	src/python_bindings/CMakeLists.txt \
+	deps/pybind11/CMakeLists.txt \
+	tests/unit/CMakeLists.txt \
+	tests/benchmark/CMakeLists.txt \
+	tests/module/CMakeLists.txt
 
 #----------------------------------------------------------------------------------------------
 
@@ -190,9 +176,13 @@ include $(MK)/rules
 
 #----------------------------------------------------------------------------------------------
 
+ifeq ($(FORCE),1)
 .PHONY: __force
 
 $(BINDIR)/Makefile: __force
+else
+$(BINDIR)/Makefile : $(CMAKE_FILES)
+endif
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
 
 $(TARGET): $(BINDIR)/Makefile
