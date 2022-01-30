@@ -8,7 +8,7 @@ project(VectorSimilaritySpaces_no_optimization)
 project(VectorSimilarity_Spaces)
 
 include(${root}/cmake/cpu_features.cmake)
-
+include(CheckCXXCompilerFlag)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# build SSE/AVX* code only on x64 processors
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
