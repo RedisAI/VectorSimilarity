@@ -37,7 +37,7 @@ commands:
       - run:
           name: Setup automation
           command: |
-            (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
+            (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git -b ck-python3ism)
             ./deps/readies/bin/getpy3
 
   checkout-all:
@@ -252,7 +252,7 @@ jobs:
   codecov:
     resource_class: large
     docker:
-      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+      - image: redisfab/rmbuilder:6.2.5-x64-bionic
     steps:
       - early_return_for_forked_pull_requests
       - abort_for_docs

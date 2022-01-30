@@ -28,7 +28,7 @@ class VecSimSetup(paella.Setup):
 
     def debian_compat(self):
         self.run("%s/bin/getgcc --modern" % READIES)
-        self.install("python3-dev clang-format valgrind")
+        self.install("python3-dev clang-format valgrind lcov")
 
     def redhat_compat(self):
         self.install("redhat-lsb-core")
