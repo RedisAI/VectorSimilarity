@@ -1,25 +1,23 @@
 version: 2.1
 
 commands:
-  abort_for_docs:
+  early-returns:
     steps:
       - run:
-          name: Avoid tests for docs
+          name: Early return if this is a docs build
           command: |
             if [[ $CIRCLE_BRANCH == *docs ]]; then
-              echo "Identifies as documents PR, no testing required"
+              echo "Identifies as documents PR, no testing required."
               circleci step halt
             fi
-
-  abort_for_noci:
-    steps:
       - run:
-          name: Ignore CI for specific branches
+          name: Early return if this branch should ignore CI
           command: |
             if [[ $CIRCLE_BRANCH == *noci ]]; then
               echo "Identifies as actively ignoring CI, no testing required."
               circleci step halt
             fi
+
   early_return_for_forked_pull_requests:
     description: >-
       If this build is from a fork, stop executing the current job and return success.
@@ -32,6 +30,7 @@ commands:
               echo "Nothing to do for forked PRs, so marking this step successful"
               circleci step halt
             fi
+
   setup-automation:
     steps:
       - run:
@@ -56,8 +55,7 @@ commands:
 
   build-steps:
     steps:
-      - abort_for_docs
-      - abort_for_noci
+      - early-returns
       - checkout-all
       # restore_cache: # Download and cache dependencies
       #   keys:
@@ -92,19 +90,6 @@ commands:
             - ~/.cache/pypoetry
           key: v2-dependencies-{{ checksum "pyproject.toml" }}-{{ .Environment.CIRCLE_STAGE }}
 
-#----------------------------------------------------------------------------------------------------------------------------------
-
-jobs:
-  build-ubuntu:
-    resource_class: large
-    docker:
-      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
-#     machine:
-#       enabled: true
-#       image: ubuntu-2004:202010-01
-#       resource_class: xlarge
-    steps:
-      - build-steps
   vm-build-platforms-steps:
     parameters:
       platform:
@@ -128,6 +113,33 @@ jobs:
             tar -C tests/pytests/logs -xzf bin/artifacts/tests-pytests-logs*.tgz
           no_output_timeout: 30m
       - save-tests-logs
+
+  save-tests-logs:
+    steps:
+      - run:
+          name: Cleanup test log dir
+          command: |
+            if [[ -d tests/pytests/logs ]]; then
+              cd tests/pytests/logs
+              rm -f *.aof *.rdb
+            fi
+          when: always
+      - store_artifacts:
+          path: tests/pytests/logs
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+jobs:
+  build-linux-debian:
+    resource_class: large
+    docker:
+      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+#     machine:
+#       enabled: true
+#       image: ubuntu-2004:202010-01
+#       resource_class: xlarge
+    steps:
+      - build-steps
 
   build-macos:
       macos:
@@ -180,6 +192,17 @@ jobs:
       - vm-build-platforms-steps:
           platform: <<parameters.platform>>
 
+  build-arm-platforms:
+    parameters:
+      platform:
+        type: string
+    machine:
+      image: ubuntu-2004:202101-01
+    resource_class: arm.medium
+    steps:
+      - vm-build-platforms-steps:
+          platform: <<parameters.platform>>
+
   sanitize:
     docker:
       - image: redisfab/clang:13-x64-bullseye
@@ -187,8 +210,7 @@ jobs:
       san-type:
         type: string
     steps:
-      - abort_for_docs
-      - abort_for_noci
+      - early-returns
       - checkout-all
       - run:
           name: Run & build tests
@@ -203,8 +225,7 @@ jobs:
 #       image: ubuntu-2004:202010-01
 #       resource_class: xlarge
     steps:
-      - abort_for_docs
-      - abort_for_noci
+      - early-returns
       - build-steps
       - run:
           name: Build Python bindings
@@ -226,8 +247,7 @@ jobs:
       - image: redisfab/rmbuilder:6.2.5-x64-bullseye
     steps:
       - early_return_for_forked_pull_requests
-      - abort_for_docs
-      - abort_for_noci
+      - early-returns
       - checkout-all
       - install-prerequisites
       - run:
