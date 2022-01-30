@@ -195,7 +195,7 @@ endif
 
 clean:
 ifeq ($(ALL),1)
-	$(SHOW)rm -rf $(BINROOT) build dist .tox
+	$(SHOW)rm -rf $(BINROOT) build/tmp.* bulid/lib.* dist .tox
 else
 	$(SHOW)$(MAKE) -C $(BINDIR) clean
 endif
@@ -237,7 +237,7 @@ valgrind:
 
 flow_test:
 	$(SHOW)$(MAKE) pybind
-	$(SHOW)tox -e flowenv
+	$(SHOW)python3 -m tox -e flowenv
 
 .PHONY: flow_test
 

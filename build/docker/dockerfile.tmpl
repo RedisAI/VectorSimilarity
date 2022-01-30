@@ -22,7 +22,10 @@ RUN /usr/local/bin/redis-server --version
 RUN make build SHOW=1
 
 {% if TEST == "1" %}
-RUN TEST='' make test
+RUN make unit_test
+RUN make VG=1 build unit_test
+RUN make flow_test
+
 # RUN set -e ;\
 #     cd /build/tests/pytests/logs ;\
 #     rm -f *.aof *.rdb ;\

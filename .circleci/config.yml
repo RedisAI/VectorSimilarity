@@ -65,24 +65,29 @@ commands:
       - install-prerequisites
       - run:
           name: Check format
-          command: bash -l -c "make check-format"
+          shell: /bin/bash -l -eo pipefail
+          command: make check-format
       - run:
           name: Build
-          command: bash -l -c "make build"
+          shell: /bin/bash -l -eo pipefail
+          command: make build
       - run:
           name: Unit test
-          command: bash -l -c "make unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make unit_test
       - run:
           name: Valgrind test
-          command: bash -l -c "make VG=1 build unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make VG=1 build unit_test
       - run:
           name: Build Python bindings
-          command: bash -l -c "make pybind"
+          shell: /bin/bash -l -eo pipefail
+          command: make pybind
       - run:
           name: Flow tests
+          shell: /bin/bash -l -eo pipefail
           command: |
-            python3 -m pip install -r sbin/requirements.txt
-            python3 -m tox -e flowenv
+            make flow_test
       - save_cache:
           paths:
             - ./.tox
@@ -214,7 +219,8 @@ jobs:
       - checkout-all
       - run:
           name: Run & build tests
-          command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make SAN=<<parameters.san-type>> build unit_test
 
   nightly_flow:
     resource_class: large
@@ -229,13 +235,15 @@ jobs:
       - build-steps
       - run:
           name: Build Python bindings
-          command: bash -l -c "make pybind"
+          shell: /bin/bash -l -eo pipefail
+          command: make pybind
       - run:
           name: Download pre-generated indices
           command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
       - run:
           name: Benchmark
-          command: bash -l -c "make benchmark"
+          shell: /bin/bash -l -eo pipefail
+          command: make benchmark
           no_output_timeout: 180m
       - run:
           name: Redis tests

@@ -2,7 +2,8 @@
 include(CheckCXXCompilerFlag)
 
 # build SSE/AVX* code only on x64 processors
-if (${ARCH} STREQUAL "x64")
+# if (${ARCH} STREQUAL "x64")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	set(VectorSimilaritySpaces_libs)
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
 
@@ -61,4 +62,3 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 
 add_library(VectorSimilaritySpaces STATIC ${SPACES_SOURCES})
 target_link_libraries(VectorSimilaritySpaces cpu_features ${VectorSimilaritySpaces_libs})
-
