@@ -120,6 +120,11 @@ else
 MAKE_J:=-j$(shell nproc)
 endif
 
+#----------------------------------------------------------------------------------------------
+
+CC_HAVE_OPTS:=$(shell $(MK)/cc-have-opts)
+CMAKE_CC_CPU_FLAGS=$(foreach opt,$(CC_HAVE_OPTS),-D$(opt))
+CMAKE_HAVE_CC_OPTS=$(foreach opt,$(CC_HAVE_OPTS),-D$(opt)=on) -DCXX_CPU_FLAGS="$(CMAKE_CC_CPU_FLAGS)"
 
 #----------------------------------------------------------------------------------------------
 
@@ -156,6 +161,7 @@ CMAKE_FLAGS += \
 	-DOSNICK=$(OSNICK) \
 	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
+	$(CMAKE_HAVE_CC_OPTS) \
 	$(CMAKE_COV) \
 	$(CMAKE_TESTS)
 
@@ -171,6 +177,10 @@ CMAKE_FILES=\
 #----------------------------------------------------------------------------------------------
 
 include $(MK)/defs
+
+all: bindirs $(TARGET)
+
+.PHONY: all
 
 include $(MK)/rules
 
