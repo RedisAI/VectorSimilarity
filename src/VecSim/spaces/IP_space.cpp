@@ -48,7 +48,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
             fstdistfunc_ = InnerProductSIMD4ExtResiduals_SSE;
         }
     } else
-#endif
+#else
 
 	{ (void) arch_opt; }
 #endif // __x86_64__
