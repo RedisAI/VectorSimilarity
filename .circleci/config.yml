@@ -105,6 +105,29 @@ jobs:
 #       resource_class: xlarge
     steps:
       - build-steps
+  vm-build-platforms-steps:
+    parameters:
+      platform:
+        type: string
+    steps:
+      - early-returns
+      - checkout-all
+      - setup-automation
+      - run:
+          name: Install Docker
+          shell: /bin/bash -l -eo pipefail
+          command: ./deps/readies/bin/getdocker
+      - run:
+          name: Build for platform
+          command: |
+            ROOT=$PWD
+            cd build/docker
+            make build OSNICK=<<parameters.platform>> VERSION=$CIRCLE_TAG BRANCH=$CIRCLE_BRANCH TEST=1 OFFICIAL=0 SHOW=1
+            cd $ROOT
+            mkdir -p tests/pytests/logs
+            tar -C tests/pytests/logs -xzf bin/artifacts/tests-pytests-logs*.tgz
+          no_output_timeout: 30m
+      - save-tests-logs
 
   build-macos:
       macos:
@@ -143,7 +166,19 @@ jobs:
             poetry install
             tox -e flowenv
 
-
+  build-platforms:
+    parameters:
+      platform:
+        type: string
+    # docker:
+    #   - image: debian:bullseye
+    machine:
+      enabled: true
+      image: ubuntu-2004:202010-01
+      resource_class: large
+    steps:
+      - vm-build-platforms-steps:
+          platform: <<parameters.platform>>
 
   sanitize:
     docker:
@@ -268,10 +303,25 @@ workflows:
 
   default_flow:
     jobs:
-      - build-ubuntu:
+      - build-linux-debian:
+          name: build
           <<: *on-any-branch
       - build-macos:
           <<: *on-any-branch
+      - build-platforms:
+          #@@<<: *on-integ-and-version-tags
+          <<: *on-any-branch
+          context: common
+          matrix:
+            parameters:
+              platform: [focal, bionic, xenial, centos7, centos8, bullseye]
+      - build-arm-platforms:
+          #@@<<: *on-integ-and-version-tags
+          <<: *on-any-branch
+          context: common
+          matrix:
+            parameters:
+              platform: [bionic]
       - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:

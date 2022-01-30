@@ -13,7 +13,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
 #if defined(__x86_64__)
     Arch_Optimization arch_opt = getArchitectureOptimization();
 
-#if defined(HAVE_MARCH_X86_64_V4)
+#if defined(__AVX512F__)
     if (arch_opt == ARCH_OPT_AVX512) {
         if (dim % 16 == 0) {
             fstdistfunc_ = InnerProductSIMD16Ext_AVX512;
@@ -22,7 +22,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
         }
     } else
 
-#elif defined(HAVE_MARCH_X86_64_V3)
+#elif defined(__AVX__)
     if (arch_opt == ARCH_OPT_AVX) {
         if (dim % 16 == 0) {
             fstdistfunc_ = InnerProductSIMD16Ext_AVX;
@@ -35,7 +35,7 @@ InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator
         }
     } else
 
-#elif defined(HAVE_MARCH_X86_64_V2)
+#elif defined(__SSE__)
 	if (arch_opt == ARCH_OPT_SSE) {
         if (dim % 16 == 0) {
             fstdistfunc_ = InnerProductSIMD16Ext_SSE;

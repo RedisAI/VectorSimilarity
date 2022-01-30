@@ -1,4 +1,6 @@
 
+include(CheckCXXCompilerFlag)
+
 # build SSE/AVX* code only on x64 processors
 if (${ARCH} STREQUAL "x64")
 	set(VectorSimilaritySpaces_libs)
