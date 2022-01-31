@@ -32,7 +32,13 @@ jobs:
       - uses: conda-incubator/setup-miniconda@v2
         with:
           auto-activate-base: false
+          activate-environment: vecsim
           environment-file: conda/linux.yml
       - run: |
           conda info
           conda list
+      - run: |
+          make
+      - run: |
+          make unit_test
+
