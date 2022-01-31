@@ -369,22 +369,22 @@ on-integ-and-version-tags: &on-integ-and-version-tags
 workflows:
   version: 2
 
-  default_flow:
-    jobs:
-      - build-focal:
-          <<: *on-any-branch
-      - build-bionic:
-          <<: *on-any-branch
-      - build-xenial:
-          <<: *on-any-branch
-      - build-centos7:
-          <<: *on-any-branch
-      - build-centos8:
-          <<: *on-any-branch
-      - build-macos:
-          <<: *on-any-branch
-      - codecov:
-          <<: *on-any-branch
+  # default_flow:
+  #   jobs:
+  #     - build-focal:
+  #         <<: *on-any-branch
+  #     - build-bionic:
+  #         <<: *on-any-branch
+  #     - build-xenial:
+  #         <<: *on-any-branch
+  #     - build-centos7:
+  #         <<: *on-any-branch
+  #     - build-centos8:
+  #         <<: *on-any-branch
+  #     - build-macos:
+  #         <<: *on-any-branch
+  #     - codecov:
+  #         <<: *on-any-branch
 
   readies_flow:
     jobs:
