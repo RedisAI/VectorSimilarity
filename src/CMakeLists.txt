@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
+cmake_policy(SET CMP0077 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 option(VECSIM_BUILD_TESTS "Build tests" ON)
 
@@ -14,7 +16,13 @@ message("# VectorSimilarity binroot: " ${binroot})
 message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 message("# VectorSimilarity build test: " ${VECSIM_BUILD_TESTS})
 
-include(${root}/cmake/common.cmake)
+if (USE_COVERAGE)
+    if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+        message(FATAL_ERROR "Build type must be DEBUG for coverage")
+    endif()
+    set(COV_CXX_FLAGS "-coverage")
+endif()
+
 
 if (USE_ASAN OR USE_MSAN)
 	include(${root}/cmake/clang-sanitizers.cmake)

@@ -47,7 +47,7 @@ commands:
           name: Checkout submodules
           command: git submodule update --init --recursive
 
-  install-prerequisites:
+  install-readies-prerequisites:
     steps:
       - setup-automation
       - run:
@@ -61,6 +61,7 @@ commands:
           command: |
             apt-get update
             apt-get install -y git
+      - checkout-all
 
   setup-centos:
     steps:
@@ -68,34 +69,28 @@ commands:
           name: basic install
           command: |
             yum install -y git
+      - checkout-all
 
-  tiny-build-steps:
+  readies-build-steps:
     steps:
       - abort_for_docs
       - abort_for_noci
-      - checkout-all
-      - install-prerequisites
       - run:
           name: Build
           command: bash -l -c "make build"
       - run:
           name: Unit test
           command: bash -l -c "make unit_test"
-      - run:
-          name: Valgrind test
-          command: bash -l -c "make VG=1 build unit_test"
 
   build-steps:
     steps:
       - abort_for_docs
       - abort_for_noci
-      - checkout-all
       # restore_cache: # Download and cache dependencies
       #   keys:
       #   - v2-dependencies-{{ checksum "pyproject.toml" }}-{{ .Environment.CIRCLE_STAGE }}
       #   # fallback to using the latest cache if no exact match is found
       #   - v2-dependencies-
-      - install-prerequisites
       - run:
           name: Check format
           command: bash -l -c "make check-format"
@@ -169,6 +164,51 @@ jobs:
     steps:
       - setup-centos
       - tiny-build-steps
+
+  readies-focal:
+    resource_class: large
+    docker:
+      - image: ubuntu:focal
+    steps:
+      - setup-ubuntu
+      - install-readies-prerequisites
+      - readies-build-steps
+
+  readies-bionic:
+    resource_class: large
+    docker:
+      - image: ubuntu:bionic
+    steps:
+      - setup-ubuntu
+      - install-readies-prerequisites
+      - readies-build-steps
+
+  readies-xenial:
+    resource_class: large
+    docker:
+      - image: ubuntu:xenial
+    steps:
+      - setup-ubuntu
+      - install-readies-prerequisites
+      - readies-build-steps
+
+  readies-centos7:
+    resource_class: large
+    docker:
+      - image: centos:centos7
+    steps:
+      - setup-centos
+      - install-readies-prerequisites
+      - readies-build-steps
+
+  readies-centos8:
+    resource_class: large
+    docker:
+      - image: centos:centos7
+    steps:
+      - setup-centos
+      - install-readies-prerequisites
+      - readies-build-steps
 
   build-macos:
       macos:
@@ -258,7 +298,6 @@ jobs:
       - abort_for_docs
       - abort_for_noci
       - checkout-all
-      - install-prerequisites
       - run:
           name: Run codecov
           command: |
@@ -344,16 +383,21 @@ workflows:
           <<: *on-any-branch
       - build-macos:
           <<: *on-any-branch
-      - sanitize:
-          name: sanitize-<< matrix.san-type >>
-          matrix:
-            parameters:
-#               san-type: [address, memory]
-              san-type: [address]
-          <<: *on-any-branch
       - codecov:
           <<: *on-any-branch
 
+  readies_flow:
+    jobs:
+      - readies-focal:
+          <<: *on-any-branch
+      - readies-bionic:
+          <<: *on-any-branch
+      - readies-xenial:
+          <<: *on-any-branch
+      - readies-centos7:
+          <<: *on-any-branch
+      - readies-centos8:
+          <<: *on-any-branch
 
   nightly:
     triggers:
