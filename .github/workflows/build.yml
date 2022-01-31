@@ -38,7 +38,8 @@ jobs:
           conda info
           conda list
       - run:
-          apt-get install -y libc6-dbg
+          sudo apt-get update
+          sudo apt-get install -y libc6-dbg
       - run: |
           make check-format
       - run: |
