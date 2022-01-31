@@ -51,8 +51,8 @@ jobs:
       # - run: |
       #     make valgrind
       - run: |
+          pip install -r sbin/requirements.txt
           poetry build
       - run: |
-          pip install -r sbin/requirements.txt
           tox -e flowenv
 
