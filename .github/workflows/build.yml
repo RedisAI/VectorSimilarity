@@ -38,7 +38,15 @@ jobs:
           conda info
           conda list
       - run: |
+          make check_format
+      - run: |
           make
       - run: |
           make unit_test
+      - run: |
+          make valgrind
+      - run: |
+          poetry build
+      - run: |
+          tox -e flowenv
 
