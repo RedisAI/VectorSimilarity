@@ -53,6 +53,6 @@ jobs:
       - run: |
           poetry build
       - run: |
-          python3 -m pip install -r sbin/requirements.txt
+          pip install -r sbin/requirements.txt
           tox -e flowenv
 

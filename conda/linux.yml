@@ -1,4 +1,4 @@
-name: vecsim
+name: vecsim_build
 channels:
   - conda-forge
   - defaults
@@ -7,13 +7,14 @@ dependencies:
   - _openmp_mutex=4.5=1_gnu
   - binutils_impl_linux-64=2.36.1=h193b22a_2
   - binutils_linux-64=2.36=hf3e587d_4
-  - bzip2=1.0.8=h7b6447c_0
-  - c-ares=1.18.1=h7f8727e_0
+  - bzip2=1.0.8=h7f98852_4
+  - c-ares=1.18.1=h7f98852_0
   - ca-certificates=2021.10.8=ha878542_0
+  - certifi=2021.10.8=py39hf3d152e_1
   - clang-format=13.0.0=default_hc23dcda_0
   - clang-format-13=13.0.0=default_hc23dcda_0
   - cmake=3.21.3=h8897547_0
-  - expat=2.4.1=h2531618_2
+  - expat=2.4.4=h9c3ff4c_0
   - gcc=11.2.0=h702ea55_4
   - gcc_impl_linux-64=11.2.0=h82a94d6_12
   - gcc_linux-64=11.2.0=h39a9532_4
@@ -21,72 +22,40 @@ dependencies:
   - gxx_impl_linux-64=11.2.0=h82a94d6_12
   - gxx_linux-64=11.2.0=hacbe6df_4
   - kernel-headers_linux-64=2.6.32=he073ed8_15
-  - krb5=1.19.2=hac12032_0
+  - krb5=1.19.2=hcc1bbae_3
   - ld_impl_linux-64=2.36.1=hea4e1c9_2
   - libclang-cpp13=13.0.0=default_hc23dcda_0
-  - libcurl=7.80.0=h0b77cf5_0
-  - libedit=3.1.20210910=h7f8727e_0
-  - libev=4.33=h7f8727e_1
+  - libcurl=7.81.0=h2574ce0_0
+  - libedit=3.1.20191231=he28a2e2_2
+  - libev=4.33=h516909a_1
   - libffi=3.3=he6710b0_2
   - libgcc-devel_linux-64=11.2.0=h0952999_12
   - libgcc-ng=11.2.0=h1d223b6_12
   - libgomp=11.2.0=h1d223b6_12
   - libllvm13=13.0.0=hf817b99_0
-  - libnghttp2=1.46.0=hce63b2e_0
+  - libnghttp2=1.46.0=h812cca2_0
   - libsanitizer=11.2.0=he4da1e4_12
-  - libssh2=1.9.0=h1ba5d50_1
+  - libssh2=1.10.0=ha56f1ee_2
   - libstdcxx-devel_linux-64=11.2.0=h0952999_12
   - libstdcxx-ng=11.2.0=he4da1e4_12
-  - libuv=1.40.0=h7b6447c_0
+  - libuv=1.43.0=h7f98852_0
   - libzlib=1.2.11=h36c2ea0_1013
-  - lz4-c=1.9.3=h295c915_1
+  - lz4-c=1.9.3=h9c3ff4c_1
   - make=4.3=hd18ef5c_1
   - ncurses=6.3=h7f8727e_2
   - openssl=1.1.1l=h7f98852_0
-  - pip=21.2.4=py38h06a4308_0
-  - python=3.8.12=h12debd9_0
-  - python_abi=3.8=2_cp38
+  - pip=21.2.4=py39h06a4308_0
+  - python=3.9.7=h12debd9_1
+  - python_abi=3.9=2_cp39
   - readline=8.1.2=h7f8727e_1
-  - rhash=1.4.1=h3c74f83_1
-  - setuptools=60.6.0=py38h578d9bd_0
+  - rhash=1.4.1=h7f98852_0
+  - setuptools=58.0.4=py39h06a4308_0
   - sqlite=3.37.0=hc218d9a_0
   - sysroot_linux-64=2.12=he073ed8_15
   - tk=8.6.11=h1ccaba5_0
+  - tzdata=2021e=hda174b7_0
   - valgrind=3.18.1=hf817b99_0
   - wheel=0.37.1=pyhd3eb1b0_0
   - xz=5.2.5=h7b6447c_0
   - zlib=1.2.11=h36c2ea0_1013
-  - zstd=1.5.0=ha4553b6_1
-  - pip:
-    - cachecontrol==0.12.10
-    - cachy==0.3.0
-    - certifi==2021.10.8
-    - cffi==1.15.0
-    - charset-normalizer==2.0.10
-    - cleo==0.8.1
-    - clikit==0.6.2
-    - crashtest==0.3.1
-    - cryptography==36.0.1
-    - html5lib==1.1
-    - idna==3.3
-    - jeepney==0.7.1
-    - keyring==21.8.0
-    - lockfile==0.12.2
-    - msgpack==1.0.3
-    - packaging==20.9
-    - pastel==0.2.1
-    - pexpect==4.8.0
-    - pkginfo==1.8.2
-    - poetry==1.1.12
-    - poetry-core==1.0.7
-    - ptyprocess==0.7.0
-    - pycparser==2.21
-    - pylev==1.4.0
-    - requests==2.27.1
-    - requests-toolbelt==0.9.1
-    - secretstorage==3.3.1
-    - shellingham==1.4.0
-    - six==1.16.0
-    - tomlkit==0.8.0
-    - urllib3==1.26.8
-    - webencodings==0.5.1
+  - zstd=1.5.2=ha95c52a_0
