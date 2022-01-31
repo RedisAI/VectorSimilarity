@@ -37,7 +37,7 @@ jobs:
       - run: |
           conda info
           conda list
-      - run:
+      - run: |
           sudo apt-get update
           sudo apt-get install -y libc6-dbg
       - run: |
