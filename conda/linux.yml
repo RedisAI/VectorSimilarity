@@ -45,6 +45,7 @@ dependencies:
   - ncurses=6.3=h9c3ff4c_0
   - openssl=3.0.0=h7f98852_2
   - pip=21.3.1=pyhd8ed1ab_0
+  - pthread-stubs=0.4=h36c2ea0_1001
   - python=3.8.12=hf930737_2_cpython
   - python_abi=3.8=2_cp38
   - readline=8.1=h46c0cb4_0
@@ -91,4 +92,3 @@ dependencies:
     - tomlkit==0.8.0
     - urllib3==1.26.8
     - webencodings==0.5.1
-
