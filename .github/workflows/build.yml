@@ -39,17 +39,17 @@ jobs:
       - run: |
           conda info
           conda list
-      # - run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y libc6-dbg
-      # - run: |
-      #     make check-format
-      # - run: |
-      #     make
-      # - run: |
-      #     make unit_test
-      # - run: |
-      #     make valgrind
+      - run: |
+          make check-format
+      - run: |
+          make
+      - run: |
+          make unit_test
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libc6-dbg
+      - run: |
+          make valgrind
       - run: |
           pip install -r sbin/requirements.txt
           poetry build
