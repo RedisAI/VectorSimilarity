@@ -38,7 +38,7 @@ jobs:
           conda info
           conda list
       - run: |
-          make check_format
+          make check-format
       - run: |
           make
       - run: |
