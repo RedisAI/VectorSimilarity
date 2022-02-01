@@ -29,6 +29,9 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
+      - run: |
+          apt-get update
+          apt-get install git
       - uses: actions/checkout@v2
         with:
           submodules: recursive
@@ -47,8 +50,7 @@ jobs:
       - run: |
           make unit_test
       - run: |
-          sudo apt-get update
-          sudo apt-get install -y libc6-dbg
+          apt-get install -y libc6-dbg
       - run: |
           make valgrind
       - run: |
