@@ -23,7 +23,7 @@ on:
 jobs:
   example-3:
     name: Ex3 Linux
-    runs-on: "ubuntu-latest"
+    container: ubuntu:focal
     defaults:
       run:
         shell: bash -l {0}
