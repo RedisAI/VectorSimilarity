@@ -38,6 +38,7 @@ public:
 
     inline void setMember(size_t index, VectorBlockMember *member) {
         this->members[index] = member;
+        member->index = index;
     }
 
     // Compute the score for every vector in the block by using the given distance function.
