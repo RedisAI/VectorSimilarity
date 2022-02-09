@@ -125,7 +125,6 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     // Swap the last vector with the deleted vector;
     vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
-    lastVectorBlockMember->block = vectorBlock;
 
     float *destination = vectorBlock->getVector(vectorIndex);
     float *origin = lastVectorBlock->removeAndFetchVector();
