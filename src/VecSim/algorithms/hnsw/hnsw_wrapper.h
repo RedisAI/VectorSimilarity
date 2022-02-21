@@ -23,6 +23,7 @@ public:
     virtual VecSimIndexInfo info() override;
     virtual VecSimInfoIterator *infoIterator() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
+    bool applyAdHocSearch(size_t subIndexSize, size_t k) override;
 
     void setEf(size_t ef);
     inline std::shared_ptr<hnswlib::HierarchicalNSW<float>> getHNSWIndex() { return hnsw; }

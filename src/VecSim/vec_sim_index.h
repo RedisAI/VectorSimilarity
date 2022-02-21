@@ -109,4 +109,9 @@ public:
      * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
+
+    /**
+     * @brief
+     */
+    virtual bool applyAdHocSearch(size_t subIndexSize, size_t k) = 0;
 };

@@ -198,3 +198,10 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
 
     return infoIterator;
 }
+
+bool HNSWIndex::applyAdHocSearch(size_t subIndexSize, size_t k) {
+    if ((float)subIndexSize/(float)this->indexSize() < 0.05) {
+        return true;
+    }
+    return false;
+}
