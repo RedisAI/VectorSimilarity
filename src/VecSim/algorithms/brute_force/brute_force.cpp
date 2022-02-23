@@ -281,7 +281,7 @@ bool BruteForceIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
     // This heuristic is based on sklearn decision tree classifier
     size_t index_size = this->indexSize();
     size_t d = this->dim;
-    float r = (float) subIndexSize / index_size;
+    float r = (float) (subIndexSize) / index_size;
     if (index_size <= 5500) return true;
     // node 2
     if (d <= 300) {

@@ -3,6 +3,7 @@
 #include "test_utils.h"
 #include "VecSim/utils/arr_cpp.h"
 #include <cmath>
+#include <random>
 
 class BruteForceTest : public ::testing::Test {
 protected:
@@ -979,29 +980,44 @@ TEST_F(BruteForceTest, brute_get_distance) {
     }
 }
 
-//TEST_F(BruteForceTest, brute_run_ad_hoc) {
-//
-//    for (size_t index_size : {5000, 500000, 1000000}) {
-//        for (size_t dim : {50, 500, 1000}) {
-//            for (float r : {0.1, 0.3, 0.5, 0.7, 0.9}){
-//                // create index and check for the expected output of "prefer ad-hoc"
-//            }
-//        }
-//    }
-//    size_t dim = 4;
-//    VecSimParams params{.algo = VecSimAlgo_BF,
-//            .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                    .dim = dim,
-//                    .metric = VecSimMetric_IP,
-//                    .initialCapacity = 200}};
-//    VecSimIndex *index = VecSimIndex_New(&params);
-//    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-//
-//    float a[dim];
-//    for (size_t i = 0; i < dim; i++) {
-//        a[i] = (float)i;
-//    }
-//    VecSimIndex_AddVector(index, (const void *)a, 1);
-//    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-//    VecSimIndex_Free(index);
-//}
+TEST_F(BruteForceTest, brute_run_ad_hoc) {
+    // Save the expected ratio which is the threshold between ad-hoc and batches mode
+    // for every combination of index size and dim.
+    std::map<std::pair<size_t, size_t>, float> threshold;
+    threshold[{1000, 4}] = threshold[{1000, 80}] = threshold[{1000, 780}] = 1.0;
+    threshold[{6000, 4}] = 0.2;
+    threshold[{6000, 80}] = 0.4;
+    threshold[{6000, 780}] = 0.8;
+    threshold[{600000, 4}] = threshold[{600000, 80}] = 0.2;
+    threshold[{600000, 780}] = 0.8;
+
+    for (size_t index_size : {1000, 6000, 600000}) {
+        for (size_t dim : {4, 80, 780}) {
+            // create index and check for the expected output of "prefer ad-hoc"
+            VecSimParams params{.algo = VecSimAlgo_BF,
+                    .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                            .dim = dim,
+                            .metric = VecSimMetric_IP,
+                            .initialCapacity = index_size}};
+            VecSimIndex *index = VecSimIndex_New(&params);
+            std::mt19937 rng;
+            rng.seed(47);
+            std::vector<float> data(dim);
+            std::uniform_real_distribution<> distrib;
+            for (size_t i = 0; i < dim; ++i) {
+                data[i] = (float)distrib(rng);
+            }
+            for (size_t i = 0; i < index_size; i++) {
+                VecSimIndex_AddVector(index, data.data(), (int)i);
+            }
+            ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
+            for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
+                bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r*index_size), 50);
+                bool expected_res = r < threshold[{index_size, dim}];
+                std::cout << "(size, d, r): " << index_size << "," << dim << "," << r << ":" << res << std::endl;
+                ASSERT_EQ(res, expected_res);
+            }
+            VecSimIndex_Free(index);
+        }
+    }
+}
