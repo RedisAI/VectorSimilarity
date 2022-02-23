@@ -978,3 +978,30 @@ TEST_F(BruteForceTest, brute_get_distance) {
         VecSimIndex_Free(index[i]);
     }
 }
+
+//TEST_F(BruteForceTest, brute_run_ad_hoc) {
+//
+//    for (size_t index_size : {5000, 500000, 1000000}) {
+//        for (size_t dim : {50, 500, 1000}) {
+//            for (float r : {0.1, 0.3, 0.5, 0.7, 0.9}){
+//                // create index and check for the expected output of "prefer ad-hoc"
+//            }
+//        }
+//    }
+//    size_t dim = 4;
+//    VecSimParams params{.algo = VecSimAlgo_BF,
+//            .bfParams = BFParams{.type = VecSimType_FLOAT32,
+//                    .dim = dim,
+//                    .metric = VecSimMetric_IP,
+//                    .initialCapacity = 200}};
+//    VecSimIndex *index = VecSimIndex_New(&params);
+//    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+//
+//    float a[dim];
+//    for (size_t i = 0; i < dim; i++) {
+//        a[i] = (float)i;
+//    }
+//    VecSimIndex_AddVector(index, (const void *)a, 1);
+//    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+//    VecSimIndex_Free(index);
+//}

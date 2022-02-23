@@ -277,7 +277,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }
 
-bool BruteForceIndex::applyAdHocSearch(size_t subIndexSize, size_t k) {
+bool BruteForceIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
     // This heuristic is based on sklearn decision tree classifier
     size_t index_size = this->indexSize();
     size_t d = this->dim;

@@ -123,7 +123,7 @@ VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *que
  * @param subIndexSize the estimated number of vectors in the index that pass the filter
  * (that is, query results can be only from a subset of vector of this size).
  */
-bool VecSimIndex_ApplyAdHocSearch(VecSimIndex *index, size_t subIndexSize, size_t k);
+bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subIndexSize, size_t k);
 
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.

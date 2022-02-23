@@ -113,5 +113,5 @@ public:
     /**
      * @brief
      */
-    virtual bool applyAdHocSearch(size_t subIndexSize, size_t k) = 0;
+    virtual bool preferAdHocSearch(size_t subIndexSize, size_t k) = 0;
 };

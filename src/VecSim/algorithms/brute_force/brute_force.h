@@ -26,7 +26,7 @@ public:
     virtual VecSimIndexInfo info() override;
     virtual VecSimInfoIterator *infoIterator() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
-    bool applyAdHocSearch(size_t subIndexSize, size_t k) override;
+    bool preferAdHocSearch(size_t subIndexSize, size_t k) override;
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }

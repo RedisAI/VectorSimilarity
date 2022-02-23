@@ -199,9 +199,127 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
     return infoIterator;
 }
 
-bool HNSWIndex::applyAdHocSearch(size_t subIndexSize, size_t k) {
-    if ((float)subIndexSize/(float)this->indexSize() < 0.05) {
-        return true;
+bool HNSWIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
+    // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes).
+    size_t index_size = this->indexSize();
+    size_t d = this->dim;
+    size_t M = this->hnsw->getM();
+    float r = (float) subIndexSize / (float)index_size;
+
+    // node 0
+    if (index_size <= 30000) {
+        // node 1
+        if (index_size <= 5500) {
+            // node 5
+            return true;
+        } else {
+            // node 6
+            if (r <= 0.17) {
+                // node 11
+                return true;
+            } else {
+                //node 12
+                if (k <= 12) {
+                    // node 13
+                    if (d <= 55) {
+                        // node 17
+                        return false;
+                    } else {
+                        // node 18
+                        if (M <= 10) {
+                            // node 19
+                            return false;
+                        } else {
+                            // node 20
+                            return true;
+                        }
+                    }
+                } else {
+                    // node 14
+                    return true;
+                }
+            }
+        }
+    } else {
+        // node 2
+         if (r < 0.07) {
+             // node 3
+             if (index_size <= 750000) {
+                 // node 15
+                 return true;
+             } else {
+                 //node 16
+                 if (k <= 7) {
+                     // node 21
+                     return true;
+                 } else {
+                     // node 22
+                     if (r <= 0.03) {
+                         // node 23
+                         return true;
+                     } else {
+                         // node 24
+                         return false;
+                     }
+                 }
+             }
+         } else {
+             // node 4
+             if (d <= 75) {
+                 // node 7
+                 return false;
+             } else {
+                 //node 8
+                 if (k <= 12) {
+                     //node 9
+                     if (r <= 0.21) {
+                         //node 27
+                         if (M <= 57) {
+                             // node 29
+                             if (index_size <= 75000) {
+                                 // node 31
+                                 return true;
+                             } else {
+                                 // node 32
+                                 return false;
+                             }
+                         } else {
+                             // node 30
+                             return true;
+                         }
+                     } else {
+                         // node 28
+                         return false;
+                     }
+                 } else {
+                     //node 10
+                     if (M <= 10) {
+                         //node 25
+                         if (r <= 0.17) {
+                             // node 33
+                             return true;
+                         } else {
+                             // node 34
+                             return false;
+                         }
+                     } else {
+                         // node 26
+                         if (index_size <= 300000) {
+                             // node 35
+                             return true;
+                         } else {
+                             // node 36
+                             if (r <= 0.17) {
+                                 // node 37
+                                 return true;
+                             } else {
+                                 // node 38
+                                 return false;
+                             }
+                         }
+                     }
+                 }
+             }
+         }
     }
-    return false;
 }
