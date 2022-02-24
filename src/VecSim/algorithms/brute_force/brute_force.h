@@ -42,4 +42,6 @@ private:
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;
     DISTFUNC<float> dist_func;
+    // Allow the following test to access the index size private member.
+    friend class BruteForceTest_preferAdHocOptimization_Test;
 };

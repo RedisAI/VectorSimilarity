@@ -204,7 +204,7 @@ bool HNSWIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
     size_t index_size = this->indexSize();
     size_t d = this->dim;
     size_t M = this->hnsw->getM();
-    float r = (float) subIndexSize / (float)index_size;
+    float r = (float)subIndexSize / (float)index_size;
 
     // node 0
     if (index_size <= 30000) {
@@ -251,7 +251,7 @@ bool HNSWIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
                  //node 16
                  if (k <= 7) {
                      // node 21
-                     return true;
+                     return false;
                  } else {
                      // node 22
                      if (r <= 0.03) {

@@ -2,8 +2,8 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 #include <cmath>
-#include <random>
 
 class BruteForceTest : public ::testing::Test {
 protected:
@@ -980,7 +980,7 @@ TEST_F(BruteForceTest, brute_get_distance) {
     }
 }
 
-TEST_F(BruteForceTest, brute_run_ad_hoc) {
+TEST_F(BruteForceTest, preferAdHocOptimization) {
     // Save the expected ratio which is the threshold between ad-hoc and batches mode
     // for every combination of index size and dim.
     std::map<std::pair<size_t, size_t>, float> threshold;
@@ -1000,16 +1000,9 @@ TEST_F(BruteForceTest, brute_run_ad_hoc) {
                             .metric = VecSimMetric_IP,
                             .initialCapacity = index_size}};
             VecSimIndex *index = VecSimIndex_New(&params);
-            std::mt19937 rng;
-            rng.seed(47);
-            std::vector<float> data(dim);
-            std::uniform_real_distribution<> distrib;
-            for (size_t i = 0; i < dim; ++i) {
-                data[i] = (float)distrib(rng);
-            }
-            for (size_t i = 0; i < index_size; i++) {
-                VecSimIndex_AddVector(index, data.data(), (int)i);
-            }
+
+            // Set the index size artificially to be the required one.
+            reinterpret_cast<BruteForceIndex *>(index)->count = index_size;
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
                 bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r*index_size), 50);

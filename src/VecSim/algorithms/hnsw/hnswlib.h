@@ -89,6 +89,8 @@ private:
     DISTFUNC<dist_t> fstdistfunc_;
     void *dist_func_param_;
     friend class HNSWIndexSerializer;
+    // Allow the following test to access the index size private member.
+    friend class HNSWLibTest_preferAdHocOptimization_Test;
 
     HierarchicalNSW() {}                                // default constructor
     HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
