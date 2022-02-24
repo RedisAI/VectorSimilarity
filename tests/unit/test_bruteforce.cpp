@@ -995,19 +995,20 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
         for (size_t dim : {4, 80, 780}) {
             // create index and check for the expected output of "prefer ad-hoc"
             VecSimParams params{.algo = VecSimAlgo_BF,
-                    .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                            .dim = dim,
-                            .metric = VecSimMetric_IP,
-                            .initialCapacity = index_size}};
+                                .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                                     .dim = dim,
+                                                     .metric = VecSimMetric_IP,
+                                                     .initialCapacity = index_size}};
             VecSimIndex *index = VecSimIndex_New(&params);
 
             // Set the index size artificially to be the required one.
             reinterpret_cast<BruteForceIndex *>(index)->count = index_size;
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
-                bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r*index_size), 50);
+                bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50);
                 bool expected_res = r < threshold[{index_size, dim}];
-                std::cout << "(size, d, r): " << index_size << "," << dim << "," << r << ":" << res << std::endl;
+                std::cout << "(size, d, r): " << index_size << "," << dim << "," << r << ":" << res
+                          << std::endl;
                 ASSERT_EQ(res, expected_res);
             }
             VecSimIndex_Free(index);

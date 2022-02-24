@@ -132,8 +132,6 @@ bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subIndexSize, size
  */
 void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
 
-
-
 #ifdef __cplusplus
 }
 #endif

@@ -278,14 +278,16 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
 }
 
 bool BruteForceIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
-    // This heuristic is based on sklearn decision tree classifier
+    // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
+    // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();
     size_t d = this->dim;
-    float r = (float) (subIndexSize) / index_size;
-    if (index_size <= 5500) return true;
+    float r = (float)(subIndexSize) / (float)index_size;
+    if (index_size <= 5500)
+        return true;
     // node 2
     if (d <= 300) {
-        //node 3
+        // node 3
         if (r <= 0.15) {
             // node 5
             return true;
@@ -294,15 +296,15 @@ bool BruteForceIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
             if (r <= 0.35) {
                 // node 9
                 if (d <= 75) {
-                    //node 11
+                    // node 11
                     return false;
                 } else {
-                    //node 12
+                    // node 12
                     if (index_size <= 550000) {
-                        //node 17
+                        // node 17
                         return true;
                     } else {
-                        //node 18
+                        // node 18
                         return false;
                     }
                 }
@@ -312,14 +314,14 @@ bool BruteForceIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
             }
         }
     } else {
-        //node 4
+        // node 4
         if (r <= 0.55) {
-            //node 7
+            // node 7
             return true;
         } else {
-            //node 8
+            // node 8
             if (d <= 750) {
-                //node 13
+                // node 13
                 return false;
             } else {
                 // node 14

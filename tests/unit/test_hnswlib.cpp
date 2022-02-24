@@ -8,16 +8,16 @@
 
 namespace hnswlib {
 
-    class HNSWLibTest : public ::testing::Test {
-    protected:
-        HNSWLibTest() {}
+class HNSWLibTest : public ::testing::Test {
+protected:
+    HNSWLibTest() {}
 
-        ~HNSWLibTest() override {}
+    ~HNSWLibTest() override {}
 
-        void SetUp() override {}
+    void SetUp() override {}
 
-        void TearDown() override {}
-    };
+    void TearDown() override {}
+};
 
 TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
     size_t dim = 4;
@@ -1174,7 +1174,7 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
     combinations[{20, 350000, 100, 20, 0.1}] = true;
     combinations[{20, 350000, 100, 20, 0.2}] = false;
 
-    for (auto& comb: combinations) {
+    for (auto &comb : combinations) {
         auto k = (size_t)comb.first[0];
         auto index_size = (size_t)comb.first[1];
         auto dim = (size_t)comb.first[2];
@@ -1183,21 +1183,21 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
 
         // Create index and check for the expected output of "prefer ad-hoc" heuristics.
         VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .initialCapacity = index_size,
-                        .M = M,
-                        .efConstruction = 1,
-                        .efRuntime = 1}};
+                            .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                     .dim = dim,
+                                                     .metric = VecSimMetric_L2,
+                                                     .initialCapacity = index_size,
+                                                     .M = M,
+                                                     .efConstruction = 1,
+                                                     .efRuntime = 1}};
         VecSimIndex *index = VecSimIndex_New(&params);
 
         // Set the index size artificially to be the required one.
         reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = index_size;
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
-        bool res = VecSimIndex_PreferAdHocSearch(index, (size_t) (r * (float)index_size), k);
-        std::cout << "(size, d, M, k, r): " << index_size << "," << dim << ","
-                  << M << "," << k << "," << r << ":" << res << std::endl;
+        bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k);
+        std::cout << "(size, d, M, k, r): " << index_size << "," << dim << "," << M << "," << k
+                  << "," << r << ":" << res << std::endl;
         ASSERT_EQ(res, comb.second);
         VecSimIndex_Free(index);
     }
