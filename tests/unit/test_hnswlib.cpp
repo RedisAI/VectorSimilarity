@@ -1158,7 +1158,7 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
     combinations[{5, 6000, 5, 5, 0.2}] = false;
     combinations[{5, 6000, 60, 5, 0.5}] = false;
     combinations[{5, 6000, 60, 15, 0.5}] = true;
-    combinations[{5, 6000, 50, 5, 0.5}] = false;
+    combinations[{15, 6000, 50, 5, 0.5}] = true;
     combinations[{5, 700000, 60, 5, 0.05}] = true;
     combinations[{5, 800000, 60, 5, 0.05}] = false;
     combinations[{10, 800000, 60, 5, 0.01}] = true;
@@ -1196,8 +1196,8 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = index_size;
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k);
-        std::cout << "(size, d, M, k, r): " << index_size << "," << dim << "," << M << "," << k
-                  << "," << r << ":" << res << std::endl;
+//        std::cout << "(size, d, M, k, r): " << index_size << "," << dim << "," << M << "," << k
+//                  << "," << r << ":" << res << std::endl;
         ASSERT_EQ(res, comb.second);
         VecSimIndex_Free(index);
     }

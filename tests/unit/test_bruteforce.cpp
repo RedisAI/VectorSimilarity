@@ -984,15 +984,17 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
     // Save the expected ratio which is the threshold between ad-hoc and batches mode
     // for every combination of index size and dim.
     std::map<std::pair<size_t, size_t>, float> threshold;
-    threshold[{1000, 4}] = threshold[{1000, 80}] = threshold[{1000, 780}] = 1.0;
+    threshold[{1000, 4}] = threshold[{1000, 80}] = threshold[{1000, 350}]= threshold[{1000, 780}] = 1.0;
     threshold[{6000, 4}] = 0.2;
     threshold[{6000, 80}] = 0.4;
+    threshold[{6000, 350}] = 0.6;
     threshold[{6000, 780}] = 0.8;
     threshold[{600000, 4}] = threshold[{600000, 80}] = 0.2;
+    threshold[{600000, 350}] = 0.6;
     threshold[{600000, 780}] = 0.8;
 
     for (size_t index_size : {1000, 6000, 600000}) {
-        for (size_t dim : {4, 80, 780}) {
+        for (size_t dim : {4, 80, 350 ,780}) {
             // create index and check for the expected output of "prefer ad-hoc"
             VecSimParams params{.algo = VecSimAlgo_BF,
                                 .bfParams = BFParams{.type = VecSimType_FLOAT32,
