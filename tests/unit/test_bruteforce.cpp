@@ -260,6 +260,50 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     VecSimIndex_Free(index);
 }
 
+TEST_F(BruteForceTest, test_delete_swap_block) {
+    size_t n = 6;
+    size_t k = 5;
+    size_t dim = 2;
+
+    // This test creates 2 vector blocks with size of 3
+    // Insert 6 vectors with ascending ids; The vector blocks will look like
+    // 0 [0, 1, 2]
+    // 1 [3, 4, 5]
+    // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move id 5
+    // from block 1 [3, 4, 5] to vector block 0, so our vector blocks will look like 0 [0, 5, 2] 1
+    // [3, 4]
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 3,
+                                             .blockSize = 3}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i; // i
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Here the shift should happen.
+    VecSimIndex_DeleteVector(index, 1);
+
+    float query[] = {0.0, 0.0};
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        if (index == 0) {
+            ASSERT_EQ(id, index);
+        } else {
+            ASSERT_EQ(id, index + 1);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
+
 TEST_F(BruteForceTest, sanity_rinsert_1280) {
     size_t n = 5;
     size_t d = 1280;
