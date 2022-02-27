@@ -117,6 +117,17 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
 
 /**
+ * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
+ * search over the index instead of using batch iterator.
+ *
+ * @param subsetSize the estimated number of vectors in the index that pass the filter
+ * (that is, query results can be only from a subset of vector of this size).
+ *
+ * @param k the number of required results to return from the query.
+ */
+bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k);
+
+/**
  * @brief Allow 3rd party memory functions to be used for memory management.
  *
  * @param memoryfunctions VecSimMemoryFunctions struct.

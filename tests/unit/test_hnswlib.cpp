@@ -6,7 +6,7 @@
 #include <climits>
 #include <unistd.h>
 
-using namespace hnswlib;
+namespace hnswlib {
 
 class HNSWLibTest : public ::testing::Test {
 protected:
@@ -1148,3 +1148,56 @@ TEST_F(HNSWLibTest, hnsw_get_distance) {
         VecSimIndex_Free(index[i]);
     }
 }
+
+TEST_F(HNSWLibTest, preferAdHocOptimization) {
+    // Save the expected result for every combination that represent a different leaf in the tree.
+    // map: [k, index_size, dim, M, r] -> res
+    std::map<std::vector<float>, bool> combinations;
+    combinations[{5, 1000, 5, 5, 0.5}] = true;
+    combinations[{5, 6000, 5, 5, 0.1}] = true;
+    combinations[{5, 6000, 5, 5, 0.2}] = false;
+    combinations[{5, 6000, 60, 5, 0.5}] = false;
+    combinations[{5, 6000, 60, 15, 0.5}] = true;
+    combinations[{15, 6000, 50, 5, 0.5}] = true;
+    combinations[{5, 700000, 60, 5, 0.05}] = true;
+    combinations[{5, 800000, 60, 5, 0.05}] = false;
+    combinations[{10, 800000, 60, 5, 0.01}] = true;
+    combinations[{10, 800000, 60, 5, 0.05}] = false;
+    combinations[{10, 800000, 60, 5, 0.1}] = false;
+    combinations[{10, 60000, 100, 5, 0.1}] = true;
+    combinations[{10, 80000, 100, 5, 0.1}] = false;
+    combinations[{10, 60000, 100, 60, 0.1}] = true;
+    combinations[{10, 60000, 100, 5, 0.3}] = false;
+    combinations[{20, 60000, 100, 5, 0.1}] = true;
+    combinations[{20, 60000, 100, 5, 0.2}] = false;
+    combinations[{20, 60000, 100, 20, 0.1}] = true;
+    combinations[{20, 350000, 100, 20, 0.1}] = true;
+    combinations[{20, 350000, 100, 20, 0.2}] = false;
+
+    for (auto &comb : combinations) {
+        auto k = (size_t)comb.first[0];
+        auto index_size = (size_t)comb.first[1];
+        auto dim = (size_t)comb.first[2];
+        auto M = (size_t)comb.first[3];
+        auto r = comb.first[4];
+
+        // Create index and check for the expected output of "prefer ad-hoc" heuristics.
+        VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                            .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                     .dim = dim,
+                                                     .metric = VecSimMetric_L2,
+                                                     .initialCapacity = index_size,
+                                                     .M = M,
+                                                     .efConstruction = 1,
+                                                     .efRuntime = 1}};
+        VecSimIndex *index = VecSimIndex_New(&params);
+
+        // Set the index size artificially to be the required one.
+        reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = index_size;
+        ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
+        bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k);
+        ASSERT_EQ(res, comb.second);
+        VecSimIndex_Free(index);
+    }
+}
+} // namespace hnswlib

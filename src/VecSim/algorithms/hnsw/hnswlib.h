@@ -88,7 +88,11 @@ private:
     // callback for computing distance between two points in the underline space.
     DISTFUNC<dist_t> fstdistfunc_;
     void *dist_func_param_;
+#ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
+    // Allow the following test to access the index size private member.
+    friend class HNSWLibTest_preferAdHocOptimization_Test;
+#endif
 
     HierarchicalNSW() {}                                // default constructor
     HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor

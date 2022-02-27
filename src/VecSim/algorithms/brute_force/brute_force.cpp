@@ -276,3 +276,63 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
 }
+
+bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
+    // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
+    // see scripts/BF_batches_clf.py
+    size_t index_size = this->indexSize();
+    size_t d = this->dim;
+    float r = (float)(subsetSize) / (float)index_size;
+    if (index_size <= 5500)
+        return true;
+    // node 2
+    if (d <= 300) {
+        // node 3
+        if (r <= 0.15) {
+            // node 5
+            return true;
+        } else {
+            // node 6
+            if (r <= 0.35) {
+                // node 9
+                if (d <= 75) {
+                    // node 11
+                    return false;
+                } else {
+                    // node 12
+                    if (index_size <= 550000) {
+                        // node 17
+                        return true;
+                    } else {
+                        // node 18
+                        return false;
+                    }
+                }
+            } else {
+                // node 10
+                return false;
+            }
+        }
+    } else {
+        // node 4
+        if (r <= 0.55) {
+            // node 7
+            return true;
+        } else {
+            // node 8
+            if (d <= 750) {
+                // node 13
+                return false;
+            } else {
+                // node 14
+                if (r <= 0.75) {
+                    // node 15
+                    return true;
+                } else {
+                    // node 16
+                    return false;
+                }
+            }
+        }
+    }
+}

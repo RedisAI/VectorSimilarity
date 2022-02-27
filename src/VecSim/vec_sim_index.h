@@ -109,4 +109,15 @@ public:
      * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
+
+    /**
+     * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
+     * search over the index instead of using batch iterator.
+     *
+     * @param subsetSize the estimated number of vectors in the index that pass the filter
+     * (that is, query results can be only from a subset of vector of this size).
+     *
+     * @param k the number of required results to return from the query.
+     */
+    virtual bool preferAdHocSearch(size_t subsetSize, size_t k) = 0;
 };

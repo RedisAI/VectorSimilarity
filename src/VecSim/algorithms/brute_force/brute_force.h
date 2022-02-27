@@ -26,6 +26,8 @@ public:
     virtual VecSimIndexInfo info() override;
     virtual VecSimInfoIterator *infoIterator() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k) override;
+
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
     virtual ~BruteForceIndex();
@@ -40,4 +42,8 @@ private:
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;
     DISTFUNC<float> dist_func;
+#ifdef BUILD_TESTS
+    // Allow the following test to access the index size private member.
+    friend class BruteForceTest_preferAdHocOptimization_Test;
+#endif
 };

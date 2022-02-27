@@ -86,3 +86,7 @@ extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, cons
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
     VecSimAllocator::setMemoryFunctions(memoryfunctions);
 }
+
+extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k) {
+    return index->preferAdHocSearch(subsetSize, k);
+}
