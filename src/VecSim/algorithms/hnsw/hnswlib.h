@@ -1045,7 +1045,7 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
             auto *node_links = (tableint *)(node_ll + 1);
             for (int i = 0; i < links_count; i++) {
                 tableint candidate = node_links[i];
-                if (candidate < 0 || candidate > max_elements_)
+                if (candidate > max_elements_)
                     throw std::runtime_error("candidate error: out of index range");
 
                 dist_t d =
