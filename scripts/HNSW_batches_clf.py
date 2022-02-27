@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn import tree
 '''------------------- batches HNSW -----------------'''
@@ -52,6 +51,16 @@ if __name__ == '__main__':
     # features: (k, index_size, dim, M, r)
     # labels: 1: adhoc better, -1: batches better
     y = []
+
+    # The following labels represent the results for experiments that were held for the following combinations:
+    # k = 5, 50, 500
+    # index_sizes: 1000, 10000, 100000, 1M, 10M
+    # dim: 10, 100, 1000 (except for size=1M or 10M with dim==100,1000)
+    # M: 4, 16, 64
+    # ratio: 0.02-0.2 with steps of 0.02
+    X_1 = np.array([[5*k, 10**i, 10**j, 4**m, 2*l/100] for k in range(1, 4) for i in range(3, 8)
+                    for j in range(1, 4) for m in range(1, 4) for l in range(1, 21)
+                    if i+j <= 8 and not (i == 6 and j == 2)])
     # (5, 1000, 10, [4,16,64], [0.02-0.2])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
@@ -185,6 +194,13 @@ if __name__ == '__main__':
     y.extend([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
     y.extend([1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
 
+    # The following labels represent the results for experiments that were held for the following combinations:
+    # k = 5, 50, 500
+    # index_sizes: 1M
+    # dim: 100
+    # M: 50
+    # ratio: 0.02-0.2 with steps of 0.02
+    X_2 = np.array([[5*k, 1e6, 100, 50, 2*l/100] for k in range(1, 4) for l in range(1, 11)])
     # (5, 1M, 100, 50, [0.02-0.2])
     y.extend([1, 1, -1, -1, -1, -1, -1, -1, -1, -1])
     # (50, 1M, 100, 50, [0.02-0.2])
@@ -192,6 +208,15 @@ if __name__ == '__main__':
     # (500, 1M, 100, 50, [0.02-0.2])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1, -1, -1])
 
+    # The following labels represent the results for experiments that were held for the following combinations:
+    # k = 5, 50, 500
+    # index_sizes: 50000, 500000, 5M
+    # dim: 5, 50, 500 (except for size=5M with dim=500)
+    # M: 24, 48
+    # ratio: 0.05-0.5 with steps of 0.05
+    X_3 = np.array([[5*k, 5*10**i, 5*10**j, m, 5*l/100] for i in range(4, 7) for j in range(3)
+                    for m in [24, 48] for k in range(1, 4) for l in range(1, 11)
+                    if i+j < 8])
     # ([5,50,500], 50k, 5, 24, [0.05-0.5])
     y.extend([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
     y.extend([1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
@@ -257,6 +282,15 @@ if __name__ == '__main__':
     y.extend([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
     y.extend([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1])
 
+    # The following labels represent the results for experiments that were held for the following combinations:
+    # k = 5, 50, 500
+    # index_sizes: 500000, 5M
+    # dim: 5, 50, 500 (except for size=5M with dim=500)
+    # M: 24, 48
+    # ratio: 0.002-0.02 with steps of 0.002
+    X_4 = np.array([[5*k, 5*10**i, 5*10**j, m, 2*l/1000] for i in range(5, 7) for j in range(3)
+                    for m in [24, 48] for k in range(1, 4) for l in range(1, 11)
+                    if i+j < 8])
     # ([5,50,500], 0.5M, 5, 24, [0.002-0.02])
     y.extend([1, 1, 1, 1, 1, -1, -1, -1, -1, -1])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
@@ -298,23 +332,10 @@ if __name__ == '__main__':
     y.extend([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
 
-    X_1 = np.array([[5*k, 10**i, 10**j, 4**m, 2*l/100] for k in range(1, 4) for i in range(3, 8)
-                    for j in range(1, 4) for m in range(1, 4) for l in range(1, 21)
-                    if i+j <= 8 and not (i == 6 and j == 2)])
-
-    X_2 = np.array([[5*k, 1e6, 100, 50, 2*l/100] for k in range(1, 4) for l in range(1, 11)])
-
-    X_3 = np.array([[5*k, 5*10**i, 5*10**j, m, 5*l/100] for i in range(4, 7) for j in range(3)
-                    for m in [24, 48] for k in range(1, 4) for l in range(1, 11)
-                    if i+j < 8])
-
-    X_4 = np.array([[5*k, 5*10**i, 5*10**j, m, 2*l/1000] for i in range(5, 7) for j in range(3)
-                    for m in [24, 48] for k in range(1, 4) for l in range(1, 11)
-                    if i+j < 8])
-
+    # The total train set is the concatenation of the 4 combinations sets above.
     X = np.concatenate((X_1, X_2, X_3, X_4))
     clf = clf.fit(X, y)
-    print_tree(clf)
 
+    print_tree(clf)
     # (k, index_size, dim, M, r)
-    print(clf.predict([[5, 800000, 100, 50, 0.05]]))
+    print(clf.predict([[10, 800000, 100, 50, 0.0001]]))

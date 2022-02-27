@@ -199,13 +199,13 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
     return infoIterator;
 }
 
-bool HNSWIndex::preferAdHocSearch(size_t subIndexSize, size_t k) {
+bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();
     size_t d = this->dim;
     size_t M = this->hnsw->getM();
-    float r = (float)subIndexSize / (float)index_size;
+    float r = (float)subsetSize / (float)index_size;
 
     // node 0
     if (index_size <= 30000) {

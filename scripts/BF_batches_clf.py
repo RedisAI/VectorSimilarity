@@ -49,44 +49,53 @@ if __name__ == '__main__':
     clf = DecisionTreeClassifier(max_leaf_nodes=10)
     # features: (index_size, dim, r)
     # labels: 1: adhoc better, -1: batches better
-    y=[]
-    # [1000, [10,100,1000], 0.1-1.0]
+    y = []
+
+    # The following labels represent the results for experiments that were held for the following combinations:
+    # index_sizes: 1000, 10000, 100000, 1M, 10M
+    # dim: 10, 100, 1000 (except for size=10M with dim=1000)
+    # ratio: 0.1-0.8 with steps of 0.1
+    X_1 = np.array([[10**i, 10**j, l/10] for i in range(3, 8) for j in range(1, 4) for l in range(1, 9) if not (i == 7 and j == 3)])
+    # (1000, [10,100,1000], 0.1-0.8)
     y.extend([1, 1, 1, 1, 1, 1, 1, 1])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1])
     y.extend([1, 1, 1, 1, 1, 1, 1, 1])
-    # [10000, [10,100,1000], 0.1-1.0]
+    # (10000, [10,100,1000], 0.1-0.8)
     y.extend([1, -1, 1, -1, -1, -1, -1, -1])
     y.extend([1, 1, 1, -1, -1, -1, -1, -1])
     y.extend([1, 1, 1, 1, 1, 1, 1, -1])
-    # [100000, [10,100,1000], 0.1-1.0]
+    # (100000, [10,100,1000], 0.1-0.8)
     y.extend([1, -1, -1, -1, -1, -1, -1, -1])
     y.extend([1, 1, 1, -1, -1, -1, -1, -1])
     y.extend([1, 1, 1, 1, 1, 1, 1, -1])
-    # [1M, [10,100,1000], 0.1-1.0]
+    # (1M, [10,100,1000], 0.1-0.8)
     y.extend([1, -1, -1, -1, -1, -1, -1, -1])
     y.extend([1, 1, -1, -1, -1, -1, -1, -1])
     y.extend([1, 1, 1, 1, 1, 1, -1, -1])
-    # [10M, [10,100], 0.1-1.0]
+    # (10M, [10,100], 0.1-0.8)
     y.extend([1, -1, -1, -1, -1, -1, -1, -1])
     y.extend([1, 1, -1, -1, -1, -1, -1, -1])
 
-    # [50000, [5,50,500], 0.1-1.0]
-    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
-    y.extend([1, 1, -1, -1, -1, -1, -1, -1])
-    y.extend([1, 1, 1, 1, 1, -1, -1, -1])
-    # [500000, [5,50,500], 0.1-1.0]
-    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
-    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
-    y.extend([1, 1, 1, 1, 1, -1, -1, -1])
-    # [5M, [5,50,500], 0.1-1.0]
-    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
-    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
-    y.extend([1, 1, 1, 1, 1, -1, -1, -1])
-
-    X_1 = np.array([[10**i, 10**j, l/10] for i in range(3, 8) for j in range(1, 4) for l in range(1, 9) if not (i == 7 and j == 3)])
+    # The following labels represent the results for experiments that were held for the following combinations:
+    # index_sizes: 50000, 500000, 5M
+    # dim: 5, 50, 500
     X_2 = np.array([[5*(10**i), 5*(10**j), l/10] for i in range(4, 7) for j in range(3) for l in range(1, 9)])
-    X = np.concatenate((X_1, X_2))
+    # (50000, [5,50,500], 0.1-0.8)
+    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
+    y.extend([1, 1, -1, -1, -1, -1, -1, -1])
+    y.extend([1, 1, 1, 1, 1, -1, -1, -1])
+    # (500000, [5,50,500], 0.1-0.8)
+    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
+    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
+    y.extend([1, 1, 1, 1, 1, -1, -1, -1])
+    # (5M, [5,50,500], 0.1-0.8)
+    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
+    y.extend([1, -1, -1, -1, -1, -1, -1, -1])
+    y.extend([1, 1, 1, 1, 1, -1, -1, -1])
 
+    # The total train set is the concatenation of the two combinations sets above.
+    X = np.concatenate((X_1, X_2))
     clf = clf.fit(X, y)
+
     print_tree(clf)
     print(clf.predict([[5e5, 600, 0.6]]))

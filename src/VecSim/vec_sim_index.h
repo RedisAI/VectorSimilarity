@@ -114,10 +114,10 @@ public:
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
      * search over the index instead of using batch iterator.
      *
-     * @param subIndexSize the estimated number of vectors in the index that pass the filter
+     * @param subsetSize the estimated number of vectors in the index that pass the filter
      * (that is, query results can be only from a subset of vector of this size).
      *
      * @param k the number of required results to return from the query.
      */
-    virtual bool preferAdHocSearch(size_t subIndexSize, size_t k) = 0;
+    virtual bool preferAdHocSearch(size_t subsetSize, size_t k) = 0;
 };

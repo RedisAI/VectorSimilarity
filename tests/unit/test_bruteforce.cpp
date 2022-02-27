@@ -1009,9 +1009,10 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
                 bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50);
+                // If r is below the threshold for this specific configuration of (index_size, dim),
+                // expect that result will be ad-hoc (i.e., true), and otherwise, batches (i.e.,
+                // false)
                 bool expected_res = r < threshold[{index_size, dim}];
-                std::cout << "(size, d, r): " << index_size << "," << dim << "," << r << ":" << res
-                          << std::endl;
                 ASSERT_EQ(res, expected_res);
             }
             VecSimIndex_Free(index);

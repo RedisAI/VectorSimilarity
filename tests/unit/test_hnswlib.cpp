@@ -1196,9 +1196,6 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = index_size;
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k);
-        //        std::cout << "(size, d, M, k, r): " << index_size << "," << dim << "," << M << ","
-        //        << k
-        //                  << "," << r << ":" << res << std::endl;
         ASSERT_EQ(res, comb.second);
         VecSimIndex_Free(index);
     }
