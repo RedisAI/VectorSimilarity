@@ -1019,3 +1019,4 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
         }
     }
 }
+
