@@ -28,7 +28,7 @@ classifiers = [
 python = "^3.7"
 
 [tool.poetry.dev-dependencies]
-numpy = "1.21"
+numpy = "1.19.1"
 tox = "^3.24.1"
 tox-poetry = "^0.4.0"
 hnswlib = "^0.5.2"
