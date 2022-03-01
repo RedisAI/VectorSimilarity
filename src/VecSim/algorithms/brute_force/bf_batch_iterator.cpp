@@ -25,6 +25,36 @@ VecSimQueryResult *BF_BatchIterator::searchByHeuristics(size_t n_res,
     return res;
 }
 
+void BF_BatchIterator::swapScores(const unordered_map<size_t, size_t> &TopCandidatesIndices,
+                                  size_t res_num) {
+    // Create a set of the indices in the scores array for every results that we return.
+    set<size_t> indices;
+    for (auto pos : TopCandidatesIndices) {
+        indices.insert(pos.second);
+    }
+    // Get the first valid position in the next iteration.
+    size_t next_scores_valid_start_pos = this->scores_valid_start_pos + res_num;
+    // Get the first index of a results in this iteration which is greater or equal to
+    // next_scores_valid_start_pos.
+    auto reuse_index_it = indices.lower_bound(next_scores_valid_start_pos);
+    auto it = indices.begin();
+    size_t ind = this->scores_valid_start_pos;
+    // Swap elements which are in the first res_num positions in the scores array, and place them
+    // in indices of results that we return now (reuse these indices).
+    while (ind < next_scores_valid_start_pos) {
+        // don't swap if there is a result in one of the heading indices which will be invalid from
+        // next iteration.
+        if (*it == ind) {
+            it++;
+        } else {
+            this->scores[*reuse_index_it] = this->scores[ind];
+            reuse_index_it++;
+        }
+        ind++;
+    }
+    this->scores_valid_start_pos = next_scores_valid_start_pos;
+}
+
 VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
     float upperBound = std::numeric_limits<float>::lowest();
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
@@ -49,16 +79,14 @@ VecSimQueryResult *BF_BatchIterator::heapBasedSearch(size_t n_res) {
         }
     }
 
+    // Save the top results to return.
     auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
         VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
-        // Move the first valid entry in the scores array to the current vector position,
-        // and advance the scores array's head (for next iterations).
-        this->scores[TopCandidatesIndices[TopCandidates.top().second]] =
-            this->scores[this->scores_valid_start_pos++];
         TopCandidates.pop();
     }
+    swapScores(TopCandidatesIndices, array_len(results));
     return results;
 }
 
