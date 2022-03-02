@@ -1239,5 +1239,6 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         EXPECT_EQ(err.what(),
                   std::string("internal error: subset size cannot be larger than index size"));
     }
+    VecSimIndex_Free(index);
 }
 } // namespace hnswlib

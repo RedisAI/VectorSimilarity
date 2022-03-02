@@ -1058,6 +1058,7 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
         EXPECT_EQ(err.what(),
                   std::string("internal error: subset size cannot be larger than index size"));
     }
+    VecSimIndex_Free(index);
 }
 
 TEST_F(BruteForceTest, batchIteratorSwapIndices) {
