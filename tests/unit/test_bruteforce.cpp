@@ -439,7 +439,8 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
 
     // Perform (or simulate) Search in 3 modes.
     VecSimIndex_AddVector(index, v, 0);
-    VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+    auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+    VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.bfInfo.last_mode);

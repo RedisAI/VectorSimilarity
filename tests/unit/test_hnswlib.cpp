@@ -393,7 +393,8 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
 
     // Perform (or simulate) Search in 3 modes.
     VecSimIndex_AddVector(index, v, 0);
-    VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+    auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+    VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
