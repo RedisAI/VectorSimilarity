@@ -34,6 +34,7 @@ const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
+const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
 
 int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
@@ -103,6 +104,21 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
         return "IP";
     case VecSimMetric_L2:
         return "L2";
+    default:
+        return NULL;
+    }
+}
+
+const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
+    switch (vecsimSearchMode) {
+    case EMPTY_MODE:
+        return "EMPTY_MODE";
+    case STANDARD_KNN:
+        return "STANDARD_KNN";
+    case HYBRID_ADHOC_BF:
+        return "HYBRID_ADHOC_BF";
+    case HYBRID_BATCHES:
+        return "HYBRID_BATCHES";
     default:
         return NULL;
     }
