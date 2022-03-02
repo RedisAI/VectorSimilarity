@@ -93,36 +93,51 @@ typedef struct {
 } VecSimQueryParams;
 
 /**
+ * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
+ *
+ */
+typedef enum {
+    EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
+    STANDARD_KNN,    // Run k-nn query over the entire vector index.
+    HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
+                     // and take the top k results.
+    HYBRID_BATCHES   // Get the top vector results in batches upon demand, and keep the results that
+                     // passes the filters until we reach k results.
+} VecSearchMode;
+
+/**
  * @brief Index information. Mainly used for debug/testing.
  *
  */
 typedef struct {
     union {
         struct {
-            size_t indexSize;      // Current count of vectors.
-            size_t M;              // Number of allowed edges per node in graph.
-            size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
-            size_t max_level;      // Number of graph levels.
-            size_t entrypoint;     // Entrypoint vector label.
-            VecSimMetric metric;   // Index distance metric
-            uint64_t memory;       // Index memory consumption.
-            VecSimType type;       // Datatype the index holds.
-            size_t dim;            // Vector size (dimension).
+            size_t indexSize;        // Current count of vectors.
+            size_t M;                // Number of allowed edges per node in graph.
+            size_t efConstruction;   // EF parameter for HNSW graph accuracy/latency for indexing.
+            size_t efRuntime;        // EF parameter for HNSW graph accuracy/latency for search.
+            size_t max_level;        // Number of graph levels.
+            size_t entrypoint;       // Entrypoint vector label.
+            VecSimMetric metric;     // Index distance metric
+            uint64_t memory;         // Index memory consumption.
+            VecSimType type;         // Datatype the index holds.
+            size_t dim;              // Vector size (dimension).
+            VecSearchMode last_mode; // The mode in which the last query ran.
         } hnswInfo;
         struct {
-            size_t indexSize;    // Current count of vectors.
-            size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
-            VecSimMetric metric; // Index distance metric
-            uint64_t memory;     // Index memory consumption.
-            VecSimType type;     // Datatype the index holds.
-            size_t dim;          // Vector size (dimension).
+            size_t indexSize;        // Current count of vectors.
+            size_t blockSize;        // Brute force algorithm vector block (mini matrix) size
+            VecSimMetric metric;     // Index distance metric
+            uint64_t memory;         // Index memory consumption.
+            VecSimType type;         // Datatype the index holds.
+            size_t dim;              // Vector size (dimension).
+            VecSearchMode last_mode; // The mode in which the last query ran.
         } bfInfo;
     };
     VecSimAlgo algo; // Algorithm being used.
 } VecSimIndexInfo;
 
-// Memory function declerations.
+// Memory function declarations.
 typedef void *(*allocFn)(size_t n);
 typedef void *(*callocFn)(size_t nelem, size_t elemsz);
 typedef void *(*reallocFn)(void *p, size_t n);

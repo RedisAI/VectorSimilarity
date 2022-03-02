@@ -42,8 +42,10 @@ private:
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;
     DISTFUNC<float> dist_func;
+    VecSearchMode last_mode;
 #ifdef BUILD_TESTS
-    // Allow the following test to access the index size private member.
+    // Allow the following tests to access the index size private member.
     friend class BruteForceTest_preferAdHocOptimization_Test;
+    friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
 #endif
 };

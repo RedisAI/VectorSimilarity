@@ -391,6 +391,31 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    // Perform (or simulate) Search in 3 modes.
+    VecSimIndex_AddVector(index, v, 0);
+    VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
+    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = 1e6;
+    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
     VecSimIndex_Free(index);
 }
 
@@ -1198,6 +1223,21 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k);
         ASSERT_EQ(res, comb.second);
         VecSimIndex_Free(index);
+    }
+    // Corner cases - empty index.
+    VecSimParams params{
+        .algo = VecSimAlgo_HNSWLIB,
+        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50));
+
+    // Corner cases - subset size is greater than index size.
+    try {
+        VecSimIndex_PreferAdHocSearch(index, 1, 50);
+        FAIL() << "Expected std::runtime error";
+    } catch (std::runtime_error const &err) {
+        EXPECT_EQ(err.what(),
+                  std::string("internal error: subset size cannot be larger than index size"));
     }
 }
 } // namespace hnswlib

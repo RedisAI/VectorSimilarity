@@ -24,7 +24,8 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
                       new (allocator) InnerProductSpace(params->dim, allocator))),
       hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(
           space.get(), params->initialCapacity, allocator, params->M ? params->M : HNSW_DEFAULT_M,
-          params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)) {
+          params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
+      last_mode(EMPTY_MODE) {
     hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
 }
 
@@ -99,6 +100,7 @@ void HNSWIndex::setEf(size_t ef) { this->hnsw->setEf(ef); }
 VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                                             VecSimQueryParams *queryParams) {
     try {
+        this->last_mode = STANDARD_KNN;
         float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
@@ -145,6 +147,7 @@ VecSimIndexInfo HNSWIndex::info() {
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();
+    info.hnswInfo.last_mode = this->last_mode;
     return info;
 }
 
@@ -155,7 +158,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
 VecSimInfoIterator *HNSWIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed;
-    size_t numberOfInfoFields = 11;
+    size_t numberOfInfoFields = 12;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
@@ -195,6 +198,10 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
                                                 .fieldType = INFOFIELD_UINT64,
                                                 .uintegerValue = info.hnswInfo.memory});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)});
 
     return infoIterator;
 }
@@ -203,41 +210,45 @@ bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();
+    if (subsetSize > index_size) {
+        throw std::runtime_error("internal error: subset size cannot be larger than index size");
+    }
     size_t d = this->dim;
     size_t M = this->hnsw->getM();
-    float r = (float)subsetSize / (float)index_size;
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    bool res;
 
     // node 0
     if (index_size <= 30000) {
         // node 1
         if (index_size <= 5500) {
             // node 5
-            return true;
+            res = true;
         } else {
             // node 6
             if (r <= 0.17) {
                 // node 11
-                return true;
+                res = true;
             } else {
                 // node 12
                 if (k <= 12) {
                     // node 13
                     if (d <= 55) {
                         // node 17
-                        return false;
+                        res = false;
                     } else {
                         // node 18
                         if (M <= 10) {
                             // node 19
-                            return false;
+                            res = false;
                         } else {
                             // node 20
-                            return true;
+                            res = true;
                         }
                     }
                 } else {
                     // node 14
-                    return true;
+                    res = true;
                 }
             }
         }
@@ -247,20 +258,20 @@ bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
             // node 3
             if (index_size <= 750000) {
                 // node 15
-                return true;
+                res = true;
             } else {
                 // node 16
                 if (k <= 7) {
                     // node 21
-                    return false;
+                    res = false;
                 } else {
                     // node 22
                     if (r <= 0.03) {
                         // node 23
-                        return true;
+                        res = true;
                     } else {
                         // node 24
-                        return false;
+                        res = false;
                     }
                 }
             }
@@ -268,7 +279,7 @@ bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
             // node 4
             if (d <= 75) {
                 // node 7
-                return false;
+                res = false;
             } else {
                 // node 8
                 if (k <= 12) {
@@ -279,18 +290,18 @@ bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
                             // node 29
                             if (index_size <= 75000) {
                                 // node 31
-                                return true;
+                                res = true;
                             } else {
                                 // node 32
-                                return false;
+                                res = false;
                             }
                         } else {
                             // node 30
-                            return true;
+                            res = true;
                         }
                     } else {
                         // node 28
-                        return false;
+                        res = false;
                     }
                 } else {
                     // node 10
@@ -298,24 +309,24 @@ bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
                         // node 25
                         if (r <= 0.17) {
                             // node 33
-                            return true;
+                            res = true;
                         } else {
                             // node 34
-                            return false;
+                            res = false;
                         }
                     } else {
                         // node 26
                         if (index_size <= 300000) {
                             // node 35
-                            return true;
+                            res = true;
                         } else {
                             // node 36
                             if (r <= 0.17) {
                                 // node 37
-                                return true;
+                                res = true;
                             } else {
                                 // node 38
-                                return false;
+                                res = false;
                             }
                         }
                     }
@@ -323,4 +334,6 @@ bool HNSWIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
             }
         }
     }
+    this->last_mode = res ? HYBRID_ADHOC_BF : HYBRID_BATCHES;
+    return res;
 }
