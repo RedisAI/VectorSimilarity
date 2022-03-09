@@ -71,7 +71,8 @@ double VecSimIndex_GetDistanceFrom_withFlag(VecSimIndex *index, size_t id, const
                                             bool normalize);
 
 /**
- * @brief Normalize the vector in "source" if needed by the index space, and puting the result in "dest"
+ * @brief Normalize the vector in "source" if needed by the index space, and puting the result in
+ * "dest"
  * @param index for reference to know if we need to normalize the vector.
  * @param source the original vector.
  * @param dest the address for the ready vector.

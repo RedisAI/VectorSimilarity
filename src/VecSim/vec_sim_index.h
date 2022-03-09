@@ -68,7 +68,8 @@ public:
     virtual double getDistanceFrom(size_t id, const void *blob, bool normalize) = 0;
 
     /**
-     * @brief Normalize the vector in "source" if needed by the index space, and puting the result in "dest"
+     * @brief Normalize the vector in "source" if needed by the index space, and puting the result
+     * in "dest"
      * @param source the original vector.
      * @param dest the address for the ready vector.
      */
