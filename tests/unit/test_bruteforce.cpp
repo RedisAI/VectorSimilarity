@@ -1003,6 +1003,7 @@ TEST_F(BruteForceTest, brute_get_distance) {
     ASSERT_TRUE(std::isnan(dist));
 
     // Clean-up.
+    free(normal);
     for (size_t i = 0; i < numIndex; i++) {
         VecSimIndex_Free(index[i]);
     }
