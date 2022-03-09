@@ -45,6 +45,13 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
 extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob) {
     return index->getDistanceFrom(id, blob);
 }
+extern "C" double VecSimIndex_GetDistanceFrom_withFlag(VecSimIndex *index, size_t id,
+                                                       const void *blob, bool normalize) {
+    return index->getDistanceFrom(id, blob, normalize);
+}
+extern "C" void VecSimIndex_PrepareVector(VecSimIndex *index, const void *source, void *dest) {
+    index->prepareVector(source, dest);
+}
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 

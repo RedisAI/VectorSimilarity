@@ -150,6 +150,9 @@ int BruteForceIndex::deleteVector(size_t label) {
 }
 
 double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
+    return BruteForceIndex::getDistanceFrom(label, vector_data, true);
+}
+double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data, bool normalize) {
     auto optionalId = this->labelToIdLookup.find(label);
     if (optionalId == this->labelToIdLookup.end()) {
         return INVALID_SCORE;
@@ -157,7 +160,7 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     idType id = optionalId->second;
     VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
     float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
+    if (this->metric == VecSimMetric_Cosine && normalize) {
         // TODO: need more generic
         memcpy(normalized_blob, vector_data, this->dim * sizeof(float));
         float_vector_normalize(normalized_blob, this->dim);
@@ -165,6 +168,13 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     }
     return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
                            &this->dim);
+}
+void BruteForceIndex::prepareVector(const void *source, void *dest) {
+    // TODO: need more generic
+    memcpy(dest, source, this->dim * sizeof(float));
+    if (this->metric == VecSimMetric_Cosine) {
+        float_vector_normalize((float *)dest, this->dim);
+    }
 }
 
 size_t BruteForceIndex::indexSize() const { return this->count; }

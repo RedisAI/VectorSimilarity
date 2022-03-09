@@ -54,6 +54,27 @@ public:
     virtual double getDistanceFrom(size_t id, const void *blob) = 0;
 
     /**
+     * @brief Calculate the distance of a vector from an index to a vector.
+     * @param index the index from which the first vector is located, and that defines the distance
+     * metric.
+     * @param id the id of the vector in the index.
+     * @param blob binary representation of the second vector. Blob size should match the index data
+     * type and dimension.
+     * @param normalize flag for skipping normalization. useful when you intend to use this function
+     * many times, and your blob is already normalized.
+     * @return The distance (according to the index's distance metric) between `blob` and the vector
+     * with id `id`.
+     */
+    virtual double getDistanceFrom(size_t id, const void *blob, bool normalize) = 0;
+
+    /**
+     * @brief Normalize the vector in "source" if needed by the index space, and puting the result in "dest"
+     * @param source the original vector.
+     * @param dest the address for the ready vector.
+     */
+    virtual void prepareVector(const void *source, void *dest) = 0;
+
+    /**
      * @brief Return the number of vectors in the index using irs SizeFn.
      *
      * @return index size.

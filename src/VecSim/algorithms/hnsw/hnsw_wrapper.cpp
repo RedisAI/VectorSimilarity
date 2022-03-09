@@ -83,7 +83,10 @@ VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum
 }
 
 double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
-    if (this->metric == VecSimMetric_Cosine) {
+    return HNSWIndex::getDistanceFrom(label, vector_data, true);
+}
+double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data, bool normalize) {
+    if (this->metric == VecSimMetric_Cosine && normalize) {
         // TODO: need more generic
         float normalized_data[this->dim];
         memcpy(normalized_data, vector_data, this->dim * sizeof(float));
@@ -91,6 +94,13 @@ double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
         return this->hnsw->getDistanceByLabelFromPoint(label, normalized_data);
     }
     return this->hnsw->getDistanceByLabelFromPoint(label, vector_data);
+}
+void HNSWIndex::prepareVector(const void *source, void *dest) {
+    // TODO: need more generic
+    memcpy(dest, source, this->dim * sizeof(float));
+    if (this->metric == VecSimMetric_Cosine) {
+        float_vector_normalize((float *)dest, this->dim);
+    }
 }
 
 size_t HNSWIndex::indexSize() const { return this->hnsw->getIndexSize(); }
