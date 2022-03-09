@@ -995,7 +995,7 @@ TEST_F(BruteForceTest, brute_get_distance) {
     }
 
     // Bad values
-    void *normal = new float[dim];
+    float *normal = new float[dim];
     VecSimIndex_PrepareVector(index[VecSimMetric_Cosine], query, normal);
     dist = VecSimIndex_GetDistanceFrom_withFlag(index[VecSimMetric_Cosine], 0, normal, false);
     ASSERT_TRUE(std::isnan(dist));
@@ -1003,7 +1003,7 @@ TEST_F(BruteForceTest, brute_get_distance) {
     ASSERT_TRUE(std::isnan(dist));
 
     // Clean-up.
-    delete normal;
+    delete[] normal;
     for (size_t i = 0; i < numIndex; i++) {
         VecSimIndex_Free(index[i]);
     }
