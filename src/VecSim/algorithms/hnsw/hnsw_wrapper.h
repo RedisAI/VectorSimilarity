@@ -20,7 +20,7 @@ public:
                                             VecSimQueryParams *qparams) override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    virtual VecSimIndexInfo info() override;
+    virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k) override;

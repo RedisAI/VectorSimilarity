@@ -131,7 +131,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
     }
 }
 
-VecSimIndexInfo HNSWIndex::info() {
+VecSimIndexInfo HNSWIndex::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;

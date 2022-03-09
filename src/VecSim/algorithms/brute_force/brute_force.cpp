@@ -227,7 +227,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     return results;
 }
 
-VecSimIndexInfo BruteForceIndex::info() {
+VecSimIndexInfo BruteForceIndex::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
