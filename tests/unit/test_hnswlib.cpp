@@ -1159,12 +1159,14 @@ TEST_F(HNSWLibTest, hnsw_get_distance) {
     // VecSimMetric_Cosine
     distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
     for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
+        dist = VecSimIndex_GetDistanceFrom_withFlag(index[VecSimMetric_Cosine], i + 1, query, true);
         ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // Bad values
-    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, query);
+    void *normal = new float[dim];
+    VecSimIndex_PrepareVector(index[VecSimMetric_Cosine], query, normal);
+    dist = VecSimIndex_GetDistanceFrom_withFlag(index[VecSimMetric_Cosine], 0, normal, false);
     ASSERT_TRUE(std::isnan(dist));
     dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], 46, query);
     ASSERT_TRUE(std::isnan(dist));
