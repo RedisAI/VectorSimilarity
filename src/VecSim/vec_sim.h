@@ -56,7 +56,7 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob);
 
 /**
- * @brief normalize the vector blob.
+ * @brief normalize the vector blob in place.
  * @param blob binary representation of a vector. Blob size should match the specified type and
  * dimension.
  * @param dim vector dimension.
