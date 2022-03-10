@@ -971,6 +971,10 @@ TEST_F(BruteForceTest, brute_get_distance) {
     }
 
     void *query = v1;
+    void *norm = v2;                                 // {e, e}
+    VecSim_Normalize(norm, dim, VecSimType_FLOAT32); // now {1/sqrt(2), 1/sqrt(2)}
+    ASSERT_FLOAT_EQ(((float *)norm)[0], 1.0f / sqrt(2.0f));
+    ASSERT_FLOAT_EQ(((float *)norm)[1], 1.0f / sqrt(2.0f));
     double dist;
 
     // VecSimMetric_L2
@@ -990,12 +994,12 @@ TEST_F(BruteForceTest, brute_get_distance) {
     // VecSimMetric_Cosine
     distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
     for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, query);
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, norm);
         ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // Bad values
-    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, query);
+    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, norm);
     ASSERT_TRUE(std::isnan(dist));
     dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], 46, query);
     ASSERT_TRUE(std::isnan(dist));
