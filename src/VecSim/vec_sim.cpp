@@ -80,24 +80,6 @@ extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
-    auto index_info = index->info();
-    size_t dim = 0; // initialize to 0, so that normalized_data array will not take space on stack.
-    bool normalization_required  = false;
-    if (index_info.algo == VecSimAlgo_HNSWLIB && index_info.hnswInfo.metric == VecSimMetric_Cosine) {
-        dim = index_info.hnswInfo.dim;
-        normalization_required = true;
-    }
-    if (index_info.algo == VecSimAlgo_BF && index_info.bfInfo.metric == VecSimMetric_Cosine) {
-        dim = index_info.bfInfo.dim;
-        normalization_required = true;
-    }
-    // If metric is cosine, normalize the vector and set the blob to it.
-    float normalized_data[dim];
-    if (normalization_required) {
-        memcpy(normalized_data, queryBlob, dim * sizeof(float));
-        float_vector_normalize(normalized_data, dim);
-        queryBlob = normalized_data;
-    }
     return index->newBatchIterator(queryBlob);
 }
 

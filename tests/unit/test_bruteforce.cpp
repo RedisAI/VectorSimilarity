@@ -1083,21 +1083,20 @@ TEST_F(BruteForceTest, batchIteratorSwapIndices) {
     VecSimIndex_Free(index);
 }
 
-
 TEST_F(BruteForceTest, testCosine) {
     size_t dim = 128;
     size_t n = 100;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
-            .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                    .dim = dim,
-                    .metric = VecSimMetric_Cosine,
-                    .initialCapacity = n}};
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_Cosine,
+                                             .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 1; i <= n; i++) {
         float f[dim];
-        f[0] = (float)i/n;
+        f[0] = (float)i / n;
         for (size_t j = 1; j < dim; j++) {
             f[j] = 1.0f;
         }
@@ -1110,11 +1109,13 @@ TEST_F(BruteForceTest, testCosine) {
     }
     auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_EQ(id, (n - index));
-        float first_coordinate = (float)id/n;
-        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector and B is
-        // the current result vector.
-        float expected_score = 1.0f - ((first_coordinate + (float)dim - 1.0f) /
-                (sqrtf((float)dim) * sqrtf((float)(dim-1) + first_coordinate*first_coordinate)));
+        float first_coordinate = (float)id / n;
+        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
+        // and B is the current result vector.
+        float expected_score =
+            1.0f -
+            ((first_coordinate + (float)dim - 1.0f) /
+             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
         // Verify that abs difference between the actual and expected score is at most 1/10^6.
         ASSERT_NEAR(score, expected_score, 1e-6);
     };
@@ -1130,12 +1131,14 @@ TEST_F(BruteForceTest, testCosine) {
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, float score, size_t index) {
-            ASSERT_EQ(id, (n - n_res*iteration_num - index));
-            float first_coordinate = (float)id/n;
-            // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector and B is
-            // the current result vector.
-            float expected_score = 1.0f - ((first_coordinate + (float)dim - 1.0f) /
-                                           (sqrtf((float)dim) * sqrtf((float)(dim-1) + first_coordinate*first_coordinate)));
+            ASSERT_EQ(id, (n - n_res * iteration_num - index));
+            float first_coordinate = (float)id / n;
+            // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
+            // vector and B is the current result vector.
+            float expected_score =
+                1.0f - ((first_coordinate + (float)dim - 1.0f) /
+                        (sqrtf((float)dim) *
+                         sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
             // Verify that abs difference between the actual and expected score is at most 1/10^6.
             ASSERT_NEAR(score, expected_score, 1e-6);
         };

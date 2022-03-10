@@ -149,7 +149,16 @@ VecSimIndexInfo HNSWIndex::info() const {
 }
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
-    return new (this->allocator) HNSW_BatchIterator(queryBlob, this, this->allocator);
+    // As this is the only supported type, we always allocate 4 bytes for every element in the
+    // vector.
+    assert(this->vecType == VecSimType_FLOAT32);
+    auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
+    if (metric == VecSimMetric_Cosine) {
+        float_vector_normalize((float *)queryBlobCopy, dim);
+    }
+    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
+    return new (this->allocator) HNSW_BatchIterator(queryBlobCopy, this, this->allocator);
 }
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {
