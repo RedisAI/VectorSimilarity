@@ -36,7 +36,7 @@ private:
     inline bool hasVisitedNode(idType node_id) const;
 
 public:
-    HNSW_BatchIterator(const void *query_vector, HNSWIndex *index,
+    HNSW_BatchIterator(void *query_vector, HNSWIndex *index,
                        std::shared_ptr<VecSimAllocator> allocator);
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
