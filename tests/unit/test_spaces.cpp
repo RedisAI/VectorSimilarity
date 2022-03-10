@@ -155,4 +155,4 @@ TEST_F(SpacesTest, ip_16) {
 }
 #endif // CPU_FEATURES_ARCH_X86_64
 
-#endif //M1/X86_64
+#endif // M1/X86_64
