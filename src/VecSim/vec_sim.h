@@ -44,7 +44,9 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
 /**
- * @brief Calculate the distance of a vector from an index to a vector.
+ * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
+ * the vector fits the index - its type and dimension are the same as the index's, and if the
+ * index's distance metric is cosine, the vector is already normalized.
  * @param index the index from which the first vector is located, and that defines the distance
  * metric.
  * @param id the id of the vector in the index.
