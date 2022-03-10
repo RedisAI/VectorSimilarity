@@ -46,6 +46,12 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
     return index->getDistanceFrom(id, blob);
 }
 
+extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
+    // TODO: need more generic
+    assert(type == VecSimType_FLOAT32);
+    float_vector_normalize((float *)blob, dim);
+}
+
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,

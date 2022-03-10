@@ -83,13 +83,6 @@ VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum
 }
 
 double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
-    if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        float normalized_data[this->dim];
-        memcpy(normalized_data, vector_data, this->dim * sizeof(float));
-        float_vector_normalize(normalized_data, this->dim);
-        return this->hnsw->getDistanceByLabelFromPoint(label, normalized_data);
-    }
     return this->hnsw->getDistanceByLabelFromPoint(label, vector_data);
 }
 
@@ -133,7 +126,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
     }
 }
 
-VecSimIndexInfo HNSWIndex::info() {
+VecSimIndexInfo HNSWIndex::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_HNSWLIB;
@@ -152,7 +145,16 @@ VecSimIndexInfo HNSWIndex::info() {
 }
 
 VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
-    return new (this->allocator) HNSW_BatchIterator(queryBlob, this, this->allocator);
+    // As this is the only supported type, we always allocate 4 bytes for every element in the
+    // vector.
+    assert(this->vecType == VecSimType_FLOAT32);
+    auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
+    if (metric == VecSimMetric_Cosine) {
+        float_vector_normalize((float *)queryBlobCopy, dim);
+    }
+    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
+    return new (this->allocator) HNSW_BatchIterator(queryBlobCopy, this, this->allocator);
 }
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {

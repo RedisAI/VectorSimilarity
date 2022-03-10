@@ -9,6 +9,7 @@
 #include <memory>
 #include <cstring>
 #include <queue>
+#include <cassert>
 
 using namespace std;
 
@@ -156,13 +157,7 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     }
     idType id = optionalId->second;
     VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(float));
-        float_vector_normalize(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
+
     return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
                            &this->dim);
 }
@@ -229,7 +224,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     return results;
 }
 
-VecSimIndexInfo BruteForceIndex::info() {
+VecSimIndexInfo BruteForceIndex::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
@@ -281,7 +276,16 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
 }
 
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
-    return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
+    // As this is the only supported type, we always allocate 4 bytes for every element in the
+    // vector.
+    assert(this->vecType == VecSimType_FLOAT32);
+    auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
+    if (metric == VecSimMetric_Cosine) {
+        float_vector_normalize((float *)queryBlobCopy, dim);
+    }
+    // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
+    return new (this->allocator) BF_BatchIterator(queryBlobCopy, this, this->allocator);
 }
 
 bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
