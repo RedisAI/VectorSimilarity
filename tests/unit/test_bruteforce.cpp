@@ -973,8 +973,8 @@ TEST_F(BruteForceTest, brute_get_distance) {
     void *query = v1;
     void *norm = v2;                                 // {e, e}
     VecSim_Normalize(norm, dim, VecSimType_FLOAT32); // now {1/sqrt(2), 1/sqrt(2)}
-    ASSERT_FLOAT_EQ(((float *)norm)[0], 1.0f/sqrt(2.0f));
-    ASSERT_FLOAT_EQ(((float *)norm)[1], 1.0f/sqrt(2.0f));
+    ASSERT_FLOAT_EQ(((float *)norm)[0], 1.0f / sqrt(2.0f));
+    ASSERT_FLOAT_EQ(((float *)norm)[1], 1.0f / sqrt(2.0f));
     double dist;
 
     // VecSimMetric_L2
