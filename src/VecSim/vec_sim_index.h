@@ -47,7 +47,7 @@ public:
      * metric.
      * @param id the id of the vector in the index.
      * @param blob binary representation of the second vector. Blob size should match the index data
-     * type and dimension.
+     * type and dimension, and pre-normalized if needed.
      * @return The distance (according to the index's distance metric) between `blob` and the vector
      * with id `id`.
      */

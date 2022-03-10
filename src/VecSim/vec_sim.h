@@ -49,11 +49,20 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
  * metric.
  * @param id the id of the vector in the index.
  * @param blob binary representation of the second vector. Blob size should match the index data
- * type and dimension.
+ * type and dimension, and pre-normalized if needed.
  * @return The distance (according to the index's distance metric) between `blob` and the vector
  * with id `id`.
  */
 double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob);
+
+/**
+ * @brief normalize the vector blob.
+ * @param blob binary representation of a vector. Blob size should match the specified type and
+ * dimension.
+ * @param dim vector dimension.
+ * @param type vector type.
+ */
+void VecSim_Normalize(void *blob, size_t dim, VecSimType type);
 
 /**
  * @brief Return the number of vectors in the index.
