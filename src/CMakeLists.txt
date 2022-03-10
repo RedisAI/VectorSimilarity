@@ -29,6 +29,24 @@ endif()
 project(VectorSimilarity)
 
 set(CMAKE_CXX_STANDARD 20)
+message(${CMAKE_HOST_SYSTEM_PROCESSOR})
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+        if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
+          # Check whether we are running under Rosetta on arm64 hardware.
+          execute_process(COMMAND sysctl -q hw.optional.arm64
+            OUTPUT_VARIABLE _sysctl_stdout
+            ERROR_VARIABLE _sysctl_stderr
+            RESULT_VARIABLE _sysctl_result
+            )
+          if(_sysctl_result EQUAL 0 AND _sysctl_stdout MATCHES "hw.optional.arm64: 1")
+		  	set(CMAKE_HOST_SYSTEM_PROCESSOR aarch64)
+			set(CMAKE_SYSTEM_PROCESSOR aarch64)
+			set(CMAKE_OSX_ARCHITECTURES=aarch64)
+			add_definitions(-DM1)
+          endif()
+		endif()
+endif()
+message(${CMAKE_HOST_SYSTEM_PROCESSOR})
 
 include_directories(${root}/src)
 include_directories(${root}/deps)

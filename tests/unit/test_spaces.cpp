@@ -1,5 +1,4 @@
 #include "gtest/gtest.h"
-#include "cpu_features_macros.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
@@ -22,6 +21,10 @@ protected:
     void TearDown() override {}
 };
 
+#if defined(M1)
+
+#elif defined(__x86_64)
+#include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
 // This test will trigger the "Residuals" function for dimension > 16, for each optimization.
 TEST_F(SpacesTest, l2_17) {
@@ -151,3 +154,5 @@ TEST_F(SpacesTest, ip_16) {
     }
 }
 #endif // CPU_FEATURES_ARCH_X86_64
+
+#endif //M1/X86_64
