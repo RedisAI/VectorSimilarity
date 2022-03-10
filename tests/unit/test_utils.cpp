@@ -50,7 +50,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
 }
 
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(7, VecSimInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(8, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -69,6 +69,10 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Metric.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoFiled->stringValue, VecSimMetric_ToString(info.bfInfo.metric));
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
+            // Search mode.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoFiled->stringValue, VecSimSearchMode_ToString(info.bfInfo.last_mode));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
@@ -88,7 +92,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 }
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(11, VecSimInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(12, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -107,6 +111,11 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Metric.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoFiled->stringValue, VecSimMetric_ToString(info.hnswInfo.metric));
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
+            // Search mode.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoFiled->stringValue,
+                         VecSimSearchMode_ToString(info.hnswInfo.last_mode));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);

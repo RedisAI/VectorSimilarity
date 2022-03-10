@@ -23,7 +23,8 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
                                                            L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->dim, allocator))) {
+                      new (allocator) InnerProductSpace(params->dim, allocator))),
+      last_mode(EMPTY_MODE) {
     this->idToVectorBlockMemberMapping.resize(params->initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
@@ -184,6 +185,7 @@ VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int pa
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
+    this->last_mode = STANDARD_KNN;
     float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
@@ -238,13 +240,14 @@ VecSimIndexInfo BruteForceIndex::info() const {
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
     info.bfInfo.memory = this->allocator->getAllocationSize();
+    info.bfInfo.last_mode = this->last_mode;
     return info;
 }
 
 VecSimInfoIterator *BruteForceIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed;
-    size_t numberOfInfoFields = 7;
+    size_t numberOfInfoFields = 8;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
@@ -270,6 +273,10 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
                                                 .fieldType = INFOFIELD_UINT64,
                                                 .uintegerValue = info.bfInfo.memory});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimSearchMode_ToString(info.bfInfo.last_mode)});
 
     return infoIterator;
 }
@@ -291,58 +298,67 @@ bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();
+    if (subsetSize > index_size) {
+        throw std::runtime_error("internal error: subset size cannot be larger than index size");
+    }
     size_t d = this->dim;
-    float r = (float)(subsetSize) / (float)index_size;
-    if (index_size <= 5500)
-        return true;
-    // node 2
-    if (d <= 300) {
-        // node 3
-        if (r <= 0.15) {
-            // node 5
-            return true;
-        } else {
-            // node 6
-            if (r <= 0.35) {
-                // node 9
-                if (d <= 75) {
-                    // node 11
-                    return false;
-                } else {
-                    // node 12
-                    if (index_size <= 550000) {
-                        // node 17
-                        return true;
-                    } else {
-                        // node 18
-                        return false;
-                    }
-                }
-            } else {
-                // node 10
-                return false;
-            }
-        }
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    bool res;
+    if (index_size <= 5500) {
+        // node 1
+        res = true;
     } else {
-        // node 4
-        if (r <= 0.55) {
-            // node 7
-            return true;
-        } else {
-            // node 8
-            if (d <= 750) {
-                // node 13
-                return false;
+        // node 2
+        if (d <= 300) {
+            // node 3
+            if (r <= 0.15) {
+                // node 5
+                res = true;
             } else {
-                // node 14
-                if (r <= 0.75) {
-                    // node 15
-                    return true;
+                // node 6
+                if (r <= 0.35) {
+                    // node 9
+                    if (d <= 75) {
+                        // node 11
+                        res = false;
+                    } else {
+                        // node 12
+                        if (index_size <= 550000) {
+                            // node 17
+                            res = true;
+                        } else {
+                            // node 18
+                            res = false;
+                        }
+                    }
                 } else {
-                    // node 16
-                    return false;
+                    // node 10
+                    res = false;
+                }
+            }
+        } else {
+            // node 4
+            if (r <= 0.55) {
+                // node 7
+                res = true;
+            } else {
+                // node 8
+                if (d <= 750) {
+                    // node 13
+                    res = false;
+                } else {
+                    // node 14
+                    if (r <= 0.75) {
+                        // node 15
+                        res = true;
+                    } else {
+                        // node 16
+                        res = false;
+                    }
                 }
             }
         }
     }
+    this->last_mode = res ? HYBRID_ADHOC_BF : HYBRID_BATCHES;
+    return res;
 }

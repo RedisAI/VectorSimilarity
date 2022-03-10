@@ -437,6 +437,32 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    // Perform (or simulate) Search in 3 modes.
+    VecSimIndex_AddVector(index, v, 0);
+    auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
+    VecSimQueryResult_Free(res);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(STANDARD_KNN, info.bfInfo.last_mode);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.bfInfo.last_mode);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
+    reinterpret_cast<BruteForceIndex *>(index)->count = 1e4;
+    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_BATCHES, info.bfInfo.last_mode);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
     VecSimIndex_Free(index);
 }
 
@@ -1018,6 +1044,22 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
             VecSimIndex_Free(index);
         }
     }
+    // Corner cases - empty index.
+    VecSimParams params{
+        .algo = VecSimAlgo_BF,
+        .bfParams = BFParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_IP}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50));
+
+    // Corner cases - subset size is greater than index size.
+    try {
+        VecSimIndex_PreferAdHocSearch(index, 1, 50);
+        FAIL() << "Expected std::runtime error";
+    } catch (std::runtime_error const &err) {
+        EXPECT_EQ(err.what(),
+                  std::string("internal error: subset size cannot be larger than index size"));
+    }
+    VecSimIndex_Free(index);
 }
 
 TEST_F(BruteForceTest, batchIteratorSwapIndices) {

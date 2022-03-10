@@ -32,4 +32,5 @@ public:
 private:
     std::shared_ptr<SpaceInterface<float>> space;
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw;
+    VecSearchMode last_mode;
 };
