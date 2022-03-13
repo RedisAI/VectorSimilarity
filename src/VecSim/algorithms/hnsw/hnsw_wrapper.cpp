@@ -40,7 +40,7 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
             vector_data = normalized_data;
         }
         if (hnsw->getIndexSize() == this->hnsw->getIndexCapacity()) {
-            this->hnsw->resizeIndex(std::max<size_t>(this->hnsw->getIndexCapacity() * 2, 2));
+            this->hnsw->resizeIndex(std::max<size_t>(std::ceil(this->hnsw->getIndexCapacity() * 1.1), 2));
         }
         this->hnsw->addPoint(vector_data, id);
         return true;
