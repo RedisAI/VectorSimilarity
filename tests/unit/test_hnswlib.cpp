@@ -1248,7 +1248,7 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
 }
 
 TEST_F(HNSWLibTest, testCosine) {
-    size_t dim = 128;
+    size_t dim = 4;
     size_t n = 100;
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -1281,7 +1281,7 @@ TEST_F(HNSWLibTest, testCosine) {
             ((first_coordinate + (float)dim - 1.0f) /
              (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
         // Verify that abs difference between the actual and expected score is at most 1/10^6.
-        ASSERT_NEAR(score, expected_score, 1e-6);
+        ASSERT_NEAR(score, expected_score, 1e-5);
     };
     runTopKSearchTest(index, query, 10, verify_res);
 
@@ -1304,7 +1304,7 @@ TEST_F(HNSWLibTest, testCosine) {
                         (sqrtf((float)dim) *
                          sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
             // Verify that abs difference between the actual and expected score is at most 1/10^6.
-            ASSERT_NEAR(score, expected_score, 1e-6);
+            ASSERT_NEAR(score, expected_score, 1e-5);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;
