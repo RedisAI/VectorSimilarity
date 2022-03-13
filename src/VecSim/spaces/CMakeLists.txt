@@ -9,10 +9,14 @@ project(VectorSimilaritySpaces_no_optimization)
 project(VectorSimilarity_Spaces)
 include(CheckCXXCompilerFlag)
 
+
+# TODO: Remove this once cpu_features get support for M1
 if(NOT APPLE)
 		include(${root}/cmake/cpu_features.cmake)
 	elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
 		include(${root}/cmake/cpu_features.cmake)
+	else()
+		add_definitions(-DM1)
 endif()
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
