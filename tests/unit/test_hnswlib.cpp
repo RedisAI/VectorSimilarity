@@ -916,12 +916,18 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
+    // Reset the iterator after it was depleted.
+    VecSimBatchIterator_Reset(batchIterator);
+
+    // Try to get 0 results.
+    res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
     // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
     size_t n_res = 7;
     size_t iteration_num = 0;
 
-    // Reset the iterator after it was depleted.
-    VecSimBatchIterator_Reset(batchIterator);
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         iteration_num++;
         std::vector<size_t> expected_ids;
@@ -943,6 +949,11 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
         }
     }
     ASSERT_EQ(iteration_num, n / n_res + 1);
+    // Try to get more results even though there are no.
+    res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
