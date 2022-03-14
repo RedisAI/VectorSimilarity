@@ -35,6 +35,35 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
     VecSimIndex_Free(index);
 }
 
+TEST_F(BruteForceTest, resizeIndex) {
+    size_t dim = 4;
+    size_t n = 15;
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
+
+    // Add another vector, since index size equals to the capacity, this should cause resizing
+    // (by 10% factor from the new index size).
+    VecSimIndex_AddVector(index, (const void *)a, n + 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
+              std::ceil(1.1 * (n + 1)));
+    VecSimIndex_Free(index);
+}
+
 TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {
     size_t dim = 4;
     size_t n = 100;
