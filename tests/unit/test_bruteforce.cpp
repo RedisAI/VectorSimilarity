@@ -899,6 +899,24 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
                                              .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
+    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+
+    // Create batch iterator for empty index.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    // try to get more results even though there are no.
+    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+    // retry to get results.
+    res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+    VecSimBatchIterator_Free(batchIterator);
+
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -908,14 +926,14 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
-    float query[dim];
-    for (size_t j = 0; j < dim; j++) {
-        query[j] = (float)n;
-    }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    batchIterator = VecSimBatchIterator_New(index, query);
 
-    // get all in first iteration, expect to use select search
+    // Ask for zero results.
+    res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
+    // get all in first iteration, expect to use select search.
     size_t n_res = n;
     auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_TRUE(id == n - 1 - index);
@@ -924,7 +942,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     // try to get more results even though there are no.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
+    res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
 

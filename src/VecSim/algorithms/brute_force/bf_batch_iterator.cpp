@@ -127,8 +127,8 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     // Only in the first iteration we need to compute all the scores
-    if (getResultsCount() == 0) {
-        assert(this->scores.empty());
+    if (this->scores.empty()) {
+        assert(getResultsCount() == 0);
         this->scores.reserve(this->index->indexSize());
         vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
         for (auto &block : blocks) {
