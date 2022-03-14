@@ -44,8 +44,9 @@ private:
     DISTFUNC<float> dist_func;
     VecSearchMode last_mode;
 #ifdef BUILD_TESTS
-    // Allow the following tests to access the index size private member.
+    // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;
     friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
+    friend class BruteForceTest_resizeIndex_Test;
 #endif
 };
