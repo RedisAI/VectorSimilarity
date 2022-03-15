@@ -340,7 +340,7 @@ workflows:
           <<: *on-any-branch
       - build-rocky8:
           <<: *on-any-branch
-      - build-centos8:
+      - build-rocky8:
           <<: *on-any-branch
       - build-macos:
           <<: *on-any-branch
