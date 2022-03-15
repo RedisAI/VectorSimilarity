@@ -162,10 +162,10 @@ jobs:
       - setup-centos
       - tiny-build-steps
 
-  build-centos8:
+  build-rocky8:
     resource_class: large
     docker:
-      - image: centos:centos7
+      - image: rockylinux:8
     steps:
       - setup-centos
       - tiny-build-steps
@@ -338,9 +338,9 @@ workflows:
           <<: *on-any-branch
       - build-xenial:
           <<: *on-any-branch
-      - build-centos7:
+      - build-rocky8:
           <<: *on-any-branch
-      - build-centos8:
+      - build-rocky8:
           <<: *on-any-branch
       - build-macos:
           <<: *on-any-branch
