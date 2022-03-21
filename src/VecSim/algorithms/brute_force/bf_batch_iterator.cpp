@@ -122,6 +122,21 @@ BF_BatchIterator::BF_BatchIterator(void *query_vector, const BruteForceIndex *bf
     BF_BatchIterator::next_id++;
 }
 
+// Compute the score for every vector in the block by using the given distance function.
+// Return a collection of (score, label) pairs for every vector in the block.
+vecsim_stl::vector<std::pair<float, labelType>>
+BF_BatchIterator::computeBlockScores(DataBlock *block) {
+    const void *queryBlob = getQueryBlob();
+    DISTFUNC<float> DistFunc = getIndex()->distFunc();
+    size_t len = block->getLength();
+    vecsim_stl::vector<std::pair<float, labelType>> scores(len, this->allocator);
+    for (size_t i = 0; i < len; i++) {
+        scores[i] = {DistFunc(block->getData(i), queryBlob, &this->index->dim),
+                     block->getMember(i)->label};
+    }
+    return scores;
+}
+
 VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
                                                         VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
@@ -130,11 +145,11 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
         this->scores.reserve(this->index->indexSize());
-        vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
+        vecsim_stl::vector<DataBlock *> blocks = this->index->getVectorBlocks();
         for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
             vecsim_stl::vector<std::pair<float, labelType>> block_scores =
-                block->computeBlockScores(getIndex()->distFunc(), getQueryBlob());
+                this->computeBlockScores(block);
             this->scores.insert(this->scores.end(), block_scores.begin(), block_scores.end());
         }
     }

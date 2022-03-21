@@ -756,7 +756,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
                 expected_ids[i] = (n - iteration_num * n_res - i - 1);
             }
             auto verify_res = [&](size_t id, float score, size_t index) {
-                ASSERT_TRUE(expected_ids[index] == id);
+                ASSERT_EQ(expected_ids[index], id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
             iteration_num++;
