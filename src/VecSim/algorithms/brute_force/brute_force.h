@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vector_block.h"
+#include "VecSim/utils/vector_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/vecsim_stl.h"

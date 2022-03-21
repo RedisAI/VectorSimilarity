@@ -4,7 +4,7 @@
 #include "hnsw_wrapper.h"
 
 typedef size_t labelType;
-typedef unsigned int idType;
+typedef size_t idType;
 
 using namespace std;
 
