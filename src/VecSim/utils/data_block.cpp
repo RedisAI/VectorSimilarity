@@ -5,11 +5,11 @@
 DataBlockMember::DataBlockMember(std::shared_ptr<VecSimAllocator> allocator)
     : VecsimBaseObject(allocator) {}
 
-DataBlock::DataBlock(size_t blockSize, size_t unitSize, std::shared_ptr<VecSimAllocator> allocator)
-    : VecsimBaseObject(allocator), unitSize(unitSize), length(0), blockSize(blockSize) {
+DataBlock::DataBlock(size_t blockSize, size_t elementSize, std::shared_ptr<VecSimAllocator> allocator, size_t index)
+    : VecsimBaseObject(allocator), elementSize(elementSize), length(0), blockSize(blockSize), index(index) {
     this->members =
         (DataBlockMember **)this->allocator->allocate(sizeof(DataBlockMember *) * blockSize);
-    this->Data = this->allocator->allocate(blockSize * unitSize);
+    this->Data = this->allocator->allocate(blockSize * elementSize);
 }
 
 DataBlock::~DataBlock() {
@@ -17,7 +17,7 @@ DataBlock::~DataBlock() {
         delete members[i];
     }
     this->allocator->deallocate(members, sizeof(DataBlockMember *) * blockSize);
-    this->allocator->deallocate(Data, blockSize * unitSize);
+    this->allocator->deallocate(Data, blockSize * elementSize);
 }
 
 void DataBlock::addData(DataBlockMember *dataBlockMember, const void *data) {
@@ -27,6 +27,6 @@ void DataBlock::addData(DataBlockMember *dataBlockMember, const void *data) {
     dataBlockMember->index = this->length;
 
     // Copy data and update block size.
-    memcpy((int8_t *)this->Data + (this->length * this->unitSize), data, this->unitSize);
+    memcpy((int8_t *)this->Data + (this->length * this->elementSize), data, this->elementSize);
     this->length++;
 }

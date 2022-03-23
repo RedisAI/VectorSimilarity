@@ -24,14 +24,14 @@ public:
 struct DataBlock : public VecsimBaseObject {
 
 public:
-    DataBlock(size_t blockSize, size_t unitSize, std::shared_ptr<VecSimAllocator> allocator);
+    DataBlock(size_t blockSize, size_t elementSize, std::shared_ptr<VecSimAllocator> allocator, size_t index = -1);
 
     void addData(DataBlockMember *dataBlockMember, const void *data);
 
-    inline void *getData(size_t index) { return (int8_t *)this->Data + (index * this->unitSize); }
+    inline void *getData(size_t index) { return (int8_t *)this->Data + (index * this->elementSize); }
 
     inline void *removeAndFetchData() {
-        return (int8_t *)this->Data + ((--this->length) * this->unitSize);
+        return (int8_t *)this->Data + ((--this->length) * this->elementSize);
     }
 
     inline size_t getLength() { return length; }
@@ -47,14 +47,16 @@ public:
     virtual ~DataBlock();
 
 private:
-    // Data unit size.
-    size_t unitSize;
+    // Data element size (in bytes).
+    size_t elementSize;
     // Current data block length.
     size_t length;
     // Data block size (capacity).
     size_t blockSize;
     // Current members of the data block.
     DataBlockMember **members;
+    // Index block in vector of blocks
+    size_t index;
     // Data hosted in the data block.
     void *Data;
 };
