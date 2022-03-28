@@ -22,7 +22,7 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
                                                            L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
                       new (allocator) InnerProductSpace(params->dim, allocator))),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float, float>(
           space.get(), params->initialCapacity, allocator, params->M ? params->M : HNSW_DEFAULT_M,
           params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
       last_mode(EMPTY_MODE) {

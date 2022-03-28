@@ -92,10 +92,10 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        unsigned int *cur_node_links_header =
-            this->hnsw_index->get_linklist_at_level(curr_node_id, 0);
-        unsigned short links_num = this->hnsw_index->getListCount(cur_node_links_header);
-        auto *node_links = (unsigned int *)(cur_node_links_header + 1);
+        hnswlib::level_data *cur_node_links_header =
+            this->hnsw_index->getMetadata(curr_node_id, 0);
+        unsigned short links_num = cur_node_links_header->numLinks;
+        auto *node_links = cur_node_links_header->links;
 #ifdef USE_SSE
         _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links), _MM_HINT_T0);
         _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links + 64), _MM_HINT_T0);
@@ -114,7 +114,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
                 continue;
             }
             this->visitNode(candidate_id);
-            char *candidate_data = this->hnsw_index->getDataByInternalId(candidate_id);
+            float *candidate_data = this->hnsw_index->getDataByInternalId(candidate_id);
             float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
                                              this->space->get_data_dim());
             candidates.emplace(candidate_dist, candidate_id);

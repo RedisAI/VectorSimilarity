@@ -18,7 +18,7 @@ typedef struct HNSWIndexMetaData {
 
 class HNSWIndexSerializer {
 private:
-    std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index;
+    std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw_index;
 
     void saveIndexFields(std::ofstream &output);
     void saveGraph(std::ofstream &output);
@@ -27,7 +27,7 @@ private:
 
 public:
     // Wrap hnsw index.
-    explicit HNSWIndexSerializer(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index);
+    explicit HNSWIndexSerializer(std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw_index);
 
     // Persist HNSW index into a file in the specified location.
     void saveIndex(const std::string &location);
@@ -39,7 +39,7 @@ public:
     void loadIndex(const std::string &location, SpaceInterface<float> *s);
 
     // Safe release the inner hnsw_index pointer, optionally replace it with another.
-    void reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index = nullptr);
+    void reset(std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw_index = nullptr);
 };
 
 } // namespace hnswlib

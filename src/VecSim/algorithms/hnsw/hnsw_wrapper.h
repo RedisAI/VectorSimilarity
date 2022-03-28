@@ -26,11 +26,11 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k) override;
 
     void setEf(size_t ef);
-    inline std::shared_ptr<hnswlib::HierarchicalNSW<float>> getHNSWIndex() { return hnsw; }
+    inline std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> getHNSWIndex() { return hnsw; }
     inline std::shared_ptr<SpaceInterface<float>> getSpace() { return space; }
 
 private:
     std::shared_ptr<SpaceInterface<float>> space;
-    std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw;
+    std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw;
     VecSearchMode last_mode;
 };

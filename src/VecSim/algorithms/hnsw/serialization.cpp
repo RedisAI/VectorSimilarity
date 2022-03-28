@@ -32,15 +32,10 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
     writeBinaryPOD(output, hnsw_index->ef_);
 
     // Save index meta-data
-    writeBinaryPOD(output, hnsw_index->data_size_);
-    writeBinaryPOD(output, hnsw_index->size_data_per_element_);
-    writeBinaryPOD(output, hnsw_index->size_links_per_element_);
-    writeBinaryPOD(output, hnsw_index->size_links_level0_);
-    writeBinaryPOD(output, hnsw_index->label_offset_);
-    writeBinaryPOD(output, hnsw_index->offsetData_);
-    writeBinaryPOD(output, hnsw_index->offsetLevel0_);
-    writeBinaryPOD(output, hnsw_index->incoming_links_offset0);
-    writeBinaryPOD(output, hnsw_index->incoming_links_offset);
+    writeBinaryPOD(output, hnsw_index->element_meta_size_);
+    writeBinaryPOD(output, hnsw_index->level_data_size_);
+    writeBinaryPOD(output, hnsw_index->element_data_size_);
+    writeBinaryPOD(output, hnsw_index->block_size_);
     writeBinaryPOD(output, hnsw_index->mult_);
 
     // Save index level generator of the top level for a new element
@@ -60,11 +55,17 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
 }
 
 void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
-    // Save level 0 data (graph layer 0 + labels + vectors data)
-    output.write(hnsw_index->data_level0_memory_,
-                 hnsw_index->max_elements_ * hnsw_index->size_data_per_element_);
     if (hnsw_index->max_id == HNSW_INVALID_ID) {
         return; // Index is empty.
+    }
+    // saves vectors data
+    writeBinaryPOD(output, hnsw_index->vectorBlocks.size())
+    for (size_t i = 0; i < hnsw_index->vectorBlocks.size(); i++) {
+        output.write(hnsw_index->vectorBlocks[i], hnsw_index->block_size_ * hnsw_index->element_data_size_);
+    }
+    // saves meta data
+    for (size_t i = 0; i < hnsw_index->metaBlocks.size(); i++) {
+        
     }
     // Save the incoming edge sets.
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
@@ -87,8 +88,8 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
             continue;
         }
         unsigned int linkListSize =
-            hnsw_index->element_levels_[i] > 0
-                ? hnsw_index->size_links_per_element_ * hnsw_index->element_levels_[i]
+            hnsw_index->getNumLevels(i) > 1
+                ? sizeof(level_data) * hnsw_index->getNumLevels(i)
                 : 0;
         writeBinaryPOD(output, linkListSize);
         if (linkListSize)
@@ -229,7 +230,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     }
 }
 
-HNSWIndexSerializer::HNSWIndexSerializer(std::shared_ptr<HierarchicalNSW<float>> hnsw_index_) {
+HNSWIndexSerializer::HNSWIndexSerializer(std::shared_ptr<HierarchicalNSW<float, float>> hnsw_index_) {
     hnsw_index = std::move(hnsw_index_); // Hold a reference of the index.
 }
 
@@ -252,7 +253,7 @@ void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<
     input.close();
 }
 
-void HNSWIndexSerializer::reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index_) {
+void HNSWIndexSerializer::reset(std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw_index_) {
     // Hold the allocator, so it won't be destroyed while VecSimBaseObject is released.
     auto allocator = hnsw_index->getAllocator();
     if (hnsw_index_ == nullptr) {
