@@ -41,7 +41,9 @@ public:
 
     inline size_t getIndex() { return index; }
 
-    inline DataBlockMember *getMember(size_t index) { return members ? this->members[index] : NULL; }
+    inline DataBlockMember *getMember(size_t index) {
+        return members ? this->members[index] : NULL;
+    }
 
     inline void setMember(size_t index, DataBlockMember *member) {
         if (members) {
