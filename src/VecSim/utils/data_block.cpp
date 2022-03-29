@@ -15,8 +15,10 @@ DataBlock::DataBlock(size_t blockSize, size_t elementSize,
 }
 
 DataBlock::~DataBlock() {
-    for (size_t i = 0; i < this->length; i++) {
-        delete members[i];
+    if (membersOwner) {
+        for (size_t i = 0; i < this->length; i++) {
+            delete members[i];
+        }
     }
     this->allocator->deallocate(members, sizeof(DataBlockMember *) * blockSize);
     this->allocator->deallocate(Data, blockSize * elementSize);
