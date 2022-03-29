@@ -300,15 +300,14 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     // 0 [0, 1, 2]
     // 1 [3, 4, 5]
     // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move id 5
-    // from block 1 [3, 4, 5] to vector block 0, so our vector blocks will look like 0 [0, 5, 2]
-    1
-        // [3, 4]
-        VecSimParams params{.algo = VecSimAlgo_BF,
-                            .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .initialCapacity = 3,
-                                                 .blockSize = 3}};
+    // from block 1 [3, 4, 5] to vector block 0, so our vector blocks will look like 0 [0, 5, 2] 1
+    // [3, 4]
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 3,
+                                             .blockSize = 3}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -727,11 +726,10 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // run the test twice - for index of size 100, every iteration will run select-based search,
-    // as the number of results is 5, which is more than 0.1% of the index size. for index of
-    size
-        // 10000, we will run the heap-based search until we return 5000 results, and then switch to
-        // select-based search.
-        for (size_t n : {100, 10000}) {
+    // as the number of results is 5, which is more than 0.1% of the index size. for index of size
+    // 10000, we will run the heap-based search until we return 5000 results, and then switch to
+    // select-based search.
+    for (size_t n : {100, 10000}) {
         for (size_t i = 0; i < n; i++) {
             float f[dim];
             for (size_t j = 0; j < dim; j++) {
@@ -749,10 +747,9 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
         size_t iteration_num = 0;
 
-        // get the 10 vectors whose ids are the maximal among those that hasn't been returned
-        yet,
-            // in every iteration. The order should be from the largest to the lowest id.
-            size_t n_res = 5;
+        // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+        // in every iteration. The order should be from the largest to the lowest id.
+        size_t n_res = 5;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             std::vector<size_t> expected_ids(n_res);
             for (size_t i = 0; i < n_res; i++) {
@@ -782,11 +779,10 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // run the test twice - for index of size 100, every iteration will run select-based search,
-    // as the number of results is 5, which is more than 0.1% of the index size. for index of
-    size
-        // 10000, we will run the heap-based search until we return 5000 results, and then switch to
-        // select-based search.
-        for (size_t n : {100, 10000}) {
+    // as the number of results is 5, which is more than 0.1% of the index size. for index of size
+    // 10000, we will run the heap-based search until we return 5000 results, and then switch to
+    // select-based search.
+    for (size_t n : {100, 10000}) {
         for (size_t i = 0; i < n; i++) {
             float f[dim];
             for (size_t j = 0; j < dim; j++) {
@@ -804,10 +800,9 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
         size_t iteration_num = 0;
 
-        // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet,
-        in
-            // every iteration. there are n/10 groups of 10 different vectors with the same score.
-            size_t n_res = 5;
+        // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet, in
+        // every iteration. there are n/10 groups of 10 different vectors with the same score.
+        size_t n_res = 5;
         bool even_iteration = false;
         std::set<size_t> expected_ids;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -863,11 +858,10 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     }
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
 
-    // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet,
-    in
-        // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
-        // iterator.
-        size_t n_res = 100;
+    // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
+    // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
+    // iterator.
+    size_t n_res = 100;
     size_t total_iteration = 5;
     size_t re_runs = 3;
 
@@ -1092,8 +1086,7 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
                 bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50);
-                // If r is below the threshold for this specific configuration of (index_size,
-                dim),
+                // If r is below the threshold for this specific configuration of (index_size, dim),
                 // expect that result will be ad-hoc (i.e., true), and otherwise, batches (i.e.,
                 // false)
                 bool expected_res = r < threshold[{index_size, dim}];
@@ -1210,13 +1203,12 @@ TEST_F(BruteForceTest, testCosine) {
     auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_EQ(id, (n - index));
         float first_coordinate = (float)id / n;
-        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-        vector
-            // and B is the current result vector.
-            float expected_score =
-                1.0f - ((first_coordinate + (float)dim - 1.0f) /
-                        (sqrtf((float)dim) *
-                         sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
+        // and B is the current result vector.
+        float expected_score =
+            1.0f -
+            ((first_coordinate + (float)dim - 1.0f) /
+             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
         // Verify that abs difference between the actual and expected score is at most 1/10^6.
         ASSERT_NEAR(score, expected_score, 1e-5);
     };
@@ -1240,8 +1232,8 @@ TEST_F(BruteForceTest, testCosine) {
                 1.0f - ((first_coordinate + (float)dim - 1.0f) /
                         (sqrtf((float)dim) *
                          sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
-            // Verify that abs difference between the actual and expected score is at most
-            1 / 10 ^ 6. ASSERT_NEAR(score, expected_score, 1e-5);
+            // Verify that abs difference between the actual and expected score is at most 1/10^6.
+            ASSERT_NEAR(score, expected_score, 1e-5);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;
