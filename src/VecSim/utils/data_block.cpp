@@ -26,9 +26,7 @@ DataBlock::~DataBlock() {
 
 void DataBlock::addData(DataBlockMember *dataBlockMember, const void *data) {
     // Mutual point both structs on each other.
-    this->members[this->length] = dataBlockMember;
-    dataBlockMember->block = this;
-    dataBlockMember->index = this->length;
+    setMember(this->length, dataBlockMember);
 
     // Copy data and update block size.
     memcpy((int8_t *)this->Data + (this->length * this->elementSize), data, this->elementSize);
