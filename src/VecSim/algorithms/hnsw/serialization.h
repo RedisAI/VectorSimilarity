@@ -27,7 +27,8 @@ private:
 
 public:
     // Wrap hnsw index.
-    explicit HNSWIndexSerializer(std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw_index);
+    explicit HNSWIndexSerializer(
+        std::shared_ptr<hnswlib::HierarchicalNSW<float, float>> hnsw_index);
 
     // Persist HNSW index into a file in the specified location.
     void saveIndex(const std::string &location);

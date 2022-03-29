@@ -92,8 +92,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        hnswlib::level_data *cur_node_links_header =
-            this->hnsw_index->getMetadata(curr_node_id, 0);
+        hnswlib::level_data *cur_node_links_header = this->hnsw_index->getMetadata(curr_node_id, 0);
         unsigned short links_num = cur_node_links_header->numLinks;
         auto *node_links = cur_node_links_header->links;
 #ifdef USE_SSE
