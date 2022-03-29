@@ -41,11 +41,11 @@ public:
 
     inline size_t getIndex() { return index; }
 
-    inline DataBlockMember *getMember(size_t index) { return this->members[index]; }
+    inline DataBlockMember *getMember(size_t index) { return members ? this->members[index] : NULL; }
 
     inline void setMember(size_t index, DataBlockMember *member) {
-        this->members[index] = member;
-        if (membersOwner) {
+        if (members) {
+            this->members[index] = member;
             member->index = index;
             member->block = this;
         }
@@ -64,9 +64,6 @@ private:
     DataBlockMember **members;
     // Index block in vector of blocks
     size_t index;
-    // Tells the block if it needs to free its members and set their values.
-    // Defaults to true
-    bool membersOwner;
     // Data hosted in the data block.
     void *Data;
 };
