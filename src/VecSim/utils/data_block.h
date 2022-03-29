@@ -24,11 +24,14 @@ public:
 struct DataBlock : public VecsimBaseObject {
 
 public:
-    DataBlock(size_t blockSize, size_t elementSize, std::shared_ptr<VecSimAllocator> allocator, size_t index = -1);
+    DataBlock(size_t blockSize, size_t elementSize, std::shared_ptr<VecSimAllocator> allocator,
+              size_t index = -1, bool ownMembers = true);
 
     void addData(DataBlockMember *dataBlockMember, const void *data);
 
-    inline void *getData(size_t index) { return (int8_t *)this->Data + (index * this->elementSize); }
+    inline void *getData(size_t index) {
+        return (int8_t *)this->Data + (index * this->elementSize);
+    }
 
     inline void *removeAndFetchData() {
         return (int8_t *)this->Data + ((--this->length) * this->elementSize);
