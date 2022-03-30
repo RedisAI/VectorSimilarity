@@ -52,6 +52,8 @@ dist/**
 poetry.lock
 *.pyc
 __pycache__/
+*.hdf5
+*.svg
 
 .vscode
 **/.ipynb_checkpoints
