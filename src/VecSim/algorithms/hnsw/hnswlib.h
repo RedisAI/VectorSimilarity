@@ -214,9 +214,13 @@ labeltype HierarchicalNSW<dist_t, T>::getExternalLabel(tableint internal_id) con
 
 template <typename dist_t, typename T>
 T *HierarchicalNSW<dist_t, T>::getDataByInternalId(tableint internal_id) const {
-    DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
+    // DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
     // return (T *)(this->vectorBlocks[bm->block->getIndex()]->getData(bm->index));
-    return (T *)(bm->vecblock->getData(bm->index));
+
+    // DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
+    // return (T *)(bm->vecblock->getData(bm->index));
+
+    return (T *)idToMetaBlockMemberMapping[internal_id]->vector;
 }
 
 template <typename dist_t, typename T>
