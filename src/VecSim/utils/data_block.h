@@ -18,6 +18,7 @@ public:
     DataBlockMember(std::shared_ptr<VecSimAllocator> allocator);
     size_t index;
     DataBlock *block;
+    DataBlock *vecblock;
     labelType label;
 };
 
@@ -50,6 +51,8 @@ public:
             this->members[index] = member;
             member->index = index;
             member->block = this;
+        } else {
+            member->vecblock = this;
         }
     }
 
