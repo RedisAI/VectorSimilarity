@@ -32,16 +32,16 @@ using namespace std;
 typedef size_t labeltype;
 typedef unsigned int tableint;
 
-struct level_data /*: public VecsimBaseObject*/ {
-    vecsim_stl::set<tableint> incoming_edges;
+struct level_data {
+    vecsim_stl::set<tableint> *incoming_edges;
     tableint numLinks;
     tableint links[];
 
     level_data(std::shared_ptr<VecSimAllocator> allocator)
-        : incoming_edges(allocator), numLinks(0) {}
+        : incoming_edges(new vecsim_stl::set<tableint>(allocator)), numLinks(0) {}
 };
 
-struct element_meta /*: public VecsimBaseObject*/ {
+struct element_meta {
     size_t toplevel;
     level_data *others;
     level_data level0;
@@ -125,13 +125,13 @@ private:
     void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
                                       level_data *element_meta, level_data *neighbour_meta,
                                       size_t level);
-    void destroyAllLevels(element_meta *em);
+    void destroyMetadata(element_meta *em);
 
 public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
-                    size_t initial_pool_size = 1, size_t elementBlock_size = 5);
+                    size_t initial_pool_size = 1, size_t elementBlock_size = BF_DEFAULT_BLOCK_SIZE);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -506,7 +506,7 @@ tableint HierarchicalNSW<dist_t, T>::mutuallyConnectNewElement(
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
-                    other_meta->incoming_edges.insert(cur_c);
+                    other_meta->incoming_edges->insert(cur_c);
                     continue;
                 }
 
@@ -516,11 +516,11 @@ tableint HierarchicalNSW<dist_t, T>::mutuallyConnectNewElement(
                 // otherwise, the edge turned from bidirectional to
                 // uni-directional, so we insert it to the neighbour's
                 // incoming edges set.
-                if (node_meta->incoming_edges.find(selectedNeighbor) !=
-                    node_meta->incoming_edges.end()) {
-                    node_meta->incoming_edges.erase(selectedNeighbor);
+                if (node_meta->incoming_edges->find(selectedNeighbor) !=
+                    node_meta->incoming_edges->end()) {
+                    node_meta->incoming_edges->erase(selectedNeighbor);
                 } else {
-                    other_meta->incoming_edges.insert(node_id);
+                    other_meta->incoming_edges->insert(node_id);
                 }
             }
         }
@@ -585,10 +585,10 @@ void HierarchicalNSW<dist_t, T>::repairConnectionsForDeletion(tableint element_i
         // we should remove it from the node's incoming edges.
         // otherwise, edge turned from bidirectional to one directional,
         // and it should be saved in the neighbor's incoming edges.
-        if (node_meta->incoming_edges.find(neighbour_id) != node_meta->incoming_edges.end()) {
-            node_meta->incoming_edges.erase(neighbour_id);
+        if (node_meta->incoming_edges->find(neighbour_id) != node_meta->incoming_edges->end()) {
+            node_meta->incoming_edges->erase(neighbour_id);
         } else {
-            neighbour_meta->incoming_edges.insert(node_id);
+            neighbour_meta->incoming_edges->insert(node_id);
         }
     }
 
@@ -606,13 +606,13 @@ void HierarchicalNSW<dist_t, T>::repairConnectionsForDeletion(tableint element_i
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_meta->incoming_edges.erase(node_id);
+                    neighbour_meta->incoming_edges->erase(node_id);
                     bidirectional_edge = true;
                     break;
                 }
             }
             if (!bidirectional_edge) {
-                node_meta->incoming_edges.insert(neighbour_id);
+                node_meta->incoming_edges->insert(neighbour_id);
             }
         }
     }
@@ -718,23 +718,21 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
 }
 
 template <typename dist_t, typename T>
-void HierarchicalNSW<dist_t, T>::destroyAllLevels(element_meta *em) {
-    // em->level0.~level_data();
+void HierarchicalNSW<dist_t, T>::destroyMetadata(element_meta *em) {
+    delete em->level0.incoming_edges;
     level_data *cur_ld = em->others;
     for (size_t i = 0; i < em->toplevel; i++) {
-        cur_ld->~level_data();
+        delete cur_ld->incoming_edges;
         cur_ld = (level_data *)((char *)cur_ld + this->level_data_size_);
     }
+    this->allocator->free_allocation(em->others);
 }
 
 template <typename dist_t, typename T>
 HierarchicalNSW<dist_t, T>::~HierarchicalNSW() {
     for (auto &metaBlock : this->metaBlocks) {
         for (size_t i = 0; i < metaBlock->getLength(); i++) {
-            element_meta *em = (element_meta *)metaBlock->getData(i);
-            em->level0.~level_data();
-            destroyAllLevels(em);
-            this->allocator->free_allocation(em->others);
+            destroyMetadata((element_meta *)metaBlock->getData(i));
         }
         delete metaBlock;
     }
@@ -803,13 +801,13 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
             // incoming edges.
             if (!bidirectional_edge) {
                 level_data *neighbour_meta = getMetadata(neighbour_id, level);
-                neighbour_meta->incoming_edges.erase(element_internal_id);
+                neighbour_meta->incoming_edges->erase(element_internal_id);
             }
         }
 
         // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // repairs.
-        for (tableint incoming_edge : elm_meta->incoming_edges) {
+        for (tableint incoming_edge : *elm_meta->incoming_edges) {
             level_data *incoming_node_meta = getMetadata(incoming_edge, level);
             repairConnectionsForDeletion(element_internal_id, incoming_edge, elm_meta,
                                          incoming_node_meta, level);
@@ -865,23 +863,21 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
     vectorBlock->setMember(elementIndex, lastBlockMember);
     metaBlock->setMember(elementIndex, lastBlockMember);
 
-    element_meta *meta_dest = (element_meta *)metaBlock->getData(elementIndex);
-    if (meta_dest->others) {
-        destroyAllLevels(meta_dest);
-        this->allocator->free_allocation(meta_dest->others);
-    }
-    element_meta *meta_origin = (element_meta *)lastMetaBlock->removeAndFetchData();
-    meta_dest->toplevel = meta_origin->toplevel;
-    meta_dest->others = meta_origin->others;
-    meta_dest->level0.incoming_edges = std::move(meta_origin->level0.incoming_edges);
-    meta_origin->level0.~level_data();
-    meta_dest->level0.numLinks = meta_origin->level0.numLinks;
-    memmove((void *)meta_dest->level0.links, (void *)meta_origin->level0.links,
-            sizeof(tableint) * this->maxM0_);
+    void *destination = metaBlock->getData(elementIndex);
+    destroyMetadata((element_meta *)destination);
+    void *origin = lastMetaBlock->removeAndFetchData();
+    // meta_dest->toplevel = meta_origin->toplevel;
+    // meta_dest->others = meta_origin->others;
+    // meta_dest->level0.incoming_edges = std::move(meta_origin->level0.incoming_edges);
+    // meta_origin->level0.~level_data();
+    // meta_dest->level0.numLinks = meta_origin->level0.numLinks;
+    // memmove((void *)meta_dest->level0.links, (void *)meta_origin->level0.links,
+    //         sizeof(tableint) * this->maxM0_);
+    memcpy(destination, origin, this->element_meta_size_);
 
-    void *vec_dest = vectorBlock->getData(elementIndex);
-    void *vec_origin = lastVectorBlock->removeAndFetchData();
-    memmove(vec_dest, vec_origin, this->element_data_size_);
+    destination = vectorBlock->getData(elementIndex);
+    origin = lastVectorBlock->removeAndFetchData();
+    memcpy(destination, origin, this->element_data_size_);
 
     // Delete the element block membership
     delete metaBlockMember;
@@ -929,9 +925,32 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
 #endif
     // choose randomly the maximum level in which the new element will be in the index.
     size_t element_max_level = getRandomLevel(mult_);
-    void *dummy = this->allocator->callocate(element_meta_size_);
-    // new(new_elm) element_meta(element_max_level, this->allocator);
-    // *new_elm = element_meta(element_max_level, this->allocator);
+    // void *dummy = this->allocator->callocate(element_meta_size_);
+    element_meta new_elm = element_meta(element_max_level, this->allocator);
+
+#ifdef ENABLE_PARALLELIZATION
+    std::unique_lock<std::mutex> entry_point_lock(global);
+#endif
+    size_t maxlevelcopy = maxlevel_;
+
+#ifdef ENABLE_PARALLELIZATION
+    if (element_max_level <= maxlevelcopy)
+        entry_point_lock.unlock();
+#endif
+    size_t currObj = entrypoint_node_;
+
+    if (element_max_level > 0) {
+        new_elm.others =
+            (level_data *)this->allocator->callocate(level_data_size_ * element_max_level);
+        if (new_elm.others == nullptr)
+            throw std::runtime_error(
+                "Not enough memory: addPoint failed to allocate levels metadata");
+        level_data *ld = new_elm.others;
+        for (size_t i = 0; i < element_max_level; i++) {
+            ld->incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+            ld = (level_data *)((char *)ld + level_data_size_);
+        }
+    }
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> insertion(global);
@@ -968,49 +987,16 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
     this->idToMetaBlockMemberMapping[cur_c] = BlockMember;
     BlockMember->label = label;
     vectorBlock->addData(BlockMember, data_point);
-    metaBlock->addData(BlockMember, dummy);
-    this->allocator->free_allocation(dummy);
-    element_meta *new_elm = (element_meta *)metaBlock->getData(BlockMember->index);
-    new (new_elm) element_meta(element_max_level, this->allocator);
+    metaBlock->addData(BlockMember, &new_elm);
+    memset(&((element_meta *)metaBlock->getData(BlockMember->index))->level0.links, 0,
+           sizeof(tableint) * maxM0_);
+    // this->allocator->free_allocation(dummy);
+    // element_meta *new_elm = metaBlock->getData(BlockMember->index);
+    // new (new_elm) element_meta(element_max_level, this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION
     insertion.unlock();
 #endif
-
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> entry_point_lock(global);
-#endif
-    size_t maxlevelcopy = maxlevel_;
-
-#ifdef ENABLE_PARALLELIZATION
-    if (element_max_level <= maxlevelcopy)
-        entry_point_lock.unlock();
-#endif
-    size_t currObj = entrypoint_node_;
-
-    if (element_max_level > 0) {
-        new_elm->others =
-            (level_data *)this->allocator->callocate(level_data_size_ * element_max_level);
-        if (new_elm->others == nullptr)
-            throw std::runtime_error(
-                "Not enough memory: addPoint failed to allocate levels metadata");
-        // for (size_t i = 0; i < element_max_level; i++) {
-        //     new(this->allocator)(&(((level_data *)((char *)new_elm->others + i *
-        //     level_data_size_))->incoming_edges)) vecsim_stl::set<tableint>(this->allocator);
-        // }
-        for (size_t i = 0; i < element_max_level; i++) {
-            level_data *ld = (level_data *)((char *)new_elm->others + i * level_data_size_);
-            new (ld) level_data(this->allocator);
-            // *ld = level_data(this->allocator);
-        }
-        // for (size_t i = 0; i < element_max_level; i++) {
-        //     level_data *l = reinterpret_cast<level_data *> (((char *)new_elm->others + i *
-        //     element_meta_size_)); *l = level_data(this->allocator);
-        // }
-        // for (size_t i = 0; i < element_max_level; i++) {
-        //     (level_data *)((char *)new_elm->others + i * element_meta_size_) = level_data();
-        // }
-    }
 
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
