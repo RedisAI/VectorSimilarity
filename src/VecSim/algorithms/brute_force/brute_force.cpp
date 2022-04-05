@@ -39,11 +39,11 @@ BruteForceIndex::~BruteForceIndex() {
 /******************** Implementation **************/
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     // Get the vector block
-    VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
-    VectorBlock *vectorBlock = vectorBlockMember->block;
+    DataBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
+    DataBlock *vectorBlock = vectorBlockMember->block;
     size_t index = vectorBlockMember->index;
     // Update vector data in the block.
-    float *destinaion = vectorBlock->getVector(index);
+    void *destinaion = vectorBlock->getData(index);
     memcpy(destinaion, vector_data, this->dim);
 }
 
@@ -81,11 +81,11 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     }
 
     // Get vector block to store the vector in.
-    VectorBlock *vectorBlock;
+    DataBlock *vectorBlock;
     if (this->vectorBlocks.size() == 0) {
         // No vector blocks, create new one.
-        vectorBlock =
-            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+        vectorBlock = new (this->allocator)
+            DataBlock(this->vectorBlockSize, this->dim * sizeof(float), this->allocator);
         this->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
@@ -93,16 +93,16 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         if (vectorBlock->getLength() == this->vectorBlockSize) {
             // Last vector block is full, create a new one.
             vectorBlock = new (this->allocator)
-                VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+                DataBlock(this->vectorBlockSize, this->dim * sizeof(float), this->allocator);
             this->vectorBlocks.push_back(vectorBlock);
         }
     }
 
     // Create vector block membership.
-    VectorBlockMember *vectorBlockMember = new (this->allocator) VectorBlockMember(this->allocator);
+    DataBlockMember *vectorBlockMember = new (this->allocator) DataBlockMember(this->allocator);
     this->idToVectorBlockMemberMapping[id] = vectorBlockMember;
     vectorBlockMember->label = label;
-    vectorBlock->addVector(vectorBlockMember, vector_data);
+    vectorBlock->addData(vectorBlockMember, vector_data);
     this->labelToIdLookup.emplace(label, id);
     return true;
 }
@@ -118,19 +118,19 @@ int BruteForceIndex::deleteVector(size_t label) {
     }
 
     // Get the vector block, and vector block member of the vector to be deleted.
-    VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
-    VectorBlock *vectorBlock = vectorBlockMember->block;
+    DataBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
+    DataBlock *vectorBlock = vectorBlockMember->block;
     size_t vectorIndex = vectorBlockMember->index;
 
-    VectorBlock *lastVectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
-    VectorBlockMember *lastVectorBlockMember =
+    DataBlock *lastVectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
+    DataBlockMember *lastVectorBlockMember =
         lastVectorBlock->getMember(lastVectorBlock->getLength() - 1);
 
     // Swap the last vector with the deleted vector;
     vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
 
-    float *destination = vectorBlock->getVector(vectorIndex);
-    float *origin = lastVectorBlock->removeAndFetchVector();
+    void *destination = vectorBlock->getData(vectorIndex);
+    void *origin = lastVectorBlock->removeAndFetchData();
     memmove(destination, origin, sizeof(float) * this->dim);
 
     // Delete the vector block membership
@@ -157,9 +157,9 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
         return INVALID_SCORE;
     }
     idType id = optionalId->second;
-    VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
+    DataBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
 
-    return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
+    return this->dist_func(vector_index->block->getData(vector_index->index), vector_data,
                            &this->dim);
 }
 
@@ -196,7 +196,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         size_t block_size = vectorBlock->getLength();
         vecsim_stl::vector<float> scores(block_size, this->allocator);
         for (size_t i = 0; i < block_size; i++) {
-            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
+            scores[i] = this->dist_func(vectorBlock->getData(i), queryBlob, &this->dim);
         }
         for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.

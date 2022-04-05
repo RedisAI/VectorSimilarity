@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vector_block.h"
+#include "VecSim/utils/data_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/vecsim_stl.h"
@@ -12,6 +12,7 @@ protected:
     size_t dim;
     VecSimType vecType;
     VecSimMetric metric;
+    friend class BF_BatchIterator;
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
@@ -28,16 +29,16 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k) override;
 
-    inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
+    inline vecsim_stl::vector<DataBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
     virtual ~BruteForceIndex();
 
 private:
     void updateVector(idType id, const void *vector_data);
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
-    vecsim_stl::vector<VectorBlockMember *> idToVectorBlockMemberMapping;
+    vecsim_stl::vector<DataBlockMember *> idToVectorBlockMemberMapping;
     vecsim_stl::set<idType> deletedIds;
-    vecsim_stl::vector<VectorBlock *> vectorBlocks;
+    vecsim_stl::vector<DataBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;

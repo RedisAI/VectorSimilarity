@@ -105,16 +105,16 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     int addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 1);
     int64_t expectedAllocationDelta = 0;
     expectedAllocationDelta +=
-        2 * ((sizeof(VectorBlockMember *) +
+        2 * ((sizeof(DataBlockMember *) +
               vecsimAllocationOverhead)); // resize idToVectorBlockMemberMapping to 2
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
-    expectedAllocationDelta += sizeof(VectorBlockMember *) +
+    expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(DataBlockMember) + vecsimAllocationOverhead;
+    expectedAllocationDelta += sizeof(DataBlockMember *) +
                                vecsimAllocationOverhead; // Pointer for the new vector block member
     expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
+        sizeof(DataBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
     expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
@@ -130,14 +130,14 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationDelta = 0;
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
-    expectedAllocationDelta += sizeof(VectorBlockMember *) +
+    expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(DataBlockMember) + vecsimAllocationOverhead;
+    expectedAllocationDelta += sizeof(DataBlockMember *) +
                                vecsimAllocationOverhead; // Pointer for the new vector block member
     expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
+        sizeof(DataBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
     expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
@@ -154,10 +154,10 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 
     int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
     expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
+        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
+    expectedAllocationDelta -= (sizeof(DataBlockMember) + vecsimAllocationOverhead);
     expectedAllocationDelta -=
-        (sizeof(VectorBlockMember *) +
+        (sizeof(DataBlockMember *) +
          vecsimAllocationOverhead); // Pointer for the new vector block member
     expectedAllocationDelta -=
         (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
@@ -178,10 +178,10 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
     expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
+        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
+    expectedAllocationDelta -= (sizeof(DataBlockMember) + vecsimAllocationOverhead);
     expectedAllocationDelta -=
-        (sizeof(VectorBlockMember *) +
+        (sizeof(DataBlockMember *) +
          vecsimAllocationOverhead); //  Pointer for the new vector block member
     expectedAllocationDelta -=
         (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
