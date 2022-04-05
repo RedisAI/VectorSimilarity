@@ -204,23 +204,23 @@ size_t HierarchicalNSW<dist_t, T>::getEntryPointLabel() const {
 
 template <typename dist_t, typename T>
 labeltype HierarchicalNSW<dist_t, T>::getExternalLabel(tableint internal_id) const {
-    return idToMetaBlockMemberMapping[internal_id]->label;
+    return this->idToMetaBlockMemberMapping[internal_id]->label;
 }
 
 // template <typename dist_t, typename T>
 // void HierarchicalNSW<dist_t, T>::setExternalLabel(tableint internal_id, labeltype label) {
-//     idToMetaBlockMemberMapping[internal_id]->label = label;
+//     this->idToMetaBlockMemberMapping[internal_id]->label = label;
 // }
 
 template <typename dist_t, typename T>
 T *HierarchicalNSW<dist_t, T>::getDataByInternalId(tableint internal_id) const {
-    // DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
+    // DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
     // return (T *)(this->vectorBlocks[bm->block->getIndex()]->getData(bm->index));
 
-    // DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
+    // DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
     // return (T *)(bm->vecblock->getData(bm->index));
 
-    return (T *)idToMetaBlockMemberMapping[internal_id]->vector;
+    return (T *)this->idToMetaBlockMemberMapping[internal_id]->vector;
 }
 
 template <typename dist_t, typename T>
@@ -246,7 +246,7 @@ level_data *HierarchicalNSW<dist_t, T>::getMetadata(tableint internal_id, size_t
     DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
     if (level) {
         return (level_data *)((char *)((element_meta *)(bm->block->getData(bm->index)))->others +
-                              level_data_size_ * (level - 1));
+                              this->level_data_size_ * (level - 1));
     } else {
         return &((element_meta *)(bm->block->getData(bm->index)))->level0;
     }
@@ -254,7 +254,7 @@ level_data *HierarchicalNSW<dist_t, T>::getMetadata(tableint internal_id, size_t
 
 template <typename dist_t, typename T>
 size_t HierarchicalNSW<dist_t, T>::getTopLevel(tableint internal_id) const {
-    DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
+    DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
     return bm ? ((element_meta *)(bm->block->getData(bm->index)))->toplevel : HNSW_INVALID_LEVEL;
 }
 
@@ -340,20 +340,19 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t, T>::searchLayer(tableint ep_id
         size_t links_num = node_meta->numLinks;
         auto *node_links = node_meta->links;
 #ifdef USE_SSE
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_meta->links)),
+        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + node_links[0]),
                      _MM_HINT_T0);
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_meta->links) + 64),
+        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + node_links[0] + 64),
                      _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*(node_meta->links)), _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*(node_meta->links + 1)), _MM_HINT_T0);
+        _mm_prefetch(getDataByInternalId(node_links[0]), _MM_HINT_T0);
+        _mm_prefetch(getDataByInternalId(node_links[1])), _MM_HINT_T0);
 #endif
 
         for (size_t j = 0; j < links_num; j++) {
             tableint candidate_id = node_links[j];
 #ifdef USE_SSE
-            _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_links + j + 1)),
-                         _MM_HINT_T0);
-            _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
+            _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + node_links[j + 1])), _MM_HINT_T0);
+            _mm_prefetch(getDataByInternalId(node_links[j + 1])), _MM_HINT_T0);
 #endif
             if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
                 continue;
@@ -671,6 +670,8 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
     level_generator_.seed(random_seed);
 
     idToMetaBlockMemberMapping.resize(max_elements);
+    // Vectors data will be stored in blocks, `block_size` vectors in each block.
+    // Vectors metadata will be stored in parallel block of the same size.
     block_size_ = block_size;
 
     if (maxM0_ >= (SIZE_MAX - sizeof(element_meta)) / sizeof(tableint))
@@ -678,59 +679,15 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
     element_meta_size_ = sizeof(element_meta) + maxM0_ * sizeof(tableint);
     level_data_size_ = sizeof(level_data) + maxM_ * sizeof(tableint);
 
-    // data_level0_memory will look like this:
-    // -----4------ | -----4*M0----------- | ----8--------------- | -dim*sizeof(type)- | ---8--- |
-    // <links_len>  | <link_1> <link_2>... | <incoming_links_set> |       <data>       | <label> |
+    // element_meta will store some meta on a vector and level 0 links. will look like this:
+    // | -----8----- | ----------8----------- | ----------8--------- | -----4---- | ---4*2*M-- |
+    // | <lop level> | <other levels pointer> |               <level 0 metadata>               |
+    // |             |                        | <incoming_links_set> | <numLinks> | <links>... |
 
-    // if (maxM0_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(tableint)) + 1)
-    //     throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    // size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(tableint) + sizeof(void *);
-
-    // if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labeltype))
-    //     throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    // size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labeltype);
-
-    // No need to test for overflow because we passed the test for size_links_level0_ and this is
-    // less.
-
-    // incoming_links_offset0 = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
-    // offsetData_ = size_links_level0_;
-    // label_offset_ = size_links_level0_ + data_size_;
-    // offsetLevel0_ = 0;
-
-    // data_level0_memory_ =
-    //     (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
-    // if (data_level0_memory_ == nullptr)
-    //     throw std::runtime_error("Not enough memory");
-
-    // linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
-    // if (linkLists_ == nullptr)
-    //     throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate
-    //     linklists");
-
-    // The i-th entry in linkLists array points to max_level[i] (continuous)
-    // chunks of memory, each one will look like this:
-    // -----4------ | -----4*M-------------- | ----8------------------|
-    // <links_len>  | <link_1> <link_2> ...  | <incoming_links_set>   |
-
-    // size_links_per_element_ = sizeof(linklistsizeint) + maxM_ * sizeof(tableint) + sizeof(void
-    // *);
-
-    // No need to test for overflow because we passed the test for incoming_links_offset0 and this
-    // is less.
-
-    // incoming_links_offset = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
-}
-
-template <typename dist_t, typename T>
-void HierarchicalNSW<dist_t, T>::destroyMetadata(element_meta *em) {
-    delete em->level0.incoming_edges;
-    level_data *cur_ld = em->others;
-    for (size_t i = 0; i < em->toplevel; i++) {
-        delete cur_ld->incoming_edges;
-        cur_ld = (level_data *)((char *)cur_ld + this->level_data_size_);
-    }
-    this->allocator->free_allocation(em->others);
+    // The other levels pointer will point to a continuous array
+    // of level data. each level will look like this:
+    // | ----------8--------- | -----4---- | --------4*M-------- |
+    // | <incoming_links_set> | <numLinks> | <link_1><link_2>... |
 }
 
 template <typename dist_t, typename T>
@@ -744,6 +701,17 @@ HierarchicalNSW<dist_t, T>::~HierarchicalNSW() {
     for (auto &vectorBlock : this->vectorBlocks) {
         delete vectorBlock;
     }
+}
+
+template <typename dist_t, typename T>
+void HierarchicalNSW<dist_t, T>::destroyMetadata(element_meta *em) {
+    delete em->level0.incoming_edges;
+    level_data *cur_ld = em->others;
+    for (size_t i = 0; i < em->toplevel; i++) {
+        delete cur_ld->incoming_edges;
+        cur_ld = (level_data *)((char *)cur_ld + this->level_data_size_);
+    }
+    this->allocator->free_allocation(em->others);
 }
 
 /**
@@ -861,8 +829,8 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
     size_t elementIndex = metaBlockMember->index;
     DataBlock *vectorBlock = this->vectorBlocks[metaBlock->getIndex()];
 
-    DataBlock *lastMetaBlock = this->metaBlocks.back();     //[this->metaBlocks.size() - 1];
-    DataBlock *lastVectorBlock = this->vectorBlocks.back(); //[this->vectorBlocks.size() - 1];
+    DataBlock *lastMetaBlock = this->metaBlocks.back();
+    DataBlock *lastVectorBlock = this->vectorBlocks.back();
     DataBlockMember *lastBlockMember = lastMetaBlock->getMember(lastMetaBlock->getLength() - 1);
 
     vectorBlock->setMember(elementIndex, lastBlockMember);
@@ -871,13 +839,6 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
     void *destination = metaBlock->getData(elementIndex);
     destroyMetadata((element_meta *)destination);
     void *origin = lastMetaBlock->removeAndFetchData();
-    // meta_dest->toplevel = meta_origin->toplevel;
-    // meta_dest->others = meta_origin->others;
-    // meta_dest->level0.incoming_edges = std::move(meta_origin->level0.incoming_edges);
-    // meta_origin->level0.~level_data();
-    // meta_dest->level0.numLinks = meta_origin->level0.numLinks;
-    // memmove((void *)meta_dest->level0.links, (void *)meta_origin->level0.links,
-    //         sizeof(tableint) * this->maxM0_);
     memcpy(destination, origin, this->element_meta_size_);
 
     destination = vectorBlock->getData(elementIndex);
@@ -930,8 +891,10 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
 #endif
     // choose randomly the maximum level in which the new element will be in the index.
     size_t element_max_level = getRandomLevel(mult_);
-    // void *dummy = this->allocator->callocate(element_meta_size_);
-    element_meta new_elm = element_meta(element_max_level, this->allocator);
+
+    char new_elm_data[element_meta_size_] = {0};
+    element_meta *new_elm = (element_meta *)new_elm_data;
+    new (new_elm) element_meta(element_max_level, this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> entry_point_lock(global);
@@ -945,12 +908,12 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
     size_t currObj = entrypoint_node_;
 
     if (element_max_level > 0) {
-        new_elm.others =
+        new_elm->others =
             (level_data *)this->allocator->callocate(level_data_size_ * element_max_level);
-        if (new_elm.others == nullptr)
+        if (new_elm->others == nullptr)
             throw std::runtime_error(
                 "Not enough memory: addPoint failed to allocate levels metadata");
-        level_data *ld = new_elm.others;
+        level_data *ld = new_elm->others;
         for (size_t i = 0; i < element_max_level; i++) {
             ld->incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
             ld = (level_data *)((char *)ld + level_data_size_);
@@ -992,12 +955,7 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
     this->idToMetaBlockMemberMapping[cur_c] = BlockMember;
     BlockMember->label = label;
     vectorBlock->addData(BlockMember, data_point);
-    metaBlock->addData(BlockMember, &new_elm);
-    memset(&((element_meta *)metaBlock->getData(BlockMember->index))->level0.links, 0,
-           sizeof(tableint) * maxM0_);
-    // this->allocator->free_allocation(dummy);
-    // element_meta *new_elm = metaBlock->getData(BlockMember->index);
-    // new (new_elm) element_meta(element_max_level, this->allocator);
+    metaBlock->addData(BlockMember, new_elm);
 
 #ifdef ENABLE_PARALLELIZATION
     insertion.unlock();
