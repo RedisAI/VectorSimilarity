@@ -892,7 +892,8 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
     // choose randomly the maximum level in which the new element will be in the index.
     size_t element_max_level = getRandomLevel(mult_);
 
-    char new_elm_data[this->element_meta_size_] = {0};
+    char new_elm_data[element_meta_size_];
+    memset(new_elm_data, 0, element_meta_size_);
     element_meta *new_elm = (element_meta *)new_elm_data;
     new (new_elm) element_meta(element_max_level, this->allocator);
 
