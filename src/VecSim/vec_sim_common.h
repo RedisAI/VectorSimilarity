@@ -7,10 +7,10 @@ extern "C" {
 #include <stdint.h>
 
 // HNSW default parameters
-#define HNSW_DEFAULT_M        16
-#define HNSW_DEFAULT_EF_C     200
-#define HNSW_DEFAULT_EF_RT    10
-#define BF_DEFAULT_BLOCK_SIZE 1024 * 1024
+#define HNSW_DEFAULT_M     16
+#define HNSW_DEFAULT_EF_C  200
+#define HNSW_DEFAULT_EF_RT 10
+#define DEFAULT_BLOCK_SIZE (1024 * 1024)
 
 // Datatypes for indexing.
 typedef enum {
@@ -57,6 +57,7 @@ typedef struct {
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
     size_t initialCapacity;
+    size_t blockSize;
     size_t M;
     size_t efConstruction;
     size_t efRuntime;
@@ -113,6 +114,7 @@ typedef struct {
     union {
         struct {
             size_t indexSize;        // Current count of vectors.
+            size_t blockSize;        // Vector block (mini matrix) size
             size_t M;                // Number of allowed edges per node in graph.
             size_t efConstruction;   // EF parameter for HNSW graph accuracy/latency for indexing.
             size_t efRuntime;        // EF parameter for HNSW graph accuracy/latency for search.
@@ -126,7 +128,7 @@ typedef struct {
         } hnswInfo;
         struct {
             size_t indexSize;        // Current count of vectors.
-            size_t blockSize;        // Brute force algorithm vector block (mini matrix) size
+            size_t blockSize;        // Vector block (mini matrix) size
             VecSimMetric metric;     // Index distance metric
             uint64_t memory;         // Index memory consumption.
             VecSimType type;         // Datatype the index holds.

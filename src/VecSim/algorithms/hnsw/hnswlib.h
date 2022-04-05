@@ -130,13 +130,15 @@ private:
 public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
-                    size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
-                    size_t initial_pool_size = 1, size_t elementBlock_size = BF_DEFAULT_BLOCK_SIZE);
+                    size_t ef_construction = 200, size_t ef = 10,
+                    size_t elementBlock_size = DEFAULT_BLOCK_SIZE, size_t random_seed = 100,
+                    size_t initial_pool_size = 1);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
     size_t getEf() const;
     size_t getIndexSize() const;
+    size_t getBlockSize() const;
     size_t getIndexCapacity() const;
     size_t getEfConstruction() const;
     size_t getM() const;
@@ -173,6 +175,11 @@ size_t HierarchicalNSW<dist_t, T>::getEf() const {
 template <typename dist_t, typename T>
 size_t HierarchicalNSW<dist_t, T>::getIndexSize() const {
     return cur_element_count;
+}
+
+template <typename dist_t, typename T>
+size_t HierarchicalNSW<dist_t, T>::getBlockSize() const {
+    return block_size_;
 }
 
 template <typename dist_t, typename T>
@@ -625,8 +632,8 @@ void HierarchicalNSW<dist_t, T>::repairConnectionsForDeletion(tableint element_i
 template <typename dist_t, typename T>
 HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                                             std::shared_ptr<VecSimAllocator> allocator, size_t M,
-                                            size_t ef_construction, size_t ef, size_t random_seed,
-                                            size_t pool_initial_size, size_t block_size)
+                                            size_t ef_construction, size_t ef, size_t block_size,
+                                            size_t random_seed, size_t pool_initial_size)
     : VecsimBaseObject(allocator), idToMetaBlockMemberMapping(allocator), vectorBlocks(allocator),
       metaBlocks(allocator), available_ids(allocator), label_lookup_(allocator)
 
