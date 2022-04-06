@@ -84,6 +84,7 @@ private:
     // Index data structures
     tableint entrypoint_node_;
     vecsim_stl::vector<DataBlockMember *> idToMetaBlockMemberMapping;
+    vecsim_stl::vector<T *> idToVectorMapping;
     vecsim_stl::vector<DataBlock *> vectorBlocks;
     vecsim_stl::vector<DataBlock *> metaBlocks;
     vecsim_stl::set<tableint> available_ids;
@@ -227,7 +228,12 @@ T *HierarchicalNSW<dist_t, T>::getDataByInternalId(tableint internal_id) const {
     // DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
     // return (T *)(bm->vecblock->getData(bm->index));
 
-    return (T *)this->idToMetaBlockMemberMapping[internal_id]->vector;
+    // DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
+    // return (T *)bm->vector;
+
+    return idToVectorMapping[internal_id];
+
+    // return (T *)this->idToMetaBlockMemberMapping[internal_id]->vector;
 }
 
 template <typename dist_t, typename T>
@@ -634,7 +640,7 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
                                             std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                             size_t ef_construction, size_t ef, size_t block_size,
                                             size_t random_seed, size_t pool_initial_size)
-    : VecsimBaseObject(allocator), idToMetaBlockMemberMapping(allocator), vectorBlocks(allocator),
+    : VecsimBaseObject(allocator), idToMetaBlockMemberMapping(allocator), idToVectorMapping(allocator), vectorBlocks(allocator),
       metaBlocks(allocator), available_ids(allocator), label_lookup_(allocator)
 
 #ifdef ENABLE_PARALLELIZATION
@@ -677,6 +683,7 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
     level_generator_.seed(random_seed);
 
     idToMetaBlockMemberMapping.resize(max_elements);
+    idToVectorMapping.resize(max_elements);
     // Vectors data will be stored in blocks, `block_size` vectors in each block.
     // Vectors metadata will be stored in parallel block of the same size.
     block_size_ = block_size;
@@ -741,6 +748,7 @@ void HierarchicalNSW<dist_t, T>::resizeIndex(size_t new_max_elements) {
 
     max_elements_ = new_max_elements;
     idToMetaBlockMemberMapping.resize(max_elements_);
+    idToVectorMapping.resize(max_elements_);
 }
 
 template <typename dist_t, typename T>
@@ -826,10 +834,6 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
         }
     }
 
-    // add the element id to the available ids for future reuse.
-    cur_element_count--;
-    label_lookup_.erase(label);
-    available_ids.insert(element_internal_id);
 
     DataBlockMember *metaBlockMember = this->idToMetaBlockMemberMapping[element_internal_id];
     DataBlock *metaBlock = metaBlockMember->block;
@@ -842,6 +846,7 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
 
     vectorBlock->setMember(elementIndex, lastBlockMember);
     metaBlock->setMember(elementIndex, lastBlockMember);
+    this->idToVectorMapping[label_lookup_[lastBlockMember->label]] = this->idToVectorMapping[element_internal_id];
 
     void *destination = metaBlock->getData(elementIndex);
     destroyMetadata((element_meta *)destination);
@@ -855,6 +860,12 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
     // Delete the element block membership
     delete metaBlockMember;
     this->idToMetaBlockMemberMapping[element_internal_id] = NULL;
+    this->idToVectorMapping[element_internal_id] = NULL;
+    
+    // add the element id to the available ids for future reuse.
+    cur_element_count--;
+    label_lookup_.erase(label);
+    available_ids.insert(element_internal_id);
 
     // If the last element block is emtpy;
     if (lastMetaBlock->getLength() == 0) {
@@ -964,6 +975,7 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
     BlockMember->label = label;
     vectorBlock->addData(BlockMember, data_point);
     metaBlock->addData(BlockMember, new_elm);
+    this->idToVectorMapping[cur_c] = (T *)BlockMember->vector;
 
 #ifdef ENABLE_PARALLELIZATION
     insertion.unlock();
