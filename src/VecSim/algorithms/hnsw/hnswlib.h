@@ -88,7 +88,12 @@ private:
     // callback for computing distance between two points in the underline space.
     DISTFUNC<dist_t> fstdistfunc_;
     void *dist_func_param_;
+#ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
+    // Allow the following test to access the index size private member.
+    friend class HNSWLibTest_preferAdHocOptimization_Test;
+    friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
+#endif
 
     HierarchicalNSW() {}                                // default constructor
     HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
@@ -1045,7 +1050,7 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
             auto *node_links = (tableint *)(node_ll + 1);
             for (int i = 0; i < links_count; i++) {
                 tableint candidate = node_links[i];
-                if (candidate < 0 || candidate > max_elements_)
+                if (candidate > max_elements_)
                     throw std::runtime_error("candidate error: out of index range");
 
                 dist_t d =

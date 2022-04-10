@@ -41,6 +41,7 @@ public:
     static const char *HNSW_ENTRYPOINT;
 
     static const char *BLOCK_SIZE_STRING;
+    static const char *SEARCH_MODE_STRING;
 };
 
 void float_vector_normalize(float *x, size_t dim);
@@ -54,3 +55,5 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 const char *VecSimType_ToString(VecSimType vecsimType);
 
 const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
+
+const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);

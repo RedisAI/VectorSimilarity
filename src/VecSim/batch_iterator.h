@@ -9,12 +9,11 @@
  */
 struct VecSimBatchIterator : public VecsimBaseObject {
 private:
-    const void *query_vector;
+    void *query_vector;
     size_t returned_results_count;
 
 public:
-    explicit VecSimBatchIterator(const void *query_vector,
-                                 std::shared_ptr<VecSimAllocator> allocator)
+    explicit VecSimBatchIterator(void *query_vector, std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0){};
 
     inline const void *getQueryBlob() const { return query_vector; }
@@ -35,5 +34,5 @@ public:
     // Reset the iterator to the initial state, before any results has been returned.
     virtual void reset() = 0;
 
-    virtual ~VecSimBatchIterator() = default;
+    virtual ~VecSimBatchIterator() { allocator->free_allocation(this->query_vector); };
 };

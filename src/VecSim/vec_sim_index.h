@@ -47,7 +47,7 @@ public:
      * metric.
      * @param id the id of the vector in the index.
      * @param blob binary representation of the second vector. Blob size should match the index data
-     * type and dimension.
+     * type and dimension, and pre-normalized if needed.
      * @return The distance (according to the index's distance metric) between `blob` and the vector
      * with id `id`.
      */
@@ -90,7 +90,7 @@ public:
      *
      * @return Index general and specific meta-data.
      */
-    virtual VecSimIndexInfo info() = 0;
+    virtual VecSimIndexInfo info() const = 0;
 
     /**
      * @brief Returns an index information in an iterable structure.
@@ -109,4 +109,15 @@ public:
      * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
+
+    /**
+     * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
+     * search over the index instead of using batch iterator.
+     *
+     * @param subsetSize the estimated number of vectors in the index that pass the filter
+     * (that is, query results can be only from a subset of vector of this size).
+     *
+     * @param k the number of required results to return from the query.
+     */
+    virtual bool preferAdHocSearch(size_t subsetSize, size_t k) = 0;
 };

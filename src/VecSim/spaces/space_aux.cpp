@@ -1,5 +1,9 @@
 #include "space_aux.h"
+#if defined(M1)
+
+#elif defined(__x86_64__)
 #include "cpu_features_macros.h"
+#endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"

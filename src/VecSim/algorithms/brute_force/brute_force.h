@@ -23,9 +23,11 @@ public:
                                             VecSimQueryParams *qparams) override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    virtual VecSimIndexInfo info() override;
+    virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k) override;
+
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
     virtual ~BruteForceIndex();
@@ -40,4 +42,11 @@ private:
     idType count;
     std::unique_ptr<SpaceInterface<float>> space;
     DISTFUNC<float> dist_func;
+    VecSearchMode last_mode;
+#ifdef BUILD_TESTS
+    // Allow the following tests to access the index private members.
+    friend class BruteForceTest_preferAdHocOptimization_Test;
+    friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
+    friend class BruteForceTest_resizeIndex_Test;
+#endif
 };

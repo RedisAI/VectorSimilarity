@@ -44,16 +44,27 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
 /**
- * @brief Calculate the distance of a vector from an index to a vector.
+ * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
+ * the vector fits the index - its type and dimension are the same as the index's, and if the
+ * index's distance metric is cosine, the vector is already normalized.
  * @param index the index from which the first vector is located, and that defines the distance
  * metric.
  * @param id the id of the vector in the index.
  * @param blob binary representation of the second vector. Blob size should match the index data
- * type and dimension.
+ * type and dimension, and pre-normalized if needed.
  * @return The distance (according to the index's distance metric) between `blob` and the vector
  * with id `id`.
  */
 double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob);
+
+/**
+ * @brief normalize the vector blob in place.
+ * @param blob binary representation of a vector. Blob size should match the specified type and
+ * dimension.
+ * @param dim vector dimension.
+ * @param type vector type.
+ */
+void VecSim_Normalize(void *blob, size_t dim, VecSimType type);
 
 /**
  * @brief Return the number of vectors in the index.
@@ -115,6 +126,17 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
  * @return Fresh batch iterator
  */
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
+
+/**
+ * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
+ * search over the index instead of using batch iterator.
+ *
+ * @param subsetSize the estimated number of vectors in the index that pass the filter
+ * (that is, query results can be only from a subset of vector of this size).
+ *
+ * @param k the number of required results to return from the query.
+ */
+bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k);
 
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.

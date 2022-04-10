@@ -6,7 +6,9 @@
 L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
     : SpaceInterface(allocator) {
     fstdistfunc_ = L2Sqr;
-#if defined(__x86_64__)
+#if defined(M1)
+
+#elif defined(__x86_64__)
     Arch_Optimization arch_opt = getArchitectureOptimization();
     if (arch_opt == ARCH_OPT_AVX512) {
 #ifdef __AVX512F__

@@ -48,7 +48,8 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
     auto dist_func = this->space->get_dist_func();
 
     // In the first iteration, add the entry point to the empty candidates set.
-    if (this->getResultsCount() == 0) {
+    if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
+        this->candidates.empty()) {
         float dist =
             dist_func(this->getQueryBlob(), this->hnsw_index->getDataByInternalId(entry_point),
                       this->space->get_data_dim());
@@ -127,7 +128,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
     return top_candidates;
 }
 
-HNSW_BatchIterator::HNSW_BatchIterator(const void *query_vector, HNSWIndex *index_wrapper,
+HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrapper,
                                        std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, std::move(allocator)), index_wrapper(index_wrapper),
       depleted(false), top_candidates_extras(this->allocator), candidates(this->allocator) {

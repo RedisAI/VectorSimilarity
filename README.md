@@ -118,4 +118,4 @@ tox -e flowenv
 
 # Benchmark
 
-To benchmark the capabilities of this library, follow the instructions in the [benchmark docs section](benchmarks.md). 
+To benchmark the capabilities of this library, follow the instructions in the [benchmark docs section](docs/benchmarks.md). 

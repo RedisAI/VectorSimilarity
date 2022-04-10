@@ -9,6 +9,8 @@
 #include <memory>
 #include <cstring>
 #include <queue>
+#include <cassert>
+#include <cmath>
 
 using namespace std;
 
@@ -22,7 +24,8 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
                                                            L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->dim, allocator))) {
+                      new (allocator) InnerProductSpace(params->dim, allocator))),
+      last_mode(EMPTY_MODE) {
     this->idToVectorBlockMemberMapping.resize(params->initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
@@ -74,7 +77,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     // See if new id is bigger than current vector count. Needs to resize the index.
     if (id >= this->idToVectorBlockMemberMapping.size()) {
-        this->idToVectorBlockMemberMapping.resize(this->count * 2);
+        this->idToVectorBlockMemberMapping.resize(std::ceil(this->count * 1.1));
     }
 
     // Get vector block to store the vector in.
@@ -125,7 +128,6 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     // Swap the last vector with the deleted vector;
     vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
-    lastVectorBlockMember->block = vectorBlock;
 
     float *destination = vectorBlock->getVector(vectorIndex);
     float *origin = lastVectorBlock->removeAndFetchVector();
@@ -156,13 +158,7 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     }
     idType id = optionalId->second;
     VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(float));
-        float_vector_normalize(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
+
     return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
                            &this->dim);
 }
@@ -184,6 +180,7 @@ VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int pa
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
+    this->last_mode = STANDARD_KNN;
     float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
@@ -228,7 +225,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     return results;
 }
 
-VecSimIndexInfo BruteForceIndex::info() {
+VecSimIndexInfo BruteForceIndex::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
@@ -238,13 +235,14 @@ VecSimIndexInfo BruteForceIndex::info() {
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
     info.bfInfo.memory = this->allocator->getAllocationSize();
+    info.bfInfo.last_mode = this->last_mode;
     return info;
 }
 
 VecSimInfoIterator *BruteForceIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed;
-    size_t numberOfInfoFields = 7;
+    size_t numberOfInfoFields = 8;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
@@ -270,10 +268,92 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
                                                 .fieldType = INFOFIELD_UINT64,
                                                 .uintegerValue = info.bfInfo.memory});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .stringValue = VecSimSearchMode_ToString(info.bfInfo.last_mode)});
 
     return infoIterator;
 }
 
 VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
-    return new (this->allocator) BF_BatchIterator(queryBlob, this, this->allocator);
+    // As this is the only supported type, we always allocate 4 bytes for every element in the
+    // vector.
+    assert(this->vecType == VecSimType_FLOAT32);
+    auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
+    if (metric == VecSimMetric_Cosine) {
+        float_vector_normalize((float *)queryBlobCopy, dim);
+    }
+    // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
+    return new (this->allocator) BF_BatchIterator(queryBlobCopy, this, this->allocator);
+}
+
+bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
+    // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
+    // see scripts/BF_batches_clf.py
+    size_t index_size = this->indexSize();
+    if (subsetSize > index_size) {
+        throw std::runtime_error("internal error: subset size cannot be larger than index size");
+    }
+    size_t d = this->dim;
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    bool res;
+    if (index_size <= 5500) {
+        // node 1
+        res = true;
+    } else {
+        // node 2
+        if (d <= 300) {
+            // node 3
+            if (r <= 0.15) {
+                // node 5
+                res = true;
+            } else {
+                // node 6
+                if (r <= 0.35) {
+                    // node 9
+                    if (d <= 75) {
+                        // node 11
+                        res = false;
+                    } else {
+                        // node 12
+                        if (index_size <= 550000) {
+                            // node 17
+                            res = true;
+                        } else {
+                            // node 18
+                            res = false;
+                        }
+                    }
+                } else {
+                    // node 10
+                    res = false;
+                }
+            }
+        } else {
+            // node 4
+            if (r <= 0.55) {
+                // node 7
+                res = true;
+            } else {
+                // node 8
+                if (d <= 750) {
+                    // node 13
+                    res = false;
+                } else {
+                    // node 14
+                    if (r <= 0.75) {
+                        // node 15
+                        res = true;
+                    } else {
+                        // node 16
+                        res = false;
+                    }
+                }
+            }
+        }
+    }
+    this->last_mode = res ? HYBRID_ADHOC_BF : HYBRID_BATCHES;
+    return res;
 }

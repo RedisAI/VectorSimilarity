@@ -17,9 +17,10 @@ private:
     VecSimQueryResult *searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
     VecSimQueryResult *selectBasedSearch(size_t n_res);
     VecSimQueryResult *heapBasedSearch(size_t n_res);
+    void swapScores(const unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num);
 
 public:
-    BF_BatchIterator(const void *query_vector, const BruteForceIndex *index,
+    BF_BatchIterator(void *query_vector, const BruteForceIndex *index,
                      std::shared_ptr<VecSimAllocator> allocator);
 
     inline const BruteForceIndex *getIndex() const { return index; };
