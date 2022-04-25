@@ -31,12 +31,13 @@ public:
 
     inline vecsim_stl::vector<DataBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
+    inline labelType getLabel(idType id) const { return idToVectorBlockMemberMapping[id].label; }
     virtual ~BruteForceIndex();
 
 private:
     void updateVector(idType id, const void *vector_data);
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
-    vecsim_stl::vector<DataBlockMember *> idToVectorBlockMemberMapping;
+    vecsim_stl::vector<DataBlockMember> idToVectorBlockMemberMapping;
     vecsim_stl::set<idType> deletedIds;
     vecsim_stl::vector<DataBlock *> vectorBlocks;
     size_t vectorBlockSize;

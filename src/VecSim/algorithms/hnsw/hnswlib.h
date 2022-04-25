@@ -33,21 +33,22 @@ typedef size_t labeltype;
 typedef unsigned int tableint;
 
 struct level_data {
-    vecsim_stl::set<tableint> *incoming_edges;
+    vecsim_stl::unordered_set<tableint> *incoming_edges;
     tableint numLinks;
     tableint links[];
 
     level_data(std::shared_ptr<VecSimAllocator> allocator)
-        : incoming_edges(new vecsim_stl::set<tableint>(allocator)), numLinks(0) {}
+        : incoming_edges(new vecsim_stl::unordered_set<tableint>(allocator)), numLinks(0) {}
 };
 
 struct element_meta {
+    labeltype label;
     size_t toplevel;
     level_data *others;
     level_data level0;
 
-    element_meta(size_t maxLevel, std::shared_ptr<VecSimAllocator> allocator)
-        : toplevel(maxLevel), others(nullptr), level0(allocator) {}
+    element_meta(labeltype label, size_t maxLevel, std::shared_ptr<VecSimAllocator> allocator)
+        : label(label), toplevel(maxLevel), others(nullptr), level0(allocator) {}
 };
 
 template <typename dist_t>
@@ -83,8 +84,7 @@ private:
 
     // Index data structures
     tableint entrypoint_node_;
-    vecsim_stl::vector<DataBlockMember *> idToMetaBlockMemberMapping;
-    vecsim_stl::vector<T *> idToVectorMapping;
+    vecsim_stl::vector<DataBlockMember> idToMetaBlockMemberMapping;
     vecsim_stl::vector<DataBlock *> vectorBlocks;
     vecsim_stl::vector<DataBlock *> metaBlocks;
     vecsim_stl::set<tableint> available_ids;
@@ -212,7 +212,8 @@ size_t HierarchicalNSW<dist_t, T>::getEntryPointLabel() const {
 
 template <typename dist_t, typename T>
 labeltype HierarchicalNSW<dist_t, T>::getExternalLabel(tableint internal_id) const {
-    return this->idToMetaBlockMemberMapping[internal_id]->label;
+    const DataBlockMember &bm = this->idToMetaBlockMemberMapping[internal_id];
+    return ((element_meta *)(bm.block->getData(bm.index)))->label;
 }
 
 // template <typename dist_t, typename T>
@@ -231,9 +232,9 @@ T *HierarchicalNSW<dist_t, T>::getDataByInternalId(tableint internal_id) const {
     // DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
     // return (T *)bm->vector;
 
-    return idToVectorMapping[internal_id];
+    // return idToVectorMapping[internal_id];
 
-    // return (T *)this->idToMetaBlockMemberMapping[internal_id]->vector;
+    return (T *)this->idToMetaBlockMemberMapping[internal_id].vector;
 }
 
 template <typename dist_t, typename T>
@@ -256,19 +257,20 @@ dist_t HierarchicalNSW<dist_t, T>::getDistanceByLabelFromPoint(labeltype label,
 
 template <typename dist_t, typename T>
 level_data *HierarchicalNSW<dist_t, T>::getMetadata(tableint internal_id, size_t level) const {
-    DataBlockMember *bm = idToMetaBlockMemberMapping[internal_id];
+    const DataBlockMember &bm = idToMetaBlockMemberMapping[internal_id];
     if (level) {
-        return (level_data *)((char *)((element_meta *)(bm->block->getData(bm->index)))->others +
+        return (level_data *)((char *)((element_meta *)(bm.block->getData(bm.index)))->others +
                               this->level_data_size_ * (level - 1));
     } else {
-        return &((element_meta *)(bm->block->getData(bm->index)))->level0;
+        return &((element_meta *)(bm.block->getData(bm.index)))->level0;
     }
 }
 
 template <typename dist_t, typename T>
 size_t HierarchicalNSW<dist_t, T>::getTopLevel(tableint internal_id) const {
-    DataBlockMember *bm = this->idToMetaBlockMemberMapping[internal_id];
-    return bm ? ((element_meta *)(bm->block->getData(bm->index)))->toplevel : HNSW_INVALID_LEVEL;
+    const DataBlockMember &bm = this->idToMetaBlockMemberMapping[internal_id];
+    return bm.block ? ((element_meta *)(bm.block->getData(bm.index)))->toplevel
+                    : HNSW_INVALID_LEVEL;
 }
 
 template <typename dist_t, typename T>
@@ -640,7 +642,7 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
                                             std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                             size_t ef_construction, size_t ef, size_t block_size,
                                             size_t random_seed, size_t pool_initial_size)
-    : VecsimBaseObject(allocator), idToMetaBlockMemberMapping(allocator), idToVectorMapping(allocator), vectorBlocks(allocator),
+    : VecsimBaseObject(allocator), idToMetaBlockMemberMapping(allocator), vectorBlocks(allocator),
       metaBlocks(allocator), available_ids(allocator), label_lookup_(allocator)
 
 #ifdef ENABLE_PARALLELIZATION
@@ -683,7 +685,6 @@ HierarchicalNSW<dist_t, T>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t ma
     level_generator_.seed(random_seed);
 
     idToMetaBlockMemberMapping.resize(max_elements);
-    idToVectorMapping.resize(max_elements);
     // Vectors data will be stored in blocks, `block_size` vectors in each block.
     // Vectors metadata will be stored in parallel block of the same size.
     block_size_ = block_size;
@@ -748,7 +749,6 @@ void HierarchicalNSW<dist_t, T>::resizeIndex(size_t new_max_elements) {
 
     max_elements_ = new_max_elements;
     idToMetaBlockMemberMapping.resize(max_elements_);
-    idToVectorMapping.resize(max_elements_);
 }
 
 template <typename dist_t, typename T>
@@ -834,34 +834,31 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
         }
     }
 
-
-    DataBlockMember *metaBlockMember = this->idToMetaBlockMemberMapping[element_internal_id];
-    DataBlock *metaBlock = metaBlockMember->block;
-    size_t elementIndex = metaBlockMember->index;
-    DataBlock *vectorBlock = this->vectorBlocks[metaBlock->getIndex()];
+    DataBlockMember &metaBlockMember = this->idToMetaBlockMemberMapping[element_internal_id];
+    DataBlock *metaBlock = metaBlockMember.block;
+    size_t elementIndex = metaBlockMember.index;
+    // DataBlock *vectorBlock = this->vectorBlocks[metaBlock->getIndex()];
 
     DataBlock *lastMetaBlock = this->metaBlocks.back();
     DataBlock *lastVectorBlock = this->vectorBlocks.back();
-    DataBlockMember *lastBlockMember = lastMetaBlock->getMember(lastMetaBlock->getLength() - 1);
+    tableint lastBlockMemberId = lastMetaBlock->getMember(lastMetaBlock->getLength() - 1);
 
-    vectorBlock->setMember(elementIndex, lastBlockMember);
-    metaBlock->setMember(elementIndex, lastBlockMember);
-    this->idToVectorMapping[label_lookup_[lastBlockMember->label]] = this->idToVectorMapping[element_internal_id];
+    this->idToMetaBlockMemberMapping[lastBlockMemberId].vector = metaBlockMember.vector;
+    metaBlock->setMember(elementIndex, &this->idToMetaBlockMemberMapping[lastBlockMemberId],
+                         lastBlockMemberId);
 
     void *destination = metaBlock->getData(elementIndex);
     destroyMetadata((element_meta *)destination);
     void *origin = lastMetaBlock->removeAndFetchData();
     memcpy(destination, origin, this->element_meta_size_);
 
-    destination = vectorBlock->getData(elementIndex);
+    destination = metaBlockMember.vector;
     origin = lastVectorBlock->removeAndFetchData();
     memcpy(destination, origin, this->element_data_size_);
 
     // Delete the element block membership
-    delete metaBlockMember;
-    this->idToMetaBlockMemberMapping[element_internal_id] = NULL;
-    this->idToVectorMapping[element_internal_id] = NULL;
-    
+    memset(&this->idToMetaBlockMemberMapping[element_internal_id], 0, sizeof(DataBlockMember));
+
     // add the element id to the available ids for future reuse.
     cur_element_count--;
     label_lookup_.erase(label);
@@ -913,7 +910,7 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
     char new_elm_data[element_meta_size_];
     memset(new_elm_data, 0, element_meta_size_);
     element_meta *new_elm = (element_meta *)new_elm_data;
-    new (new_elm) element_meta(element_max_level, this->allocator);
+    new (new_elm) element_meta(label, element_max_level, this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> entry_point_lock(global);
@@ -934,7 +931,7 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
                 "Not enough memory: addPoint failed to allocate levels metadata");
         level_data *ld = new_elm->others;
         for (size_t i = 0; i < element_max_level; i++) {
-            ld->incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+            ld->incoming_edges = new vecsim_stl::unordered_set<tableint>(this->allocator);
             ld = (level_data *)((char *)ld + level_data_size_);
         }
     }
@@ -942,40 +939,22 @@ void HierarchicalNSW<dist_t, T>::addPoint(const void *data_point, const labeltyp
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> insertion(global);
 #endif
-    // Get vector and metadata blocks to store the new element in.
-    DataBlock *metaBlock;
-    DataBlock *vectorBlock;
 
-    if (this->metaBlocks.size() == 0) {
-        // No element blocks, create new one.
-        metaBlock = new (this->allocator)
-            DataBlock(this->block_size_, element_meta_size_, this->allocator, 0);
-        this->metaBlocks.push_back(metaBlock);
-        vectorBlock = new (this->allocator)
-            DataBlock(this->block_size_, element_data_size_, this->allocator, 0, false);
-        this->vectorBlocks.push_back(vectorBlock);
-    } else {
-        // Get the last element block.
-        metaBlock = this->metaBlocks.back();
-        vectorBlock = this->vectorBlocks.back();
-        if (metaBlock->getLength() == this->block_size_) {
-            // Last element block is full, create a new one.
-            metaBlock = new (this->allocator) DataBlock(this->block_size_, element_meta_size_,
-                                                        this->allocator, this->metaBlocks.size());
-            this->metaBlocks.push_back(metaBlock);
-            vectorBlock =
-                new (this->allocator) DataBlock(this->block_size_, element_data_size_,
-                                                this->allocator, this->metaBlocks.size(), false);
-            this->vectorBlocks.push_back(vectorBlock);
-        }
+    if (this->metaBlocks.size() == 0 || this->metaBlocks.back()->getLength() == this->block_size_) {
+        // No element blocks or last element block is full, create new one.
+        this->metaBlocks.push_back(new (this->allocator) DataBlock(
+            this->block_size_, this->element_meta_size_, this->allocator));
+        this->vectorBlocks.push_back(new (this->allocator) DataBlock(
+            this->block_size_, this->element_data_size_, this->allocator, false));
     }
+    // Get vector and metadata blocks to store the new element in.
+    DataBlock *metaBlock = this->metaBlocks.back();
+    DataBlock *vectorBlock = this->vectorBlocks.back();
 
-    DataBlockMember *BlockMember = new (this->allocator) DataBlockMember(this->allocator);
-    this->idToMetaBlockMemberMapping[cur_c] = BlockMember;
-    BlockMember->label = label;
-    vectorBlock->addData(BlockMember, data_point);
-    metaBlock->addData(BlockMember, new_elm);
-    this->idToVectorMapping[cur_c] = (T *)BlockMember->vector;
+    vectorBlock->addData(&this->idToMetaBlockMemberMapping[cur_c], data_point, cur_c);
+    metaBlock->addData(&this->idToMetaBlockMemberMapping[cur_c], new_elm, cur_c);
+    this->idToMetaBlockMemberMapping[cur_c].vector =
+        vectorBlock->getData(vectorBlock->getLength() - 1);
 
 #ifdef ENABLE_PARALLELIZATION
     insertion.unlock();

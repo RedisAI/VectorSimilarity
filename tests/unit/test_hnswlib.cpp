@@ -745,9 +745,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
     // This is testing a bug fix - before we had the seconder sorting by id in CompareByFirst,
     // the graph got disconnected due to the deletion of some node followed by a bad repairing of
     // one of its neighbours. Here, we ensure that we get all the nodes in the graph as results.
-    auto verify_res = [&](size_t id, float score, size_t index) {
-        ASSERT_EQ(id, n - 1 - index);
-    };
+    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, n - 1 - index); };
     runTopKSearchTest(index, query, n, verify_res);
 
     VecSimIndex_Free(index);
