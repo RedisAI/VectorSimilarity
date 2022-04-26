@@ -34,9 +34,8 @@ extern "C" size_t VecSimIndex_EstimateSize(const VecSimParams *params) {
         return HNSWIndex::estimateSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceIndex::estimateSize(&params->bfParams);
-    default:
-        return -1;
     }
+    return -1;
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
