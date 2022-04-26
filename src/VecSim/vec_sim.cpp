@@ -28,6 +28,17 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     return index;
 }
 
+extern "C" size_t VecSimIndex_EstimateSize(const VecSimParams *params) {
+    switch (params->algo) {
+    case VecSimAlgo_HNSWLIB:
+        return HNSWIndex::estimateSize(&params->hnswParams);
+    case VecSimAlgo_BF:
+        return BruteForceIndex::estimateSize(&params->bfParams);
+    default:
+        return -1;
+    }
+}
+
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
     int64_t before = index->getAllocator()->getAllocationSize();
     index->addVector(blob, id);

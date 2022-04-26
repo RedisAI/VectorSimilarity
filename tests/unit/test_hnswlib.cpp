@@ -1353,4 +1353,29 @@ TEST_F(HNSWLibTest, testCosine) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, testSizeEstimation) {
+    size_t dim = 128;
+    size_t n = 100;
+    size_t M = 32;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .M = M}};
+    size_t test_estimation = sizeof(HNSWIndex);
+    test_estimation += sizeof(hnswlib::HierarchicalNSW<float>);
+    // link lists
+    test_estimation += sizeof(void *) * n;
+    // main data block
+    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(tableint) + sizeof(void *);
+    size_t size_data_per_element = size_links_level0 + dim * sizeof(float) + sizeof(labeltype);
+    test_estimation += n * size_data_per_element;
+
+    size_t estimation = VecSimIndex_EstimateSize(&params);
+    ASSERT_GE(estimation, test_estimation);
+    ASSERT_LE(estimation, test_estimation + 32);
+}
 } // namespace hnswlib

@@ -30,6 +30,20 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
 }
 
 /******************** Implementation **************/
+size_t HNSWIndex::estimateSize(const HNSWParams *params) {
+    size_t est = sizeof(HNSWIndex);
+    est += sizeof(*space);
+    est += sizeof(*hnsw);
+
+    est += sizeof(void *) * params->initialCapacity; // link lists
+
+    size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
+    size_t size_data_per_element = size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+    est += params->initialCapacity * size_data_per_element;
+
+    return est;
+}
+
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
         float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine

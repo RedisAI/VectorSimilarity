@@ -20,6 +20,14 @@ typedef struct VecSimIndex VecSimIndex;
 VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 
 /**
+ * @brief Estimates the size of an empty index according to the parameters.
+ * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
+ * algorithm-related params).
+ * @return Estimated index size.
+ */
+size_t VecSimIndex_EstimateSize(const VecSimParams *params);
+
+/**
  * @brief Release an index and its internal data.
  * @param index the index to release.
  */
