@@ -1255,7 +1255,7 @@ TEST_F(BruteForceTest, testSizeEstimation) {
     size_t test_estimation = sizeof(BruteForceIndex);
 
     test_estimation += n * (sizeof(idType) + sizeof(labelType)); // labelToIdLookup
-    test_estimation += n * sizeof(idType); // idToVectorBlockMemberMapping
+    test_estimation += n * sizeof(idType);                       // idToVectorBlockMemberMapping
 
     size_t estimation = VecSimIndex_EstimateSize(&params);
     ASSERT_GE(estimation, test_estimation);

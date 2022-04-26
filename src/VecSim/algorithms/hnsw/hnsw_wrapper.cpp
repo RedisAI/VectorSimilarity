@@ -37,8 +37,10 @@ size_t HNSWIndex::estimateSize(const HNSWParams *params) {
 
     est += sizeof(void *) * params->initialCapacity; // link lists
 
-    size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
-    size_t size_data_per_element = size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+    size_t size_links_level0 =
+        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
+    size_t size_data_per_element =
+        size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
     est += params->initialCapacity * size_data_per_element;
 
     return est;
