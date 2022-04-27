@@ -49,6 +49,10 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     return est;
 }
 
+size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
+    return params->dim * sizeof(float);
+}
+
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     // Get the vector block
     VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];

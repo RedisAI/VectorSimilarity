@@ -56,6 +56,16 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
     return index->getDistanceFrom(id, blob);
 }
 
+extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
+    switch (params->algo) {
+    case VecSimAlgo_HNSWLIB:
+        return HNSWIndex::estimateElementMemory(&params->hnswParams);
+    case VecSimAlgo_BF:
+        return BruteForceIndex::estimateElementMemory(&params->bfParams);
+    }
+    return -1;
+}
+
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     // TODO: need more generic
     assert(type == VecSimType_FLOAT32);

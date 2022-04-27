@@ -47,6 +47,14 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     return est;
 }
 
+size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
+    size_t size_links_level0 =
+        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
+    size_t size_data_per_element =
+        size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+    return size_data_per_element;
+}
+
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
         float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine

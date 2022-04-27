@@ -28,6 +28,14 @@ VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
 
 /**
+ * @brief normalize the vector blob in place.
+ * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
+ * algorithm-related params).
+ * @return The estimated single vector memory consumption, considering the parameters.
+ */
+size_t VecSimIndex_EstimateElementSize(const VecSimParams *params);
+
+/**
  * @brief Release an index and its internal data.
  * @param index the index to release.
  */
