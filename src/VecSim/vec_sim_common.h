@@ -7,10 +7,10 @@ extern "C" {
 #include <stdint.h>
 
 // HNSW default parameters
-#define HNSW_DEFAULT_M        16
-#define HNSW_DEFAULT_EF_C     200
-#define HNSW_DEFAULT_EF_RT    10
-#define BF_DEFAULT_BLOCK_SIZE 1024 * 1024
+#define HNSW_DEFAULT_M     16
+#define HNSW_DEFAULT_EF_C  200
+#define HNSW_DEFAULT_EF_RT 10
+#define DEFAULT_BLOCK_SIZE 100
 
 // Datatypes for indexing.
 typedef enum {
@@ -57,6 +57,7 @@ typedef struct {
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
     size_t initialCapacity;
+    size_t blockSize;
     size_t M;
     size_t efConstruction;
     size_t efRuntime;
