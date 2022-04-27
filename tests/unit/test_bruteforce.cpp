@@ -1257,9 +1257,12 @@ TEST_F(BruteForceTest, testSizeEstimation) {
     test_estimation += n * (sizeof(idType) + sizeof(labelType)); // labelToIdLookup
     test_estimation += n * sizeof(idType);                       // idToVectorBlockMemberMapping
 
-    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    ASSERT_GE(estimation, test_estimation);
+    size_t iestimation = VecSimIndex_EstimateInitialSize(&params);
+    ASSERT_GE(iestimation, test_estimation);
     // Some small internals that are kept with pointers doesn't take into account in this test.
     // Here we test that we are not far from the estimation.
-    ASSERT_LE(estimation, test_estimation + 50);
+    ASSERT_LE(iestimation, test_estimation + 50);
+
+    size_t eestimation = VecSimIndex_EstimateElementSize(&params);
+    ASSERT_EQ(eestimation, dim * sizeof(float));
 }
