@@ -331,17 +331,20 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // Default args
+    ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
     VecSimIndex_Free(index);
 
     d = 1280;
+    size_t bs = 42;
     params = {.algo = VecSimAlgo_HNSWLIB,
               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                        .dim = d,
                                        .metric = VecSimMetric_L2,
                                        .initialCapacity = n,
+                                       .blockSize = bs,
                                        .M = 200,
                                        .efConstruction = 1000,
                                        .efRuntime = 500}};
@@ -350,6 +353,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // User args
+    ASSERT_EQ(info.hnswInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);

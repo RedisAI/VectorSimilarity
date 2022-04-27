@@ -114,6 +114,7 @@ typedef struct {
     union {
         struct {
             size_t indexSize;        // Current count of vectors.
+            size_t blockSize;        // Sets the amount to grow when resizing
             size_t M;                // Number of allowed edges per node in graph.
             size_t efConstruction;   // EF parameter for HNSW graph accuracy/latency for indexing.
             size_t efRuntime;        // EF parameter for HNSW graph accuracy/latency for search.

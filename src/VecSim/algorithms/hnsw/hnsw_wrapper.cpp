@@ -150,6 +150,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.dim = this->dim;
     info.hnswInfo.type = this->vecType;
     info.hnswInfo.metric = this->metric;
+    info.hnswInfo.blockSize = this->blockSize;
     info.hnswInfo.M = this->hnsw->getM();
     info.hnswInfo.efConstruction = this->hnsw->getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw->getEf();
