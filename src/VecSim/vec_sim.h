@@ -25,7 +25,7 @@ VecSimIndex *VecSimIndex_New(const VecSimParams *params);
  * algorithm-related params).
  * @return Estimated index size.
  */
-size_t VecSimIndex_EstimateSize(const VecSimParams *params);
+size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
 
 /**
  * @brief Release an index and its internal data.
