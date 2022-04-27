@@ -9,6 +9,7 @@ protected:
     size_t dim;
     VecSimType vecType;
     VecSimMetric metric;
+    size_t blockSize;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);

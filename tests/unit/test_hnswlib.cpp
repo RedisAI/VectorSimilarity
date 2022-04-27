@@ -43,11 +43,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
 TEST_F(HNSWLibTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 15;
+    size_t bs = 50;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
-                                                 .initialCapacity = n}};
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -61,11 +63,10 @@ TEST_F(HNSWLibTest, resizeIndex) {
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (by 10% factor from the index size).
+    // by the block size parameter.
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              std::ceil(1.1 * n));
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs + n);
     VecSimIndex_Free(index);
 }
 
