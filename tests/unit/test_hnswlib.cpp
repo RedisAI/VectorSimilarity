@@ -1374,8 +1374,10 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     size_t size_data_per_element = size_links_level0 + dim * sizeof(float) + sizeof(labeltype);
     test_estimation += n * size_data_per_element;
 
-    size_t estimation = VecSimIndex_EstimateSize(&params);
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
     ASSERT_GE(estimation, test_estimation);
+    // Some small internals that are kept with pointers doesn't take into account in this test.
+    // Here we test that we are not far from the estimation.
     ASSERT_LE(estimation, test_estimation + 32);
 }
 } // namespace hnswlib

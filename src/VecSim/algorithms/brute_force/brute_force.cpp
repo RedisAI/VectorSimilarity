@@ -37,7 +37,7 @@ BruteForceIndex::~BruteForceIndex() {
 }
 
 /******************** Implementation **************/
-size_t BruteForceIndex::estimateSize(const BFParams *params) {
+size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
     size_t est = sizeof(BruteForceIndex);
     est += sizeof(*allocator);

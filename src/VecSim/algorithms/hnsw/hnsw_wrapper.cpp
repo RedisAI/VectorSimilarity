@@ -30,7 +30,7 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
 }
 
 /******************** Implementation **************/
-size_t HNSWIndex::estimateSize(const HNSWParams *params) {
+size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     size_t est = sizeof(HNSWIndex);
     est += sizeof(*space);
     est += sizeof(*hnsw);
