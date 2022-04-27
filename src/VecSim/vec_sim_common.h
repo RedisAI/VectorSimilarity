@@ -97,12 +97,13 @@ typedef struct {
  *
  */
 typedef enum {
-    EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
-    STANDARD_KNN,    // Run k-nn query over the entire vector index.
-    HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
-                     // and take the top k results.
-    HYBRID_BATCHES   // Get the top vector results in batches upon demand, and keep the results that
-                     // passes the filters until we reach k results.
+    EMPTY_MODE,                 // Default value to initialize the "last_mode" field with.
+    STANDARD_KNN,               // Run k-nn query over the entire vector index.
+    HYBRID_ADHOC_BF,            // Measure ad-hoc the distance for every result that passes the filters,
+                                // and take the top k results.
+    HYBRID_BATCHES,             // Get the top vector results in batches upon demand, and keep the results that
+                                // passes the filters until we reach k results.
+    HYBRID_BATCHES_TO_ADHOC_BF  // Start with batches and dynamically switched to ad-hoc BF.
 } VecSearchMode;
 
 /**
