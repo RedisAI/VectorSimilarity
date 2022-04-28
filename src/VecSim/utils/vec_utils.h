@@ -42,6 +42,8 @@ public:
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
+	static const char *HYBRID_POLICY_STRING;
+	static const char *BATCH_SIZE_STRING;
 };
 
 void float_vector_normalize(float *x, size_t dim);
@@ -49,6 +51,8 @@ void float_vector_normalize(float *x, size_t dim);
 void sort_results_by_id(VecSimQueryResult_List results);
 
 void sort_results_by_score(VecSimQueryResult_List results);
+
+VecSimResolveCode validate_numeric_param(VecSimRawParam rawParam, long long *val);
 
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 

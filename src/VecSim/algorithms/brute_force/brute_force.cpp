@@ -179,14 +179,37 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 
 VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
                                                  VecSimQueryParams *qparams) {
-    if (!qparams || (!rparams && (paramNum != 0))) {
-        return VecSimParamResolverErr_NullParam;
-    }
-    bzero(qparams, sizeof(VecSimQueryParams));
-    if (paramNum != 0) {
-        return VecSimParamResolverErr_UnknownParam;
-    }
-    return (VecSimResolveCode)VecSim_OK;
+	if (!qparams || (!rparams && (paramNum != 0))) {
+		return VecSimParamResolverErr_NullParam;
+	}
+	bzero(qparams, sizeof(VecSimQueryParams));
+	long long num_val;
+	for (int i = 0; i < paramNum; i++) {
+		if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
+			if (qparams->batchSize != 0) {
+				return VecSimParamResolverErr_AlreadySet;
+			}
+			if (validate_numeric_param(rparams[i], &num_val) != VecSimParamResolver_OK) {
+				return VecSimParamResolverErr_BadValue;
+			}
+			qparams->batchSize = (size_t)num_val;
+		} else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
+			if (!strcasecmp(rparams[i].value, "batches")) {
+				qparams->searchMode = HYBRID_BATCHES;
+			} else if (!strcasecmp(rparams[i].value, "adhoc_bf")) {
+				qparams->searchMode = HYBRID_ADHOC_BF;
+			} else {
+				return VecSimParamResolverErr_InvalidPolicy;
+			}
+		} else {
+			return VecSimParamResolverErr_UnknownParam;
+		}
+	}
+	// The combination of AD-HOC with batch_size is invalid, as there are no batches in this policy.
+	if (qparams->searchMode == HYBRID_ADHOC_BF && qparams->batchSize > 0) {
+		return VecSimParamResolverErr_InvalidPolicy;
+	}
+	return (VecSimResolveCode)VecSim_OK;
 }
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,

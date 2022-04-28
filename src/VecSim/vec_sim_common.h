@@ -45,7 +45,8 @@ typedef enum {
     VecSimParamResolverErr_NullParam,
     VecSimParamResolverErr_AlreadySet,
     VecSimParamResolverErr_UnknownParam,
-    VecSimParamResolverErr_BadValue
+    VecSimParamResolverErr_BadValue,
+	VecSimParamResolverErr_InvalidPolicy
 } VecSimResolveCode;
 
 /**
@@ -83,6 +84,19 @@ typedef struct {
 } HNSWRuntimeParams;
 
 /**
+ * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
+ *
+ */
+typedef enum {
+	EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
+	STANDARD_KNN,    // Run k-nn query over the entire vector index.
+	HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
+	// and take the top k results.
+	HYBRID_BATCHES   // Get the top vector results in batches upon demand, and keep the results that
+	// passes the filters until we reach k results.
+} VecSearchMode;
+
+/**
  * @brief Query Runtime parameters.
  *
  */
@@ -90,20 +104,10 @@ typedef struct {
     union {
         HNSWRuntimeParams hnswRuntimeParams;
     };
+	size_t batchSize;
+	VecSearchMode searchMode;
 } VecSimQueryParams;
 
-/**
- * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
- *
- */
-typedef enum {
-    EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
-    STANDARD_KNN,    // Run k-nn query over the entire vector index.
-    HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
-                     // and take the top k results.
-    HYBRID_BATCHES   // Get the top vector results in batches upon demand, and keep the results that
-                     // passes the filters until we reach k results.
-} VecSearchMode;
 
 /**
  * @brief Index information. Mainly used for debug/testing.

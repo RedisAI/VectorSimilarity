@@ -74,28 +74,43 @@ VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum
         return VecSimParamResolverErr_NullParam;
     }
     bzero(qparams, sizeof(VecSimQueryParams));
+	long long num_val;
     for (int i = 0; i < paramNum; i++) {
-        if ((rparams[i].nameLen == strlen(VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) &&
-            (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING))) {
+        if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
             if (qparams->hnswRuntimeParams.efRuntime != 0) {
-                return VecSimParamResolverErr_AlreadySet;
-            } else {
-                char *ep; // For checking that strtoll used all rparams[i].valLen chars.
-                errno = 0;
-                long long val = strtoll(rparams[i].value, &ep, 0);
-                // Here we verify that val is positive and strtoll was successful.
-                // The last test checks that the entire rparams[i].value was used.
-                // We catch here inputs like "3.14", "123text" and so on.
-                if (val <= 0 || val == LLONG_MAX || errno != 0 ||
-                    (rparams[i].value + rparams[i].valLen) != ep) {
-                    return VecSimParamResolverErr_BadValue;
-                }
-                qparams->hnswRuntimeParams.efRuntime = (size_t)val;
+	            return VecSimParamResolverErr_AlreadySet;
             }
-        } else {
+            if (validate_numeric_param(rparams[i], &num_val) != VecSimParamResolver_OK) {
+	            return VecSimParamResolverErr_BadValue;
+			}
+			qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
+            if (qparams->batchSize != 0) {
+	            return VecSimParamResolverErr_AlreadySet;
+            }
+            if (validate_numeric_param(rparams[i], &num_val) != VecSimParamResolver_OK) {
+	            return VecSimParamResolverErr_BadValue;
+            }
+            qparams->batchSize = (size_t)num_val;
+		} else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
+	        if (qparams->searchMode != 0) {
+		        return VecSimParamResolverErr_AlreadySet;
+	        }
+			if (!strcasecmp(rparams[i].value, "batches")) {
+				qparams->searchMode = HYBRID_BATCHES;
+			} else if (!strcasecmp(rparams[i].value, "adhoc_bf")) {
+				qparams->searchMode = HYBRID_ADHOC_BF;
+			} else {
+				return VecSimParamResolverErr_InvalidPolicy;
+			}
+		} else {
             return VecSimParamResolverErr_UnknownParam;
         }
     }
+	// The combination of AD-HOC with batch_size is invalid, as there are no batches in this policy.
+	if (qparams->searchMode == HYBRID_ADHOC_BF && qparams->batchSize > 0) {
+		return VecSimParamResolverErr_InvalidPolicy;
+	}
     return (VecSimResolveCode)VecSim_OK;
 }
 

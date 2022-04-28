@@ -1005,7 +1005,7 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
 
-    VecSimRawParam *rparams = array_new<VecSimRawParam>(2);
+    auto *rparams = array_new<VecSimRawParam>(2);
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
@@ -1049,7 +1049,37 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
               VecSimParamResolverErr_NullParam);
 
-    VecSimIndex_Free(index);
+	// Testing with hybrid query params.
+	rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY", .nameLen = strlen("HYBRID_POLICY"),
+								  .value = "batches_wrong", .valLen = strlen("batches_wrong")};
+	ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+		          VecSimParamResolverErr_InvalidPolicy);
+	rparams[1].value = "batches";
+	rparams[1].valLen = strlen("batches");
+	ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+
+	rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY", .nameLen = strlen("HYBRID_POLICY"),
+				.value = "batches", .valLen = strlen("batches")};
+	ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+	          VecSimParamResolverErr_AlreadySet);
+
+	rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY", .nameLen = strlen("HYBRID_POLICY"),
+				.value = "AD_hOC", .valLen = strlen("AD_hOC")};
+	ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+		          VecSimParamResolverErr_AlreadySet);
+
+	rparams[0] = (VecSimRawParam){.name = "batch_size", .nameLen = strlen("batch_size"),
+				.value = "10", .valLen = strlen("10")};
+	ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+	          VecSimParamResolverErr_InvalidPolicy);
+
+	rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY", .nameLen = strlen("HYBRID_POLICY"),
+				.value = "batches", .valLen = strlen("batches")};
+	ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+
+
+
+		VecSimIndex_Free(index);
     array_free(rparams);
 }
 
