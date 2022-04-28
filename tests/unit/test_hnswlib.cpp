@@ -1372,8 +1372,10 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
                                                  .initialCapacity = n,
                                                  .blockSize = bs,
                                                  .M = M}};
-
-    float vec[dim] = {0};
+    float vec[dim];
+    for (size_t i = 0; i < dim; i++) {
+        vec[i] = 1.0f;
+    }
 
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
     VecSimIndex *index = VecSimIndex_New(&params);
