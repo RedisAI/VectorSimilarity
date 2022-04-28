@@ -1361,7 +1361,8 @@ TEST_F(HNSWLibTest, testCosine) {
 
 TEST_F(HNSWLibTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 100;
+    size_t n = 1000;
+    size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -1369,23 +1370,27 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
                                                  .initialCapacity = n,
+                                                 .blockSize = bs,
                                                  .M = M}};
-    size_t test_estimation = sizeof(HNSWIndex);
-    test_estimation += sizeof(hnswlib::HierarchicalNSW<float>);
-    // link lists
-    test_estimation += sizeof(void *) * n;
-    // main data block
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(tableint) + sizeof(void *);
-    size_t size_data_per_element = size_links_level0 + dim * sizeof(float) + sizeof(labeltype);
-    test_estimation += n * size_data_per_element;
 
-    size_t iestimation = VecSimIndex_EstimateInitialSize(&params);
-    ASSERT_GE(iestimation, test_estimation);
-    // Some small internals that are kept with pointers doesn't take into account in this test.
-    // Here we test that we are not far from the estimation.
-    ASSERT_LE(iestimation, test_estimation + 32);
+    float vec[dim];
 
-    size_t eestimation = VecSimIndex_EstimateElementSize(&params);
-    ASSERT_EQ(size_data_per_element, eestimation);
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    size_t actual = index->getAllocator()->getAllocationSize();
+
+    estimation += 13 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
+    ASSERT_EQ(estimation, actual);
+
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_AddVector(index, vec, i);
+    }
+    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    actual = VecSimIndex_AddVector(index, vec, 0);
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
+
+    VecSimIndex_Free(index);
 }
 } // namespace hnswlib

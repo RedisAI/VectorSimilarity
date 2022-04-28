@@ -1245,24 +1245,29 @@ TEST_F(BruteForceTest, testCosine) {
 
 TEST_F(BruteForceTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 100;
+    size_t n = 10000;
+    size_t bs = DEFAULT_BLOCK_SIZE;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_Cosine,
-                                             .initialCapacity = n}};
-    size_t test_estimation = sizeof(BruteForceIndex);
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
+    float vec[dim];
 
-    test_estimation += n * (sizeof(idType) + sizeof(labelType)); // labelToIdLookup
-    test_estimation += n * sizeof(idType);                       // idToVectorBlockMemberMapping
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-    size_t iestimation = VecSimIndex_EstimateInitialSize(&params);
-    ASSERT_GE(iestimation, test_estimation);
-    // Some small internals that are kept with pointers doesn't take into account in this test.
-    // Here we test that we are not far from the estimation.
-    ASSERT_LE(iestimation, test_estimation + 50);
+    size_t actual = index->getAllocator()->getAllocationSize();
 
-    size_t eestimation = VecSimIndex_EstimateElementSize(&params);
-    ASSERT_EQ(eestimation, dim * sizeof(float));
+    estimation += 6 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
+    ASSERT_EQ(estimation, actual);
+
+    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    actual = VecSimIndex_AddVector(index, vec, 0);
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
+
+    VecSimIndex_Free(index);
 }
