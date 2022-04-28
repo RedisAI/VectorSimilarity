@@ -355,6 +355,7 @@ bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initia
         }
     }
     // Set the mode - if this isn't the initial check, we switched mode form batches to ad-hoc.
-    this->last_mode = res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
+    this->last_mode =
+        res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
 }
