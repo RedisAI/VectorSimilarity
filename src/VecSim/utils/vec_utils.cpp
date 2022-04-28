@@ -119,6 +119,8 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
         return "HYBRID_ADHOC_BF";
     case HYBRID_BATCHES:
         return "HYBRID_BATCHES";
+    case HYBRID_BATCHES_TO_ADHOC_BF:
+        return "HYBRID_BATCHES_TO_ADHOC_BF";
     default:
         return NULL;
     }

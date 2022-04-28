@@ -446,6 +446,15 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    // Simulate the case where another call to the heuristics is done after realizing that
+    // the subset size is smaller, and change the policy as a result.
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
     VecSimIndex_Free(index);
 }
 
