@@ -430,7 +430,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1));
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
@@ -439,10 +439,19 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = 1e6;
-    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1));
+    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Simulate the case where another call to the heuristics is done after realizing that
+    // the subset size is smaller, and change the policy as a result.
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -1265,7 +1274,7 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         // Set the index size artificially to be the required one.
         reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->cur_element_count = index_size;
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
-        bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k);
+        bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
         VecSimIndex_Free(index);
     }
@@ -1274,11 +1283,11 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         .algo = VecSimAlgo_HNSWLIB,
         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2}};
     VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50));
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
     try {
-        VecSimIndex_PreferAdHocSearch(index, 1, 50);
+        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
         FAIL() << "Expected std::runtime error";
     } catch (std::runtime_error const &err) {
         EXPECT_EQ(err.what(),
