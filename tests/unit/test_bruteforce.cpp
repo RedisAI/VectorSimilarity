@@ -1254,7 +1254,7 @@ TEST_F(BruteForceTest, testSizeEstimation) {
                                              .metric = VecSimMetric_Cosine,
                                              .initialCapacity = n,
                                              .blockSize = bs}};
-    float vec[dim];
+    float vec[dim] = {0};
 
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
     VecSimIndex *index = VecSimIndex_New(&params);
