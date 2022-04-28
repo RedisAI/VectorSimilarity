@@ -37,6 +37,18 @@ BruteForceIndex::~BruteForceIndex() {
 }
 
 /******************** Implementation **************/
+size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
+    // Constant part (not effected by parameters).
+    size_t est = sizeof(BruteForceIndex);
+    est += sizeof(*allocator);
+    est += sizeof(*space);
+    // Parameters related part.
+    est += params->initialCapacity * sizeof(decltype(labelToIdLookup)::value_type);
+    est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type);
+
+    return est;
+}
+
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     // Get the vector block
     VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
