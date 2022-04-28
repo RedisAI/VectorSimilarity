@@ -43,14 +43,13 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     est += sizeof(*allocator);
     est += sizeof(*space);
     // Parameters related part.
-    est += params->initialCapacity * sizeof(decltype(labelToIdLookup)::value_type);
     est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type);
 
     return est;
 }
 
 size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
-    return params->dim * sizeof(float);
+    return params->dim * sizeof(float) + sizeof(labelType);
 }
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {

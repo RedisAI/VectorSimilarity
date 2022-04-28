@@ -35,8 +35,15 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     size_t est = sizeof(HNSWIndex);
     est += sizeof(*space);
     est += sizeof(*hnsw);
+    est += sizeof(VisitedNodesHandler);
+    // used for synchronization only when parallel indexing / searching is enabled.
+#ifdef ENABLE_PARALLELIZATION
+    est += sizeof(VisitedNodesHandlerPool);
+#endif
+    est += params->initialCapacity * sizeof(tag_t);
 
     est += sizeof(void *) * params->initialCapacity; // link lists
+    est += sizeof(size_t) * params->initialCapacity; // element level
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
@@ -52,7 +59,9 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
     size_t size_data_per_element =
         size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
-    return size_data_per_element;
+    
+    size_t est = size_data_per_element + sizeof(tag_t) + sizeof(size_t) + sizeof(void *);
+    return est;
 }
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
