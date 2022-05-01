@@ -476,7 +476,7 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1));
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(HYBRID_ADHOC_BF, info.bfInfo.last_mode);
@@ -485,10 +485,19 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     reinterpret_cast<BruteForceIndex *>(index)->count = 1e4;
-    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1));
+    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES, info.bfInfo.last_mode);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    // Simulate the case where another call to the heuristics is done after realizing that
+    // the subset size is smaller, and change the policy as a result.
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -1152,7 +1161,7 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
             reinterpret_cast<BruteForceIndex *>(index)->count = index_size;
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
-                bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50);
+                bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50, true);
                 // If r is below the threshold for this specific configuration of (index_size, dim),
                 // expect that result will be ad-hoc (i.e., true), and otherwise, batches (i.e.,
                 // false)
@@ -1167,11 +1176,11 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
         .algo = VecSimAlgo_BF,
         .bfParams = BFParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_IP}};
     VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50));
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
     try {
-        VecSimIndex_PreferAdHocSearch(index, 1, 50);
+        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
         FAIL() << "Expected std::runtime error";
     } catch (std::runtime_error const &err) {
         EXPECT_EQ(err.what(),
