@@ -391,7 +391,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
     // Default args
-    ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
     VecSimIndex_Free(index);
 
@@ -1279,21 +1279,32 @@ TEST_F(BruteForceTest, testCosine) {
 
 TEST_F(BruteForceTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 100;
+    size_t n = 10000;
+    size_t bs = DEFAULT_BLOCK_SIZE;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_Cosine,
-                                             .initialCapacity = n}};
-    size_t test_estimation = sizeof(BruteForceIndex);
-
-    test_estimation += n * (sizeof(idType) + sizeof(labelType)); // labelToIdLookup
-    test_estimation += n * sizeof(idType);                       // idToVectorBlockMemberMapping
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
+    float vec[dim];
+    for (size_t i = 0; i < dim; i++) {
+        vec[i] = 1.0f;
+    }
 
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    ASSERT_GE(estimation, test_estimation);
-    // Some small internals that are kept with pointers doesn't take into account in this test.
-    // Here we test that we are not far from the estimation.
-    ASSERT_LE(estimation, test_estimation + 50);
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    size_t actual = index->getAllocator()->getAllocationSize();
+
+    estimation += 6 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
+    ASSERT_EQ(estimation, actual);
+
+    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    actual = VecSimIndex_AddVector(index, vec, 0);
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
+
+    VecSimIndex_Free(index);
 }

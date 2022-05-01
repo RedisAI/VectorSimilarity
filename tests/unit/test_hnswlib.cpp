@@ -43,11 +43,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
 TEST_F(HNSWLibTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 15;
+    size_t bs = 50;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
-                                                 .initialCapacity = n}};
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -61,11 +63,10 @@ TEST_F(HNSWLibTest, resizeIndex) {
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (by 10% factor from the index size).
+    // by the block size parameter.
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              std::ceil(1.1 * n));
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs + n);
     VecSimIndex_Free(index);
 }
 
@@ -330,17 +331,20 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // Default args
+    ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
     VecSimIndex_Free(index);
 
     d = 1280;
+    size_t bs = 42;
     params = {.algo = VecSimAlgo_HNSWLIB,
               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                        .dim = d,
                                        .metric = VecSimMetric_L2,
                                        .initialCapacity = n,
+                                       .blockSize = bs,
                                        .M = 200,
                                        .efConstruction = 1000,
                                        .efRuntime = 500}};
@@ -349,6 +353,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // User args
+    ASSERT_EQ(info.hnswInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
@@ -1436,7 +1441,8 @@ TEST_F(HNSWLibTest, testCosine) {
 
 TEST_F(HNSWLibTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 100;
+    size_t n = 1000;
+    size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -1444,20 +1450,29 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
                                                  .initialCapacity = n,
+                                                 .blockSize = bs,
                                                  .M = M}};
-    size_t test_estimation = sizeof(HNSWIndex);
-    test_estimation += sizeof(hnswlib::HierarchicalNSW<float>);
-    // link lists
-    test_estimation += sizeof(void *) * n;
-    // main data block
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(tableint) + sizeof(void *);
-    size_t size_data_per_element = size_links_level0 + dim * sizeof(float) + sizeof(labeltype);
-    test_estimation += n * size_data_per_element;
+    float vec[dim];
+    for (size_t i = 0; i < dim; i++) {
+        vec[i] = 1.0f;
+    }
 
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    ASSERT_GE(estimation, test_estimation);
-    // Some small internals that are kept with pointers doesn't take into account in this test.
-    // Here we test that we are not far from the estimation.
-    ASSERT_LE(estimation, test_estimation + 32);
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    size_t actual = index->getAllocator()->getAllocationSize();
+
+    estimation += 13 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
+    ASSERT_EQ(estimation, actual);
+
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_AddVector(index, vec, i);
+    }
+    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    actual = VecSimIndex_AddVector(index, vec, 0);
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
+
+    VecSimIndex_Free(index);
 }
 } // namespace hnswlib

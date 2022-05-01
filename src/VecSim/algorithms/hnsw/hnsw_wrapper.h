@@ -9,10 +9,12 @@ protected:
     size_t dim;
     VecSimType vecType;
     VecSimMetric metric;
+    size_t blockSize;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const HNSWParams *params);
+    static size_t estimateElementMemory(const HNSWParams *params);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;

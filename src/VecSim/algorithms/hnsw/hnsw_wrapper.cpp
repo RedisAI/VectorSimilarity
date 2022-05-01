@@ -17,6 +17,7 @@ using namespace hnswlib;
 
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
+      blockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
                                                            L2Space(params->dim, allocator))
@@ -34,8 +35,15 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     size_t est = sizeof(HNSWIndex);
     est += sizeof(*space);
     est += sizeof(*hnsw);
+    est += sizeof(VisitedNodesHandler);
+    // used for synchronization only when parallel indexing / searching is enabled.
+#ifdef ENABLE_PARALLELIZATION
+    est += sizeof(VisitedNodesHandlerPool);
+#endif
+    est += params->initialCapacity * sizeof(tag_t);
 
     est += sizeof(void *) * params->initialCapacity; // link lists
+    est += sizeof(size_t) * params->initialCapacity; // element level
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
@@ -44,6 +52,15 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     est += params->initialCapacity * size_data_per_element;
 
     return est;
+}
+
+size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
+    size_t size_links_level0 =
+        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
+    size_t size_data_per_element =
+        size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+
+    return size_data_per_element + sizeof(tag_t) + sizeof(size_t) + sizeof(void *);
 }
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
@@ -56,8 +73,7 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
             vector_data = normalized_data;
         }
         if (hnsw->getIndexSize() == this->hnsw->getIndexCapacity()) {
-            this->hnsw->resizeIndex(
-                std::max<size_t>(std::ceil(this->hnsw->getIndexCapacity() * 1.1), 2));
+            this->hnsw->resizeIndex(this->hnsw->getIndexCapacity() + this->blockSize);
         }
         this->hnsw->addPoint(vector_data, id);
         return true;
@@ -119,6 +135,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.dim = this->dim;
     info.hnswInfo.type = this->vecType;
     info.hnswInfo.metric = this->metric;
+    info.hnswInfo.blockSize = this->blockSize;
     info.hnswInfo.M = this->hnsw->getM();
     info.hnswInfo.efConstruction = this->hnsw->getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw->getEf();

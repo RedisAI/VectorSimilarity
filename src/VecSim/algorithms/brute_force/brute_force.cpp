@@ -19,7 +19,7 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
       labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator), deletedIds(allocator),
       vectorBlocks(allocator),
-      vectorBlockSize(params->blockSize ? params->blockSize : BF_DEFAULT_BLOCK_SIZE), count(0),
+      vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
                                                            L2Space(params->dim, allocator))
@@ -43,10 +43,13 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     est += sizeof(*allocator);
     est += sizeof(*space);
     // Parameters related part.
-    est += params->initialCapacity * sizeof(decltype(labelToIdLookup)::value_type);
     est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type);
 
     return est;
+}
+
+size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
+    return params->dim * sizeof(float) + sizeof(labelType);
 }
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
