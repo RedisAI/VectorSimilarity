@@ -42,8 +42,8 @@ public:
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
-	static const char *HYBRID_POLICY_STRING;
-	static const char *BATCH_SIZE_STRING;
+    static const char *HYBRID_POLICY_STRING;
+    static const char *BATCH_SIZE_STRING;
 };
 
 void float_vector_normalize(float *x, size_t dim);

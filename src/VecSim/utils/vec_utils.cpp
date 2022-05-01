@@ -40,7 +40,6 @@ const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
 const char *VecSimCommonStrings::HYBRID_POLICY_STRING = "HYBRID_POLICY";
 const char *VecSimCommonStrings::BATCH_SIZE_STRING = "BATCH_SIZE";
 
-
 int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
 }
@@ -76,17 +75,16 @@ void sort_results_by_score(VecSimQueryResult_List results) {
 }
 
 VecSimResolveCode validate_numeric_param(VecSimRawParam rawParam, long long *val) {
-	char *ep; // For checking that strtoll used all rawParam.valLen chars.
-	errno = 0;
-	*val = strtoll(rawParam.value, &ep, 0);
-	// Here we verify that val is positive and strtoll was successful.
-	// The last test checks that the entire rawParam.value was used.
-	// We catch here inputs like "3.14", "123text" and so on.
-	if (*val <= 0 || *val == LLONG_MAX || errno != 0 ||
-	    (rawParam.value + rawParam.valLen) != ep) {
-		return VecSimParamResolverErr_BadValue;
-	}
-	return VecSimParamResolver_OK;
+    char *ep; // For checking that strtoll used all rawParam.valLen chars.
+    errno = 0;
+    *val = strtoll(rawParam.value, &ep, 0);
+    // Here we verify that val is positive and strtoll was successful.
+    // The last test checks that the entire rawParam.value was used.
+    // We catch here inputs like "3.14", "123text" and so on.
+    if (*val <= 0 || *val == LLONG_MAX || errno != 0 || (rawParam.value + rawParam.valLen) != ep) {
+        return VecSimParamResolverErr_BadValue;
+    }
+    return VecSimParamResolver_OK;
 }
 
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {

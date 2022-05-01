@@ -46,7 +46,7 @@ typedef enum {
     VecSimParamResolverErr_AlreadySet,
     VecSimParamResolverErr_UnknownParam,
     VecSimParamResolverErr_BadValue,
-	VecSimParamResolverErr_InvalidPolicy
+    VecSimParamResolverErr_InvalidPolicy
 } VecSimResolveCode;
 
 /**
@@ -88,12 +88,12 @@ typedef struct {
  *
  */
 typedef enum {
-	EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
-	STANDARD_KNN,    // Run k-nn query over the entire vector index.
-	HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
-	// and take the top k results.
-	HYBRID_BATCHES   // Get the top vector results in batches upon demand, and keep the results that
-	// passes the filters until we reach k results.
+    EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
+    STANDARD_KNN,    // Run k-nn query over the entire vector index.
+    HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
+    // and take the top k results.
+    HYBRID_BATCHES // Get the top vector results in batches upon demand, and keep the results that
+                   // passes the filters until we reach k results.
 } VecSearchMode;
 
 /**
@@ -104,10 +104,9 @@ typedef struct {
     union {
         HNSWRuntimeParams hnswRuntimeParams;
     };
-	size_t batchSize;
-	VecSearchMode searchMode;
+    size_t batchSize;
+    VecSearchMode searchMode;
 } VecSimQueryParams;
-
 
 /**
  * @brief Index information. Mainly used for debug/testing.
