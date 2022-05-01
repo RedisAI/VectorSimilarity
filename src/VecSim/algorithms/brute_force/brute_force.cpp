@@ -304,7 +304,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
     return new (this->allocator) BF_BatchIterator(queryBlobCopy, this, this->allocator);
 }
 
-bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
+bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();
@@ -369,6 +369,8 @@ bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k) {
             }
         }
     }
-    this->last_mode = res ? HYBRID_ADHOC_BF : HYBRID_BATCHES;
+    // Set the mode - if this isn't the initial check, we switched mode form batches to ad-hoc.
+    this->last_mode =
+        res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
 }
