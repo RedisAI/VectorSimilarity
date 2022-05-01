@@ -143,8 +143,12 @@ VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *que
  * (that is, query results can be only from a subset of vector of this size).
  *
  * @param k the number of required results to return from the query.
+ *
+ * @param initial_check flag to indicate if this check is performed for the first time (upon
+ * creating the hybrid iterator), or after running batches.
  */
-bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k);
+bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
+                                   bool initial_check);
 
 /**
  * @brief Allow 3rd party memory functions to be used for memory management.
