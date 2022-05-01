@@ -43,11 +43,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
 TEST_F(HNSWLibTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 15;
+    size_t bs = 50;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
-                                                 .initialCapacity = n}};
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -61,11 +63,10 @@ TEST_F(HNSWLibTest, resizeIndex) {
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (by 10% factor from the index size).
+    // by the block size parameter.
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              std::ceil(1.1 * n));
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs + n);
     VecSimIndex_Free(index);
 }
 
@@ -330,17 +331,20 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // Default args
+    ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
     VecSimIndex_Free(index);
 
     d = 1280;
+    size_t bs = 42;
     params = {.algo = VecSimAlgo_HNSWLIB,
               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                        .dim = d,
                                        .metric = VecSimMetric_L2,
                                        .initialCapacity = n,
+                                       .blockSize = bs,
                                        .M = 200,
                                        .efConstruction = 1000,
                                        .efRuntime = 500}};
@@ -349,6 +353,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     // User args
+    ASSERT_EQ(info.hnswInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
