@@ -66,7 +66,59 @@ extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->inde
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams) {
-    return index->resolveParams(rparams, paramNum, qparams);
+
+    if (!qparams || (!rparams && (paramNum != 0))) {
+        return VecSimParamResolverErr_NullParam;
+    }
+    bzero(qparams, sizeof(VecSimQueryParams));
+    long long num_val;
+    for (int i = 0; i < paramNum; i++) {
+        if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
+            // EF_RUNTIME is a valid parameter only in HNSW algorithm.
+            if (!dynamic_cast<HNSWIndex *>(index)) {
+                return VecSimParamResolverErr_UnknownParam;
+            }
+            if (qparams->hnswRuntimeParams.efRuntime != 0) {
+                return VecSimParamResolverErr_AlreadySet;
+            }
+            if (validate_positive_integer_param(rparams[i], &num_val) != VecSimParamResolver_OK) {
+                return VecSimParamResolverErr_BadValue;
+            }
+            qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
+            if (qparams->batchSize != 0) {
+                return VecSimParamResolverErr_AlreadySet;
+            }
+            if (validate_positive_integer_param(rparams[i], &num_val) != VecSimParamResolver_OK) {
+                return VecSimParamResolverErr_BadValue;
+            }
+            qparams->batchSize = (size_t)num_val;
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
+            if (qparams->searchMode != 0) {
+                return VecSimParamResolverErr_AlreadySet;
+            }
+            if (!strcasecmp(rparams[i].value, "batches")) {
+                qparams->searchMode = HYBRID_BATCHES;
+            } else if (!strcasecmp(rparams[i].value, "adhoc_bf")) {
+                qparams->searchMode = HYBRID_ADHOC_BF;
+            } else {
+                return VecSimParamResolverErr_InvalidPolicy;
+            }
+        } else {
+            return VecSimParamResolverErr_UnknownParam;
+        }
+    }
+    // The combination of AD-HOC with batch_size is invalid, as there are no batches in this policy.
+    if (qparams->searchMode == HYBRID_ADHOC_BF && qparams->batchSize > 0) {
+        return VecSimParamResolverErr_InvalidPolicy;
+    }
+    // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
+    // graph.
+    if (qparams->searchMode == HYBRID_ADHOC_BF && dynamic_cast<HNSWIndex *>(index) &&
+        qparams->hnswRuntimeParams.efRuntime > 0) {
+        return VecSimParamResolverErr_InvalidPolicy;
+    }
+    return (VecSimResolveCode)VecSim_OK;
 }
 
 extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,

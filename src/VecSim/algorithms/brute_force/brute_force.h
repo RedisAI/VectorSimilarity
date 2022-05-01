@@ -20,8 +20,6 @@ public:
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
-    virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
-                                            VecSimQueryParams *qparams) override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;

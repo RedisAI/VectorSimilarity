@@ -74,7 +74,7 @@ void sort_results_by_score(VecSimQueryResult_List results) {
           (__compar_fn_t)cmpVecSimQueryResultByScore);
 }
 
-VecSimResolveCode validate_numeric_param(VecSimRawParam rawParam, long long *val) {
+VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val) {
     char *ep; // For checking that strtoll used all rawParam.valLen chars.
     errno = 0;
     *val = strtoll(rawParam.value, &ep, 0);
