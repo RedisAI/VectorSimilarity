@@ -1021,6 +1021,14 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 100);
 
+    // Both params are "batch_size".
+    rparams[0] = (VecSimRawParam){.name = "batch_size",
+                                  .nameLen = strlen("batch_size"),
+                                  .value = "200",
+                                  .valLen = strlen("200")};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+              VecSimParamResolverErr_AlreadySet);
+
     VecSimIndex_Free(index);
     array_free(rparams);
 }
