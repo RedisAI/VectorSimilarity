@@ -1000,7 +1000,7 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
                                   .value = "adhoc", // prefix of "adhoc_bf"
                                   .valLen = strlen("ADHOC")};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
-              VecSimParamResolverErr_InvalidPolicy);
+              VecSimParamResolverErr_InvalidPolicy_NExits);
 
     // Sending HYBRID_POLICY=adhoc as the single parameter is valid.
     rparams[0].value = "ADHOC_BF";

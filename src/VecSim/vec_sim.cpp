@@ -80,12 +80,13 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
     }
+    VecSimAlgo index_type = index->info().algo;
     bzero(qparams, sizeof(VecSimQueryParams));
     long long num_val;
     for (int i = 0; i < paramNum; i++) {
         if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
             // EF_RUNTIME is a valid parameter only in HNSW algorithm.
-            if (!dynamic_cast<HNSWIndex *>(index)) {
+            if (index_type != VecSimAlgo_HNSWLIB) {
                 return VecSimParamResolverErr_UnknownParam;
             }
             if (qparams->hnswRuntimeParams.efRuntime != 0) {
@@ -112,7 +113,7 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
             } else if (!strcasecmp(rparams[i].value, "adhoc_bf")) {
                 qparams->searchMode = HYBRID_ADHOC_BF;
             } else {
-                return VecSimParamResolverErr_InvalidPolicy;
+                return VecSimParamResolverErr_InvalidPolicy_NExits;
             }
         } else {
             return VecSimParamResolverErr_UnknownParam;
@@ -120,13 +121,18 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     }
     // The combination of AD-HOC with batch_size is invalid, as there are no batches in this policy.
     if (qparams->searchMode == HYBRID_ADHOC_BF && qparams->batchSize > 0) {
-        return VecSimParamResolverErr_InvalidPolicy;
+        return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize;
     }
     // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
     // graph.
-    if (qparams->searchMode == HYBRID_ADHOC_BF && dynamic_cast<HNSWIndex *>(index) &&
+    if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
         qparams->hnswRuntimeParams.efRuntime > 0) {
-        return VecSimParamResolverErr_InvalidPolicy;
+        return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
+    }
+    // EF_RUNTIME cannot be lower than the batch_size.
+    if (index_type == VecSimAlgo_HNSWLIB && qparams->hnswRuntimeParams.efRuntime &&
+        qparams->batchSize && qparams->hnswRuntimeParams.efRuntime < qparams->batchSize) {
+        return VecSimParamResolverErr_InvalidPolicy_BatchSize_GT_EfRuntime;
     }
     return (VecSimResolveCode)VecSim_OK;
 }
