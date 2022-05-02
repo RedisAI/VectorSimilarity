@@ -75,7 +75,8 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
-                                                       int paramNum, VecSimQueryParams *qparams) {
+                                                       int paramNum, VecSimQueryParams *qparams,
+                                                       bool hybrid) {
 
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
@@ -97,6 +98,9 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
             }
             qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
+            if (!hybrid) {
+                return VecSimParamResolverErr_InvalidPolicy_NHybrid;
+            }
             if (qparams->batchSize != 0) {
                 return VecSimParamResolverErr_AlreadySet;
             }
@@ -105,6 +109,9 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
             }
             qparams->batchSize = (size_t)num_val;
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
+            if (!hybrid) {
+                return VecSimParamResolverErr_InvalidPolicy_NHybrid;
+            }
             if (qparams->searchMode != 0) {
                 return VecSimParamResolverErr_AlreadySet;
             }

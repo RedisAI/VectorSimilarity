@@ -985,12 +985,13 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
 
     auto *rparams = array_new<VecSimRawParam>(2);
 
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSim_OK);
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     array_append(rparams, (VecSimRawParam){
                               .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_UnknownParam);
 
     // Testing with hybrid query params (more relevant tests to the shared logic are in
@@ -999,14 +1000,19 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "adhoc", // prefix of "adhoc_bf"
                                   .valLen = strlen("ADHOC")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_InvalidPolicy_NExits);
 
     // Sending HYBRID_POLICY=adhoc as the single parameter is valid.
     rparams[0].value = "ADHOC_BF";
     rparams[0].valLen = strlen("ADHOC_BF");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_ADHOC_BF);
+
+    // Trying to set hybrid policy for non-hybrid query.
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSimParamResolverErr_InvalidPolicy_NHybrid);
 
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -1017,7 +1023,8 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
                                            .nameLen = strlen("batch_size"),
                                            .value = "100",
                                            .valLen = strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 100);
 
@@ -1026,7 +1033,7 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
                                   .nameLen = strlen("batch_size"),
                                   .value = "200",
                                   .valLen = strlen("200")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_AlreadySet);
 
     VecSimIndex_Free(index);

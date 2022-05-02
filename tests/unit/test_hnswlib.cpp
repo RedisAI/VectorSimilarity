@@ -1021,46 +1021,48 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
 
     auto *rparams = array_new<VecSimRawParam>(3);
 
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSim_OK);
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     array_append(rparams, (VecSimRawParam){
                               .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSim_OK);
     ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 100);
     qparams.hnswRuntimeParams.efRuntime = 0;
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     rparams[0] = (VecSimRawParam){.name = "ef_run", .nameLen = 6, .value = "100", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_UnknownParam);
 
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
     array_append(rparams, (VecSimRawParam){
                               .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_AlreadySet);
 
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL, false),
               VecSimParamResolverErr_NullParam);
 
     // Testing with hybrid query params.
@@ -1068,11 +1070,12 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "batches_wrong",
                                   .valLen = strlen("batches_wrong")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_InvalidPolicy_NExits);
     rparams[1].value = "batches";
     rparams[1].valLen = strlen("batches");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
 
     // Both params are "hybrid policy".
@@ -1080,16 +1083,16 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "ADhOC_bf",
                                   .valLen = strlen("ADhOC_bf")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_AlreadySet);
 
     // Sending HYBRID_POLICY=adhoc as the single parameter is valid.
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, 1, &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, 1, &qparams, true), VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_ADHOC_BF);
 
     // Cannot set ef_runtime param with "hybrid_policy" which is "ADHOC_BF"
     rparams[1] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
 
     // Cannot set batch_size param with "hybrid_policy" which is "ADHOC_BF"
@@ -1097,24 +1100,30 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
                                   .nameLen = strlen("batch_size"),
                                   .value = "100",
                                   .valLen = strlen("100")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize);
 
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "batches",
                                   .valLen = strlen("batches")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 100);
 
+    // Trying to set hybrid policy for non-hybrid query.
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSimParamResolverErr_InvalidPolicy_NHybrid);
+
     array_append(rparams,
                  (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "50", .valLen = 2});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_InvalidPolicy_BatchSize_GT_EfRuntime);
 
     rparams[2] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "200", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 100);
     ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 200);
@@ -1122,27 +1131,27 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     // Check for invalid batch sizes params.
     rparams[1].value = "not_a_number";
     rparams[1].valLen = strlen("not_a_number");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_BadValue);
 
     rparams[1].value = "9223372036854775808"; // LLONG_MAX+1
     rparams[1].valLen = strlen("9223372036854775808");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_BadValue);
 
     rparams[1].value = "-5";
     rparams[1].valLen = strlen("-5");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_BadValue);
 
     rparams[1].value = "0";
     rparams[1].valLen = strlen("0");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_BadValue);
 
     rparams[1].value = "10f";
     rparams[1].valLen = strlen("10f");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
               VecSimParamResolverErr_BadValue);
 
     VecSimIndex_Free(index);

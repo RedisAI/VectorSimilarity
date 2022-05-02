@@ -47,6 +47,7 @@ typedef enum {
     VecSimParamResolverErr_UnknownParam,
     VecSimParamResolverErr_BadValue,
     VecSimParamResolverErr_InvalidPolicy_NExits,
+    VecSimParamResolverErr_InvalidPolicy_NHybrid,
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize,
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime,
     VecSimParamResolverErr_InvalidPolicy_BatchSize_GT_EfRuntime
