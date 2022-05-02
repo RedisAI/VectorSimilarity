@@ -50,7 +50,7 @@ void _delete_vectors(VecSimIndex *index, long long amount) {
 // Creates a generic index, supports Broute Force and HNSW.
 VecSimIndex *_create_index(VecSimAlgo algo) {
 
-    VecSimParams param;
+    VecSimParams param = {0};
     param.algo = algo;
     switch (algo) {
     case VecSimAlgo_BF:
