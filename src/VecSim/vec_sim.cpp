@@ -141,6 +141,9 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
         qparams->batchSize && qparams->hnswRuntimeParams.efRuntime < qparams->batchSize) {
         return VecSimParamResolverErr_InvalidPolicy_BatchSize_GT_EfRuntime;
     }
+    if (qparams->searchMode != 0) {
+        index->setLastSearchMode(qparams->searchMode);
+    }
     return (VecSimResolveCode)VecSim_OK;
 }
 

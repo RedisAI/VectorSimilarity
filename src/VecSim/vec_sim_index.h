@@ -114,4 +114,10 @@ public:
      */
 
     virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) = 0;
+
+    /**
+     * @brief Set the latest search mode in the index data (for info/debugging).
+     * @param mode The search mode.
+     */
+    virtual inline void setLastSearchMode(VecSearchMode mode) = 0;
 };

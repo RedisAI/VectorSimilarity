@@ -31,6 +31,7 @@ public:
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
+    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
 private:
