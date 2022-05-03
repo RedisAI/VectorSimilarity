@@ -1126,6 +1126,8 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     // Trying to set hybrid policy for non-hybrid query.
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_InvalidPolicy_NHybrid);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, false),
+              VecSimParamResolverErr_InvalidPolicy_NHybrid);
 
     array_append(rparams,
                  (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "50", .valLen = 2});
