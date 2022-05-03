@@ -140,6 +140,7 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
  * @param index the index in which the search will be done (in batches)
  * @param queryBlob binary representation of the vector. Blob size should match the index data type
  * and dimension.
+ * @param queryParams run time params for the search, which are algorithm-specific.
  * @return Fresh batch iterator
  */
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
