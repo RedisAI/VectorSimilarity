@@ -129,6 +129,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
 }
 
 HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrapper,
+                                       VecSimQueryParams *queryParams,
                                        std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, std::move(allocator)), index_wrapper(index_wrapper),
       depleted(false), top_candidates_extras(this->allocator), candidates(this->allocator) {
@@ -139,6 +140,10 @@ HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrap
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = hnsw_index->getVisitedList();
     this->visited_tag = this->visited_list->getFreshTag();
+    if (queryParams && queryParams->hnswRuntimeParams.efRuntime > 0) {
+        this->orig_ef_runtime = this->hnsw_index->getEf();
+        this->hnsw_index->setEf(queryParams->hnswRuntimeParams.efRuntime);
+    }
 }
 
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
@@ -188,3 +193,5 @@ void HNSW_BatchIterator::reset() {
     this->candidates = candidatesMinHeap(this->allocator);
     this->top_candidates_extras = candidatesMinHeap(this->allocator);
 }
+
+HNSW_BatchIterator::~HNSW_BatchIterator() { this->hnsw_index->setEf(this->orig_ef_runtime); }

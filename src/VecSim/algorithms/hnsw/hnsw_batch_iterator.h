@@ -20,6 +20,7 @@ private:
     unsigned short visited_tag;                 // Used to mark nodes that were scanned.
     idType entry_point;                         // Internal id of the node to begin the scan from.
     bool depleted;
+    size_t orig_ef_runtime; // Original default parameter to reproduce.
 
     // Data structure that holds the search state between iterations.
     float lower_bound;
@@ -36,7 +37,7 @@ private:
     inline bool hasVisitedNode(idType node_id) const;
 
 public:
-    HNSW_BatchIterator(void *query_vector, HNSWIndex *index,
+    HNSW_BatchIterator(void *query_vector, HNSWIndex *index, VecSimQueryParams *queryParams,
                        std::shared_ptr<VecSimAllocator> allocator);
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
@@ -45,5 +46,5 @@ public:
 
     void reset() override;
 
-    ~HNSW_BatchIterator() override = default;
+    ~HNSW_BatchIterator() override;
 };

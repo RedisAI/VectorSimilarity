@@ -753,7 +753,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
         }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
         // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
@@ -806,7 +806,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
         }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
         // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet, in
@@ -865,7 +865,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
@@ -915,7 +915,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     }
 
     // Create batch iterator for empty index.
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     // try to get more results even though there are no.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
@@ -935,7 +935,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    batchIterator = VecSimBatchIterator_New(index, query);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Ask for zero results.
     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
@@ -1191,7 +1191,7 @@ TEST_F(BruteForceTest, batchIteratorSwapIndices) {
     // query for (1,1,1,1) vector.
     float query[dim];
     query[0] = query[1] = query[2] = query[3] = 1.0;
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get first batch - expect to get ids 1,3,4,5.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 4, BY_ID);
@@ -1264,7 +1264,7 @@ TEST_F(BruteForceTest, testCosine) {
     runTopKSearchTest(index, query, 10, verify_res);
 
     // Test with batch iterator.
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
     // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,

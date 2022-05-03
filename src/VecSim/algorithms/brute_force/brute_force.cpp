@@ -279,7 +279,8 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
     return infoIterator;
 }
 
-VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
+VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
+                                                       VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);

@@ -97,7 +97,8 @@ public:
      * type and dimension.
      * @return Fresh batch iterator
      */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  VecSimQueryParams *queryParams) = 0;
 
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force

@@ -142,7 +142,8 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
  * and dimension.
  * @return Fresh batch iterator
  */
-VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
+                                             VecSimQueryParams *queryParams);
 
 /**
  * @brief Return True if heuristics says that it is better to use ad-hoc brute-force

@@ -93,10 +93,10 @@ public:
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
-    PyBatchIterator createBatchIterator(py::object &query_blob) {
+    PyBatchIterator createBatchIterator(py::object &query_blob, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
         float *vector_data = (float *)items.data(0);
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data));
+        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, query_params));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
@@ -195,7 +195,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
-        .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator);
+        .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
+             py::arg("query_param") = nullptr);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
