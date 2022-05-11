@@ -190,6 +190,19 @@ def test_batch_iterator():
             should_have_return_in_first_batch.append(dist)
     assert(len(should_have_return_in_first_batch) <= 2)
 
+    # Verify that runtime args are sent properly to the batch iterator.
+    query_params = VecSimQueryParams()
+    query_params.hnswRuntimeParams.efRuntime = 5
+    batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
+    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+    # Verify that accuracy is worse with the new lower ef_runtime.
+    assert (sum(labels_first_batch[0]) < sum(labels_first_batch_new[0]))
+
+    query_params.hnswRuntimeParams.efRuntime = efRuntime  # Restore previous ef_runtime.
+    batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
+    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+    # Verify that results are now the same.
+    assert_allclose(labels_first_batch_new[0], labels_first_batch[0])
 
     # Reset
     batch_iterator.reset()

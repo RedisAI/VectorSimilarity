@@ -971,6 +971,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
 TEST_F(BruteForceTest, brute_force_resolve_params) {
     size_t dim = 4;
+    size_t k = 5;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -985,56 +986,26 @@ TEST_F(BruteForceTest, brute_force_resolve_params) {
 
     auto *rparams = array_new<VecSimRawParam>(2);
 
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
-              VecSim_OK);
-    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
-
-    array_append(rparams, (VecSimRawParam){
-                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+    // EF_RUNTIME is not a valid parameter for BF index.
+    array_append(rparams, (VecSimRawParam){.name = "ef_runtime",
+                                           .nameLen = strlen("ef_runtime"),
+                                           .value = "200",
+                                           .valLen = strlen("200")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false, k),
               VecSimParamResolverErr_UnknownParam);
 
-    // Testing with hybrid query params (more relevant tests to the shared logic are in
-    // test_hnswlib_resolve_params).
-    rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
-                                  .nameLen = strlen("HYBRID_POLICY"),
-                                  .value = "adhoc", // prefix of "adhoc_bf"
-                                  .valLen = strlen("ADHOC")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
-              VecSimParamResolverErr_InvalidPolicy_NExits);
-
-    // Sending HYBRID_POLICY=adhoc as the single parameter is valid.
-    rparams[0].value = "ADHOC_BF";
-    rparams[0].valLen = strlen("ADHOC_BF");
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
-              VecSim_OK);
-    ASSERT_EQ(qparams.searchMode, HYBRID_ADHOC_BF);
-
-    // Trying to set hybrid policy for non-hybrid query.
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
-              VecSimParamResolverErr_InvalidPolicy_NHybrid);
-
-    rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
-                                  .nameLen = strlen("HYBRID_POLICY"),
-                                  .value = "batches",
-                                  .valLen = strlen("batches")};
-
+    /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
+    // Sending only "batch_size" param is valid.
     array_append(rparams, (VecSimRawParam){.name = "batch_size",
                                            .nameLen = strlen("batch_size"),
                                            .value = "100",
                                            .valLen = strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
-              VecSim_OK);
-    ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, true, k), VecSim_OK);
     ASSERT_EQ(qparams.batchSize, 100);
 
-    // Both params are "batch_size".
-    rparams[0] = (VecSimRawParam){.name = "batch_size",
-                                  .nameLen = strlen("batch_size"),
-                                  .value = "200",
-                                  .valLen = strlen("200")};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
-              VecSimParamResolverErr_AlreadySet);
+    // With EF_RUNTIME, its again invalid (for hybrid queries as well).
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true, k),
+              VecSimParamResolverErr_UnknownParam);
 
     VecSimIndex_Free(index);
     array_free(rparams);
