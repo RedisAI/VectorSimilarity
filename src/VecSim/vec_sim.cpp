@@ -8,6 +8,58 @@
 #include <cassert>
 #include "memory.h"
 
+static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
+                                                  VecSimQueryParams *qparams, bool hybrid) {
+    long long num_val;
+    // EF_RUNTIME is a valid parameter only in HNSW algorithm.
+    if (index_type != VecSimAlgo_HNSWLIB) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
+    if (qparams->hnswRuntimeParams.efRuntime != 0) {
+        return VecSimParamResolverErr_AlreadySet;
+    }
+    if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
+        return VecSimParamResolverErr_BadValue;
+    }
+
+    qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
+    return VecSimParamResolver_OK;
+}
+
+static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQueryParams *qparams,
+                                                  bool hybrid) {
+    long long num_val;
+    if (!hybrid) {
+        return VecSimParamResolverErr_InvalidPolicy_NHybrid;
+    }
+    if (qparams->batchSize != 0) {
+        return VecSimParamResolverErr_AlreadySet;
+    }
+    if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
+        return VecSimParamResolverErr_BadValue;
+    }
+    qparams->batchSize = (size_t)num_val;
+    return VecSimParamResolver_OK;
+}
+
+static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
+                                                     VecSimQueryParams *qparams, bool hybrid) {
+    if (!hybrid) {
+        return VecSimParamResolverErr_InvalidPolicy_NHybrid;
+    }
+    if (qparams->searchMode != 0) {
+        return VecSimParamResolverErr_AlreadySet;
+    }
+    if (!strcasecmp(rparam.value, "batches")) {
+        qparams->searchMode = HYBRID_BATCHES;
+    } else if (!strcasecmp(rparam.value, "adhoc_bf")) {
+        qparams->searchMode = HYBRID_ADHOC_BF;
+    } else {
+        return VecSimParamResolverErr_InvalidPolicy_NExits;
+    }
+    return VecSimParamResolver_OK;
+}
+
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     VecSimIndex *index = NULL;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -75,8 +127,49 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
-                                                       int paramNum, VecSimQueryParams *qparams) {
-    return index->resolveParams(rparams, paramNum, qparams);
+                                                       int paramNum, VecSimQueryParams *qparams,
+                                                       bool hybrid) {
+
+    if (!qparams || (!rparams && (paramNum != 0))) {
+        return VecSimParamResolverErr_NullParam;
+    }
+    VecSimAlgo index_type = index->info().algo;
+    bzero(qparams, sizeof(VecSimQueryParams));
+    auto res = VecSimParamResolver_OK;
+    for (int i = 0; i < paramNum; i++) {
+        if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
+            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, hybrid)) !=
+                VecSimParamResolver_OK) {
+                return res;
+            }
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
+            if ((res = _ResolveParams_BatchSize(rparams[i], qparams, hybrid)) !=
+                VecSimParamResolver_OK) {
+                return res;
+            }
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
+            if ((res = _ResolveParams_HybridPolicy(rparams[i], qparams, hybrid)) !=
+                VecSimParamResolver_OK) {
+                return res;
+            }
+        } else {
+            return VecSimParamResolverErr_UnknownParam;
+        }
+    }
+    // The combination of AD-HOC with batch_size is invalid, as there are no batches in this policy.
+    if (qparams->searchMode == HYBRID_ADHOC_BF && qparams->batchSize > 0) {
+        return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize;
+    }
+    // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
+    // graph.
+    if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
+        qparams->hnswRuntimeParams.efRuntime > 0) {
+        return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
+    }
+    if (qparams->searchMode != 0) {
+        index->setLastSearchMode(qparams->searchMode);
+    }
+    return res;
 }
 
 extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
@@ -105,8 +198,9 @@ extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
     return index->infoIterator();
 }
 
-extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
-    return index->newBatchIterator(queryBlob);
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
+                                                        VecSimQueryParams *queryParams) {
+    return index->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

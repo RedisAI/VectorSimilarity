@@ -180,18 +180,6 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
 
-VecSimResolveCode BruteForceIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
-                                                 VecSimQueryParams *qparams) {
-    if (!qparams || (!rparams && (paramNum != 0))) {
-        return VecSimParamResolverErr_NullParam;
-    }
-    bzero(qparams, sizeof(VecSimQueryParams));
-    if (paramNum != 0) {
-        return VecSimParamResolverErr_UnknownParam;
-    }
-    return (VecSimResolveCode)VecSim_OK;
-}
-
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
@@ -291,7 +279,8 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
     return infoIterator;
 }
 
-VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob) {
+VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
+                                                       VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);

@@ -511,6 +511,17 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
 
+    // Create batch iterator without query param - verify that ef_runtime didn't change.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
+    // Run one batch for sanity.
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    // After releasing the batch iterator, ef_runtime should return to the default one.
+    VecSimBatchIterator_Free(batchIterator);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
+
     VecSimIndex_Free(index);
 }
 
@@ -564,6 +575,17 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     // Check that user args did not change
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
+    ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
+
+    // Create batch iterator with query param - verify that ef_runtime is set.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, &queryParams);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.hnswInfo.efRuntime, 300);
+    // Run one batch for sanity.
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    // After releasing the batch iterator, ef_runtime should return to the default one.
+    VecSimBatchIterator_Free(batchIterator);
+    info = VecSimIndex_Info(index);
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
 
     VecSimIndex_Free(index);
@@ -790,7 +812,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
     // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
@@ -844,7 +866,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. Run this flow for 3 times, and reset the iterator.
@@ -899,7 +921,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
     size_t n_res = 1, expected_n_res = 1;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -934,7 +956,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     float query[] = {(float)n, (float)n, (float)n, (float)n};
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
@@ -1019,49 +1041,70 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
 
-    VecSimRawParam *rparams = array_new<VecSimRawParam>(2);
+    auto *rparams = array_new<VecSimRawParam>(3);
 
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    // Test with empty runtime params.
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSim_OK);
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     array_append(rparams, (VecSimRawParam){
                               .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+              VecSim_OK);
     ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 100);
-    qparams.hnswRuntimeParams.efRuntime = 0;
-    ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     rparams[0] = (VecSimRawParam){.name = "ef_run", .nameLen = 6, .value = "100", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_UnknownParam);
 
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
     array_append(rparams, (VecSimRawParam){
                               .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
               VecSimParamResolverErr_AlreadySet);
 
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), NULL),
-              VecSimParamResolverErr_NullParam);
+    /** Testing with hybrid query params - cases which are only relevant for HNSW index. **/
+    // Cannot set ef_runtime param with "hybrid_policy" which is "ADHOC_BF"
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "ADHOC_BF",
+                                  .valLen = strlen("ADHOC_BF")};
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
+
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "BATCHES",
+                                  .valLen = strlen("BATCHES")};
+    array_append(rparams, (VecSimRawParam){.name = "batch_size",
+                                           .nameLen = strlen("batch_size"),
+                                           .value = "50",
+                                           .valLen = strlen("50")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+              VecSim_OK);
+    ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
+    ASSERT_EQ(qparams.batchSize, 50);
+    ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 100);
 
     VecSimIndex_Free(index);
     array_free(rparams);
@@ -1340,7 +1383,7 @@ TEST_F(HNSWLibTest, testCosine) {
     runTopKSearchTest(index, query, 10, verify_res);
 
     // Test with batch iterator.
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
     // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,

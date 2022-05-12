@@ -81,7 +81,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
     size_t batch_size = st.range(0);
     size_t total_res_count = st.range(1);
     for (auto _ : st) {
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(bf_index, query.data());
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(bf_index, query.data(), nullptr);
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res =
@@ -110,7 +111,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
     size_t total_res_num = st.range(1);
     auto bf_results =
         VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data(), nullptr);
     VecSimQueryResult_List accumulated_results[total_res_num];
     size_t batch_num = 0, res_num = 0;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -148,7 +149,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
     VecSimBatchIterator_Free(batchIterator);
 
     for (auto _ : st) {
-        batchIterator = VecSimBatchIterator_New(hnsw_index, query.data());
+        batchIterator = VecSimBatchIterator_New(hnsw_index, query.data(), nullptr);
         res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);

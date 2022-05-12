@@ -19,18 +19,18 @@ public:
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
-    virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
-                                            VecSimQueryParams *qparams) override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() override;
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) override;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
 
     void setEf(size_t ef);
     inline std::shared_ptr<hnswlib::HierarchicalNSW<float>> getHNSWIndex() { return hnsw; }
     inline std::shared_ptr<SpaceInterface<float>> getSpace() { return space; }
+    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
 
 private:
     std::shared_ptr<SpaceInterface<float>> space;
