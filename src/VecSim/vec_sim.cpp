@@ -9,8 +9,7 @@
 #include "memory.h"
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
-                                                  VecSimQueryParams *qparams, bool hybrid,
-                                                  size_t k) {
+                                                  VecSimQueryParams *qparams, bool hybrid) {
     long long num_val;
     // EF_RUNTIME is a valid parameter only in HNSW algorithm.
     if (index_type != VecSimAlgo_HNSWLIB) {
@@ -22,11 +21,7 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
     if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
         return VecSimParamResolverErr_BadValue;
     }
-    // Asking for EF_RUNTIME lower than k is useless for standard KNN, as HNSW sets EF_RUNTIME to be
-    // >= k
-    if (k > (size_t)num_val && !hybrid) {
-        return VecSimParamResolverErr_k_GT_EfRuntime;
-    }
+
     qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
     return VecSimParamResolver_OK;
 }
@@ -133,7 +128,7 @@ extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->inde
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
-                                                       bool hybrid, size_t k) {
+                                                       bool hybrid) {
 
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
@@ -143,7 +138,7 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
         if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
-            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, hybrid, k)) !=
+            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, hybrid)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
@@ -170,11 +165,6 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
         qparams->hnswRuntimeParams.efRuntime > 0) {
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
-    }
-    // EF_RUNTIME cannot be lower than the batch_size.
-    if (index_type == VecSimAlgo_HNSWLIB && qparams->hnswRuntimeParams.efRuntime &&
-        qparams->batchSize && qparams->hnswRuntimeParams.efRuntime < qparams->batchSize) {
-        return VecSimParamResolverErr_InvalidPolicy_BatchSize_GT_EfRuntime;
     }
     if (qparams->searchMode != 0) {
         index->setLastSearchMode(qparams->searchMode);
