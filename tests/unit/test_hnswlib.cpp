@@ -511,6 +511,17 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
 
+    // Create batch iterator without query param - verify that ef_runtime didn't change.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
+    // Run one batch for sanity.
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    // After releasing the batch iterator, ef_runtime should return to the default one.
+    VecSimBatchIterator_Free(batchIterator);
+    info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
+
     VecSimIndex_Free(index);
 }
 

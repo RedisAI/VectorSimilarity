@@ -140,8 +140,8 @@ HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrap
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = hnsw_index->getVisitedList();
     this->visited_tag = this->visited_list->getFreshTag();
+    this->orig_ef_runtime = this->hnsw_index->getEf();
     if (queryParams && queryParams->hnswRuntimeParams.efRuntime > 0) {
-        this->orig_ef_runtime = this->hnsw_index->getEf();
         this->hnsw_index->setEf(queryParams->hnswRuntimeParams.efRuntime);
     }
 }
