@@ -84,37 +84,6 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
 
-VecSimResolveCode HNSWIndex::resolveParams(VecSimRawParam *rparams, int paramNum,
-                                           VecSimQueryParams *qparams) {
-    if (!qparams || (!rparams && (paramNum != 0))) {
-        return VecSimParamResolverErr_NullParam;
-    }
-    bzero(qparams, sizeof(VecSimQueryParams));
-    for (int i = 0; i < paramNum; i++) {
-        if ((rparams[i].nameLen == strlen(VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) &&
-            (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING))) {
-            if (qparams->hnswRuntimeParams.efRuntime != 0) {
-                return VecSimParamResolverErr_AlreadySet;
-            } else {
-                char *ep; // For checking that strtoll used all rparams[i].valLen chars.
-                errno = 0;
-                long long val = strtoll(rparams[i].value, &ep, 0);
-                // Here we verify that val is positive and strtoll was successful.
-                // The last test checks that the entire rparams[i].value was used.
-                // We catch here inputs like "3.14", "123text" and so on.
-                if (val <= 0 || val == LLONG_MAX || errno != 0 ||
-                    (rparams[i].value + rparams[i].valLen) != ep) {
-                    return VecSimParamResolverErr_BadValue;
-                }
-                qparams->hnswRuntimeParams.efRuntime = (size_t)val;
-            }
-        } else {
-            return VecSimParamResolverErr_UnknownParam;
-        }
-    }
-    return (VecSimResolveCode)VecSim_OK;
-}
-
 double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
     return this->hnsw->getDistanceByLabelFromPoint(label, vector_data);
 }
@@ -178,7 +147,8 @@ VecSimIndexInfo HNSWIndex::info() const {
     return info;
 }
 
-VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
+VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
+                                                 VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);
@@ -188,7 +158,8 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob) {
         float_vector_normalize((float *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
-    return new (this->allocator) HNSW_BatchIterator(queryBlobCopy, this, this->allocator);
+    return new (this->allocator)
+        HNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {

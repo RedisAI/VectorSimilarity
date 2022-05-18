@@ -61,17 +61,6 @@ public:
     virtual size_t indexSize() const = 0;
 
     /**
-     * @brief Resolves VecSimRawParam array and generate VecSimQueryParams struct.
-     * @param index the index whose size is requested.
-     * @param rparams array of raw params to resolve.
-     * @param paramNum number of params in rparams (or number of parames in rparams to resolve).
-     * @param qparams pointer to VecSimQueryParams struct to set.
-     * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
-     */
-    virtual VecSimResolveCode resolveParams(VecSimRawParam *rparams, int paramNum,
-                                            VecSimQueryParams *qparams) = 0;
-
-    /**
      * @brief Search for the k closest vectors to a given vector in the index.
      *
      * @param queryBlob binary representation of the query vector. Blob size should match the index
@@ -108,7 +97,8 @@ public:
      * type and dimension.
      * @return Fresh batch iterator
      */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob) = 0;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  VecSimQueryParams *queryParams) = 0;
 
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
@@ -124,4 +114,10 @@ public:
      */
 
     virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) = 0;
+
+    /**
+     * @brief Set the latest search mode in the index data (for info/debugging).
+     * @param mode The search mode.
+     */
+    virtual inline void setLastSearchMode(VecSearchMode mode) = 0;
 };

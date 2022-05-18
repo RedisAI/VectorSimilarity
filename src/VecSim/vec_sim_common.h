@@ -45,7 +45,11 @@ typedef enum {
     VecSimParamResolverErr_NullParam,
     VecSimParamResolverErr_AlreadySet,
     VecSimParamResolverErr_UnknownParam,
-    VecSimParamResolverErr_BadValue
+    VecSimParamResolverErr_BadValue,
+    VecSimParamResolverErr_InvalidPolicy_NExits,
+    VecSimParamResolverErr_InvalidPolicy_NHybrid,
+    VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize,
+    VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime
 } VecSimResolveCode;
 
 /**
@@ -84,16 +88,6 @@ typedef struct {
 } HNSWRuntimeParams;
 
 /**
- * @brief Query Runtime parameters.
- *
- */
-typedef struct {
-    union {
-        HNSWRuntimeParams hnswRuntimeParams;
-    };
-} VecSimQueryParams;
-
-/**
  * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
  *
  */
@@ -106,6 +100,18 @@ typedef enum {
                      // passes the filters until we reach k results.
     HYBRID_BATCHES_TO_ADHOC_BF // Start with batches and dynamically switched to ad-hoc BF.
 } VecSearchMode;
+
+/**
+ * @brief Query Runtime parameters.
+ *
+ */
+typedef struct {
+    union {
+        HNSWRuntimeParams hnswRuntimeParams;
+    };
+    size_t batchSize;
+    VecSearchMode searchMode;
+} VecSimQueryParams;
 
 /**
  * @brief Index information. Mainly used for debug/testing.
