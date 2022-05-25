@@ -1307,7 +1307,7 @@ TEST_F(BruteForceTest, testTimeoutReturn) {
                                              .blockSize = 5}};
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndex_AddVector(index, vec, 0);
-    VecSim_SetTimeoutCallbackFunction([](void *ctx){ return 1; }); // Always times out
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     // Checks return code on timeout
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
@@ -1351,7 +1351,7 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
     ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
     VecSimQueryResult_Free(rl);
 
-    VecSim_SetTimeoutCallbackFunction([](void *ctx){ return 1; }); // Always times out
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     VecSimQueryResult_Free(rl);
@@ -1367,7 +1367,6 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
     VecSimQueryResult_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
-
 
     VecSimIndex_Free(index);
 }

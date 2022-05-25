@@ -152,7 +152,7 @@ TEST_F(CommonTest, SetTimeoutCallbackFunction) {
     VecSimQueryResult_Free(rl);
 
     // Actual test: sets the vecsimindex timeout callback to always return timeout
-    VecSim_SetTimeoutCallbackFunction([](void *ctx){ return 1; });
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; });
 
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);

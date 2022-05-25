@@ -159,13 +159,13 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
             vecsim_stl::vector<std::pair<float, labelType>> block_scores =
                 this->computeBlockScores(block);
             if (block_scores.empty()) {
-                return { NULL, VecSim_QueryResult_TimedOut };
+                return {NULL, VecSim_QueryResult_TimedOut};
             }
             this->scores.insert(this->scores.end(), block_scores.begin(), block_scores.end());
         }
     }
     if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-        return { NULL, VecSim_QueryResult_TimedOut };
+        return {NULL, VecSim_QueryResult_TimedOut};
     }
     VecSimQueryResult_List rl = searchByHeuristics(n_res, order);
 
