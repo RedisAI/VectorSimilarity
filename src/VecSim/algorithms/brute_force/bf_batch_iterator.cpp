@@ -149,7 +149,6 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
                                                         VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
-    VecSimQueryResult_List rl = {0};
     // Only in the first iteration we need to compute all the scores
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
@@ -160,17 +159,15 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
             vecsim_stl::vector<std::pair<float, labelType>> block_scores =
                 this->computeBlockScores(block);
             if (block_scores.empty()) {
-                rl.code = VecSim_QueryResult_TimedOut;
-                return rl;
+                return { NULL, VecSim_QueryResult_TimedOut };
             }
             this->scores.insert(this->scores.end(), block_scores.begin(), block_scores.end());
         }
     }
     if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-        rl.code = VecSim_QueryResult_TimedOut;
-        return rl;
+        return { NULL, VecSim_QueryResult_TimedOut };
     }
-    rl = searchByHeuristics(n_res, order);
+    VecSimQueryResult_List rl = searchByHeuristics(n_res, order);
 
     this->updateResultsCount(array_len(rl.results));
     if (order == BY_ID) {
