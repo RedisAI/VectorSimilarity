@@ -168,6 +168,13 @@ bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t
  */
 void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
 
+/**
+ * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.
+ *
+ * @param memoryfunctions VecSimMemoryFunctions struct.
+ */
+void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
+
 #ifdef __cplusplus
 }
 #endif

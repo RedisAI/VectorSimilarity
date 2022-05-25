@@ -1,3 +1,4 @@
+// #pragma GCC optimize("O0")
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"
@@ -7,6 +8,16 @@
 #include "VecSim/utils/arr_cpp.h"
 #include <cassert>
 #include "memory.h"
+
+timeoutCallbackFunction VecSimIndex::timeoutCallback = [](void *ctx) { return 0; };
+
+void VecSimIndex::setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
+    VecSimIndex::timeoutCallback = callback;
+}
+
+extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
+    VecSimIndex::setTimeoutCallbackFunction(callback);
+}
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams, bool hybrid) {

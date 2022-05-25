@@ -111,6 +111,7 @@ typedef struct {
     };
     size_t batchSize;
     VecSearchMode searchMode;
+    void *timeoutCtx;
 } VecSimQueryParams;
 
 /**
@@ -163,6 +164,8 @@ typedef struct {
     reallocFn reallocFunction; // Realloc like function.
     freeFn freeFunction;       // Free function.
 } VecSimMemoryFunctions;
+
+typedef int (*timeoutCallbackFunction)(void *ctx);
 
 #ifdef __cplusplus
 }

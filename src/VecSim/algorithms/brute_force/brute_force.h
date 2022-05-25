@@ -12,6 +12,7 @@ protected:
     size_t dim;
     VecSimType vecType;
     VecSimMetric metric;
+    friend class BF_BatchIterator;
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);

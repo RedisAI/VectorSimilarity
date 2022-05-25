@@ -1,4 +1,4 @@
-
+// #pragma GCC optimize("O0")
 #include "brute_force.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
@@ -183,6 +183,9 @@ size_t BruteForceIndex::indexSize() const { return this->count; }
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
+    VecSimQueryResult_List rl = {0};
+    void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
+
     this->last_mode = STANDARD_KNN;
     float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -199,6 +202,11 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         size_t block_size = vectorBlock->getLength();
         vecsim_stl::vector<float> scores(block_size, this->allocator);
         for (size_t i = 0; i < block_size; i++) {
+            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+                // if (this->timeoutCallback(this->timeoutCtx)) {
+                rl.code = VecSim_QueryResult_TimedOut;
+                return rl;
+            }
             scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
         }
         for (size_t i = 0; i < scores.size(); i++) {
@@ -219,13 +227,14 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
             }
         }
     }
-    auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
+    rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
+        VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
+        VecSimQueryResult_SetScore(rl.results[i], TopCandidates.top().first);
         TopCandidates.pop();
     }
-    return results;
+    rl.code = VecSim_QueryResult_OK;
+    return rl;
 }
 
 VecSimIndexInfo BruteForceIndex::info() const {
@@ -290,7 +299,8 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
         float_vector_normalize((float *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator) BF_BatchIterator(queryBlobCopy, this, this->allocator);
+    return new (this->allocator)
+        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
 bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
