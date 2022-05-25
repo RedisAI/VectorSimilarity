@@ -15,7 +15,11 @@ struct VecSimQueryResult_Iterator {
 
 extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List rl) { return array_len(rl.results); }
 
-extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) { array_free(rl.results); }
+extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
+    if (rl.results) {
+        array_free(rl.results);
+    }
+}
 
 extern "C" VecSimQueryResult_Iterator *
 VecSimQueryResult_List_GetIterator(VecSimQueryResult_List results) {
