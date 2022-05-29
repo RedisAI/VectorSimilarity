@@ -10,7 +10,7 @@
 /1/
 **/build/
 
-# Ignore benchmark fetched data but not the sorce file
+# Ignore benchmark fetched data but not the source file
 /tests/benchmark/data/*
 !/tests/benchmark/data/hnsw_indices.txt
 

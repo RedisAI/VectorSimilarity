@@ -1,4 +1,4 @@
-// #pragma GCC optimize("O0")
+
 #include "brute_force.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"

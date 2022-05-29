@@ -25,7 +25,7 @@ VecSimQueryResult_List BF_BatchIterator::searchByHeuristics(size_t n_res,
     return rl;
 }
 
-void BF_BatchIterator::swapScores(const unordered_map<size_t, size_t> &TopCandidatesIndices,
+void BF_BatchIterator::swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices,
                                   size_t res_num) {
     // Create a set of the indices in the scores array for every results that we return.
     set<size_t> indices;
@@ -60,7 +60,7 @@ VecSimQueryResult_List BF_BatchIterator::heapBasedSearch(size_t n_res) {
     float upperBound = std::numeric_limits<float>::lowest();
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
-    unordered_map<size_t, size_t> TopCandidatesIndices(n_res + 1);
+    vecsim_stl::unordered_map<size_t, size_t> TopCandidatesIndices(n_res, this->allocator);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {
         if (TopCandidates.size() < n_res) {
             TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
@@ -70,11 +70,11 @@ VecSimQueryResult_List BF_BatchIterator::heapBasedSearch(size_t n_res) {
             if (this->scores[i].first >= upperBound) {
                 continue;
             } else {
-                TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
-                TopCandidatesIndices[this->scores[i].second] = i;
                 // remove the furthest vector from the candidates and from the label->index mappings
                 TopCandidatesIndices.erase(TopCandidates.top().second);
                 TopCandidates.pop();
+                TopCandidatesIndices[this->scores[i].second] = i;
+                TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
                 upperBound = TopCandidates.top().first;
             }
         }
@@ -129,19 +129,20 @@ BF_BatchIterator::BF_BatchIterator(void *query_vector, const BruteForceIndex *bf
 // Compute the score for every vector in the block by using the given distance function.
 // Return a collection of (score, label) pairs for every vector in the block.
 vecsim_stl::vector<std::pair<float, labelType>>
-BF_BatchIterator::computeBlockScores(VectorBlock *block) {
+BF_BatchIterator::computeBlockScores(VectorBlock *block, VecSimQueryResult_Code *rc) {
     const void *queryBlob = getQueryBlob();
     DISTFUNC<float> DistFunc = getIndex()->distFunc();
     size_t len = block->getLength();
     vecsim_stl::vector<std::pair<float, labelType>> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
         if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-            // Assuming block size > 0, returning empty vector as timeout signal.
+            *rc = VecSim_QueryResult_TimedOut;
             return vecsim_stl::vector<std::pair<float, labelType>>(this->allocator);
         }
         scores[i] = {DistFunc(block->getVector(i), queryBlob, &this->index->dim),
                      block->getMember(i)->label};
     }
+    *rc = VecSim_QueryResult_OK;
     return scores;
 }
 
@@ -154,12 +155,13 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
         assert(getResultsCount() == 0);
         this->scores.reserve(this->index->indexSize());
         vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
+        VecSimQueryResult_Code rc;
         for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
             vecsim_stl::vector<std::pair<float, labelType>> block_scores =
-                this->computeBlockScores(block);
-            if (block_scores.empty()) {
-                return {NULL, VecSim_QueryResult_TimedOut};
+                this->computeBlockScores(block, &rc);
+            if (VecSim_OK != rc) {
+                return {NULL, rc};
             }
             this->scores.insert(this->scores.end(), block_scores.begin(), block_scores.end());
         }

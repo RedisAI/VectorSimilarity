@@ -167,6 +167,12 @@ typedef struct {
 
 typedef int (*timeoutCallbackFunction)(void *ctx);
 
+typedef enum {
+    VecSim_QueryResult_OK = VecSim_OK,
+    VecSim_QueryResult_TimedOut,
+    VecSim_QueryResult_Err,
+} VecSimQueryResult_Code;
+
 #ifdef __cplusplus
 }
 #endif

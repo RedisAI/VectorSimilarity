@@ -1359,7 +1359,7 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator_Free(batchIterator);
 
     // Fail on first batch (while calculating)
-    // Timeout callback function already always times out
+    // Timeout callback function already set to always time out
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);

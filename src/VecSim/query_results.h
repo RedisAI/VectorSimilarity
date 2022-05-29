@@ -30,12 +30,6 @@ int64_t VecSimQueryResult_GetId(const VecSimQueryResult *item);
  */
 float VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 
-typedef enum {
-    VecSim_QueryResult_OK = VecSim_OK,
-    VecSim_QueryResult_TimedOut,
-    VecSim_QueryResult_Err,
-} VecSimQueryResult_Code;
-
 /**
  * @brief An opaque object from which results can be obtained via iterator.
  */

@@ -1,4 +1,3 @@
-// #pragma GCC optimize("O0")
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"

@@ -17,8 +17,9 @@ private:
     VecSimQueryResult_List searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
     VecSimQueryResult_List selectBasedSearch(size_t n_res);
     VecSimQueryResult_List heapBasedSearch(size_t n_res);
-    void swapScores(const unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num);
-    vecsim_stl::vector<std::pair<float, labelType>> computeBlockScores(VectorBlock *block);
+    void swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num);
+    vecsim_stl::vector<std::pair<float, labelType>> computeBlockScores(VectorBlock *block,
+                                                                       VecSimQueryResult_Code *rc);
 
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex *index,
