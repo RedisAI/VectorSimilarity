@@ -25,8 +25,8 @@ VecSimQueryResult_List BF_BatchIterator::searchByHeuristics(size_t n_res,
     return rl;
 }
 
-void BF_BatchIterator::swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices,
-                                  size_t res_num) {
+void BF_BatchIterator::swapScores(
+    const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num) {
     // Create a set of the indices in the scores array for every results that we return.
     set<size_t> indices;
     for (auto pos : TopCandidatesIndices) {
