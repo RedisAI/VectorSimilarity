@@ -126,26 +126,6 @@ BF_BatchIterator::BF_BatchIterator(void *query_vector, const BruteForceIndex *bf
     BF_BatchIterator::next_id++;
 }
 
-// Compute the score for every vector in the block by using the given distance function.
-// Return a collection of (score, label) pairs for every vector in the block.
-vecsim_stl::vector<std::pair<float, labelType>>
-BF_BatchIterator::computeBlockScores(VectorBlock *block, VecSimQueryResult_Code *rc) {
-    const void *queryBlob = getQueryBlob();
-    DISTFUNC<float> DistFunc = getIndex()->distFunc();
-    size_t len = block->getLength();
-    vecsim_stl::vector<std::pair<float, labelType>> scores(len, this->allocator);
-    for (size_t i = 0; i < len; i++) {
-        if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-            *rc = VecSim_QueryResult_TimedOut;
-            return vecsim_stl::vector<std::pair<float, labelType>>(this->allocator);
-        }
-        scores[i] = {DistFunc(block->getVector(i), queryBlob, &this->index->dim),
-                     block->getMember(i)->label};
-    }
-    *rc = VecSim_QueryResult_OK;
-    return scores;
-}
-
 VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
                                                         VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
@@ -158,12 +138,14 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
         VecSimQueryResult_Code rc;
         for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
-            vecsim_stl::vector<std::pair<float, labelType>> block_scores =
-                this->computeBlockScores(block, &rc);
+            auto block_scores = this->index->computeBlockScores(
+                block, this->getQueryBlob(), this->getTimeoutCtx(), &rc);
             if (VecSim_OK != rc) {
                 return {NULL, rc};
             }
-            this->scores.insert(this->scores.end(), block_scores.begin(), block_scores.end());
+            for (size_t i = 0; i < block_scores.size(); i++) {
+                this->scores.emplace_back(block_scores[i], block->getMember(i)->label);
+            }
         }
     }
     if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {

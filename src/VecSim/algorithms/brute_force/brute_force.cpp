@@ -180,6 +180,24 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
 
+// Compute the score for every vector in the block by using the given distance function.
+vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block,
+                                                              const void *queryBlob,
+                                                              void *timeoutCtx,
+                                                              VecSimQueryResult_Code *rc) const {
+    size_t len = block->getLength();
+    vecsim_stl::vector<float> scores(len, this->allocator);
+    for (size_t i = 0; i < len; i++) {
+        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            return scores;
+        }
+        scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
+    }
+    *rc = VecSim_QueryResult_OK;
+    return scores;
+}
+
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
@@ -199,15 +217,9 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
-        size_t block_size = vectorBlock->getLength();
-        vecsim_stl::vector<float> scores(block_size, this->allocator);
-        for (size_t i = 0; i < block_size; i++) {
-            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
-                // if (this->timeoutCallback(this->timeoutCtx)) {
-                rl.code = VecSim_QueryResult_TimedOut;
-                return rl;
-            }
-            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
+        if (VecSim_OK != rl.code) {
+            return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.
