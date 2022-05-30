@@ -139,8 +139,8 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
         VecSimQueryResult_Code rc;
         for (auto &block : blocks) {
             // compute the scores for the vectors in every block and extend the scores array.
-            auto block_scores = this->index->computeBlockScores(
-                block, this->getQueryBlob(), this->getTimeoutCtx(), &rc);
+            auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
+                                                                this->getTimeoutCtx(), &rc);
             if (VecSim_OK != rc) {
                 return {NULL, rc};
             }
