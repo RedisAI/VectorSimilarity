@@ -58,6 +58,11 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         this->visitNode(entry_point);
         candidates.emplace(dist, entry_point);
     }
+    // Checks that we didn't got timeout between iterations.
+    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        *rc = VecSim_QueryResult_TimedOut;
+        return top_candidates;
+    }
 
     // Move extras from previous iteration to the top candidates.
     while (top_candidates.size() < this->hnsw_index->getEf() && !top_candidates_extras.empty()) {

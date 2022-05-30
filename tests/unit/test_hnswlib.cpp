@@ -1473,6 +1473,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
 
 TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
+    size_t n = 2;
     float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
     VecSimQueryResult_List rl;
 
@@ -1480,16 +1481,32 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
-                                                 .initialCapacity = 1}};
+                                                 .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    VecSimIndex_AddVector(index, vec, 46);
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_AddVector(index, vec, i + 46);
+    }
 
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Fail on second batch (after calculation already completed)
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    VecSimQueryResult_Free(rl);
+
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
 
     // Fail on first batch (while calculating)
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
+    // Timeout callback function already set to always time out
+    batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
