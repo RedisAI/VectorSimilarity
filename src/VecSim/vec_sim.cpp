@@ -8,12 +8,6 @@
 #include <cassert>
 #include "memory.h"
 
-timeoutCallbackFunction VecSimIndex::timeoutCallback = [](void *ctx) { return 0; };
-
-void VecSimIndex::setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
-    VecSimIndex::timeoutCallback = callback;
-}
-
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
     VecSimIndex::setTimeoutCallbackFunction(callback);
 }

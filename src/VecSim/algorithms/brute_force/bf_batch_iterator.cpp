@@ -71,6 +71,7 @@ VecSimQueryResult_List BF_BatchIterator::heapBasedSearch(size_t n_res) {
                 continue;
             } else {
                 // remove the furthest vector from the candidates and from the label->index mappings
+                // we first remove the worst candidate so we wont exceed the allocated size
                 TopCandidatesIndices.erase(TopCandidates.top().second);
                 TopCandidates.pop();
                 TopCandidatesIndices[this->scores[i].second] = i;
