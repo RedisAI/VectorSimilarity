@@ -171,7 +171,7 @@ void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
 /**
  * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.
  *
- * @param memoryfunctions VecSimMemoryFunctions struct.
+ * @param callback timeoutCallbackFunction function. should get void* and return int.
  */
 void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 
