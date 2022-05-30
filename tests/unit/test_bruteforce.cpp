@@ -1315,6 +1315,7 @@ TEST_F(BruteForceTest, testTimeoutReturn) {
     VecSimQueryResult_Free(rl);
 
     VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
 }
 
 TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
@@ -1369,4 +1370,5 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
 }
