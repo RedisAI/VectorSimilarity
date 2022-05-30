@@ -1506,8 +1506,8 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator_Free(batchIterator);
 
     // Fail on first batch (while calculating)
-    
-    auto tcb = [](void *ctx) {
+    // Fails on second call.
+    auto timeoutcb = [](void *ctx) {
         static size_t flag = 1;
         if (flag) {
             flag = 0;
@@ -1516,7 +1516,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
             return 1;
         }
     };
-    VecSim_SetTimeoutCallbackFunction(tcb); // Always times out
+    VecSim_SetTimeoutCallbackFunction(timeoutcb); // Always times out
     batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
