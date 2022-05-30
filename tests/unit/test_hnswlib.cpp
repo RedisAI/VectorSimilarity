@@ -1447,4 +1447,67 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, testTimeoutReturn) {
+    size_t dim = 4;
+    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    VecSimQueryResult_List rl;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = 1,
+                                                 .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex_AddVector(index, vec, 0);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    // Checks return code on timeout
+    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(rl);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
+    size_t dim = 4;
+    size_t n = 10;
+    VecSimQueryResult_List rl;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .blockSize = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+
+    // Fail on first batch (while calculating)
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
+
+    VecSimIndex_Free(index);
+}
 } // namespace hnswlib

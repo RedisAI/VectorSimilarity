@@ -113,8 +113,8 @@ private:
     candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
                                           size_t ef) const;
     candidatesMaxHeap<dist_t> searchBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
-                                                             size_t ef, void * timeoutCtx,
-                                                             VecSimQueryResult_Code *rc) const;
+                                                            size_t ef, void *timeoutCtx,
+                                                            VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
     tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
                                        size_t level);
@@ -1071,8 +1071,10 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
 }
 
 template <typename dist_t>
-candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(
-    tableint ep_id, const void *data_point, size_t ef, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
+candidatesMaxHeap<dist_t>
+HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
+                                                       size_t ef, void *timeoutCtx,
+                                                       VecSimQueryResult_Code *rc) const {
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
         this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
@@ -1164,9 +1166,10 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
     }
 
     tableint bottom_layer_ep = searchBottomLayerEP(query_data);
-    candidatesMaxHeap<dist_t> top_candidates = searchBottomLayer_WithTimeout(bottom_layer_ep, query_data, std::max(ef_, k), timeoutCtx, rc);
+    candidatesMaxHeap<dist_t> top_candidates = searchBottomLayer_WithTimeout(
+        bottom_layer_ep, query_data, std::max(ef_, k), timeoutCtx, rc);
 
-    if (VecSim_QueryResult_OK == *rc) {
+    if (VecSim_OK == *rc) {
         while (top_candidates.size() > k) {
             top_candidates.pop();
         }
