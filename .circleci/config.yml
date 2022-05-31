@@ -170,6 +170,17 @@ jobs:
       - setup-centos
       - tiny-build-steps
 
+  build-arm:
+    resource_class: arm.large
+    docker:
+      - image: ubuntu:focal
+    # parameters:
+    #   platform:
+    #     type: string
+    steps:
+      - setup-ubuntu
+      - build-steps
+
   build-macos:
       macos:
         xcode: 11.6.0
@@ -334,18 +345,18 @@ workflows:
 
   default_flow:
     jobs:
-      - build-focal:
+      # - build-focal:
+      #     <<: *on-any-branch
+      # - build-bionic:
+      #     <<: *on-any-branch
+      # - build-xenial:
+      #     <<: *on-any-branch
+      # - build-rocky8:
+      #     <<: *on-any-branch
+      - build-arm:
           <<: *on-any-branch
-      - build-bionic:
-          <<: *on-any-branch
-      - build-xenial:
-          <<: *on-any-branch
-      - build-rocky8:
-          <<: *on-any-branch
-      - build-rocky8:
-          <<: *on-any-branch
-      - build-macos:
-          <<: *on-any-branch
+      # - build-macos:
+      #     <<: *on-any-branch
       - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
