@@ -172,8 +172,8 @@ jobs:
 
   build-arm:
     resource_class: arm.large
-    docker:
-      - image: ubuntu-2004:current
+    machine:
+      image: ubuntu-2004:current
     # parameters:
     #   platform:
     #     type: string
