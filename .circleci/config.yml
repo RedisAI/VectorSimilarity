@@ -52,7 +52,7 @@ commands:
       - setup-automation
       - run:
           name: System setup
-          command: ./sbin/system-setup.py
+          command: sudo ./sbin/system-setup.py
 
   setup-ubuntu:
     steps:
