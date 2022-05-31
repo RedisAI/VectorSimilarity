@@ -172,10 +172,8 @@ jobs:
 
   build-arm:
     resource_class: arm.large
-    # machine:
-    #   image: ubuntu-2004:current
-    docker:
-      - image: ubuntu-2004:current
+    machine:
+      image: ubuntu-2004:current
     steps:
       - setup-ubuntu
       - build-steps
