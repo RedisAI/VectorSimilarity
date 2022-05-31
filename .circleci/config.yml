@@ -52,7 +52,7 @@ commands:
       - setup-automation
       - run:
           name: System setup
-          command: sudo ./sbin/system-setup.py
+          command: ./sbin/system-setup.py
 
   setup-ubuntu:
     steps:
@@ -174,9 +174,6 @@ jobs:
     resource_class: arm.large
     machine:
       image: ubuntu-2004:current
-    # parameters:
-    #   platform:
-    #     type: string
     steps:
       - setup-ubuntu
       - build-steps
