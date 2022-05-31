@@ -13,40 +13,42 @@ import paella
 #----------------------------------------------------------------------------------------------
 
 class VecSimSetup(paella.Setup):
-    def __init__(self, nop=False):
-        paella.Setup.__init__(self, nop)
+    def __init__(self, args):
+        paella.Setup.__init__(self, args.nop)
 
     def common_first(self):
         self.install_downloaders()
-        self.pip_install("wheel")
-        self.pip_install("setuptools --upgrade")
 
+        self.run("%s/bin/enable-utf8" % READIES, sudo=self.os != 'macos')
         self.install("git")
-
-        self.run("%s/bin/enable-utf8" % READIES)
-        self.run("%s/bin/getcmake" % READIES)
 
     def debian_compat(self):
         self.run("%s/bin/getgcc --modern" % READIES)
-        self.install("python3-dev clang-format valgrind")
+        self.install("python3-dev valgrind")
 
     def redhat_compat(self):
         self.install("redhat-lsb-core")
+        self.run("%s/bin/getepel" % READIES, sudo=True)
+        self.install("libatomic")
+
         self.run("%s/bin/getgcc --modern" % READIES)
 
     def fedora(self):
+        self.install("libatomic")
         self.run("%s/bin/getgcc --modern" % READIES)
 
     def macos(self):
         self.install_gnu_utils()
         self.run("%s/bin/getgcc --modern" % READIES)
-        self.install("clang-format")
 
     def linux_last(self):
         self.run("%s/bin/getclang" % READIES)
 
     def common_last(self):
-        self.run("python3 %s/bin/getrmpytools" % READIES)
+        self.run("{PYTHON} {READIES}/bin/getcmake --usr".format(PYTHON=self.python, READIES=READIES),
+                 sudo=self.os != 'macos')
+        self.run("{PYTHON} {READIES}/bin/getrmpytools --reinstall".format(PYTHON=self.python, READIES=READIES))
+        self.run("%s/bin/getclang --format" % READIES)
         self.pip_install("-r %s/sbin/requirements.txt" % ROOT)
 
 #----------------------------------------------------------------------------------------------
@@ -55,4 +57,4 @@ parser = argparse.ArgumentParser(description='Set up system for build.')
 parser.add_argument('-n', '--nop', action="store_true", help='no operation')
 args = parser.parse_args()
 
-VecSimSetup(nop = args.nop).setup()
+VecSimSetup(args).setup()
