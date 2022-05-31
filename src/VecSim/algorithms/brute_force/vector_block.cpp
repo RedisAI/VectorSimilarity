@@ -31,13 +31,3 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     memcpy(this->vectors + (this->length * this->dim), vectorData, this->dim * sizeof(float));
     this->length++;
 }
-
-vecsim_stl::vector<std::pair<float, labelType>>
-VectorBlock::computeBlockScores(DISTFUNC<float> DistFunc, const void *queryBlob) {
-    vecsim_stl::vector<std::pair<float, labelType>> scores(this->length, this->allocator);
-    for (size_t i = 0; i < this->length; i++) {
-        scores[i] = {DistFunc(this->getVector(i), queryBlob, &this->dim),
-                     this->getMember(i)->label};
-    }
-    return scores;
-}

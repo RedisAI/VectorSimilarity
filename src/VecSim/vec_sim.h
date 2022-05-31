@@ -139,9 +139,11 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
  * @param index the index in which the search will be done (in batches)
  * @param queryBlob binary representation of the vector. Blob size should match the index data type
  * and dimension.
+ * @param queryParams run time params for the search, which are algorithm-specific.
  * @return Fresh batch iterator
  */
-VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob);
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
+                                             VecSimQueryParams *queryParams);
 
 /**
  * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
@@ -164,6 +166,13 @@ bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t
  * @param memoryfunctions VecSimMemoryFunctions struct.
  */
 void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
+
+/**
+ * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.
+ *
+ * @param callback timeoutCallbackFunction function. should get void* and return int.
+ */
+void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 
 #ifdef __cplusplus
 }

@@ -16,6 +16,7 @@ inline bool HNSW_BatchIterator::hasVisitedNode(idType node_id) const {
 
 VecSimQueryResult_List HNSW_BatchIterator::prepareResults(candidatesMaxHeap top_candidates,
                                                           size_t n_res) {
+    VecSimQueryResult_List rl = {0};
     // size_t initial_results_num = array_len(batch_results);
     // Put the "spare" results (if exist) in the results heap.
     while (top_candidates.size() > n_res) {
@@ -23,17 +24,17 @@ VecSimQueryResult_List HNSW_BatchIterator::prepareResults(candidatesMaxHeap top_
                                             top_candidates.top().second); // (distance, id)
         top_candidates.pop();
     }
-    auto *batch_results =
-        array_new_len<VecSimQueryResult>(top_candidates.size(), top_candidates.size());
+    rl.results = array_new_len<VecSimQueryResult>(top_candidates.size(), top_candidates.size());
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
     for (int i = (int)(top_candidates.size() - 1); i >= 0; i--) {
         labelType label = this->hnsw_index->getExternalLabel(top_candidates.top().second);
-        VecSimQueryResult_SetId(batch_results[i], label);
-        VecSimQueryResult_SetScore(batch_results[i], top_candidates.top().first);
+        VecSimQueryResult_SetId(rl.results[i], label);
+        VecSimQueryResult_SetScore(rl.results[i], top_candidates.top().first);
         top_candidates.pop();
     }
-    return batch_results;
+    rl.code = VecSim_QueryResult_OK;
+    return rl;
 }
 
 candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
@@ -129,9 +130,12 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
 }
 
 HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrapper,
+                                       VecSimQueryParams *queryParams,
                                        std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimBatchIterator(query_vector, std::move(allocator)), index_wrapper(index_wrapper),
-      depleted(false), top_candidates_extras(this->allocator), candidates(this->allocator) {
+    : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
+                          std::move(allocator)),
+      index_wrapper(index_wrapper), depleted(false), top_candidates_extras(this->allocator),
+      candidates(this->allocator) {
     this->space = index_wrapper->getSpace();
 
     this->hnsw_index = index_wrapper->getHNSWIndex();
@@ -164,7 +168,7 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
     // Move the spare results to the "extras" queue if needed, and create the batch results array.
     auto batch_results = this->prepareResults(top_candidates, n_res);
 
-    this->updateResultsCount(array_len(batch_results));
+    this->updateResultsCount(VecSimQueryResult_Len(batch_results));
     if (this->getResultsCount() == this->index_wrapper->indexSize()) {
         this->depleted = true;
     }

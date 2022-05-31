@@ -753,7 +753,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
         }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
         // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
@@ -806,7 +806,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
         }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
         // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet, in
@@ -865,7 +865,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
@@ -915,7 +915,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     }
 
     // Create batch iterator for empty index.
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     // try to get more results even though there are no.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
@@ -935,7 +935,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    batchIterator = VecSimBatchIterator_New(index, query);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Ask for zero results.
     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
@@ -1151,7 +1151,7 @@ TEST_F(BruteForceTest, batchIteratorSwapIndices) {
     // query for (1,1,1,1) vector.
     float query[dim];
     query[0] = query[1] = query[2] = query[3] = 1.0;
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get first batch - expect to get ids 1,3,4,5.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 4, BY_ID);
@@ -1224,7 +1224,7 @@ TEST_F(BruteForceTest, testCosine) {
     runTopKSearchTest(index, query, 10, verify_res);
 
     // Test with batch iterator.
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
     // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
@@ -1280,6 +1280,83 @@ TEST_F(BruteForceTest, testSizeEstimation) {
     actual = VecSimIndex_AddVector(index, vec, 0);
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, testTimeoutReturn) {
+    size_t dim = 4;
+    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    VecSimQueryResult_List rl;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 1,
+                                             .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex_AddVector(index, vec, 0);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    // Checks return code on timeout
+    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(rl);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
+    size_t dim = 4;
+    size_t n = 10;
+    VecSimQueryResult_List rl;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n,
+                                             .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)n;
+    }
+
+    // Fail on second batch (after calculation already completed)
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    VecSimQueryResult_Free(rl);
+
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
+
+    // Fail on first batch (while calculating)
+    // Timeout callback function already set to always time out
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);
 }

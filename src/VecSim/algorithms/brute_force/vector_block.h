@@ -42,11 +42,6 @@ public:
         member->block = this;
     }
 
-    // Compute the score for every vector in the block by using the given distance function.
-    // Return a collection of (score, label) pairs for every vector in the block.
-    vecsim_stl::vector<std::pair<float, labelType>> computeBlockScores(DISTFUNC<float> DistFunc,
-                                                                       const void *queryBlob);
-
     virtual ~VectorBlock();
 
 private:

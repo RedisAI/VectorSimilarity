@@ -790,7 +790,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
     // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
@@ -844,7 +844,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. Run this flow for 3 times, and reset the iterator.
@@ -899,7 +899,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
     size_t n_res = 1, expected_n_res = 1;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -934,7 +934,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     float query[] = {(float)n, (float)n, (float)n, (float)n};
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
@@ -1340,7 +1340,7 @@ TEST_F(HNSWLibTest, testCosine) {
     runTopKSearchTest(index, query, 10, verify_res);
 
     // Test with batch iterator.
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
     // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,

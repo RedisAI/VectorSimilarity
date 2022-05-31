@@ -8,6 +8,10 @@
 #include <cassert>
 #include "memory.h"
 
+extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
+    VecSimIndex::setTimeoutCallbackFunction(callback);
+}
+
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     VecSimIndex *index = NULL;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -105,8 +109,9 @@ extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
     return index->infoIterator();
 }
 
-extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob) {
-    return index->newBatchIterator(queryBlob);
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
+                                                        VecSimQueryParams *queryParams) {
+	return index->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

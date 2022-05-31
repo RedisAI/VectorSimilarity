@@ -84,16 +84,6 @@ typedef struct {
 } HNSWRuntimeParams;
 
 /**
- * @brief Query Runtime parameters.
- *
- */
-typedef struct {
-    union {
-        HNSWRuntimeParams hnswRuntimeParams;
-    };
-} VecSimQueryParams;
-
-/**
  * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
  *
  */
@@ -106,6 +96,18 @@ typedef enum {
                      // passes the filters until we reach k results.
     HYBRID_BATCHES_TO_ADHOC_BF // Start with batches and dynamically switched to ad-hoc BF.
 } VecSearchMode;
+
+/**
+ * @brief Query Runtime parameters.
+ *
+ */
+typedef struct {
+    union {
+        HNSWRuntimeParams hnswRuntimeParams;
+    };
+    void *timeoutCtx; // This parameter is not exposed directly to the user, and we shouldn't expect
+                      // to get it from the parameters reslove function.
+} VecSimQueryParams;
 
 /**
  * @brief Index information. Mainly used for debug/testing.
@@ -157,6 +159,19 @@ typedef struct {
     reallocFn reallocFunction; // Realloc like function.
     freeFn freeFunction;       // Free function.
 } VecSimMemoryFunctions;
+
+/**
+ * @brief A struct to pass 3rd party timeout function to Vecsimlib.
+ * @param ctx some generic context to pass to the function
+ * @return the function should return a non-zero value on timeout
+ */
+typedef int (*timeoutCallbackFunction)(void *ctx);
+
+typedef enum {
+    VecSim_QueryResult_OK = VecSim_OK,
+    VecSim_QueryResult_TimedOut,
+    VecSim_QueryResult_Err,
+} VecSimQueryResult_Code;
 
 #ifdef __cplusplus
 }

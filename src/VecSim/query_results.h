@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include "vec_sim_common.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,7 +33,10 @@ float VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 /**
  * @brief An opaque object from which results can be obtained via iterator.
  */
-typedef VecSimQueryResult *VecSimQueryResult_List;
+typedef struct {
+    VecSimQueryResult *results;
+    VecSimQueryResult_Code code;
+} VecSimQueryResult_List;
 
 /**
  * @brief Iterator for going over the list of results that had returned form a query
