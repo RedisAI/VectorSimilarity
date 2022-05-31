@@ -21,6 +21,9 @@ public:
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
+    vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
+                                                 void *timeoutCtx,
+                                                 VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;

@@ -94,6 +94,7 @@ void HNSWIndex::setEf(size_t ef) { this->hnsw->setEf(ef); }
 
 VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
                                             VecSimQueryParams *queryParams) {
+    VecSimQueryResult_List rl = {0};
     try {
         this->last_mode = STANDARD_KNN;
         float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
@@ -112,20 +113,21 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
             }
         }
         auto knn_res = hnsw->searchKnn(query_data, k);
-        auto *results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
+        rl.results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
         for (int i = (int)knn_res.size() - 1; i >= 0; --i) {
-            VecSimQueryResult_SetId(results[i], knn_res.top().second);
-            VecSimQueryResult_SetScore(results[i], knn_res.top().first);
+            VecSimQueryResult_SetId(rl.results[i], knn_res.top().second);
+            VecSimQueryResult_SetScore(rl.results[i], knn_res.top().first);
             knn_res.pop();
         }
         // Restore efRuntime
         hnsw->setEf(originalEF);
         assert(hnsw->getEf() == originalEF);
 
-        return results;
+        rl.code = VecSim_QueryResult_OK;
     } catch (...) {
-        return NULL;
+        rl.code = VecSim_QueryResult_Err;
     }
+    return rl;
 }
 
 VecSimIndexInfo HNSWIndex::info() const {

@@ -8,6 +8,10 @@
 #include <cassert>
 #include "memory.h"
 
+extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
+    VecSimIndex::setTimeoutCallbackFunction(callback);
+}
+
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams, bool hybrid) {
     long long num_val;

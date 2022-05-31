@@ -64,13 +64,13 @@ void float_vector_normalize(float *x, size_t dim) {
     }
 }
 
-void sort_results_by_id(VecSimQueryResult_List results) {
-    qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
+void sort_results_by_id(VecSimQueryResult_List rl) {
+    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultById);
 }
 
-void sort_results_by_score(VecSimQueryResult_List results) {
-    qsort(results, VecSimQueryResult_Len(results), sizeof(VecSimQueryResult),
+void sort_results_by_score(VecSimQueryResult_List rl) {
+    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultByScore);
 }
 
