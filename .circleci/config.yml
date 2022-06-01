@@ -114,7 +114,7 @@ commands:
       - run:
           name: Flow tests
           command: |
-            python3 -m pip install -r --no-cache-dir sbin/requirements.txt
+            python3 -m pip install --no-cache-dir -r sbin/requirements.txt
             python3 -m tox -e flowenv -r
           no_output_timeout: 30m
       - save_cache:
