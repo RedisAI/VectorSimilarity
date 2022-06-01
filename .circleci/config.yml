@@ -116,6 +116,7 @@ commands:
           command: |
             python3 -m pip install -r sbin/requirements.txt
             python3 -m tox -e flowenv
+          no_output_timeout: 30m
       - save_cache:
           paths:
             - ./.tox
