@@ -114,8 +114,7 @@ commands:
       - run:
           name: Flow tests
           command: |
-            rm -rf ~/.local/lib ~/.pypoetry
-            python3 -m pip install -r sbin/requirements.txt
+            python3 -m pip install -r --no-cache-dir sbin/requirements.txt
             python3 -m tox -e flowenv -r
           no_output_timeout: 30m
       - save_cache:
