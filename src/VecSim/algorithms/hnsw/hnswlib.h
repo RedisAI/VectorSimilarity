@@ -29,6 +29,10 @@ using namespace std;
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
 
+#ifndef USE_SSE
+#define USE_SSE
+#endif
+
 typedef size_t labeltype;
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
