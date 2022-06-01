@@ -113,18 +113,17 @@ commands:
       - run:
           name: Unit test
           command: bash -l -c "make unit_test"
-      # - run:
-      #     name: Valgrind test
-      #     command: bash -l -c "make VG=1 build unit_test"
+      - run:
+          name: Valgrind test
+          command: bash -l -c "make VG=1 build unit_test"
       - run:
           name: Build Python bindings
           command: bash -l -c "make pybind"
       - run:
           name: Flow tests
           command: |
-            python3 -m pip install --upgrade -r sbin/requirements.txt
+            python3 -m pip install -r sbin/requirements.txt
             python3 -m tox -e flowenv -r
-          no_output_timeout: 30m
       - save_cache:
           paths:
             - ./.tox
@@ -185,7 +184,7 @@ jobs:
       image: ubuntu-2004:current
     steps:
       - setup-ubuntu-sudo
-      - build-steps
+      - tiny-build-steps
 
   build-macos:
       macos:
@@ -353,16 +352,16 @@ workflows:
     jobs:
       - build-focal:
           <<: *on-any-branch
-      # - build-bionic:
-      #     <<: *on-any-branch
-      # - build-xenial:
-      #     <<: *on-any-branch
-      # - build-rocky8:
-      #     <<: *on-any-branch
+      - build-bionic:
+          <<: *on-any-branch
+      - build-xenial:
+          <<: *on-any-branch
+      - build-rocky8:
+          <<: *on-any-branch
       - build-arm:
           <<: *on-any-branch
-      # - build-macos:
-      #     <<: *on-any-branch
+      - build-macos:
+          <<: *on-any-branch
       - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
