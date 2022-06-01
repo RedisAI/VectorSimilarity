@@ -59,7 +59,7 @@ commands:
       - run:
           name: basic install
           command: |
-            sudo apt-get update
+            sudo apt-get update --fix-missing
             sudo apt-get install -y git
 
   setup-centos:
@@ -114,8 +114,9 @@ commands:
       - run:
           name: Flow tests
           command: |
+            rm -rf ~/.local/lib ~/.pypoetry
             python3 -m pip install -r sbin/requirements.txt
-            python3 -m tox -e flowenv
+            python3 -m tox -e flowenv -r
           no_output_timeout: 30m
       - save_cache:
           paths:
