@@ -59,6 +59,14 @@ commands:
       - run:
           name: basic install
           command: |
+            apt-get update --fix-missing
+            apt-get install -y git
+
+  setup-ubuntu-sudo:
+    steps:
+      - run:
+          name: basic install
+          command: |
             sudo apt-get update --fix-missing
             sudo apt-get install -y git
 
@@ -177,7 +185,7 @@ jobs:
     machine:
       image: ubuntu-2004:current
     steps:
-      - setup-ubuntu
+      - setup-ubuntu-sudo
       - build-steps
 
   build-macos:
