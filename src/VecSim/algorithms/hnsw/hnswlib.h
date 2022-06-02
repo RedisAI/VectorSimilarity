@@ -112,9 +112,11 @@ private:
                           size_t Mcurmax, tableint *node_neighbors,
                           const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
-    dist_t process_candidate(tableint curNodeId, const void *data_point, size_t layer, size_t ef,
-                             tag_t visited_tag, candidatesMaxHeap<dist_t> &top_candidates,
-                             candidatesMaxHeap<dist_t> &candidates_set, dist_t lowerBound) const;
+    inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
+                                   size_t ef, tag_t visited_tag,
+                                   candidatesMaxHeap<dist_t> &top_candidates,
+                                   candidatesMaxHeap<dist_t> &candidates_set,
+                                   dist_t lowerBound) const;
     candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
                                           size_t ef) const;
     candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(tableint ep_id,
@@ -347,11 +349,11 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 }
 
 template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::process_candidate(tableint curNodeId, const void *data_point,
-                                                  size_t layer, size_t ef, tag_t visited_tag,
-                                                  candidatesMaxHeap<dist_t> &top_candidates,
-                                                  candidatesMaxHeap<dist_t> &candidate_set,
-                                                  dist_t lowerBound) const {
+dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void *data_point,
+                                                 size_t layer, size_t ef, tag_t visited_tag,
+                                                 candidatesMaxHeap<dist_t> &top_candidates,
+                                                 candidatesMaxHeap<dist_t> &candidate_set,
+                                                 dist_t lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -426,8 +428,8 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
         }
         candidate_set.pop();
 
-        lowerBound = process_candidate(curr_el_pair.second, data_point, layer, ef, visited_tag,
-                                       top_candidates, candidate_set, lowerBound);
+        lowerBound = processCandidate(curr_el_pair.second, data_point, layer, ef, visited_tag,
+                                      top_candidates, candidate_set, lowerBound);
     }
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1122,8 +1124,8 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
         }
         candidate_set.pop();
 
-        lowerBound = process_candidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
-                                       top_candidates, candidate_set, lowerBound);
+        lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
+                                      top_candidates, candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
