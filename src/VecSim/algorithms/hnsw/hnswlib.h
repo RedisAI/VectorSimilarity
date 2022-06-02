@@ -155,7 +155,8 @@ public:
     bool removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
     dist_t getDistanceByLabelFromPoint(labeltype label, const void *data_point);
-    tableint searchBottomLayerEP(const void *query_data) const;
+    tableint searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                 VecSimQueryResult_Code *rc) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
 };
@@ -1056,7 +1057,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
 }
 
 template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) const {
+tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                                      VecSimQueryResult_Code *rc) const {
 
     if (cur_element_count == 0) {
         return entrypoint_node_;
@@ -1067,6 +1069,10 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
+            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+                *rc = VecSim_QueryResult_TimedOut;
+                return HNSW_INVALID_ID;
+            }
             changed = false;
             linklistsizeint *node_ll = get_linklist(currObj, level);
             unsigned short links_count = getListCount(node_ll);
@@ -1086,6 +1092,7 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
             }
         }
     }
+    *rc = VecSim_QueryResult_OK;
     return currObj;
 }
 
@@ -1152,7 +1159,10 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
         return candidatesLabelsMaxHeap<dist_t>(this->allocator);
     }
 
-    tableint bottom_layer_ep = searchBottomLayerEP(query_data);
+    tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
+    if (VecSim_OK != *rc) {
+        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
+    }
     candidatesLabelsMaxHeap<dist_t> results = searchBottomLayer_WithTimeout(
         bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, rc);
 

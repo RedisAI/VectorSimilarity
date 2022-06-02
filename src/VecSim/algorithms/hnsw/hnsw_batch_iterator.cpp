@@ -172,7 +172,11 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
     // In the first iteration, we search the graph from top bottom to find the initial entry point,
     // and then we scan the graph to get results (layer 0).
     if (this->getResultsCount() == 0) {
-        idType bottom_layer_ep = this->hnsw_index->searchBottomLayerEP(this->getQueryBlob());
+        idType bottom_layer_ep = this->hnsw_index->searchBottomLayerEP(
+            this->getQueryBlob(), this->getTimeoutCtx(), &batch.code);
+        if (VecSim_OK != batch.code) {
+            return batch;
+        }
         this->entry_point = bottom_layer_ep;
     }
     // We ask for at least n_res candidate from the scan. In fact, at most ef results will return,
