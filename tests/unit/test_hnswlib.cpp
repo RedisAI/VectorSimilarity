@@ -1487,7 +1487,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        VecSimIndex_AddVector(index, vec, i + 46);
+        VecSimIndex_AddVector(index, vec, 46 - i);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
