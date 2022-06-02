@@ -1466,6 +1466,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     // Checks return code on timeout
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSimIndex_Free(index);
@@ -1496,11 +1497,13 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    ASSERT_NE(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
@@ -1521,6 +1524,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
 
     rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
