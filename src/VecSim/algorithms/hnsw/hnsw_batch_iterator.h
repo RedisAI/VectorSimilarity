@@ -28,7 +28,7 @@ private:
 
     candidatesMaxHeap scanGraph(candidatesMinHeap &candidates,
                                 candidatesMinHeap &spare_top_candidates, float &lower_bound,
-                                idType entry_point);
+                                idType entry_point, VecSimQueryResult_Code *rc);
     VecSimQueryResult_List
     prepareResults(vecsim_stl::max_priority_queue<pair<float, idType>> top_candidates,
                    size_t n_res);

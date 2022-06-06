@@ -33,13 +33,13 @@ VecSimQueryResult_List HNSW_BatchIterator::prepareResults(candidatesMaxHeap top_
         VecSimQueryResult_SetScore(rl.results[i], top_candidates.top().first);
         top_candidates.pop();
     }
-    rl.code = VecSim_QueryResult_OK;
     return rl;
 }
 
 candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
                                                 candidatesMinHeap &top_candidates_extras,
-                                                float &lower_bound, idType entry_point) {
+                                                float &lower_bound, idType entry_point,
+                                                VecSimQueryResult_Code *rc) {
 
     candidatesMaxHeap top_candidates(this->allocator);
     if (entry_point == HNSW_INVALID_ID) {
@@ -57,6 +57,11 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         lower_bound = dist;
         this->visitNode(entry_point);
         candidates.emplace(dist, entry_point);
+    }
+    // Checks that we didn't got timeout between iterations.
+    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        *rc = VecSim_QueryResult_TimedOut;
+        return top_candidates;
     }
 
     // Move extras from previous iteration to the top candidates.
@@ -76,6 +81,10 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         // top candidates set, and we have enough results, we finish the search.
         if (curr_node_dist > lower_bound && top_candidates.size() >= this->hnsw_index->getEf()) {
             break;
+        }
+        if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            return top_candidates;
         }
         if (top_candidates.size() < this->hnsw_index->getEf() || lower_bound > curr_node_dist) {
             top_candidates.emplace(curr_node_dist, curr_node_id);
@@ -148,6 +157,7 @@ HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrap
 VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
                                                           VecSimQueryResult_Order order) {
 
+    VecSimQueryResult_List batch = {0};
     // If ef_runtime lower than the number of results to return, increase it. Therefore, we assume
     // that the number of results that return from the graph scan is at least n_res (if exist).
     size_t orig_ef = this->hnsw_index->getEf();
@@ -158,26 +168,33 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
     // In the first iteration, we search the graph from top bottom to find the initial entry point,
     // and then we scan the graph to get results (layer 0).
     if (this->getResultsCount() == 0) {
-        idType bottom_layer_ep = this->hnsw_index->searchBottomLayerEP(this->getQueryBlob());
+        idType bottom_layer_ep = this->hnsw_index->searchBottomLayerEP(
+            this->getQueryBlob(), this->getTimeoutCtx(), &batch.code);
+        if (VecSim_OK != batch.code) {
+            return batch;
+        }
         this->entry_point = bottom_layer_ep;
     }
     // We ask for at least n_res candidate from the scan. In fact, at most ef results will return,
     // and it could be that ef > n_res.
     auto top_candidates = this->scanGraph(this->candidates, this->top_candidates_extras,
-                                          this->lower_bound, this->entry_point);
+                                          this->lower_bound, this->entry_point, &batch.code);
+    if (VecSim_OK != batch.code) {
+        return batch;
+    }
     // Move the spare results to the "extras" queue if needed, and create the batch results array.
-    auto batch_results = this->prepareResults(top_candidates, n_res);
+    batch = this->prepareResults(top_candidates, n_res);
 
-    this->updateResultsCount(VecSimQueryResult_Len(batch_results));
+    this->updateResultsCount(VecSimQueryResult_Len(batch));
     if (this->getResultsCount() == this->index_wrapper->indexSize()) {
         this->depleted = true;
     }
     // By default, results are ordered by score.
     if (order == BY_ID) {
-        sort_results_by_id(batch_results);
+        sort_results_by_id(batch);
     }
     this->hnsw_index->setEf(orig_ef);
-    return batch_results;
+    return batch;
 }
 
 bool HNSW_BatchIterator::isDepleted() {

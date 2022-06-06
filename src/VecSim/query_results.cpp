@@ -18,6 +18,7 @@ extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List rl) { return arra
 extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
     if (rl.results) {
         array_free(rl.results);
+        rl.results = NULL;
     }
 }
 
