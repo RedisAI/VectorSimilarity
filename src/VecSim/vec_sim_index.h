@@ -120,4 +120,9 @@ public:
      * @param mode The search mode.
      */
     virtual inline void setLastSearchMode(VecSearchMode mode) = 0;
+
+public:
+    static timeoutCallbackFunction timeoutCallback;
+
+    static void setTimeoutCallbackFunction(timeoutCallbackFunction callback);
 };

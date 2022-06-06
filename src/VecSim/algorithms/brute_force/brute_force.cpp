@@ -180,8 +180,29 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
 
+// Compute the score for every vector in the block by using the given distance function.
+vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block,
+                                                              const void *queryBlob,
+                                                              void *timeoutCtx,
+                                                              VecSimQueryResult_Code *rc) const {
+    size_t len = block->getLength();
+    vecsim_stl::vector<float> scores(len, this->allocator);
+    for (size_t i = 0; i < len; i++) {
+        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            return scores;
+        }
+        scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
+    }
+    *rc = VecSim_QueryResult_OK;
+    return scores;
+}
+
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
+
+    VecSimQueryResult_List rl = {0};
+    void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
 
     this->last_mode = STANDARD_KNN;
     float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
@@ -196,10 +217,9 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     for (auto vectorBlock : this->vectorBlocks) {
-        size_t block_size = vectorBlock->getLength();
-        vecsim_stl::vector<float> scores(block_size, this->allocator);
-        for (size_t i = 0; i < block_size; i++) {
-            scores[i] = this->dist_func(vectorBlock->getVector(i), queryBlob, &this->dim);
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
+        if (VecSim_OK != rl.code) {
+            return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.
@@ -219,13 +239,14 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
             }
         }
     }
-    auto *results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
+    rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(results[i], TopCandidates.top().first);
+        VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
+        VecSimQueryResult_SetScore(rl.results[i], TopCandidates.top().first);
         TopCandidates.pop();
     }
-    return results;
+    rl.code = VecSim_QueryResult_OK;
+    return rl;
 }
 
 VecSimIndexInfo BruteForceIndex::info() const {
@@ -290,7 +311,8 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
         float_vector_normalize((float *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator) BF_BatchIterator(queryBlobCopy, this, this->allocator);
+    return new (this->allocator)
+        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
 bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {

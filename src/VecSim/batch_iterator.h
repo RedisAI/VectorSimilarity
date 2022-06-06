@@ -11,12 +11,17 @@ struct VecSimBatchIterator : public VecsimBaseObject {
 private:
     void *query_vector;
     size_t returned_results_count;
+    void *timeoutCtx;
 
 public:
-    explicit VecSimBatchIterator(void *query_vector, std::shared_ptr<VecSimAllocator> allocator)
-        : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0){};
+    explicit VecSimBatchIterator(void *query_vector, void *tctx,
+                                 std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator), query_vector(query_vector), returned_results_count(0),
+          timeoutCtx(tctx){};
 
     inline const void *getQueryBlob() const { return query_vector; }
+
+    inline void *getTimeoutCtx() const { return timeoutCtx; }
 
     inline size_t getResultsCount() const { return returned_results_count; }
 

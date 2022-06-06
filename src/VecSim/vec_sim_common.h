@@ -111,6 +111,8 @@ typedef struct {
     };
     size_t batchSize;
     VecSearchMode searchMode;
+    void *timeoutCtx; // This parameter is not exposed directly to the user, and we shouldn't expect
+                      // to get it from the parameters reslove function.
 } VecSimQueryParams;
 
 /**
@@ -163,6 +165,19 @@ typedef struct {
     reallocFn reallocFunction; // Realloc like function.
     freeFn freeFunction;       // Free function.
 } VecSimMemoryFunctions;
+
+/**
+ * @brief A struct to pass 3rd party timeout function to Vecsimlib.
+ * @param ctx some generic context to pass to the function
+ * @return the function should return a non-zero value on timeout
+ */
+typedef int (*timeoutCallbackFunction)(void *ctx);
+
+typedef enum {
+    VecSim_QueryResult_OK = VecSim_OK,
+    VecSim_QueryResult_TimedOut,
+    VecSim_QueryResult_Err,
+} VecSimQueryResult_Code;
 
 #ifdef __cplusplus
 }

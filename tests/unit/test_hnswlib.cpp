@@ -1447,4 +1447,117 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, testTimeoutReturn) {
+    size_t dim = 4;
+    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    VecSimQueryResult_List rl;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = 1,
+                                                 .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex_AddVector(index, vec, 0);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    // Checks return code on timeout
+    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    // Fail on searching bottom layer entry point.
+    // We need to have at least 1 vector in layer higher than 0 to fail there.
+    size_t next = 0;
+    while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
+        VecSimIndex_AddVector(index, vec, next++);
+    }
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    rl = VecSimIndex_TopKQuery(index, vec, 2, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
+}
+
+TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
+    size_t dim = 4;
+    size_t n = 2;
+    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    VecSimQueryResult_List rl;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_AddVector(index, vec, 46 - i);
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Fail on second batch (after some calculation already completed in the first one)
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    ASSERT_NE(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
+
+    // Fail on first batch (while calculating)
+    auto timeoutcb = [](void *ctx) {
+        static size_t flag = 1;
+        if (flag) {
+            flag = 0;
+            return 0;
+        } else {
+            return 1;
+        }
+    };
+    VecSim_SetTimeoutCallbackFunction(timeoutcb); // Fails on second call.
+    batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
+
+    // Fail on searching bottom layer entry point.
+    // We need to have at least 1 vector in layer higher than 0 to fail there.
+    size_t next = 0;
+    while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
+        VecSimIndex_AddVector(index, vec, next++);
+    }
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
+
+    rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    VecSimBatchIterator_Free(batchIterator);
+
+    VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
+}
 } // namespace hnswlib
