@@ -28,15 +28,15 @@ classifiers = [
 python = "^3.7"
 
 [tool.poetry.dev-dependencies]
-numpy = "1.21"
-tox = "^3.24.1"
+numpy = "^1.21"
+tox = "^3.25.0"
 tox-poetry = "^0.4.0"
 hnswlib = "^0.5.2"
 pytest = "^6.2.4"
-scipy = "^1.5.4"
-h5py = "^3.6.0"
+scipy = "^1.6"
+h5py = "^3.7.0"
 pybind11 = {path = "deps/pybind11"}
-rltest = "0.4.2"
+rltest = "0.5.4"
 
 
 [build-system]

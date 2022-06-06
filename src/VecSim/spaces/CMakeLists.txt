@@ -52,7 +52,7 @@ target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimizat
 
 if(NOT APPLE)
 	target_link_libraries(VectorSimilaritySpaces cpu_features)
-	elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
+elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
 	target_link_libraries(VectorSimilaritySpaces cpu_features)
 endif()
 
