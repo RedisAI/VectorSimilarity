@@ -59,8 +59,16 @@ commands:
       - run:
           name: basic install
           command: |
-            apt-get update
+            apt-get update --fix-missing
             apt-get install -y git
+
+  setup-ubuntu-sudo:
+    steps:
+      - run:
+          name: basic install
+          command: |
+            sudo apt-get update --fix-missing
+            sudo apt-get install -y git
 
   setup-centos:
     steps:
@@ -168,6 +176,14 @@ jobs:
       - image: rockylinux:8
     steps:
       - setup-centos
+      - tiny-build-steps
+
+  build-arm:
+    resource_class: arm.large
+    machine:
+      image: ubuntu-2004:current
+    steps:
+      - setup-ubuntu-sudo
       - tiny-build-steps
 
   build-macos:
@@ -342,7 +358,7 @@ workflows:
           <<: *on-any-branch
       - build-rocky8:
           <<: *on-any-branch
-      - build-rocky8:
+      - build-arm:
           <<: *on-any-branch
       - build-macos:
           <<: *on-any-branch
