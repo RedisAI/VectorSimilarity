@@ -35,6 +35,8 @@ typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
+template <typename dist_t>
+using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>;
 
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
@@ -110,8 +112,17 @@ private:
                           size_t Mcurmax, tableint *node_neighbors,
                           const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
+    inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
+                                   size_t ef, tag_t visited_tag,
+                                   candidatesMaxHeap<dist_t> &top_candidates,
+                                   candidatesMaxHeap<dist_t> &candidates_set,
+                                   dist_t lowerBound) const;
     candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
                                           size_t ef) const;
+    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(tableint ep_id,
+                                                                  const void *data_point, size_t ef,
+                                                                  size_t k, void *timeoutCtx,
+                                                                  VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
     tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
                                        size_t level);
@@ -144,9 +155,10 @@ public:
     bool removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
     dist_t getDistanceByLabelFromPoint(labeltype label, const void *data_point);
-    tableint searchBottomLayerEP(const void *query_data) const;
-    vecsim_stl::max_priority_queue<pair<dist_t, labeltype>> searchKnn(const void *query_data,
-                                                                      size_t k) const;
+    tableint searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                 VecSimQueryResult_Code *rc) const;
+    vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
+    searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
 };
 
 /**
@@ -338,6 +350,57 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 }
 
 template <typename dist_t>
+dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void *data_point,
+                                                 size_t layer, size_t ef, tag_t visited_tag,
+                                                 candidatesMaxHeap<dist_t> &top_candidates,
+                                                 candidatesMaxHeap<dist_t> &candidate_set,
+                                                 dist_t lowerBound) const {
+
+#ifdef ENABLE_PARALLELIZATION
+    std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
+#endif
+    linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
+    size_t links_num = getListCount(node_ll);
+    auto *node_links = (tableint *)(node_ll + 1);
+#ifdef USE_SSE
+    _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1)), _MM_HINT_T0);
+    _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64),
+                 _MM_HINT_T0);
+    _mm_prefetch(getDataByInternalId(*node_links), _MM_HINT_T0);
+    _mm_prefetch(getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
+#endif
+
+    for (size_t j = 0; j < links_num; j++) {
+        tableint candidate_id = *(node_links + j);
+#ifdef USE_SSE
+        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_links + j + 1)),
+                     _MM_HINT_T0);
+        _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
+#endif
+        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+            continue;
+        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+        char *currObj1 = (getDataByInternalId(candidate_id));
+
+        dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
+        if (top_candidates.size() < ef || lowerBound > dist1) {
+            candidate_set.emplace(-dist1, candidate_id);
+#ifdef USE_SSE
+            _mm_prefetch(getDataByInternalId(candidate_set.top().second), _MM_HINT_T0);
+#endif
+            top_candidates.emplace(dist1, candidate_id);
+
+            if (top_candidates.size() > ef)
+                top_candidates.pop();
+
+            if (!top_candidates.empty())
+                lowerBound = top_candidates.top().first;
+        }
+    }
+    return lowerBound;
+}
+
+template <typename dist_t>
 candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
                                                                const void *data_point, size_t layer,
                                                                size_t ef) const {
@@ -366,50 +429,10 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
         }
         candidate_set.pop();
 
-        tableint curNodeNum = curr_el_pair.second;
-#ifdef ENABLE_PARALLELIZATION
-        std::unique_lock<std::mutex> lock(link_list_locks_[curNodeNum]);
-#endif
-        linklistsizeint *node_ll = get_linklist_at_level(curNodeNum, layer);
-        size_t links_num = getListCount(node_ll);
-        auto *node_links = (tableint *)(node_ll + 1);
-#ifdef USE_SSE
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1)),
-                     _MM_HINT_T0);
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64),
-                     _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*node_links), _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
-#endif
-
-        for (size_t j = 0; j < links_num; j++) {
-            tableint candidate_id = *(node_links + j);
-#ifdef USE_SSE
-            _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_links + j + 1)),
-                         _MM_HINT_T0);
-            _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
-#endif
-            if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
-                continue;
-            this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-            char *currObj1 = (getDataByInternalId(candidate_id));
-
-            dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
-            if (top_candidates.size() < ef || lowerBound > dist1) {
-                candidate_set.emplace(-dist1, candidate_id);
-#ifdef USE_SSE
-                _mm_prefetch(getDataByInternalId(candidate_set.top().second), _MM_HINT_T0);
-#endif
-                top_candidates.emplace(dist1, candidate_id);
-
-                if (top_candidates.size() > ef)
-                    top_candidates.pop();
-
-                if (!top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
-        }
+        lowerBound = processCandidate(curr_el_pair.second, data_point, layer, ef, visited_tag,
+                                      top_candidates, candidate_set, lowerBound);
     }
+
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
 #endif
@@ -1034,7 +1057,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
 }
 
 template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) const {
+tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                                      VecSimQueryResult_Code *rc) const {
 
     if (cur_element_count == 0) {
         return entrypoint_node_;
@@ -1045,6 +1069,10 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
+            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+                *rc = VecSim_QueryResult_TimedOut;
+                return HNSW_INVALID_ID;
+            }
             changed = false;
             linklistsizeint *node_ll = get_linklist(currObj, level);
             unsigned short links_count = getListCount(node_ll);
@@ -1064,30 +1092,81 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data) co
             }
         }
     }
+    *rc = VecSim_QueryResult_OK;
     return currObj;
 }
 
 template <typename dist_t>
-vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
-HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k) const {
+candidatesLabelsMaxHeap<dist_t>
+HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
+                                                       size_t ef, size_t k, void *timeoutCtx,
+                                                       VecSimQueryResult_Code *rc) const {
+    candidatesLabelsMaxHeap<dist_t> results(this->allocator);
 
-    vecsim_stl::max_priority_queue<std::pair<dist_t, labeltype>> result(this->allocator);
-    if (cur_element_count == 0)
-        return result;
+#ifdef ENABLE_PARALLELIZATION
+    this->visited_nodes_handler =
+        this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
+#endif
 
-    tableint bottom_layer_ep = searchBottomLayerEP(query_data);
-    vecsim_stl::max_priority_queue<pair<dist_t, tableint>> top_candidates =
-        searchLayer(bottom_layer_ep, query_data, 0, std::max(ef_, k));
+    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
+    candidatesMaxHeap<dist_t> top_candidates(this->allocator);
+    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+
+    dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
+    dist_t lowerBound = dist;
+    top_candidates.emplace(dist, ep_id);
+    candidate_set.emplace(-dist, ep_id);
+
+    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+
+    while (!candidate_set.empty()) {
+        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
+        if ((-curr_el_pair.first) > lowerBound) {
+            break;
+        }
+        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            return results;
+        }
+        candidate_set.pop();
+
+        lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
+                                      top_candidates, candidate_set, lowerBound);
+    }
+#ifdef ENABLE_PARALLELIZATION
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+#endif
     while (top_candidates.size() > k) {
         top_candidates.pop();
     }
     while (top_candidates.size() > 0) {
-        std::pair<dist_t, tableint> rez = top_candidates.top();
-        result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
+        auto &res = top_candidates.top();
+        results.emplace(res.first, getExternalLabel(res.second));
         top_candidates.pop();
     }
-    return result;
+    *rc = VecSim_QueryResult_OK;
+    return results;
+}
+
+template <typename dist_t>
+candidatesLabelsMaxHeap<dist_t>
+HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeoutCtx,
+                                   VecSimQueryResult_Code *rc) const {
+
+    if (cur_element_count == 0) {
+        *rc = VecSim_QueryResult_OK;
+        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
+    }
+
+    tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
+    if (VecSim_OK != *rc) {
+        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
+    }
+    candidatesLabelsMaxHeap<dist_t> results = searchBottomLayer_WithTimeout(
+        bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, rc);
+
+    return results;
 }
 
 } // namespace hnswlib

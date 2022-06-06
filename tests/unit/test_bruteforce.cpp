@@ -1312,9 +1312,11 @@ TEST_F(BruteForceTest, testTimeoutReturn) {
     // Checks return code on timeout
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
 }
 
 TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
@@ -1349,11 +1351,13 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    ASSERT_NE(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
@@ -1364,9 +1368,11 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
 }
