@@ -107,15 +107,15 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         unsigned short links_num = this->hnsw_index->getListCount(cur_node_links_header);
         auto *node_links = (unsigned int *)(cur_node_links_header + 1);
 
-        __builtin_prefetch((char *)(visited_list->getElementsTags() + *node_links));
-        __builtin_prefetch((char *)(visited_list->getElementsTags() + *node_links + 64));
+        __builtin_prefetch(visited_list->getElementsTags() + *node_links);
+        __builtin_prefetch(visited_list->getElementsTags() + *node_links + 64);
         __builtin_prefetch(hnsw_index->getDataByInternalId(*node_links));
         __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + 1)));
 
         for (size_t j = 0; j < links_num; j++) {
             unsigned int candidate_id = *(node_links + j);
 
-            __builtin_prefetch((char *)(visited_list->getElementsTags() + *(node_links + j + 1)));
+            __builtin_prefetch(visited_list->getElementsTags() + *(node_links + j + 1));
             __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + j + 1)));
 
             if (this->hasVisitedNode(candidate_id)) {

@@ -362,8 +362,8 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
     size_t links_num = getListCount(node_ll);
     auto *node_links = (tableint *)(node_ll + 1);
 
-    __builtin_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1)));
-    __builtin_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64));
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
     __builtin_prefetch(getDataByInternalId(*node_links));
     __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
