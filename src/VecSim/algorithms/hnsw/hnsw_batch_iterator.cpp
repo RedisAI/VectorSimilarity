@@ -106,20 +106,18 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
             this->hnsw_index->get_linklist_at_level(curr_node_id, 0);
         unsigned short links_num = this->hnsw_index->getListCount(cur_node_links_header);
         auto *node_links = (unsigned int *)(cur_node_links_header + 1);
-#ifdef USE_SSE
-        _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links), _MM_HINT_T0);
-        _mm_prefetch((char *)(visited_list->getElementsTags() + *node_links + 64), _MM_HINT_T0);
-        _mm_prefetch(hnsw_index->getDataByInternalId(*node_links), _MM_HINT_T0);
-        _mm_prefetch(hnsw_index->getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
-#endif
+
+        __builtin_prefetch(visited_list->getElementsTags() + *node_links);
+        __builtin_prefetch(visited_list->getElementsTags() + *node_links + 64);
+        __builtin_prefetch(hnsw_index->getDataByInternalId(*node_links));
+        __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + 1)));
 
         for (size_t j = 0; j < links_num; j++) {
             unsigned int candidate_id = *(node_links + j);
-#ifdef USE_SSE
-            _mm_prefetch((char *)(visited_list->getElementsTags() + *(node_links + j + 1)),
-                         _MM_HINT_T0);
-            _mm_prefetch(hnsw_index->getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
-#endif
+
+            __builtin_prefetch(visited_list->getElementsTags() + *(node_links + j + 1));
+            __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + j + 1)));
+
             if (this->hasVisitedNode(candidate_id)) {
                 continue;
             }
