@@ -370,7 +370,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
     for (size_t j = 0; j < links_num; j++) {
         tableint candidate_id = *(node_links + j);
 
-        __builtin_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_links + j + 1)));
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
         __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
