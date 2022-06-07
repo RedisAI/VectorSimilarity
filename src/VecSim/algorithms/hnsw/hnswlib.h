@@ -4,7 +4,6 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/space_interface.h"
-#include "VecSim/spaces/space_includes.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
@@ -362,21 +361,18 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
     linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
     size_t links_num = getListCount(node_ll);
     auto *node_links = (tableint *)(node_ll + 1);
-#ifdef USE_SSE
-    _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1)), _MM_HINT_T0);
-    _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64),
-                 _MM_HINT_T0);
-    _mm_prefetch(getDataByInternalId(*node_links), _MM_HINT_T0);
-    _mm_prefetch(getDataByInternalId(*(node_links + 1)), _MM_HINT_T0);
-#endif
+
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
+    __builtin_prefetch(getDataByInternalId(*node_links));
+    __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
     for (size_t j = 0; j < links_num; j++) {
         tableint candidate_id = *(node_links + j);
-#ifdef USE_SSE
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + *(node_links + j + 1)),
-                     _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(*(node_links + j + 1)), _MM_HINT_T0);
-#endif
+
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
+        __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
+
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
@@ -385,9 +381,9 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
         dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
-#ifdef USE_SSE
-            _mm_prefetch(getDataByInternalId(candidate_set.top().second), _MM_HINT_T0);
-#endif
+
+            __builtin_prefetch(getDataByInternalId(candidate_set.top().second));
+
             top_candidates.emplace(dist1, candidate_id);
 
             if (top_candidates.size() > ef)
