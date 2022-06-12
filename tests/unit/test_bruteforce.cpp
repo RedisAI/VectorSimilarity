@@ -466,13 +466,21 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    // Perform (or simulate) Search in 3 modes.
+    // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.bfInfo.last_mode);
+    compareFlatIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
+    VecSimQueryResult_Free(res);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(RANGE_QUERY, info.bfInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -604,6 +612,10 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
+    res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
         float f[dim];
@@ -624,6 +636,10 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
     VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
@@ -1309,8 +1325,14 @@ TEST_F(BruteForceTest, testTimeoutReturn) {
     VecSimIndex_AddVector(index, vec, 0);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
-    // Checks return code on timeout
+    // Checks return code on timeout - knn
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    // Check timeout again - range query
+    rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
@@ -1375,4 +1397,97 @@ TEST_F(BruteForceTest, testTimeoutReturn_batch_iterator) {
 
     VecSimIndex_Free(index);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
+}
+
+TEST_F(BruteForceTest, rangeQuery) {
+    size_t n = 2000;
+    size_t dim = 4;
+
+    VecSimParams params{
+        .algo = VecSimAlgo_BF,
+        .bfParams = BFParams{
+            .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .blockSize = n / 2}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    size_t pivot_id = n / 2; // the id to return vectors around it.
+    float query[] = {(float)pivot_id, (float)pivot_id, (float)pivot_id, (float)pivot_id};
+    auto verify_res_by_score = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
+        ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
+    };
+    uint expected_num_results = 11;
+    // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2 score
+    // in the boundaries.
+    float radius = dim * powf(expected_num_results / 2, 2);
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
+
+    // Get results by id.
+    auto verify_res_by_id = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
+        ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
+    };
+    runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, rangeQueryCosine) {
+    size_t n = 100;
+    size_t dim = 4;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_Cosine,
+                                             .blockSize = n / 2}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        f[0] = float(i + 1) / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0f;
+        }
+        // Use as label := n - (internal id)
+        VecSimIndex_AddVector(index, (const void *)f, n - i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0f;
+    }
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, index + 1);
+        float first_coordinate = float(n - index) / n;
+        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
+        // and B is the current result vector.
+        float expected_score =
+            1.0f -
+            ((first_coordinate + (float)dim - 1.0f) /
+             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+        // Verify that abs difference between the actual and expected score is at most 1/10^5.
+        ASSERT_NEAR(score, expected_score, 1e-5);
+    };
+    uint expected_num_results = 31;
+    // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
+    // to get the radius.
+    float edge_first_coordinate = (float)(n - expected_num_results + 1) / n;
+    float radius =
+        1.0f - ((edge_first_coordinate + (float)dim - 1.0f) /
+                (sqrtf((float)dim) *
+                 sqrtf((float)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
+    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
+    // Return results BY_ID should give the same results.
+    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
+
+    VecSimIndex_Free(index);
 }

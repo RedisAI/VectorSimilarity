@@ -118,3 +118,45 @@ def test_batch_iterator():
     print(f'Total search time for running batches of size {batch_size} for index with {num_elements} of dim={dim}: {time.time() - start}')
     assert (returned_results_num == num_elements)
     assert (iterations == np.ceil(num_elements/batch_size))
+
+
+def test_range_query():
+    dim = 128
+    num_elements = 1000000
+
+    bfparams = BFParams()
+    bfparams.initialCapacity = num_elements
+    bfparams.blockSize = num_elements
+    bfparams.dim = dim
+    bfparams.type = VecSimType_FLOAT32
+    bfparams.metric = VecSimMetric_L2
+    bfindex = BFIndex(bfparams)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        bfindex.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    query_data = np.float32(np.random.random((1, dim)))
+
+    radius = 13
+    start = time.time()
+    bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
+    end = time.time()
+    res_num = len(bf_labels[0])
+    print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds, got {res_num} results')
+
+    # Verify that we got exactly all vectors within the range
+    dists = sorted([(spatial.distance.euclidean(query_data, vec), key) for key, vec in vectors])
+    keys = [key for _, key in dists[:res_num]]
+    assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
+    # The distance return by the library is L2^2
+    assert_allclose(max(bf_distances[0]), dists[res_num-1][0]**2, rtol=1e-05)
+    assert max(bf_distances[0]) <= radius
+    # Verify that the next closest vector that hasn't returned is not within the range
+    assert dists[res_num][0]**2 > radius
+
+    # Expect zero results for radius==0
+    bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
+    assert len(bf_labels[0]) == 0

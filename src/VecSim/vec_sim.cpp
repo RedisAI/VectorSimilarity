@@ -190,6 +190,23 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     return results;
 }
 
+extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+                                                         float radius,
+                                                         VecSimQueryParams *queryParams,
+                                                         VecSimQueryResult_Order order) {
+    assert((order == BY_ID || order == BY_SCORE) &&
+           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
+    assert(radius >= 0 && "radius must be non-negative");
+    VecSimQueryResult_List results = index->rangeQuery(queryBlob, radius, queryParams);
+
+    if (order == BY_SCORE) {
+        sort_results_by_score(results);
+    } else {
+        sort_results_by_id(results);
+    }
+    return results;
+}
+
 extern "C" void VecSimIndex_Free(VecSimIndex *index) {
     std::shared_ptr<VecSimAllocator> allocator =
         index->getAllocator(); // Save allocator so it will not deallocate itself

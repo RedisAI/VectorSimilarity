@@ -91,6 +91,14 @@ public:
         return wrap_results(res, k);
     }
 
+    py::object range(py::object input, float radius, VecSimQueryParams *query_params) {
+        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
+        float *vector_data = (float *)items.data(0);
+        VecSimQueryResult_List res =
+            VecSimIndex_RangeQuery(index, (void *)vector_data, radius, query_params, BY_SCORE);
+        return wrap_results(res, VecSimQueryResult_Len(res));
+    }
+
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
     PyBatchIterator createBatchIterator(py::object &query_blob, VecSimQueryParams *query_params) {
@@ -200,6 +208,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("add_vector", &PyVecSimIndex::addVector)
         .def("delete_vector", &PyVecSimIndex::deleteVector)
         .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
+             py::arg("query_param") = nullptr)
+        .def("range_query", &PyVecSimIndex::range, py::arg("vector"), py::arg("radius"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),

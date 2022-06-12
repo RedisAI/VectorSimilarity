@@ -98,7 +98,9 @@ typedef enum {
                      // and take the top k results.
     HYBRID_BATCHES,  // Get the top vector results in batches upon demand, and keep the results that
                      // passes the filters until we reach k results.
-    HYBRID_BATCHES_TO_ADHOC_BF // Start with batches and dynamically switched to ad-hoc BF.
+    HYBRID_BATCHES_TO_ADHOC_BF, // Start with batches and dynamically switched to ad-hoc BF.
+    RANGE_QUERY, // Run range query, to return all vectors that are within a given range from the
+                 // query vector.
 } VecSearchMode;
 
 /**
