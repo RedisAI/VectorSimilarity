@@ -1420,6 +1420,21 @@ TEST_F(BruteForceTest, rangeQuery) {
 
     size_t pivot_id = n / 2; // the id to return vectors around it.
     float query[] = {(float)pivot_id, (float)pivot_id, (float)pivot_id, (float)pivot_id};
+
+    // Validate invalid params are caught with runtime exception.
+    try {
+        VecSimIndex_RangeQuery(index, (const void *)query, -1, nullptr, BY_SCORE);
+        FAIL();
+    } catch (std::runtime_error const &err) {
+        EXPECT_EQ(err.what(), std::string("radius must be non-negative"));
+    }
+    try {
+        VecSimIndex_RangeQuery(index, (const void *)query, 1, nullptr, VecSimQueryResult_Order(2));
+        FAIL();
+    } catch (std::runtime_error const &err) {
+        EXPECT_EQ(err.what(), std::string("Possible order values are only 'BY_ID' or 'BY_SCORE'"));
+    }
+
     auto verify_res_by_score = [&](size_t id, float score, size_t index) {
         ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
         ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
