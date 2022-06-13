@@ -66,10 +66,10 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
   )
 
-if(VECSIM_BUILD_TESTS)
-	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
-	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
-endif()
+# if(VECSIM_BUILD_TESTS)
+# 	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
+# 	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
+# endif()
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
@@ -86,7 +86,7 @@ if(VECSIM_BUILD_TESTS)
 	add_subdirectory(${root}/tests/unit unit_tests)
 	add_subdirectory(${root}/tests/module module_tests)
 
-	if (NOT(USE_ASAN OR USE_MSAN))
-		add_subdirectory(${root}/tests/benchmark benchmark)
-	endif()
+	# if (NOT(USE_ASAN OR USE_MSAN))
+	# 	add_subdirectory(${root}/tests/benchmark benchmark)
+	# endif()
 endif()

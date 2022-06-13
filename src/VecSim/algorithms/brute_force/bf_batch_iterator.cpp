@@ -132,7 +132,7 @@ BF_BatchIterator::computeBlockScores(DataBlock *block) {
     vecsim_stl::vector<std::pair<float, labelType>> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
         scores[i] = {DistFunc(block->getData(i), queryBlob, &this->index->dim),
-                     block->getMember(i)->label};
+                     this->index->getLabel(block->getMember(i))};
     }
     return scores;
 }

@@ -44,6 +44,23 @@ public:
         : VecsimBaseObject(allocator), stl_object(allocator), simpleObject(allocator){};
 };
 
+TEST_F(AllocatorTest, test_simple_allocation) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+    void *mem = nullptr;
+    mem = allocator->reallocate(mem, 100);
+    expectedAllocationSize += 100 + vecsimAllocationOverhead;
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+    mem = allocator->reallocate(mem, 100);
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+    mem = allocator->reallocate(mem, 200);
+    expectedAllocationSize += 100;
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+    allocator->deallocate(mem, 200);
+    ASSERT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator));
+}
+
 TEST_F(AllocatorTest, test_simple_object) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
@@ -131,7 +148,10 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
     expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta += sizeof(DataBlockMember) + vecsimAllocationOverhead;
+    expectedAllocationDelta +=
+        sizeof(DataBlockMember) +
+        vecsimAllocationOverhead; //?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?$?
+    expectedAllocationDelta -= 32;
     expectedAllocationDelta += sizeof(DataBlockMember *) +
                                vecsimAllocationOverhead; // Pointer for the new vector block member
     expectedAllocationDelta +=

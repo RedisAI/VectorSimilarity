@@ -1,11 +1,13 @@
 #pragma once
 #include <stddef.h>
+#include <limits.h>
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/utils/vecsim_stl.h"
 
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/vec_utils.h"
 
+#define INVALID_ID UINT_MAX
 typedef size_t labelType;
 typedef size_t idType;
 
@@ -13,21 +15,24 @@ typedef size_t idType;
 
 struct DataBlock;
 
-struct DataBlockMember : public VecsimBaseObject {
+struct DataBlockMember /*: public VecsimBaseObject*/ {
 public:
-    DataBlockMember(std::shared_ptr<VecSimAllocator> allocator);
-    size_t index;
+    // DataBlockMember(std::shared_ptr<VecSimAllocator> allocator);
+    union {
+        void *vector;
+        labelType label;
+    };
     DataBlock *block;
-    labelType label;
+    size_t index;
 };
 
 struct DataBlock : public VecsimBaseObject {
 
 public:
     DataBlock(size_t blockSize, size_t elementSize, std::shared_ptr<VecSimAllocator> allocator,
-              size_t index = -1, bool ownMembers = true);
+              bool ownMembers = true);
 
-    void addData(DataBlockMember *dataBlockMember, const void *data);
+    void addData(DataBlockMember *member, const void *data, idType id);
 
     inline void *getData(size_t index) {
         return (int8_t *)this->Data + (index * this->elementSize);
@@ -39,15 +44,11 @@ public:
 
     inline size_t getLength() { return length; }
 
-    inline size_t getIndex() { return index; }
+    inline idType getMember(size_t index) { return members ? this->members[index] : INVALID_ID; }
 
-    inline DataBlockMember *getMember(size_t index) {
-        return members ? this->members[index] : NULL;
-    }
-
-    inline void setMember(size_t index, DataBlockMember *member) {
+    inline void setMember(size_t index, DataBlockMember *member, idType id) {
         if (members) {
-            this->members[index] = member;
+            this->members[index] = id;
             member->index = index;
             member->block = this;
         }
@@ -63,9 +64,7 @@ private:
     // Data block size (capacity).
     size_t blockSize;
     // Current members of the data block.
-    DataBlockMember **members;
-    // Index block in vector of blocks
-    size_t index;
+    idType *members;
     // Data hosted in the data block.
     void *Data;
 };

@@ -22,12 +22,12 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
                                                            L2Space(params->dim, allocator))
                 : static_cast<SpaceInterface<float> *>(
                       new (allocator) InnerProductSpace(params->dim, allocator))),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float, float>(
           space.get(), params->initialCapacity, allocator, params->M ? params->M : HNSW_DEFAULT_M,
-          params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
-      last_mode(EMPTY_MODE) {
-    hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
-}
+          params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C,
+          params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT,
+          params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE)),
+      last_mode(EMPTY_MODE) {}
 
 /******************** Implementation **************/
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
@@ -38,10 +38,6 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
             memcpy(normalized_data, vector_data, this->dim * sizeof(float));
             float_vector_normalize(normalized_data, this->dim);
             vector_data = normalized_data;
-        }
-        if (hnsw->getIndexSize() == this->hnsw->getIndexCapacity()) {
-            this->hnsw->resizeIndex(
-                std::max<size_t>(std::ceil(this->hnsw->getIndexCapacity() * 1.1), 2));
         }
         this->hnsw->addPoint(vector_data, id);
         return true;
@@ -138,6 +134,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.efConstruction = this->hnsw->getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw->getEf();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
+    info.hnswInfo.blockSize = this->hnsw->getBlockSize();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();

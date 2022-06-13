@@ -391,7 +391,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
     // Default args
-    ASSERT_EQ(info.bfInfo.blockSize, BF_DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
     VecSimIndex_Free(index);
 

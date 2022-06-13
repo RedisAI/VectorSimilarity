@@ -2,16 +2,14 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
 
-DataBlockMember::DataBlockMember(std::shared_ptr<VecSimAllocator> allocator)
-    : VecsimBaseObject(allocator) {}
+// DataBlockMember::DataBlockMember(std::shared_ptr<VecSimAllocator> allocator)
+//     : VecsimBaseObject(allocator) {}
 
 DataBlock::DataBlock(size_t blockSize, size_t elementSize,
-                     std::shared_ptr<VecSimAllocator> allocator, size_t index, bool ownMembers)
-    : VecsimBaseObject(allocator), elementSize(elementSize), length(0), blockSize(blockSize),
-      index(index) {
+                     std::shared_ptr<VecSimAllocator> allocator, bool ownMembers)
+    : VecsimBaseObject(allocator), elementSize(elementSize), length(0), blockSize(blockSize) {
     if (ownMembers) {
-        this->members =
-            (DataBlockMember **)this->allocator->allocate(sizeof(DataBlockMember *) * blockSize);
+        this->members = (idType *)this->allocator->allocate(sizeof(idType) * blockSize);
     } else {
         this->members = NULL;
     }
@@ -20,17 +18,14 @@ DataBlock::DataBlock(size_t blockSize, size_t elementSize,
 
 DataBlock::~DataBlock() {
     if (members) {
-        for (size_t i = 0; i < this->length; i++) {
-            delete members[i];
-        }
-        this->allocator->deallocate(members, sizeof(DataBlockMember *) * blockSize);
+        this->allocator->deallocate(members, sizeof(idType) * blockSize);
     }
     this->allocator->deallocate(Data, blockSize * elementSize);
 }
 
-void DataBlock::addData(DataBlockMember *dataBlockMember, const void *data) {
+void DataBlock::addData(DataBlockMember *member, const void *data, idType id) {
     // Mutual point both structs on each other.
-    setMember(this->length, dataBlockMember);
+    setMember(this->length, member, id);
 
     // Copy data and update block size.
     memcpy((int8_t *)this->Data + (this->length * this->elementSize), data, this->elementSize);
