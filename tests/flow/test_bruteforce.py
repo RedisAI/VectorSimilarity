@@ -132,6 +132,7 @@ def test_range_query():
     bfparams.metric = VecSimMetric_L2
     bfindex = BFIndex(bfparams)
 
+    np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
