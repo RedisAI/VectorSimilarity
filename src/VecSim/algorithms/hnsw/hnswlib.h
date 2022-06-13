@@ -354,21 +354,18 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t, T>::searchLayer(tableint ep_id
         level_data *node_meta = getMetadata(curNodeNum, layer);
         size_t links_num = node_meta->numLinks;
         auto *node_links = node_meta->links;
-#ifdef USE_SSE
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + node_links[0]),
-                     _MM_HINT_T0);
-        _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + node_links[0] + 64),
-                     _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(node_links[0]), _MM_HINT_T0);
-        _mm_prefetch(getDataByInternalId(node_links[1])), _MM_HINT_T0);
-#endif
+
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_links[0]);
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_links[0] + 64);
+        __builtin_prefetch(getDataByInternalId(node_links[0]));
+        __builtin_prefetch(getDataByInternalId(node_links[1]));
 
         for (size_t j = 0; j < links_num; j++) {
             tableint candidate_id = node_links[j];
-#ifdef USE_SSE
-            _mm_prefetch((char *)(visited_nodes_handler->getElementsTags() + node_links[j + 1])), _MM_HINT_T0);
-            _mm_prefetch(getDataByInternalId(node_links[j + 1])), _MM_HINT_T0);
-#endif
+
+            __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_links[j + 1]);
+            __builtin_prefetch(getDataByInternalId(node_links[j + 1]));
+
             if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
                 continue;
             this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
@@ -377,9 +374,9 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t, T>::searchLayer(tableint ep_id
             dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
             if (top_candidates.size() < ef || lowerBound > dist1) {
                 candidate_set.emplace(-dist1, candidate_id);
-#ifdef USE_SSE
-                _mm_prefetch(getDataByInternalId(candidate_set.top().second), _MM_HINT_T0);
-#endif
+
+                __builtin_prefetch(getDataByInternalId(candidate_set.top().second));
+
                 top_candidates.emplace(dist1, candidate_id);
 
                 if (top_candidates.size() > ef)
