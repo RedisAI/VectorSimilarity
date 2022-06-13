@@ -323,3 +323,108 @@ def test_serialization():
     recall_after = float(correct_after)/(k*num_queries)
     print("\nrecall after is: \n", recall_after)
     assert recall == recall_after
+
+
+def test_scaling():
+    dim = 100
+    num_elements = 10000
+    M = 16
+    efConstruction = 500
+    k = 10
+
+    efRuntime = 100
+
+    params = VecSimParams()
+    hnswparams = HNSWParams()
+
+    params.algo = VecSimAlgo_HNSWLIB
+
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_L2
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.M = M
+    hnswparams.efConstruction = efConstruction
+    hnswparams.initialCapacity = num_elements
+    hnswparams.efRuntime = efRuntime
+
+    params.hnswParams = hnswparams
+    index = VecSimIndex(params)
+
+    # create 2 "small" indices to hold half of the data each, and use a lower ef_runtime
+    shard_ef_runtime = int(efRuntime*3/4)
+    hnswparams.efRuntime = shard_ef_runtime
+    params.hnswParams = hnswparams
+    index_even = VecSimIndex(params)
+    index_odd = VecSimIndex(params)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+
+    vectors = []
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+        vectors.append((i, vector))
+        if i % 2:
+            index_even.add_vector(vector, i)
+        else:
+            index_odd.add_vector(vector, i)
+
+    num_queries = 10
+    queries = np.float32(np.random.random((num_queries, dim)))
+
+    correct = 0
+    total_time = 0
+    for query_data in queries:
+        start = time.time()
+        one_shard_labels, one_shard_dists = index.knn_query(query_data, k)
+        end = time.time()
+        total_time += (end-start)
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = [(spatial.distance.euclidean(query_data, vec), key) for key, vec in vectors]
+        dists = sorted(dists)
+        keys = [key for _, key in dists[:k]]
+
+        for label in one_shard_labels[0]:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct += 1
+                    break
+
+    # Measure recall
+    recall = float(correct)/(k*num_queries)
+    print(f'\nlookup time for one shard with ef_runtime={efRuntime} took {total_time/num_queries} seconds')
+    print("\nrecall one shard is:", recall)
+
+    # Rerun queries over the "two shards" and measure time and recall
+    correct = 0
+    total_time = 0
+    for query_data in queries:
+        start = time.time()
+        two_shard_labels_1, two_shard_dists_1 = index_even.knn_query(query_data, k)
+        two_shard_labels_2, two_shard_dists_2 = index_odd.knn_query(query_data, k)
+        end = time.time()
+        total_time += (end-start)/2
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = [(spatial.distance.euclidean(query_data, vec), key) for key, vec in vectors]
+        dists = sorted(dists)
+        keys = [key for _, key in dists[:k]]
+
+        two_shard_labels_1 = list(two_shard_labels_1[0])
+        two_shard_dists_1 = list(two_shard_dists_1[0])
+        two_shard_labels_1.extend(list(two_shard_labels_2)[0])
+        two_shard_dists_1.extend(list(two_shard_dists_2)[0])
+
+        keys_two_shards = sorted([(dist, key) for dist, key in zip(two_shard_dists_1, two_shard_labels_1)])[:k]
+        keys_two_shards = [key for _, key in keys_two_shards]
+
+        for label in keys_two_shards:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct += 1
+                    break
+
+    # Measure recall
+    recall = float(correct)/(k*num_queries)
+    print(f'\navg shard lookup time for two shards with ef_runtime={shard_ef_runtime} took {total_time/num_queries} seconds')
+    print("\nrecall two shards is:", recall)
