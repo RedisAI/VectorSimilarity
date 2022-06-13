@@ -194,9 +194,12 @@ extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, con
                                                          float radius,
                                                          VecSimQueryParams *queryParams,
                                                          VecSimQueryResult_Order order) {
-    assert((order == BY_ID || order == BY_SCORE) &&
-           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
-    assert(radius >= 0 && "radius must be non-negative");
+    if (order != BY_ID && order != BY_SCORE) {
+        throw std::runtime_error("Possible order values are only 'BY_ID' or 'BY_SCORE'");
+    }
+    if (radius < 0) {
+        throw std::runtime_error("radius must be non-negative");
+    }
     VecSimQueryResult_List results = index->rangeQuery(queryBlob, radius, queryParams);
 
     if (order == BY_SCORE) {
