@@ -16,3 +16,8 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
+
+void runRangeQueryTest(VecSimIndex *index, const void *query, float radius,
+                       const std::function<void(size_t, float, size_t)> &ResCB,
+                       size_t expected_res_num, VecSimQueryResult_Order order = BY_ID,
+                       VecSimQueryParams *params = nullptr);

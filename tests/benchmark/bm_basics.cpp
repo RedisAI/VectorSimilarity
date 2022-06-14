@@ -151,7 +151,22 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
     }
 }
 
+BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
+    float radius = 1.0f * (float)st.range(0);
+    auto res = VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
+    st.counters["Results number"] = (double)VecSimQueryResult_Len(res);
+    for (auto _ : st) {
+        VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
+    }
+}
+
 // Register the function as a benchmark
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
+    ->Arg(10)
+    ->Arg(12)
+    ->Arg(15)
+    ->Unit(benchmark::kMillisecond);
+
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)->Unit(benchmark::kMillisecond);

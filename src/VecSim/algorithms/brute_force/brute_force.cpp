@@ -249,6 +249,39 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     return rl;
 }
 
+VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float radius,
+                                                   VecSimQueryParams *queryParams) {
+    auto rl = (VecSimQueryResult_List){0};
+    void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
+    this->last_mode = RANGE_QUERY;
+
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic when other types will be supported.
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        float_vector_normalize(normalized_blob, this->dim);
+        queryBlob = normalized_blob;
+    }
+
+    // Compute scores in every block and save results that are within the range.
+    rl.results =
+        array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
+    for (auto vectorBlock : this->vectorBlocks) {
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
+        if (VecSim_OK != rl.code) {
+            return rl;
+        }
+        for (size_t i = 0; i < scores.size(); i++) {
+            if (scores[i] <= radius) {
+                auto res = VecSimQueryResult{vectorBlock->getMember(i)->label, scores[i]};
+                rl.results = array_append(rl.results, res);
+            }
+        }
+    }
+    rl.code = VecSim_QueryResult_OK;
+    return rl;
+}
+
 VecSimIndexInfo BruteForceIndex::info() const {
 
     VecSimIndexInfo info;

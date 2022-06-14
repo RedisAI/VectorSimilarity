@@ -21,6 +21,12 @@ public:
     virtual size_t indexSize() const override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
+                                      VecSimQueryParams *queryParams) override
+    // TODO: implement
+    {
+        return (VecSimQueryResult_List){nullptr};
+    }
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,

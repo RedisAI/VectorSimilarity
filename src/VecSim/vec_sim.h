@@ -119,6 +119,22 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
                                              VecSimQueryResult_Order);
 
 /**
+ * @brief Search for the vectors that are in a given range in the index with respect to a given
+ * vector. The results can be ordered by their score or id.
+ * @param index the index to query in.
+ * @param queryBlob binary representation of the query vector. Blob size should match the index data
+ * type and dimension.
+ * @param radius the radius around the query vector to search vectors within it.
+ * @param queryParams run time params for the search, which are algorithm-specific.
+ * @param order the criterion to sort the results list by it. Options are by score, or by id.
+ * @return An opaque object the represents a list of results. User can access the id and score
+ * (which is the distance according to the index metric) of every result through
+ * VecSimQueryResult_Iterator.
+ */
+VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+                                              float radius, VecSimQueryParams *queryParams,
+                                              VecSimQueryResult_Order);
+/**
  * @brief Return index information.
  * @param index the index to return its info.
  * @return Index general and specific meta-data.
