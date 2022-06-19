@@ -24,11 +24,13 @@ add_executable(test_hnswlib test_hnswlib.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_utils.cpp)
 add_executable(test_allocator test_allocator.cpp)
 add_executable(test_spaces test_spaces.cpp)
+add_executable(test_common test_common.cpp)
 
 target_link_libraries(test_hnswlib PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_allocator PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_spaces PUBLIC gtest_main VectorSimilarity)
+target_link_libraries(test_common PUBLIC gtest_main VectorSimilarity)
 
 include(GoogleTest)
 
@@ -36,3 +38,4 @@ gtest_discover_tests(test_hnswlib)
 gtest_discover_tests(test_bruteforce)
 gtest_discover_tests(test_allocator)
 gtest_discover_tests(test_spaces)
+gtest_discover_tests(test_common)
