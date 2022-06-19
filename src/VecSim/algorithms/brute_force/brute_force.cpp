@@ -197,17 +197,17 @@ vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block
                                                               const void *queryBlob,
                                                               void *timeoutCtx,
                                                               VecSimQueryResult_Code *rc) const {
-	size_t len = block->getLength();
-	vecsim_stl::vector<float> scores(len, this->allocator);
-	for (size_t i = 0; i < len; i++) {
-		if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
-			*rc = VecSim_QueryResult_TimedOut;
-			return scores;
-		}
-		scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
-	}
-	*rc = VecSim_QueryResult_OK;
-	return scores;
+    size_t len = block->getLength();
+    vecsim_stl::vector<float> scores(len, this->allocator);
+    for (size_t i = 0; i < len; i++) {
+        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            return scores;
+        }
+        scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
+    }
+    *rc = VecSim_QueryResult_OK;
+    return scores;
 }
 
 VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,

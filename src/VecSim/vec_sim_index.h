@@ -99,17 +99,17 @@ public:
      */
     virtual VecSimInfoIterator *infoIterator() = 0;
 
-	/**
-	 * @brief Create a new batch iterator for a specific index, for a specific query vector,
-	 * using the Index_BatchIteratorNew method of the index. Should be released with
-	 * VecSimBatchIterator_Free call.
-	 *
-	 * @param queryBlob binary representation of the vector. Blob size should match the index data
-	 * type and dimension.
-	 * @return Fresh batch iterator
-	 */
-	virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-	                                              VecSimQueryParams *queryParams) = 0;
+    /**
+     * @brief Create a new batch iterator for a specific index, for a specific query vector,
+     * using the Index_BatchIteratorNew method of the index. Should be released with
+     * VecSimBatchIterator_Free call.
+     *
+     * @param queryBlob binary representation of the vector. Blob size should match the index data
+     * type and dimension.
+     * @return Fresh batch iterator
+     */
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  VecSimQueryParams *queryParams) = 0;
 
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force

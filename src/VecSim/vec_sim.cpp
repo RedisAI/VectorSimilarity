@@ -111,7 +111,7 @@ extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
-	return index->newBatchIterator(queryBlob, queryParams);
+    return index->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

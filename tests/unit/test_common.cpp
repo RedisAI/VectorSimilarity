@@ -4,13 +4,13 @@
 
 class CommonTest : public ::testing::Test {
 protected:
-	CommonTest() {}
+    CommonTest() {}
 
-	~CommonTest() override {}
+    ~CommonTest() override {}
 
-	void SetUp() override {}
+    void SetUp() override {}
 
-	void TearDown() override {}
+    void TearDown() override {}
 };
 
 TEST_F(CommonTest, SetTimeoutCallbackFunction) {

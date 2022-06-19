@@ -30,9 +30,9 @@ public:
                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() override;
-	virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-	                                              VecSimQueryParams *queryParams) override;
-	bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                                  VecSimQueryParams *queryParams) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
