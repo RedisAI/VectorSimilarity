@@ -793,9 +793,6 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
  */
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
-    if (new_max_elements < cur_element_count)
-        throw std::runtime_error(
-            "Cannot resize, max element is less than the current number of elements");
     element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
@@ -826,11 +823,10 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
 template <typename dist_t>
 bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // check that the label actually exists in the graph, and update the number of elements.
-    tableint element_internal_id;
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return true;
     }
-    element_internal_id = label_lookup_[label];
+	tableint element_internal_id = label_lookup_[label];
 
     // go over levels and repair connections
     size_t element_top_level = element_levels_[element_internal_id];
@@ -910,23 +906,45 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         }
     }
 
-    if (element_levels_[element_internal_id] > 0) {
-        this->allocator->free_allocation(linkLists_[element_internal_id]);
-    }
-    // add the element id to the available ids for future reuse.
-    cur_element_count--;
-    label_lookup_.erase(label);
-    available_ids.insert(element_internal_id);
-    element_levels_[element_internal_id] = HNSW_INVALID_LEVEL;
-    memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
-           size_data_per_element_);
+	/* Swap the last id with the deleted one, and invalidate the last id data */
+	tableint last_element_internal_id = --cur_element_count;
+	labeltype last_element_label = getExternalLabel(last_element_internal_id);
+	// swap labels
+	label_lookup_.erase(label);
+	label_lookup_[last_element_label] = element_internal_id;
+
+	// swap level 0 data
+	memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
+	       data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
+	       size_data_per_element_);
+	memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
+	       size_data_per_element_);
+
+	// swap higher levels data
+	if (element_levels_[element_internal_id] > 0) {
+		this->allocator->free_allocation(linkLists_[element_internal_id]);
+	}
+	if (element_levels_[last_element_internal_id] > 0) {
+		linkLists_[element_internal_id] =
+				(char *)this->allocator->allocate(size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
+		memcpy(linkLists_[element_internal_id], linkLists_[last_element_internal_id],
+			   size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
+	} else {
+		linkLists_[element_internal_id] = nullptr;
+	}
+
+	// swap top element level
+	element_levels_[element_internal_id] = element_levels_[last_element_internal_id];
+	element_levels_[last_element_internal_id] = HNSW_INVALID_LEVEL;
+
+
     return true;
 }
 
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype label) {
 
-    tableint cur_c = 0;
+    tableint cur_c = max_id = cur_element_count++;
 
     {
 #ifdef ENABLE_PARALLELIZATION
@@ -939,14 +957,6 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         if (cur_element_count >= max_elements_) {
             throw std::runtime_error("The number of elements exceeds the specified limit");
         }
-        if (available_ids.empty()) {
-            cur_c = cur_element_count;
-            max_id = cur_element_count;
-        } else {
-            cur_c = *available_ids.begin();
-            available_ids.erase(available_ids.begin());
-        }
-        cur_element_count++;
         label_lookup_[label] = cur_c;
     }
 #ifdef ENABLE_PARALLELIZATION
