@@ -323,3 +323,44 @@ def test_serialization():
     recall_after = float(correct_after)/(k*num_queries)
     print("\nrecall after is: \n", recall_after)
     assert recall == recall_after
+
+
+def test_resharding():
+    import h5py
+    import crc16
+    f = h5py.File("/home/alon/Downloads/dbpedia-768.hdf5")
+    X = f['train']
+
+    M = 64
+    dim = 768
+    ef_c = 512
+    num_slots = 16384
+
+    hnswparams = HNSWParams()
+    hnswparams.M = M
+    hnswparams.efConstruction = ef_c
+    hnswparams.dim = dim
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.metric = VecSimMetric_Cosine
+
+    hnsw_index_shard_0 = HNSWIndex(hnswparams)
+    hnsw_index_shard_1 = HNSWIndex(hnswparams)
+    print(X.shape[0])
+    for i in range(X.shape[0]):
+        hash_slot = crc16.crc16xmodem(bytes(str(i), 'utf-8')) % num_slots
+        if hash_slot < num_slots/2:
+            hnsw_index_shard_0.add_vector(X[i], i)
+        else:
+            hnsw_index_shard_1.add_vector(X[i], i)
+
+    file_name = os.getcwd()+"/DBpedia-n1M-cosine-d768-M64-EFC512"
+    hnsw_index_shard_0.save_index(file_name+"-0.hnsw")
+    hnsw_index_shard_1.save_index(file_name+"-1.hnsw")
+
+    hnsw_index_shard_0.load_index(file_name+"-0.hnsw")
+    hnsw_index_shard_1.load_index(file_name+"-1.hnsw")
+
+    for i in range(X.shape[0]):
+        hash_slot = crc16.crc16xmodem(bytes(str(i), 'utf-8')) % num_slots
+        if hash_slot < num_slots/4:
+            hnsw_index_shard_0.delete_vector(X[i], i)
