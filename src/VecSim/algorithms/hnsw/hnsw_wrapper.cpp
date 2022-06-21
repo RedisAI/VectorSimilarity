@@ -82,7 +82,13 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
     }
 }
 
-int HNSWIndex::deleteVector(size_t id) { return this->hnsw->removePoint(id); }
+int HNSWIndex::deleteVector(size_t id) {
+	bool res =  this->hnsw->removePoint(id);
+	if (hnsw->getIndexSize() + this->blockSize < this->hnsw->getIndexCapacity()) {
+		this->hnsw->resizeIndex(this->hnsw->getIndexCapacity() - this->blockSize);
+	}
+	return res;
+}
 
 double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
     return this->hnsw->getDistanceByLabelFromPoint(label, vector_data);
