@@ -826,7 +826,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return true;
     }
-	tableint element_internal_id = label_lookup_[label];
+    tableint element_internal_id = label_lookup_[label];
 
     // go over levels and repair connections
     size_t element_top_level = element_levels_[element_internal_id];
@@ -906,110 +906,114 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         }
     }
 
-	/* Swap the last id with the deleted one, and invalidate the last id data */
-	tableint last_element_internal_id = --cur_element_count;
-	max_id = last_element_internal_id - 1;
-	if (last_element_internal_id == element_internal_id) {
-		label_lookup_.erase(label);
-		if (element_levels_[element_internal_id] > 0) {
-			this->allocator->free_allocation(linkLists_[element_internal_id]);
-		}
-		memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
-		       size_data_per_element_);
-		linkLists_[element_internal_id] = nullptr;
-		return true;
-	}
-	labeltype last_element_label = getExternalLabel(last_element_internal_id);
-	// swap labels
-	label_lookup_.erase(label);
-	label_lookup_[last_element_label] = element_internal_id;
+    /* Swap the last id with the deleted one, and invalidate the last id data */
+    tableint last_element_internal_id = --cur_element_count;
+    max_id = last_element_internal_id - 1;
+    if (last_element_internal_id == element_internal_id) {
+        label_lookup_.erase(label);
+        if (element_levels_[element_internal_id] > 0) {
+            this->allocator->free_allocation(linkLists_[element_internal_id]);
+        }
+        memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ +
+                   offsetLevel0_,
+               0, size_data_per_element_);
+        linkLists_[element_internal_id] = nullptr;
+        return true;
+    }
+    labeltype last_element_label = getExternalLabel(last_element_internal_id);
+    // swap labels
+    label_lookup_.erase(label);
+    label_lookup_[last_element_label] = element_internal_id;
 
-	// swap neighbours
-	size_t last_element_top_level = element_levels_[last_element_internal_id];
-	for (size_t level = 0; level <= last_element_top_level; level++) {
-		linklistsizeint *neighbours_list = get_linklist_at_level(last_element_internal_id, level);
-		unsigned short neighbours_count = getListCount(neighbours_list);
-		auto *neighbours = (tableint *)(neighbours_list + 1);
+    // swap neighbours
+    size_t last_element_top_level = element_levels_[last_element_internal_id];
+    for (size_t level = 0; level <= last_element_top_level; level++) {
+        linklistsizeint *neighbours_list = get_linklist_at_level(last_element_internal_id, level);
+        unsigned short neighbours_count = getListCount(neighbours_list);
+        auto *neighbours = (tableint *)(neighbours_list + 1);
 
-		// go over the neighbours that also points back to the last element that has been moved,
-		// and update the id.
-		for (size_t i = 0; i < neighbours_count; i++) {
-			tableint neighbour_id = neighbours[i];
-			linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
-			unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
+        // go over the neighbours that also points back to the last element that has been moved,
+        // and update the id.
+        for (size_t i = 0; i < neighbours_count; i++) {
+            tableint neighbour_id = neighbours[i];
+            linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
+            unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
 
-			auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
-			bool bidirectional_edge = false;
-			for (size_t j = 0; j < neighbour_neighbours_count; j++) {
-				// if the edge is bidirectional, update for this neighbor
-				if (neighbour_neighbours[j] == last_element_internal_id) {
-					bidirectional_edge = true;
-					neighbour_neighbours[j] = element_internal_id;
-					break;
-				}
-			}
+            auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+            bool bidirectional_edge = false;
+            for (size_t j = 0; j < neighbour_neighbours_count; j++) {
+                // if the edge is bidirectional, update for this neighbor
+                if (neighbour_neighbours[j] == last_element_internal_id) {
+                    bidirectional_edge = true;
+                    neighbour_neighbours[j] = element_internal_id;
+                    break;
+                }
+            }
 
-			// if this edge is uni-directional, we should remove the element from the neighbor's
-			// incoming edges.
-			if (!bidirectional_edge) {
-				auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-				neighbour_incoming_edges->erase(last_element_internal_id);
-				neighbour_incoming_edges->insert(element_internal_id);
-			}
-		}
+            // if this edge is uni-directional, we should remove the element from the neighbor's
+            // incoming edges.
+            if (!bidirectional_edge) {
+                auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+                neighbour_incoming_edges->erase(last_element_internal_id);
+                neighbour_incoming_edges->insert(element_internal_id);
+            }
+        }
 
-		// next, go over the rest of incoming edges (the ones that are not bidirectional) and make
-		// updates.
-		auto *incoming_edges = getIncomingEdgesPtr(last_element_internal_id, level);
-		for (auto incoming_edge : *incoming_edges) {
-			linklistsizeint *incoming_neighbour_neighbours_list = get_linklist_at_level(incoming_edge, level);
-			unsigned short incoming_neighbour_neighbours_count = getListCount(incoming_neighbour_neighbours_list);
-			auto *incoming_neighbour_neighbours = (tableint *)(incoming_neighbour_neighbours_list + 1);
-			for (size_t j = 0; j < incoming_neighbour_neighbours_count; j++) {
-				if (incoming_neighbour_neighbours[j] == last_element_internal_id) {
-					incoming_neighbour_neighbours[j] = element_internal_id;
-					break;
-				}
-			}
-		}
-	}
-	// swap level 0 data
-	memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
-	       data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
-	       size_data_per_element_);
-	auto *element_incoming_edges_ptr = getIncomingEdgesPtr(element_internal_id, 0);
-	auto *last_element_incoming_edges_ptr = getIncomingEdgesPtr(last_element_internal_id, 0);
-	*element_incoming_edges_ptr = *last_element_incoming_edges_ptr;
-	memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
-	       size_data_per_element_);
+        // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
+        // updates.
+        auto *incoming_edges = getIncomingEdgesPtr(last_element_internal_id, level);
+        for (auto incoming_edge : *incoming_edges) {
+            linklistsizeint *incoming_neighbour_neighbours_list =
+                get_linklist_at_level(incoming_edge, level);
+            unsigned short incoming_neighbour_neighbours_count =
+                getListCount(incoming_neighbour_neighbours_list);
+            auto *incoming_neighbour_neighbours =
+                (tableint *)(incoming_neighbour_neighbours_list + 1);
+            for (size_t j = 0; j < incoming_neighbour_neighbours_count; j++) {
+                if (incoming_neighbour_neighbours[j] == last_element_internal_id) {
+                    incoming_neighbour_neighbours[j] = element_internal_id;
+                    break;
+                }
+            }
+        }
+    }
+    // swap level 0 data
+    memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
+           data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
+           size_data_per_element_);
+    auto *element_incoming_edges_ptr = getIncomingEdgesPtr(element_internal_id, 0);
+    auto *last_element_incoming_edges_ptr = getIncomingEdgesPtr(last_element_internal_id, 0);
+    *element_incoming_edges_ptr = *last_element_incoming_edges_ptr;
+    memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
+           0, size_data_per_element_);
 
-	// swap higher levels data
-	if (element_levels_[element_internal_id] > 0) {
-		this->allocator->free_allocation(linkLists_[element_internal_id]);
-	}
-	if (element_levels_[last_element_internal_id] > 0) {
-		linkLists_[element_internal_id] =
-				(char *)this->allocator->allocate(size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
-		memcpy(linkLists_[element_internal_id], linkLists_[last_element_internal_id],
-			   size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
-		// Copy incoming edges sets in every level
-		for (size_t l = 1; l < element_levels_[last_element_internal_id]; l++) {
-			element_incoming_edges_ptr = getIncomingEdgesPtr(element_internal_id, l);
-			last_element_incoming_edges_ptr = getIncomingEdgesPtr(last_element_internal_id, l);
-			*element_incoming_edges_ptr = *last_element_incoming_edges_ptr;
-		}
-		this->allocator->free_allocation(linkLists_[last_element_internal_id]);
-	} else {
-		linkLists_[element_internal_id] = nullptr;
-	}
+    // swap higher levels data
+    if (element_levels_[element_internal_id] > 0) {
+        this->allocator->free_allocation(linkLists_[element_internal_id]);
+    }
+    if (element_levels_[last_element_internal_id] > 0) {
+        linkLists_[element_internal_id] = (char *)this->allocator->allocate(
+            size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
+        memcpy(linkLists_[element_internal_id], linkLists_[last_element_internal_id],
+               size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
+        // Copy incoming edges sets in every level
+        for (size_t l = 1; l < element_levels_[last_element_internal_id]; l++) {
+            element_incoming_edges_ptr = getIncomingEdgesPtr(element_internal_id, l);
+            last_element_incoming_edges_ptr = getIncomingEdgesPtr(last_element_internal_id, l);
+            *element_incoming_edges_ptr = *last_element_incoming_edges_ptr;
+        }
+        this->allocator->free_allocation(linkLists_[last_element_internal_id]);
+    } else {
+        linkLists_[element_internal_id] = nullptr;
+    }
 
-	// swap top element level
-	element_levels_[element_internal_id] = element_levels_[last_element_internal_id];
-	element_levels_[last_element_internal_id] = HNSW_INVALID_LEVEL;
+    // swap top element level
+    element_levels_[element_internal_id] = element_levels_[last_element_internal_id];
+    element_levels_[last_element_internal_id] = HNSW_INVALID_LEVEL;
 
-	if (last_element_internal_id == this->entrypoint_node_) {
-		this->entrypoint_node_ = element_internal_id;
-	}
+    if (last_element_internal_id == this->entrypoint_node_) {
+        this->entrypoint_node_ = element_internal_id;
+    }
 
     return true;
 }
@@ -1030,7 +1034,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         if (cur_element_count >= max_elements_) {
             throw std::runtime_error("The number of elements exceeds the specified limit");
         }
-		cur_c = max_id = cur_element_count++;
+        cur_c = max_id = cur_element_count++;
         label_lookup_[label] = cur_c;
     }
 #ifdef ENABLE_PARALLELIZATION
