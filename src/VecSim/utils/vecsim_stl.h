@@ -4,12 +4,16 @@
 #include <vector>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <queue>
 
 namespace vecsim_stl {
 
 template <typename T>
 using vector = std::vector<T, VecsimSTLAllocator<T>>;
+
+template <typename T>
+using unordered_set = std::unordered_set<T, std::hash<T>,  std::equal_to<T>, VecsimSTLAllocator<T>>;
 
 template <typename T>
 using set = std::set<T, std::less<T>, VecsimSTLAllocator<T>>;

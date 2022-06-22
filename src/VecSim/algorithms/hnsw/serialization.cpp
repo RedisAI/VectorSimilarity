@@ -167,7 +167,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
-        auto *set_ptr = new vecsim_stl::set<tableint>(hnsw_index->allocator);
+        auto *set_ptr = new vecsim_stl::unordered_set<tableint>(hnsw_index->allocator);
         unsigned int set_size;
         readBinaryPOD(input, set_size);
         for (size_t j = 0; j < set_size; j++) {
@@ -215,7 +215,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
                     "Not enough memory: loadIndex failed to allocate linklist");
             input.read(hnsw_index->linkLists_[i], linkListSize);
             for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-                auto *set_ptr = new vecsim_stl::set<tableint>(hnsw_index->allocator);
+                auto *set_ptr = new vecsim_stl::unordered_set<tableint>(hnsw_index->allocator);
                 unsigned int set_size;
                 readBinaryPOD(input, set_size);
                 for (size_t k = 0; k < set_size; k++) {

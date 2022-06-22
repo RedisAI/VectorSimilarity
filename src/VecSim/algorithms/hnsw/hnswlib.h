@@ -102,14 +102,14 @@ private:
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
-    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
+    vecsim_stl::unordered_set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
     void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
-                          const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
+                          const vecsim_stl::unordered_set<tableint> &orig_neighbors, tableint *removed_links,
                           size_t *removed_links_num);
     inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
                                    size_t ef, tag_t visited_tag,
@@ -251,14 +251,14 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
 }
 
 template <typename dist_t>
-vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
+vecsim_stl::unordered_set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
                                                                         size_t level) const {
     if (level == 0) {
-        return reinterpret_cast<vecsim_stl::set<tableint> *>(
+        return reinterpret_cast<vecsim_stl::unordered_set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<vecsim_stl::set<tableint> *>(
+    return reinterpret_cast<vecsim_stl::unordered_set<tableint> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset));
 }
@@ -320,7 +320,7 @@ template <typename dist_t>
 void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
                                                candidatesMaxHeap<dist_t> candidates, size_t Mcurmax,
                                                tableint *node_neighbors,
-                                               const vecsim_stl::set<tableint> &orig_neighbors,
+                                               const vecsim_stl::unordered_set<tableint> &orig_neighbors,
                                                tableint *removed_links, size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
@@ -513,7 +513,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+        auto *incoming_edges = new vecsim_stl::unordered_set<tableint>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
@@ -542,7 +542,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
             candidatesMaxHeap<dist_t> candidates(this->allocator);
-            vecsim_stl::set<tableint> orig_neighbors_set(this->allocator);
+            vecsim_stl::unordered_set<tableint> orig_neighbors_set(this->allocator);
             dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c),
                                         getDataByInternalId(selectedNeighbor), dist_func_param_);
             candidates.emplace(d_max, cur_c);
@@ -601,7 +601,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
 
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<dist_t> candidates(this->allocator);
-    vecsim_stl::set<tableint> candidates_set(this->allocator);
+    vecsim_stl::unordered_set<tableint> candidates_set(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (tableint *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
@@ -616,7 +616,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
-    vecsim_stl::set<tableint> neighbour_orig_neighbours_set(this->allocator);
+    vecsim_stl::unordered_set<tableint> neighbour_orig_neighbours_set(this->allocator);
     unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
     auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
     for (size_t j = 0; j < neighbour_neighbours_count; j++) {
@@ -1037,7 +1037,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-                auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+                auto *incoming_edges = new vecsim_stl::unordered_set<tableint>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
@@ -1045,7 +1045,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         // Do nothing for the first element
         entrypoint_node_ = 0;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+            auto *incoming_edges = new vecsim_stl::unordered_set<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;

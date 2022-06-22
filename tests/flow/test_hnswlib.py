@@ -1,4 +1,6 @@
 import os
+import time
+
 from common import *
 import hnswlib
 
@@ -346,21 +348,29 @@ def test_resharding():
     hnsw_index_shard_0 = HNSWIndex(hnswparams)
     hnsw_index_shard_1 = HNSWIndex(hnswparams)
     print(X.shape[0])
-    for i in range(X.shape[0]):
-        hash_slot = crc16.crc16xmodem(bytes(str(i), 'utf-8')) % num_slots
-        if hash_slot < num_slots/2:
-            hnsw_index_shard_0.add_vector(X[i], i)
-        else:
-            hnsw_index_shard_1.add_vector(X[i], i)
+    # for i in range(X.shape[0]):
+    #     hash_slot = crc16.crc16xmodem(bytes(str(i), 'utf-8')) % num_slots
+    #     if hash_slot < num_slots/2:
+    #         hnsw_index_shard_0.add_vector(X[i], i)
+    #     else:
+    #         hnsw_index_shard_1.add_vector(X[i], i)
 
     file_name = os.getcwd()+"/DBpedia-n1M-cosine-d768-M64-EFC512"
-    hnsw_index_shard_0.save_index(file_name+"-0.hnsw")
-    hnsw_index_shard_1.save_index(file_name+"-1.hnsw")
+    # hnsw_index_shard_0.save_index(file_name+"-0.hnsw")
+    # hnsw_index_shard_1.save_index(file_name+"-1.hnsw")
 
     hnsw_index_shard_0.load_index(file_name+"-0.hnsw")
     hnsw_index_shard_1.load_index(file_name+"-1.hnsw")
 
+    total_time=0
+    counter=0
     for i in range(X.shape[0]):
         hash_slot = crc16.crc16xmodem(bytes(str(i), 'utf-8')) % num_slots
         if hash_slot < num_slots/4:
-            hnsw_index_shard_0.delete_vector(X[i], i)
+            counter += 1
+            start = time.time()
+            hnsw_index_shard_0.delete_vector(i)
+            end = time.time()
+            total_time += end-start
+            if counter % 1000 == 999:
+                print(f"Avg deletion time for {counter} vectors is {total_time/counter}")
