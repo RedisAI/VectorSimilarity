@@ -1,6 +1,8 @@
 import os
 import time
 
+import pytest
+
 from common import *
 import hnswlib
 
@@ -327,6 +329,7 @@ def test_serialization():
     assert recall == recall_after
 
 
+@pytest.skip
 def test_resharding():
     import h5py
     import crc16
