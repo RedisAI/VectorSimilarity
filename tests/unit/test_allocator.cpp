@@ -242,3 +242,33 @@ TEST_F(AllocatorTest, test_hnsw) {
     ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
     VecSimIndex_Free(hnswIndex);
 }
+
+TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
+	std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+	size_t d = 128;
+
+	// Build with default args
+	HNSWParams params = {
+			.type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
+	auto *hnswIndex = new (allocator) HNSWIndex(&params, allocator);
+	size_t block_size = 1024; // currently, this is the default and is not configurable.
+
+	// get memory (to compare later)
+
+	// Add vectors up to the size of a whole block.
+	for (size_t i = 0; i < block_size; i++) {
+		float vec[d];
+		for (size_t j = 0; j < d; j++) {
+			vec[j] = (float)rand();
+		}
+		VecSimIndex_AddVector(hnswIndex, vec, i);
+	}
+	//todo:
+	// validate one block exists
+	// add some vectors
+	// validate two blocks exit
+	// remove the vectors in arbitrary order
+	// validate one block exist + memory returns to what it was
+	// remove the rest of the vectors
+	// validate memory back to what it was.
+}
