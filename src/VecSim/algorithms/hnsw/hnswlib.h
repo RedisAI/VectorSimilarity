@@ -811,7 +811,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
-      available_ids(allocator), label_lookup_(allocator)
+      available_ids(allocator), label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
                                     link_list_locks_(max_elements),
@@ -910,6 +910,8 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     element_levels_.resize(new_max_elements);
+	element_levels_.shrink_to_fit();
+	label_lookup_.reserve(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
