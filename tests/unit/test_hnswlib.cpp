@@ -1433,18 +1433,25 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
-
-	estimation += 7 * sizeof (size_t); // labels_lookup hash table additional memory
+	// labels_lookup hash table has additional memory, since STL implementation chooses "an appropriate prime number"
+	// higher than n as the number of allocated buckets (for n=1000, 1031 buckets are created)
+	estimation += 31 * sizeof(size_t);
     estimation += 14 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
 
-	// todo: see why this isn't equal
 	ASSERT_EQ(estimation, actual);
 
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_AddVector(index, vec, i);
     }
+	// Add a full block.
     estimation = VecSimIndex_EstimateElementSize(&params) * bs;
-    actual = VecSimIndex_AddVector(index, vec, 0);
+	actual = VecSimIndex_AddVector(index, vec, 0);
+//
+//	actual = 0;
+//	for (size_t i = 0; i < bs; i++) {
+//		size_t diff = VecSimIndex_AddVector(index, vec, n + i);;
+//		actual += diff;
+//	}
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
 
