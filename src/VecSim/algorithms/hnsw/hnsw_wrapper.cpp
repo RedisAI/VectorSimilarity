@@ -61,7 +61,9 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
     size_t size_data_per_element =
         size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
 
-    return size_data_per_element + sizeof(tag_t) + sizeof(size_t) + sizeof(void *);
+	size_t size_labels_lookup = sizeof(size_t) + sizeof(pair<labeltype, tableint>);
+
+    return size_data_per_element + sizeof(tag_t) + sizeof(size_t) + sizeof(void *) + size_labels_lookup;
 }
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
