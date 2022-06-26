@@ -288,7 +288,8 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
         expected_allocation_delta +=
             hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
             AllocatorTest::vecsimAllocationOverhead;
-    ASSERT_EQ(expected_allocation_delta, allocation_delta);
+    ASSERT_GE(allocation_delta, expected_allocation_delta);
+    ASSERT_LE(allocation_delta, expected_allocation_delta + 8); // for MacOS test
 
     float vec2[] = {2.0f, 0.0f};
     VecSimIndex_AddVector(hnswIndex, vec2, 2);
@@ -317,7 +318,8 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
 
     expected_allocation_delta +=
         AllocatorTest::setNodeSize + AllocatorTest::vecsimAllocationOverhead;
-    ASSERT_EQ(expected_allocation_delta, allocation_delta);
+    ASSERT_GE(allocation_delta, expected_allocation_delta);
+    ASSERT_LE(allocation_delta, expected_allocation_delta + 48); // for Xenial test
 
     VecSimIndex_Free(hnswIndex);
 }
