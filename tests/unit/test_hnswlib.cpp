@@ -698,7 +698,7 @@ TEST_F(HNSWLibTest, hnsw_bad_params) {
     }
 }
 
-//TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
+// TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
 //    size_t n = 10000;
 //    size_t dim = 2;
 //    size_t M = 2;
@@ -1429,33 +1429,32 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
-	// labels_lookup hash table has additional memory, since STL implementation chooses "an appropriate prime number"
-	// higher than n as the number of allocated buckets (for n=1000, 1031 buckets are created)
-	estimation += 31 * sizeof(size_t);
+    // labels_lookup hash table has additional memory, since STL implementation chooses "an
+    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+    // buckets are created)
+    estimation += 31 * sizeof(size_t);
     estimation += 14 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
 
-	ASSERT_EQ(estimation, actual);
+    ASSERT_EQ(estimation, actual);
 
-	float vec[dim];
-	for (size_t i = 0; i < n; i++) {
-	    for (size_t j = 0; j < dim; j++) {
-		    vec[j] = (float)i;
-	    }
+    float vec[dim];
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            vec[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, vec, i);
     }
 
-	// Estimate the memory delta of adding a fool new block.
+    // Estimate the memory delta of adding a fool new block.
     estimation = VecSimIndex_EstimateElementSize(&params) * bs;
 
-	actual = 0;
-	for (size_t i = 0; i < bs; i++) {
-		for (size_t j = 0; j < dim; j++) {
-			vec[j] = (float)i;
-		}
-		actual += VecSimIndex_AddVector(index, vec, n + i);
-	}
-//	auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-//	ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    actual = 0;
+    for (size_t i = 0; i < bs; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            vec[j] = (float)i;
+        }
+        actual += VecSimIndex_AddVector(index, vec, n + i);
+    }
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
 
