@@ -40,30 +40,44 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool);
 #endif
-    est += params->initialCapacity * sizeof(tag_t);
+    est += sizeof(tag_t) * params->initialCapacity;  // visited nodes
 
-    est += sizeof(void *) * params->initialCapacity; // link lists
+    est += sizeof(void *) * params->initialCapacity; // link lists (for levels > 0)
     est += sizeof(size_t) * params->initialCapacity; // element level
 	est += sizeof(size_t) * params->initialCapacity; // labels lookup
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
-    size_t size_data_per_element =
+    size_t size_total_data_per_element =
         size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
-    est += params->initialCapacity * size_data_per_element;
+    est += params->initialCapacity * size_total_data_per_element;
 
     return est;
 }
 
 size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
     size_t size_links_level0 =
-        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
-    size_t size_data_per_element =
-        size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *) + sizeof(vecsim_stl::set_wrapper<tableint>);
+	size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(tableint) +
+			sizeof(void *) + sizeof(vecsim_stl::set_wrapper<tableint>);
+	// The Expectancy for the random variable which is the number of levels per element equals 1/ln(M).
+	size_t expected_size_links_higher_levels = ceil((1/log(params->M)) * (float)size_links_higher_level);
 
-	size_t size_labels_lookup = sizeof(size_t) + sizeof(pair<labeltype, tableint>);
+	size_t size_total_data_per_element =
+        size_links_level0 + expected_size_links_higher_levels + params->dim * sizeof(float) + sizeof(labeltype);
 
-    return size_data_per_element + sizeof(tag_t) + sizeof(size_t) + sizeof(void *) + size_labels_lookup;
+	// For every new vector, a new node of size 24 is allocated in a bucket of the hash table.
+	size_t size_label_lookup_node = 24 + sizeof(size_t);  // 24 + VecSimAllocator::allocation_header_size
+	// 1 entry in visited nodes + 1 entry in element levels + (approximately) 1 bucket in labels lookup hash map.
+	size_t size_meta_data = sizeof(tag_t) + sizeof(size_t) + sizeof(size_t) + size_label_lookup_node;
+
+	/* Disclaimer: we are neglecting two additional factors that consume memory:
+	 * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of requested buckets
+	 * (which is the index capacity), and it is auto selected according to the hashing policy and the max load factor.
+	 * 2. The incoming edges that aren't bidirectional are stored in a set and change dynamically upon every insert
+	 * and deletion of vectors. Those edges' memory *is omitted completely* from this estimation.
+	*/
+    return size_meta_data + size_total_data_per_element;
 }
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
