@@ -31,9 +31,9 @@ using min_priority_queue = std::priority_queue<T, Container, Compare>;
 template <typename T>
 class set_wrapper : public VecsimBaseObject {
 public:
-	vecsim_stl::set<T> set_;
-	explicit set_wrapper(const std::shared_ptr<VecSimAllocator>& alloc) :
-	VecsimBaseObject(alloc), set_(alloc) {}
+    vecsim_stl::set<T> set_;
+    explicit set_wrapper(const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), set_(alloc) {}
 };
 
 } // namespace vecsim_stl

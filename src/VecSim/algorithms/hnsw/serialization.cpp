@@ -167,7 +167,8 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
-        auto *set_ptr = new (hnsw_index->allocator) vecsim_stl::set_wrapper<tableint>(hnsw_index->allocator);
+        auto *set_ptr =
+            new (hnsw_index->allocator) vecsim_stl::set_wrapper<tableint>(hnsw_index->allocator);
         unsigned int set_size;
         readBinaryPOD(input, set_size);
         for (size_t j = 0; j < set_size; j++) {
@@ -215,7 +216,8 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
                     "Not enough memory: loadIndex failed to allocate linklist");
             input.read(hnsw_index->linkLists_[i], linkListSize);
             for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-                auto *set_ptr = new (hnsw_index->allocator) vecsim_stl::set_wrapper<tableint>(hnsw_index->allocator);
+                auto *set_ptr = new (hnsw_index->allocator)
+                    vecsim_stl::set_wrapper<tableint>(hnsw_index->allocator);
                 unsigned int set_size;
                 readBinaryPOD(input, set_size);
                 for (size_t k = 0; k < set_size; k++) {
@@ -275,14 +277,12 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     size_t connections_checked = 0, double_connections = 0;
     std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
     size_t incoming_edges_sets_sizes = 0;
-	std::vector<int> levels_hist(hnsw_index->maxlevel_+1, 0);
-	if (hnsw_index->max_id != HNSW_INVALID_ID) {
+    if (hnsw_index->max_id != HNSW_INVALID_ID) {
         for (size_t i = 0; i <= hnsw_index->max_id; i++) {
             if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
                 continue;
             }
-	        levels_hist[hnsw_index->element_levels_[i]]++;
-	        for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
+            for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
                 auto *data = (tableint *)(ll_cur + 1);
@@ -316,9 +316,6 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                 incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->set_.size();
             }
         }
-		for (size_t i=0; i<hnsw_index->maxlevel_; i++) {
-			std::cout << "level " << i << " has " << levels_hist[i] << "vectors\n";
-		}
     }
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
@@ -336,7 +333,6 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     }
     res.valid_state = true;
     std::cout << "HNSW index integrity OK\n";
-	std::cout << "element levels hist:\n";
-	return res;
+    return res;
 }
 } // namespace hnswlib
