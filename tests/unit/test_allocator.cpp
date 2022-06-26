@@ -17,9 +17,17 @@ protected:
     void TearDown() override {}
 
     static uint64_t vecsimAllocationOverhead;
+
+    static uint64_t hashTableNodeSize;
+
+    static uint64_t setNodeSize;
 };
 
 uint64_t AllocatorTest::vecsimAllocationOverhead = sizeof(size_t);
+
+uint64_t AllocatorTest::hashTableNodeSize = 24;
+
+uint64_t AllocatorTest::setNodeSize = 40;
 
 struct SimpleObject : public VecsimBaseObject {
 public:
@@ -196,6 +204,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     VecSimIndex_Free(bfIndex);
 }
 
+namespace hnswlib {
+
 TEST_F(AllocatorTest, test_hnsw) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
@@ -242,3 +252,74 @@ TEST_F(AllocatorTest, test_hnsw) {
     ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
     VecSimIndex_Free(hnswIndex);
 }
+
+TEST_F(AllocatorTest, testIncomingEdgesSet) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    size_t d = 2;
+
+    // Build with default args
+    HNSWParams params = {.type = VecSimType_FLOAT32,
+                         .dim = d,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = 10,
+                         .M = 2};
+    auto *hnswIndex = new (allocator) HNSWIndex(&params, allocator);
+
+    // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
+    float vec0[] = {0.0f, 0.0f};
+    VecSimIndex_AddVector(hnswIndex, vec0, 0);
+
+    // Add another vector and validate it's exact memory allocation delta.
+    float vec1[] = {1.0f, 0.0f};
+    int allocation_delta = VecSimIndex_AddVector(hnswIndex, vec1, 1);
+    size_t vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[1];
+
+    // Expect the creation of an empty incoming edges set in every level, and a node in the labels'
+    // lookup hash table.
+    size_t expected_basic_allocation_delta =
+        (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
+                               AllocatorTest::vecsimAllocationOverhead);
+    expected_basic_allocation_delta +=
+        AllocatorTest::hashTableNodeSize + AllocatorTest::vecsimAllocationOverhead;
+
+    size_t expected_allocation_delta = expected_basic_allocation_delta;
+    // Account for allocating link lists for levels higher than 0, if exists.
+    if (vec_max_level > 0)
+        expected_allocation_delta +=
+            hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
+            AllocatorTest::vecsimAllocationOverhead;
+    ASSERT_EQ(expected_allocation_delta, allocation_delta);
+
+    float vec2[] = {2.0f, 0.0f};
+    VecSimIndex_AddVector(hnswIndex, vec2, 2);
+    float vec3[] = {1.0f, 1.0f};
+    VecSimIndex_AddVector(hnswIndex, vec3, 3);
+    float vec4[] = {1.0f, -1.0f};
+    VecSimIndex_AddVector(hnswIndex, vec4, 4);
+
+    // Layer 0 should look like this (all edges bidirectional):
+    //    3                    3
+    //    |                    |
+    // 0--1--2      =>   0--5--1--2
+    //    |              |----^|
+    //    4                    4
+    // Next, insertion of vec5 should make 0->1 unidirectional, thus adding 0 to 1's incoming edges
+    // set.
+    float vec5[] = {0.5f, 0.0f};
+    allocation_delta = VecSimIndex_AddVector(hnswIndex, vec5, 5);
+    vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[5];
+    expected_allocation_delta = expected_basic_allocation_delta;
+    // Account for allocating link lists for levels higher than 0, if exists.
+    if (vec_max_level > 0)
+        expected_allocation_delta +=
+            hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
+            AllocatorTest::vecsimAllocationOverhead;
+
+    expected_allocation_delta +=
+        AllocatorTest::setNodeSize + AllocatorTest::vecsimAllocationOverhead;
+    ASSERT_EQ(expected_allocation_delta, allocation_delta);
+
+    VecSimIndex_Free(hnswIndex);
+}
+
+} // namespace hnswlib
