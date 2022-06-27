@@ -11,9 +11,6 @@ namespace vecsim_stl {
 template <typename T>
 using vector = std::vector<T, VecsimSTLAllocator<T>>;
 
-template <typename T>
-using set = std::set<T, std::less<T>, VecsimSTLAllocator<T>>;
-
 template <typename K, typename V>
 using unordered_map = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>,
                                          VecsimSTLAllocator<std::pair<const K, V>>>;
@@ -29,10 +26,10 @@ template <typename T, typename Container = vecsim_stl::vector<T>,
 using min_priority_queue = std::priority_queue<T, Container, Compare>;
 
 template <typename T>
-class set_wrapper : public VecsimBaseObject, public vecsim_stl::set<T> {
+class set : public VecsimBaseObject, public std::set<T, std::less<T>, VecsimSTLAllocator<T>> {
 public:
-    explicit set_wrapper(const std::shared_ptr<VecSimAllocator> &alloc)
-        : VecsimBaseObject(alloc), vecsim_stl::set<T>(alloc) {}
+    explicit set(const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::set<T, std::less<T>, VecsimSTLAllocator<T>>(alloc) {}
 };
 
 } // namespace vecsim_stl

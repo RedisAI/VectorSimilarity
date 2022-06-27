@@ -103,8 +103,7 @@ private:
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
-    vecsim_stl::set_wrapper<tableint> *getIncomingEdgesPtr(tableint internal_id,
-                                                           size_t level) const;
+    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
     void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
@@ -253,14 +252,14 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
 }
 
 template <typename dist_t>
-vecsim_stl::set_wrapper<tableint> *
-HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id, size_t level) const {
+vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
+                                                                        size_t level) const {
     if (level == 0) {
-        return reinterpret_cast<vecsim_stl::set_wrapper<tableint> *>(
+        return reinterpret_cast<vecsim_stl::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<vecsim_stl::set_wrapper<tableint> *>(
+    return reinterpret_cast<vecsim_stl::set<tableint> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset));
 }
@@ -515,8 +514,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges =
-            new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::set<tableint>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
@@ -1041,7 +1039,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             // create the incoming edges set for the new levels.
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
-                    new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
+                    new (this->allocator) vecsim_stl::set<tableint>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
@@ -1049,8 +1047,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         // Do nothing for the first element
         entrypoint_node_ = 0;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges =
-                new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
+            auto *incoming_edges = new (this->allocator) vecsim_stl::set<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;

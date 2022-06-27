@@ -277,8 +277,8 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     // Expect the creation of an empty incoming edges set in every level, and a node in the labels'
     // lookup hash table.
     size_t expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
-                               AllocatorTest::vecsimAllocationOverhead);
+        (vec_max_level + 1) *
+        (sizeof(vecsim_stl::set<hnswlib::tableint>) + AllocatorTest::vecsimAllocationOverhead);
     expected_allocation_delta += AllocatorTest::hashTableNodeSize;
 
     // Account for allocating link lists for levels higher than 0, if exists.
@@ -312,10 +312,9 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
         hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() - buckets_num_before;
     vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[5];
 
-    expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
-                               AllocatorTest::vecsimAllocationOverhead) +
-        AllocatorTest::hashTableNodeSize;
+    expected_allocation_delta = (vec_max_level + 1) * (sizeof(vecsim_stl::set<hnswlib::tableint>) +
+                                                       AllocatorTest::vecsimAllocationOverhead) +
+                                AllocatorTest::hashTableNodeSize;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
     // Account for allocating link lists for levels higher than 0, if exists.
     if (vec_max_level > 0) {

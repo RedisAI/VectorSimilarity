@@ -179,7 +179,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, float radius,
 
 size_t getIncomingEdgesSetNodeSize() {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    auto dummy_set = vecsim_stl::set_wrapper<unsigned int>(allocator);
+    auto dummy_set = vecsim_stl::set<unsigned int>(allocator);
     size_t memory_before = allocator->getAllocationSize();
     dummy_set.insert(1); // Insert a dummy element.
     size_t memory_after = allocator->getAllocationSize();
