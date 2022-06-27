@@ -4,7 +4,7 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
-#include "VecSim/spaces/space_interface.h"
+#include "test_utils.h"
 
 class AllocatorTest : public ::testing::Test {
 protected:
@@ -25,9 +25,9 @@ protected:
 
 uint64_t AllocatorTest::vecsimAllocationOverhead = sizeof(size_t);
 
-uint64_t AllocatorTest::hashTableNodeSize = 24;
+uint64_t AllocatorTest::hashTableNodeSize = getLabelsLookupNodeSize();
 
-uint64_t AllocatorTest::setNodeSize = 40;
+uint64_t AllocatorTest::setNodeSize = getIncomingEdgesSetNodeSize();
 
 struct SimpleObject : public VecsimBaseObject {
 public:
@@ -279,8 +279,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     size_t expected_basic_allocation_delta =
         (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
                                AllocatorTest::vecsimAllocationOverhead);
-    expected_basic_allocation_delta +=
-        AllocatorTest::hashTableNodeSize + AllocatorTest::vecsimAllocationOverhead;
+    expected_basic_allocation_delta += AllocatorTest::hashTableNodeSize;
 
     size_t expected_allocation_delta = expected_basic_allocation_delta;
     // Account for allocating link lists for levels higher than 0, if exists.
@@ -288,8 +287,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
         expected_allocation_delta +=
             hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
             AllocatorTest::vecsimAllocationOverhead;
-    ASSERT_GE(allocation_delta, expected_allocation_delta);
-    ASSERT_LE(allocation_delta, expected_allocation_delta + 8); // for MacOS test
+    ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
     float vec2[] = {2.0f, 0.0f};
     VecSimIndex_AddVector(hnswIndex, vec2, 2);
@@ -316,10 +314,8 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
             hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
             AllocatorTest::vecsimAllocationOverhead;
 
-    expected_allocation_delta +=
-        AllocatorTest::setNodeSize + AllocatorTest::vecsimAllocationOverhead;
-    ASSERT_GE(allocation_delta, expected_allocation_delta);
-    ASSERT_LE(allocation_delta, expected_allocation_delta + 48); // for Xenial test
+    expected_allocation_delta += AllocatorTest::setNodeSize;
+    ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
     VecSimIndex_Free(hnswIndex);
 }

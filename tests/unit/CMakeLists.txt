@@ -22,7 +22,7 @@ enable_testing()
 
 add_executable(test_hnswlib test_hnswlib.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_utils.cpp)
-add_executable(test_allocator test_allocator.cpp)
+add_executable(test_allocator test_allocator.cpp test_utils.cpp)
 add_executable(test_spaces test_spaces.cpp)
 add_executable(test_common test_common.cpp)
 

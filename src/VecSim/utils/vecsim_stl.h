@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/memory/vecsim_base.h"
 #include <vector>
 #include <set>
 #include <unordered_map>
