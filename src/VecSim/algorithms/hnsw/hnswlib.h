@@ -604,7 +604,8 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
 
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<dist_t> candidates(this->allocator);
-    vecsim_stl::set<tableint> candidates_set(this->allocator);
+	vecsim_stl::vector<bool> element_neighbours(max_id+1, this->allocator);
+    //vecsim_stl::set<tableint> candidates_set(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (tableint *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
@@ -615,7 +616,8 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
         candidates.emplace(fstdistfunc_(getDataByInternalId(neighbours[j]),
                                         getDataByInternalId(neighbour_id), dist_func_param_),
                            neighbours[j]);
-        candidates_set.insert(neighbours[j]);
+	    element_neighbours[neighbours[j]] = true;
+        //candidates_set.insert(neighbours[j]);
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
@@ -626,7 +628,8 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
         neighbour_orig_neighbours_set.insert(neighbour_neighbours[j]);
         // Don't add the removed element to the candidates, nor nodes that are already in the
         // candidates set.
-        if (candidates_set.find(neighbour_neighbours[j]) != candidates_set.end() ||
+        //if (candidates_set.find(neighbour_neighbours[j]) != candidates_set.end() ||
+		if (element_neighbours[neighbour_neighbours[j]] ||
             neighbour_neighbours[j] == element_internal_id) {
             continue;
         }
