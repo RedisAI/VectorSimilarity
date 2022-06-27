@@ -181,7 +181,7 @@ size_t getIncomingEdgesSetNodeSize() {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     auto dummy_set = vecsim_stl::set_wrapper<unsigned int>(allocator);
     size_t memory_before = allocator->getAllocationSize();
-    dummy_set.set_.insert(1); // Insert a dummy element.
+    dummy_set.insert(1); // Insert a dummy element.
     size_t memory_after = allocator->getAllocationSize();
     return memory_after - memory_before;
 }

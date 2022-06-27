@@ -276,17 +276,17 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
 
     // Expect the creation of an empty incoming edges set in every level, and a node in the labels'
     // lookup hash table.
-    size_t expected_basic_allocation_delta =
+    size_t expected_allocation_delta =
         (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
                                AllocatorTest::vecsimAllocationOverhead);
-    expected_basic_allocation_delta += AllocatorTest::hashTableNodeSize;
+    expected_allocation_delta += AllocatorTest::hashTableNodeSize;
 
-    size_t expected_allocation_delta = expected_basic_allocation_delta;
     // Account for allocating link lists for levels higher than 0, if exists.
-    if (vec_max_level > 0)
+    if (vec_max_level > 0) {
         expected_allocation_delta +=
             hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
             AllocatorTest::vecsimAllocationOverhead;
+    }
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
     float vec2[] = {2.0f, 0.0f};
@@ -305,15 +305,24 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     // Next, insertion of vec5 should make 0->1 unidirectional, thus adding 0 to 1's incoming edges
     // set.
     float vec5[] = {0.5f, 0.0f};
+    size_t buckets_num_before = hnswIndex->getHNSWIndex()->label_lookup_.bucket_count();
+
     allocation_delta = VecSimIndex_AddVector(hnswIndex, vec5, 5);
+    size_t buckets_diff =
+        hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() - buckets_num_before;
     vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[5];
-    expected_allocation_delta = expected_basic_allocation_delta;
+
+    expected_allocation_delta =
+        (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
+                               AllocatorTest::vecsimAllocationOverhead) +
+        AllocatorTest::hashTableNodeSize;
+    expected_allocation_delta += buckets_diff * sizeof(size_t);
     // Account for allocating link lists for levels higher than 0, if exists.
-    if (vec_max_level > 0)
+    if (vec_max_level > 0) {
         expected_allocation_delta +=
             hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level + 1 +
             AllocatorTest::vecsimAllocationOverhead;
-
+    }
     expected_allocation_delta += AllocatorTest::setNodeSize;
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
