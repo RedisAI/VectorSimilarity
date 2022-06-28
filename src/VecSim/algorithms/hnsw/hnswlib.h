@@ -111,8 +111,7 @@ private:
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
-    vecsim_stl::set_wrapper<tableint> *getIncomingEdgesPtr(tableint internal_id,
-                                                           size_t level) const;
+    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
     void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
@@ -263,14 +262,14 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
 }
 
 template <typename dist_t>
-vecsim_stl::set_wrapper<tableint> *
-HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id, size_t level) const {
+vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
+                                                                        size_t level) const {
     if (level == 0) {
-        return reinterpret_cast<vecsim_stl::set_wrapper<tableint> *>(
+        return reinterpret_cast<vecsim_stl::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<vecsim_stl::set_wrapper<tableint> *>(
+    return reinterpret_cast<vecsim_stl::set<tableint> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset));
 }
@@ -583,7 +582,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
-                    neighbour_incoming_edges->set_.insert(cur_c);
+                    neighbour_incoming_edges->insert(cur_c);
                     continue;
                 }
 
@@ -593,11 +592,10 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 // otherwise, the edge turned from bidirectional to
                 // uni-directional, so we insert it to the neighbour's
                 // incoming edges set.
-                if (node_incoming_edges->set_.find(selectedNeighbor) !=
-                    node_incoming_edges->set_.end()) {
-                    node_incoming_edges->set_.erase(selectedNeighbor);
+                if (node_incoming_edges->find(selectedNeighbor) != node_incoming_edges->end()) {
+                    node_incoming_edges->erase(selectedNeighbor);
                 } else {
-                    neighbour_incoming_edges->set_.insert(node_id);
+                    neighbour_incoming_edges->insert(node_id);
                 }
             }
         }
@@ -665,10 +663,10 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
         // we should remove it from the node's incoming edges.
         // otherwise, edge turned from bidirectional to one directional,
         // and it should be saved in the neighbor's incoming edges.
-        if (node_incoming_edges->set_.find(neighbour_id) != node_incoming_edges->set_.end()) {
-            node_incoming_edges->set_.erase(neighbour_id);
+        if (node_incoming_edges->find(neighbour_id) != node_incoming_edges->end()) {
+            node_incoming_edges->erase(neighbour_id);
         } else {
-            neighbour_incoming_edges->set_.insert(node_id);
+            neighbour_incoming_edges->insert(node_id);
         }
     }
 
@@ -687,13 +685,13 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->set_.erase(node_id);
+                    neighbour_incoming_edges->erase(node_id);
                     bidirectional_edge = true;
                     break;
                 }
             }
             if (!bidirectional_edge) {
-                node_incoming_edges->set_.insert(neighbour_id);
+                node_incoming_edges->insert(neighbour_id);
             }
         }
     }
@@ -985,14 +983,14 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->set_.erase(element_internal_id);
+                neighbour_incoming_edges->erase(element_internal_id);
             }
         }
 
         // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // repairs.
         auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
-        for (auto incoming_edge : incoming_edges->set_) {
+        for (auto incoming_edge : *incoming_edges) {
             linklistsizeint *incoming_node_neighbours_list =
                 get_linklist_at_level(incoming_edge, level);
             repairConnectionsForDeletion(element_internal_id, incoming_edge, neighbours_list,
