@@ -430,9 +430,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // zero, while in others the entire capacity reduced to zero (including the header).
     // Also, the element_levels vector capacity should become zero, so we should reduce its header
     // that always counted in the initial size estimation.
-    ASSERT_GE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
-                                                  hash_table_memory - vecsimAllocationOverhead);
     ASSERT_LE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
+                                                  hash_table_memory - vecsimAllocationOverhead);
+    ASSERT_GE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
                                                   hash_table_memory - 2 * vecsimAllocationOverhead);
     VecSimIndex_Free(hnswIndex);
 }
