@@ -348,9 +348,11 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
 
     ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 0);
     size_t initial_memory_size = allocator->getAllocationSize();
-    ASSERT_LE(initial_memory_size, HNSWIndex::estimateInitialSize(&params));
     // labels_lookup and element_levels containers are not allocated at all in some platforms,
-    // when initial capacity is zero, so we reduce their headers.
+    // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
+    // single bucket. This, we get the following range in which we expect the initial memory to be
+    // in.
+    ASSERT_LE(initial_memory_size, HNSWIndex::estimateInitialSize(&params) + sizeof(size_t));
     ASSERT_GE(initial_memory_size,
               HNSWIndex::estimateInitialSize(&params) - 2 * vecsimAllocationOverhead);
 
