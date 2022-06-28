@@ -103,6 +103,7 @@ private:
     friend class HNSWLibTest_preferAdHocOptimization_Test;
     friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
+    friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
     friend class HNSWLibTest_testSizeEstimation_Test;
 #endif
 

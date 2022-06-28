@@ -345,6 +345,7 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     HNSWParams params = {
         .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
     auto *hnswIndex = new (allocator) HNSWIndex(&params, allocator);
+
     ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 0);
     size_t block_size = hnswIndex->info().hnswInfo.blockSize;
 
@@ -393,10 +394,14 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
 
     ASSERT_EQ(hnswIndex->indexSize(), 0);
     ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 0);
-    // Memory returns to as it was, with additional 24 bytes (due to labels_lookup which is STL's
-    // unordered_map)
-    ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + 24);
-    ASSERT_EQ(serializer.checkIntegrity().double_connections, 0);
+    // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
+    // (STL unordered_map with hash table implementation), that leaves some empty buckets.
+    size_t hash_table_memory =
+        hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() * sizeof(size_t);
+    ASSERT_EQ(allocator->getAllocationSize(),
+              initial_memory_size + hash_table_memory + vecsimAllocationOverhead);
+
+    VecSimIndex_Free(hnswIndex);
 }
 
 } // namespace hnswlib
