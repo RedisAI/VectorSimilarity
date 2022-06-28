@@ -22,7 +22,7 @@
 #include <sys/resource.h>
 #include <fstream>
 
-#include "BitMagic/src/bm.h"
+#include "src/bm.h"
 
 namespace hnswlib {
 using namespace std;
@@ -1057,7 +1057,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     //new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
-					new bm::bvector<>();
+					new bm::bvector<>(); //todo: init??
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
