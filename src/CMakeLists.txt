@@ -32,6 +32,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 include_directories(${root}/src)
 include_directories(${root}/deps)
+include_directories(${root}/deps/BitMagic)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
@@ -67,10 +68,10 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/hnsw_batch_iterator.cpp
   )
 
-if(VECSIM_BUILD_TESTS)
-	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
-	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
-endif()
+#if(VECSIM_BUILD_TESTS)
+#	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
+#	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
+#endif()
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
