@@ -337,7 +337,6 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     VecSimIndex_Free(hnswIndex);
 }
 
-
 TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t d = 128;

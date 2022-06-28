@@ -44,7 +44,7 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
 
     est += sizeof(void *) * params->initialCapacity; // link lists (for levels > 0)
     est += sizeof(size_t) * params->initialCapacity; // element level
-    est += sizeof(size_t) * params->initialCapacity; // labels lookup
+    est += sizeof(size_t) * params->initialCapacity; // labels lookup hash table buckets
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
@@ -57,9 +57,9 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
 
 size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
     size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) +
-                               sizeof(void *) + sizeof(vecsim_stl::set_wrapper<tableint>);
+                               sizeof(void *) + sizeof(vecsim_stl::set<tableint>);
     size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(tableint) +
-                                     sizeof(void *) + sizeof(vecsim_stl::set_wrapper<tableint>);
+                                     sizeof(void *) + sizeof(vecsim_stl::set<tableint>);
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, it's approximately 1/2*ln(M).
     size_t expected_size_links_higher_levels =

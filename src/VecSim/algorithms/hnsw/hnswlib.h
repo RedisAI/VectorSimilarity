@@ -103,6 +103,7 @@ private:
     friend class HNSWLibTest_preferAdHocOptimization_Test;
     friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
+    friend class HNSWLibTest_testSizeEstimation_Test;
 #endif
 
     HierarchicalNSW() {}                                // default constructor
@@ -770,7 +771,7 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
         // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // updates.
         auto *incoming_edges = getIncomingEdgesPtr(last_element_internal_id, level);
-        for (auto incoming_edge : incoming_edges->set_) {
+        for (auto incoming_edge : *incoming_edges) {
             linklistsizeint *incoming_neighbour_neighbours_list =
                 get_linklist_at_level(incoming_edge, level);
             unsigned short incoming_neighbour_neighbours_count =
@@ -817,7 +818,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
-      available_ids(allocator), label_lookup_(allocator)
+      available_ids(allocator), label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
                                     link_list_locks_(max_elements),
@@ -917,7 +918,7 @@ template <typename dist_t>
 void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     element_levels_.resize(new_max_elements);
     element_levels_.shrink_to_fit();
-    //label_lookup_.reserve(new_max_elements);
+    label_lookup_.reserve(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
