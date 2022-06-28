@@ -1434,8 +1434,11 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
 
     size_t actual = index->getAllocator()->getAllocationSize();
 
-    estimation += 13 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
-    ASSERT_EQ(estimation, actual);
+	estimation += 7 * sizeof (size_t); // labels_lookup hash table additional memory
+    estimation += 14 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
+
+	// todo: see why this isn't equal
+	ASSERT_EQ(estimation, actual);
 
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_AddVector(index, vec, i);
