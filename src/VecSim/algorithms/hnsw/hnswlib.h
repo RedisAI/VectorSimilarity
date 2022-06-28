@@ -795,14 +795,9 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
     memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
            0, size_data_per_element_);
 
-    // swap higher levels data (if exists)
-    if (element_levels_[last_element_internal_id] > 0) {
-        linkLists_[element_internal_id] = (char *)this->allocator->allocate(
-            size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
-        memcpy(linkLists_[element_internal_id], linkLists_[last_element_internal_id],
-               size_links_per_element_ * element_levels_[last_element_internal_id] + 1);
-        this->allocator->free_allocation(linkLists_[last_element_internal_id]);
-    }
+    // swap pointer of higher levels links
+    linkLists_[element_internal_id] = linkLists_[last_element_internal_id];
+    linkLists_[last_element_internal_id] = nullptr;
 
     // swap top element level
     element_levels_[element_internal_id] = element_levels_[last_element_internal_id];

@@ -379,10 +379,32 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     for (size_t j = 0; j < d; j++) {
         vec[j] = (float)block_size;
     }
-    VecSimIndex_AddVector(hnswIndex, vec, block_size);
+    size_t prev_bucket_count = hnswIndex->getHNSWIndex()->label_lookup_.bucket_count();
+    size_t mem_delta = VecSimIndex_AddVector(hnswIndex, vec, block_size);
     ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
     ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 2 * block_size);
     ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+
+    // Compute the expected memory allocation due to the last vector insertion.
+    size_t vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[block_size];
+    size_t expected_mem_delta = (vec_max_level + 1) * (sizeof(vecsim_stl::set<hnswlib::tableint>) +
+                                                       AllocatorTest::vecsimAllocationOverhead) +
+                                AllocatorTest::hashTableNodeSize;
+    if (vec_max_level > 0) {
+        expected_mem_delta += hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level +
+                              1 + AllocatorTest::vecsimAllocationOverhead;
+    }
+    // Also account for all the memory allocation caused by the resizing that this vector triggered
+    // except for the bucket count of the labels_lookup hash table that is calculated separately.
+    size_t size_total_data_per_element = hnswIndex->getHNSWIndex()->size_data_per_element_;
+    expected_mem_delta +=
+        (sizeof(tag_t) + sizeof(void *) + sizeof(size_t) + size_total_data_per_element) *
+        block_size;
+    expected_mem_delta +=
+        (hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() - prev_bucket_count) *
+        sizeof(size_t);
+
+    ASSERT_EQ(expected_mem_delta, mem_delta);
 
     // Remove the last vector, expect resizing back to a single block, and return to the previous
     // memory consumption.
@@ -403,15 +425,12 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory =
         hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() * sizeof(size_t);
-    // current memory should be in the following range, depends on whether the label_lookup
-    // hash table was allocated with a single bucket at start or not. If so, the diff from the
-    // initial memory size should be at most the current hash_table_memory - size of a single
-    // bucket. On the other hand, the diff may also include the label_lookup and element_levels
-    // headers.
-    ASSERT_GE(allocator->getAllocationSize(),
-              initial_memory_size + hash_table_memory - sizeof(size_t));
-    ASSERT_LE(allocator->getAllocationSize(),
-              initial_memory_size + hash_table_memory + 2 * vecsimAllocationOverhead);
+    // Current memory should be back as it was initially. The label_lookup hash table is an
+    // exception, since some empty buckets remain even when the capacity is set to zero.
+    // Also, the element_levels vector capacity should become zero, so we should reduce its header
+    // that always counted in the initial size estimation.
+    ASSERT_EQ(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
+                                                  hash_table_memory - vecsimAllocationOverhead);
 
     VecSimIndex_Free(hnswIndex);
 }

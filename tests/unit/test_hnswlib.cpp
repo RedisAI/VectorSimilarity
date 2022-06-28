@@ -1446,7 +1446,7 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
         VecSimIndex_AddVector(index, vec, i);
     }
 
-    // Estimate the memory delta of adding a fool new block.
+    // Estimate the memory delta of adding a full new block.
     estimation = VecSimIndex_EstimateElementSize(&params) * bs;
 
     actual = 0;
@@ -1456,8 +1456,8 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
         }
         actual += VecSimIndex_AddVector(index, vec, n + i);
     }
-    ASSERT_GE(estimation * 1.01, actual);
-    ASSERT_LE(estimation * 0.99, actual);
+    ASSERT_GE(estimation * 1.02, actual);
+    ASSERT_LE(estimation * 0.98, actual);
 
     VecSimIndex_Free(index);
 }
