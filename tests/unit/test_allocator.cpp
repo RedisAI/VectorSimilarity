@@ -426,12 +426,14 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     size_t hash_table_memory =
         hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() * sizeof(size_t);
     // Current memory should be back as it was initially. The label_lookup hash table is an
-    // exception, since some empty buckets remain even when the capacity is set to zero.
+    // exception, since in some platforms, empty buckets remain even when the capacity is set to
+    // zero, while in others the entire capacity reduced to zero (including the header).
     // Also, the element_levels vector capacity should become zero, so we should reduce its header
     // that always counted in the initial size estimation.
-    ASSERT_EQ(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
+    ASSERT_GE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
                                                   hash_table_memory - vecsimAllocationOverhead);
-
+    ASSERT_LE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
+                                                  hash_table_memory - 2 * vecsimAllocationOverhead);
     VecSimIndex_Free(hnswIndex);
 }
 
