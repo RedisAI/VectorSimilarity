@@ -1435,8 +1435,6 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     estimation +=
         (reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->label_lookup_.bucket_count() - n) *
         sizeof(size_t);
-    estimation +=
-        14 * sizeof(size_t); // account for the overhead of #allocations * allocation_header_size
 
     ASSERT_EQ(estimation, actual);
 

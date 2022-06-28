@@ -347,13 +347,16 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     auto *hnswIndex = new (allocator) HNSWIndex(&params, allocator);
 
     ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 0);
-    size_t block_size = hnswIndex->info().hnswInfo.blockSize;
-
     size_t initial_memory_size = allocator->getAllocationSize();
+    ASSERT_LE(initial_memory_size, HNSWIndex::estimateInitialSize(&params));
+    // labels_lookup and element_levels containers are not allocated at all in some platforms,
+    // when initial capacity is zero, so we reduce their headers.
+    ASSERT_GE(initial_memory_size,
+              HNSWIndex::estimateInitialSize(&params) - 2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
+    size_t block_size = hnswIndex->info().hnswInfo.blockSize;
     size_t accumulated_mem_delta = 0;
-    // size_t expected_accumulated_labels_lookup_mem = block_size*32;
     float vec[d];
     for (size_t i = 0; i < block_size; i++) {
         for (size_t j = 0; j < d; j++) {
@@ -398,8 +401,15 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory =
         hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() * sizeof(size_t);
-    ASSERT_EQ(allocator->getAllocationSize(),
-              initial_memory_size + hash_table_memory + vecsimAllocationOverhead);
+    // current memory should be in the following range, depends on whether the label_lookup
+    // hash table was allocated with a single bucket at start or not. If so, the diff from the
+    // initial memory size should be at most the current hash_table_memory - size of a single
+    // bucket. On the other hand, the diff may also include the label_lookup and element_levels
+    // headers.
+    ASSERT_GE(allocator->getAllocationSize(),
+              initial_memory_size + hash_table_memory - sizeof(size_t));
+    ASSERT_LE(allocator->getAllocationSize(),
+              initial_memory_size + hash_table_memory + 2 * vecsimAllocationOverhead);
 
     VecSimIndex_Free(hnswIndex);
 }

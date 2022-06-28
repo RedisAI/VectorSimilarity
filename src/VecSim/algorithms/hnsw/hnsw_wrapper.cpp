@@ -32,25 +32,27 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
 
 /******************** Implementation **************/
 size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
-    size_t est = sizeof(HNSWIndex);
-    est += sizeof(*space);
-    est += sizeof(*hnsw);
-    est += sizeof(VisitedNodesHandler);
+    size_t est = sizeof(VecSimAllocator) + sizeof(HNSWIndex) + sizeof(size_t);
+    est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
+           sizeof(size_t);
+    est += sizeof(*hnsw) + sizeof(size_t);
+    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool);
 #endif
-    est += sizeof(tag_t) * params->initialCapacity; // visited nodes
+    est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes
 
-    est += sizeof(void *) * params->initialCapacity; // link lists (for levels > 0)
-    est += sizeof(size_t) * params->initialCapacity; // element level
-    est += sizeof(size_t) * params->initialCapacity; // labels lookup hash table buckets
+    est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
+    est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
+    est += sizeof(size_t) * params->initialCapacity +
+           sizeof(size_t); // labels lookup hash table buckets
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
     size_t size_total_data_per_element =
         size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
-    est += params->initialCapacity * size_total_data_per_element;
+    est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
 
     return est;
 }
@@ -61,7 +63,10 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
     size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(tableint) +
                                      sizeof(void *) + sizeof(vecsim_stl::set<tableint>);
     // The Expectancy for the random variable which is the number of levels per element equals
-    // 1/ln(M). Since the max_level is rounded to the "floor" integer, it's approximately 1/2*ln(M).
+    // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
+    // of levels is lower (intuitively, we "loose" a level every time the random generated number
+    // should have been rounded up to the larger integer). So, we "fix" the expectancy and take
+    // 1/2*ln(M) instead as an approximation.
     size_t expected_size_links_higher_levels =
         ceil((1 / (2 * log(params->M))) * (float)size_links_higher_level);
 
