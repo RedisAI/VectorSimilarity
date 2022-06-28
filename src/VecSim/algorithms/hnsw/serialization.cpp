@@ -72,9 +72,9 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
             continue;
         }
         auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, 0);
-        unsigned int set_size = set_ptr->size();
+        unsigned int set_size = set_ptr->set_.size();
         writeBinaryPOD(output, set_size);
-        for (auto id : *set_ptr) {
+        for (auto id : set_ptr->set_) {
             writeBinaryPOD(output, id);
         }
     }
@@ -95,9 +95,9 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
             output.write(hnsw_index->linkLists_[i], linkListSize);
         for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
             auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
-            unsigned int set_size = set_ptr->size();
+            unsigned int set_size = set_ptr->set_.size();
             writeBinaryPOD(output, set_size);
-            for (auto id : *set_ptr) {
+            for (auto id : set_ptr->set_) {
                 writeBinaryPOD(output, id);
             }
         }
@@ -174,7 +174,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         for (size_t j = 0; j < set_size; j++) {
             tableint next_edge;
             readBinaryPOD(input, next_edge);
-            set_ptr->insert(next_edge);
+            set_ptr->set_.insert(next_edge);
         }
         hnsw_index->setIncomingEdgesPtr(i, 0, (void *)set_ptr);
     }
@@ -223,7 +223,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
                 for (size_t k = 0; k < set_size; k++) {
                     tableint next_edge;
                     readBinaryPOD(input, next_edge);
-                    set_ptr->insert(next_edge);
+                    set_ptr->set_.insert(next_edge);
                 }
                 hnsw_index->setIncomingEdgesPtr(i, j, (void *)set_ptr);
             }
@@ -313,7 +313,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                     res.valid_state = false;
                     return res;
                 }
-                incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
+                incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->set_.size();
             }
         }
     }
