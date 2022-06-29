@@ -1272,8 +1272,6 @@ TEST_F(BruteForceTest, testSizeEstimation) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
-
-    estimation += 6 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
     ASSERT_EQ(estimation, actual);
 
     estimation = VecSimIndex_EstimateElementSize(&params) * bs;

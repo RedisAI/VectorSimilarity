@@ -1381,26 +1381,40 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
                                                  .initialCapacity = n,
                                                  .blockSize = bs,
                                                  .M = M}};
-    float vec[dim];
-    for (size_t i = 0; i < dim; i++) {
-        vec[i] = 1.0f;
-    }
 
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
     VecSimIndex *index = VecSimIndex_New(&params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
+    // labels_lookup hash table has additional memory, since STL implementation chooses "an
+    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+    // buckets are created)
+    estimation +=
+        (reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->label_lookup_.bucket_count() - n) *
+        sizeof(size_t);
 
-    estimation += 13 * sizeof(size_t); // #VecsimBaseObject * allocation_header_size
     ASSERT_EQ(estimation, actual);
 
+    float vec[dim];
     for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            vec[j] = (float)i;
+        }
         VecSimIndex_AddVector(index, vec, i);
     }
+
+    // Estimate the memory delta of adding a full new block.
     estimation = VecSimIndex_EstimateElementSize(&params) * bs;
-    actual = VecSimIndex_AddVector(index, vec, 0);
-    ASSERT_GE(estimation * 1.01, actual);
-    ASSERT_LE(estimation * 0.99, actual);
+
+    actual = 0;
+    for (size_t i = 0; i < bs; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            vec[j] = (float)i;
+        }
+        actual += VecSimIndex_AddVector(index, vec, n + i);
+    }
+    ASSERT_GE(estimation * 1.02, actual);
+    ASSERT_LE(estimation * 0.98, actual);
 
     VecSimIndex_Free(index);
 }
