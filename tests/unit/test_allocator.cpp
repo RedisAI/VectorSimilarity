@@ -277,7 +277,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     // Expect the creation of an empty incoming edges set in every level, and a node in the labels'
     // lookup hash table.
     size_t expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
+        (vec_max_level + 1) * (sizeof(vecsim_stl::bvector<vecsim_stl::dbg_alloc>) +
                                AllocatorTest::vecsimAllocationOverhead);
     expected_allocation_delta += AllocatorTest::hashTableNodeSize;
 

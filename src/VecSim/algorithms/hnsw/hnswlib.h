@@ -22,8 +22,6 @@
 #include <sys/resource.h>
 #include <fstream>
 
-#include "src/bm.h"
-
 namespace hnswlib {
 using namespace std;
 
@@ -105,7 +103,7 @@ private:
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
-	bm::bvector<> *getIncomingEdgesPtr(tableint internal_id,
+	vecsim_stl::bvector<vecsim_stl::dbg_alloc> *getIncomingEdgesPtr(tableint internal_id,
                                                            size_t level) const;
     void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
@@ -256,14 +254,14 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
 }
 
 template <typename dist_t>
-bm::bvector<> *
+vecsim_stl::bvector<vecsim_stl::dbg_alloc> *
 HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id, size_t level) const {
     if (level == 0) {
-        return reinterpret_cast<bm::bvector<> *>(
+        return reinterpret_cast<vecsim_stl::bvector<vecsim_stl::dbg_alloc> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<bm::bvector<> *>(
+    return reinterpret_cast<vecsim_stl::bvector<vecsim_stl::dbg_alloc> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset));
 }
@@ -519,8 +517,8 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges =
-            new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::bvector<vecsim_stl::dbg_alloc>(this->allocator);
+            //new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
@@ -690,7 +688,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(node_id);
+                    neighbour_incoming_edges->set(node_id, false);
                     bidirectional_edge = true;
                     break;
                 }
@@ -887,7 +885,9 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         // repairs.
         auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
 		auto it_end = incoming_edges->end();
-        for (bm::bvector<>::enumerator it = incoming_edges->first(); it != it_end; it++) {
+		size_t count = 0;
+        for (vecsim_stl::bvector<vecsim_stl::dbg_alloc>::enumerator it = incoming_edges->first(); it != it_end; ++it) {
+			count++;
             linklistsizeint *incoming_node_neighbours_list =
                 get_linklist_at_level(*it, level);
             repairConnectionsForDeletion(element_internal_id, *it, neighbours_list,
@@ -1055,9 +1055,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-                auto *incoming_edges =
+	            auto *incoming_edges = new (this->allocator) vecsim_stl::bvector<vecsim_stl::dbg_alloc>(this->allocator);
                     //new (this->allocator) vecsim_stl::set_wrapper<tableint>(this->allocator);
-					new bm::bvector<>(); //todo: init??
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
@@ -1065,8 +1064,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         // Do nothing for the first element
         entrypoint_node_ = 0;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges =
-					new bm::bvector<>();
+	        auto *incoming_edges = new (this->allocator) vecsim_stl::bvector<vecsim_stl::dbg_alloc>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;

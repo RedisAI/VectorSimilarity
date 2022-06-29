@@ -17,12 +17,15 @@ private:
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
     static VecSimMemoryFunctions memFunctions;
-
-    VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
-
+	VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
 public:
+
+	explicit VecSimAllocator(const std::shared_ptr<VecSimAllocator> &allocator) : allocated(allocator->allocated) {}
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();
     void *allocate(size_t size);
+	inline void *allocate(size_t size, const void *) {
+		return allocate(sizeof(void*) * size);
+	}
     void *callocate(size_t size);
     void deallocate(void *p, size_t size);
     void *reallocate(void *p, size_t size);
