@@ -64,7 +64,9 @@ public:
 			  bm::bvector<Alloc> (bm::BM_BIT, bm::gap_len_table<true>::_len,
 			                      bm::id_max,
 								  vecsim_stl::dbg_alloc(vecsim_stl::dbg_block_allocator(alloc),
-											VecSimAllocator(alloc))) {}
+											VecSimAllocator(alloc))) {
+		this->init();
+	}
 };
 
 } // namespace vecsim_stl
