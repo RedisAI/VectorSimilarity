@@ -313,7 +313,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[5];
 
     expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::set_wrapper<hnswlib::tableint>) +
+        (vec_max_level + 1) * (sizeof(vecsim_stl::bvector<vecsim_stl::dbg_alloc>) +
                                AllocatorTest::vecsimAllocationOverhead) +
         AllocatorTest::hashTableNodeSize;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
