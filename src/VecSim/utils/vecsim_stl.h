@@ -6,7 +6,7 @@
 #include <set>
 #include <unordered_map>
 #include <queue>
-#include <src/bm.h>
+#include <VecSim/../../BitMagic/src/bm.h>
 
 namespace vecsim_stl {
 
@@ -61,7 +61,7 @@ class bvector : public VecsimBaseObject, public bm::bvector<Alloc>{
 public:
 	explicit bvector(const std::shared_ptr<VecSimAllocator> &alloc)
 			: VecsimBaseObject(alloc),
-			  bm::bvector<Alloc> (bm::BM_BIT, bm::gap_len_table<true>::_len,
+			  bm::bvector<Alloc> (bm::BM_GAP, bm::gap_len_table_min<true>::_len,
 			                      bm::id_max,
 								  vecsim_stl::dbg_alloc(vecsim_stl::dbg_block_allocator(alloc),
 											VecSimAllocator(alloc))) {

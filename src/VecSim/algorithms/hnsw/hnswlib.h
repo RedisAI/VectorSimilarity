@@ -580,7 +580,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
                     //neighbour_incoming_edges->insert(cur_c);
-	                node_incoming_edges->set(cur_c, false);
+	                neighbour_incoming_edges->set(cur_c, true);
                     continue;
                 }
 
