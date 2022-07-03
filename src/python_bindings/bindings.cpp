@@ -218,9 +218,9 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
-        .def("save_index", &PyHNSWLibIndex::saveIndex)
-        .def("load_index", &PyHNSWLibIndex::loadIndex);
+        .def("set_ef", &PyHNSWLibIndex::setDefaultEf);
+//        .def("save_index", &PyHNSWLibIndex::saveIndex)
+//        .def("load_index", &PyHNSWLibIndex::loadIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

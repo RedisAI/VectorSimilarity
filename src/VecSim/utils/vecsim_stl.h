@@ -19,6 +19,8 @@ public:
 			: VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(alloc) {}
 	explicit vector(size_t cap, const std::shared_ptr<VecSimAllocator> &alloc)
 			: VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, alloc) {}
+	explicit vector(size_t cap, T val, const std::shared_ptr<VecSimAllocator> &alloc)
+			: VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, val, alloc) {}
 };
 
 // max-heap
