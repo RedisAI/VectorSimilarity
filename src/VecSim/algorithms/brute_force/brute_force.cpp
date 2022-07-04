@@ -39,11 +39,12 @@ BruteForceIndex::~BruteForceIndex() {
 /******************** Implementation **************/
 size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
-    size_t est = sizeof(BruteForceIndex);
-    est += sizeof(*allocator);
-    est += sizeof(*space);
+    size_t est = sizeof(VecSimAllocator) + sizeof(BruteForceIndex) + sizeof(size_t);
+    est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
+           sizeof(size_t);
     // Parameters related part.
-    est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type);
+    est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type) +
+           sizeof(size_t);
 
     return est;
 }
