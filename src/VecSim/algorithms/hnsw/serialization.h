@@ -16,27 +16,31 @@ typedef struct HNSWIndexMetaData {
     size_t max_in_degree;
 } HNSWIndexMetaData;
 
+typedef enum EncodingVersion { EncodingVersion_V0 = 0, EncodingVersion_V1 } EncodingVersion;
+
 class HNSWIndexSerializer {
 private:
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index;
 
     void saveIndexFields(std::ofstream &output);
     void saveGraph(std::ofstream &output);
-    void restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s);
-    void restoreGraph(std::ifstream &input);
+    void restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s,
+                            EncodingVersion version);
+    void restoreGraph(std::ifstream &input, EncodingVersion version);
 
 public:
     // Wrap hnsw index.
     explicit HNSWIndexSerializer(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index);
 
     // Persist HNSW index into a file in the specified location.
-    void saveIndex(const std::string &location);
+    void saveIndex_v1(const std::string &location);
 
     // Check the validity of the reproduced index.
     HNSWIndexMetaData checkIntegrity();
 
     // Restore the index from the file in the specified location.
-    void loadIndex(const std::string &location, SpaceInterface<float> *s);
+    void loadIndex(const std::string &location, SpaceInterface<float> *s,
+                   EncodingVersion version = EncodingVersion_V1);
 
     // Safe release the inner hnsw_index pointer, optionally replace it with another.
     void reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index = nullptr);

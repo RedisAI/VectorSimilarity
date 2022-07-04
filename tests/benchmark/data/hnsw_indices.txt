@@ -1,4 +1,4 @@
-https://s3.amazonaws.com/redismodules/VectorSimilarity/random-1M-100-l2.hnsw
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1
 https://s3.amazonaws.com/redismodules/VectorSimilarity/mnist-784-euclidean-M=32-ef=150.hnsw
 https://s3.amazonaws.com/redismodules/VectorSimilarity/glove-25-angular-M=16-ef=100.hnsw
 https://s3.amazonaws.com/redismodules/VectorSimilarity/glove-50-angular-M=24-ef=150.hnsw

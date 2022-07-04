@@ -16,53 +16,55 @@ protected:
     std::vector<float> query;
 
     BM_BatchIterator() {
-        dim = 100;
+        dim = 768;
         n_vectors = 1000000;
         query.reserve(dim);
+        rng.seed(47);
     }
 
 public:
     void SetUp(const ::benchmark::State &state) {
-        rng.seed(47);
-        std::vector<float> data(n_vectors * dim);
-        std::uniform_real_distribution<> distrib;
-        for (size_t i = 0; i < n_vectors * dim; ++i) {
-            data[i] = (float)distrib(rng);
-        }
-        VecSimParams params = {.algo = VecSimAlgo_BF,
-                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                    .dim = dim,
-                                                    .metric = VecSimMetric_L2,
-                                                    .initialCapacity = n_vectors}};
-        bf_index = VecSimIndex_New(&params);
 
-        // Add random vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
-        }
-
-        size_t M = 50;
-        size_t ef = 350;
-        params = {.algo = VecSimAlgo_HNSWLIB,
-                  .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                           .dim = dim,
-                                           .metric = VecSimMetric_L2,
-                                           .initialCapacity = n_vectors,
-                                           .M = M,
-                                           .efConstruction = ef,
-                                           .efRuntime = ef}};
+        // Initialize and load HNSW index for DBPedia data set.
+        size_t M = 64;
+        size_t ef_c = 512;
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                        .dim = dim,
+                                                        .metric = VecSimMetric_Cosine,
+                                                        .initialCapacity = n_vectors + 1,
+                                                        .M = M,
+                                                        .efConstruction = ef_c}};
         hnsw_index = VecSimIndex_New(&params);
 
-        // Load pre-generated HNSW index containing the same vectors as the Flat index.
-        char *location = getcwd(NULL, 0);
-        auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
+        // Load pre-generated HNSW index.
+        char *location = getcwd(nullptr, 0);
+        auto file_name = std::string(location) +
+                         "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
         free(location);
+        size_t ef_r = 500;
+        reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
 
-        // Generate random query vector test.
+        params = {.algo = VecSimAlgo_BF,
+                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                       .dim = dim,
+                                       .metric = VecSimMetric_Cosine,
+                                       .initialCapacity = n_vectors}};
+        bf_index = VecSimIndex_New(&params);
+
+        // Add the same vectors to Flat index.
+        for (size_t i = 0; i < n_vectors; ++i) {
+            char *blob =
+                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
+            VecSimIndex_AddVector(bf_index, blob, i);
+        }
+
+        // Generate random query vector before test.
+        std::uniform_real_distribution<> distrib;
         for (size_t i = 0; i < dim; ++i) {
             query[i] = (float)distrib(rng);
         }

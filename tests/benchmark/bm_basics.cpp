@@ -9,14 +9,19 @@
 static void GetHNSWIndex(VecSimIndex *hnsw_index) {
 
     // Load the index file, if it exists in the expected path.
-    char *location = getcwd(NULL, 0);
-    auto file_name = std::string(location) + "/tests/benchmark/data/random-1M-100-l2.hnsw";
+    char *location = getcwd(nullptr, 0);
+    auto file_name =
+        std::string(location) + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
+        if (!serializer.checkIntegrity().valid_state) {
+            std::cerr << "The loaded HNSW index is corrupted. Exiting..." << std::endl;
+            exit(1);
+        }
     } else {
         std::cerr << "HNSW index file was not found in path. Exiting..." << std::endl;
         exit(1);
@@ -34,48 +39,48 @@ protected:
     std::vector<float> query;
 
     BM_VecSimBasics() {
-        dim = 100;
+        dim = 768;
         n_vectors = 1000000;
         query.reserve(dim);
+        rng.seed(47);
     }
 
 public:
     void SetUp(const ::benchmark::State &state) {
-        rng.seed(47);
-        std::vector<float> data(n_vectors * dim);
-        std::uniform_real_distribution<> distrib;
-        for (size_t i = 0; i < n_vectors * dim; ++i) {
-            data[i] = (float)distrib(rng);
-        }
-        VecSimParams params = {.algo = VecSimAlgo_BF,
-                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                    .dim = dim,
-                                                    .metric = VecSimMetric_L2,
-                                                    .initialCapacity = n_vectors}};
-        bf_index = VecSimIndex_New(&params);
 
-        // Add random vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            VecSimIndex_AddVector(bf_index, data.data() + dim * i, i);
-        }
-        // Initialize and load HNSW index.
-        size_t M = 50;
-        size_t ef_c = 350;
-        size_t ef_r = 500;
-        params = {.algo = VecSimAlgo_HNSWLIB,
-                  .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                           .dim = dim,
-                                           .metric = VecSimMetric_L2,
-                                           .initialCapacity = n_vectors + 1,
-                                           .M = M,
-                                           .efConstruction = ef_c,
-                                           .efRuntime = ef_r}};
+        // Initialize and load HNSW index for DBPedia data set.
+        size_t M = 64;
+        size_t ef_c = 512;
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                        .dim = dim,
+                                                        .metric = VecSimMetric_Cosine,
+                                                        .initialCapacity = n_vectors + 1,
+                                                        .M = M,
+                                                        .efConstruction = ef_c}};
         hnsw_index = VecSimIndex_New(&params);
 
-        // Load pre-generated HNSW index containing the same vectors as the Flat index.
+        // Load pre-generated HNSW index.
         GetHNSWIndex(hnsw_index);
+        size_t ef_r = 500;
+        reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
+
+        params = {.algo = VecSimAlgo_BF,
+                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                       .dim = dim,
+                                       .metric = VecSimMetric_Cosine,
+                                       .initialCapacity = n_vectors}};
+        bf_index = VecSimIndex_New(&params);
+
+        // Add the same vectors to Flat index.
+        for (size_t i = 0; i < n_vectors; ++i) {
+            char *blob =
+                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
+            VecSimIndex_AddVector(bf_index, blob, i);
+        }
 
         // Generate random query vector before test.
+        std::uniform_real_distribution<> distrib;
         for (size_t i = 0; i < dim; ++i) {
             query[i] = (float)distrib(rng);
         }
@@ -152,7 +157,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
-    float radius = 1.0f * (float)st.range(0);
+    float radius = 1.0f / 3 * (float)st.range(0);
     auto res = VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
     st.counters["Results number"] = (double)VecSimQueryResult_Len(res);
     for (auto _ : st) {
@@ -162,9 +167,9 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-    ->Arg(10)
-    ->Arg(12)
-    ->Arg(15)
+    ->Arg(1)
+    ->Arg(2)
+    ->Arg(3)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);

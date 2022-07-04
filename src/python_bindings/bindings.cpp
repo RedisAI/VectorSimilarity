@@ -127,13 +127,13 @@ public:
     void saveIndex(const std::string &location) {
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-        serializer.saveIndex(location);
+        serializer.saveIndex_v1(location);
     }
-    void loadIndex(const std::string &location) {
+    void loadIndex(const std::string &location, hnswlib::EncodingVersion version) {
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
         auto space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
-        serializer.loadIndex(location, space);
+        serializer.loadIndex(location, space, version);
     }
 };
 
@@ -167,6 +167,11 @@ PYBIND11_MODULE(VecSim, m) {
     py::enum_<VecSimQueryResult_Order>(m, "VecSimQueryResult_Order")
         .value("BY_SCORE", BY_SCORE)
         .value("BY_ID", BY_ID)
+        .export_values();
+
+    py::enum_<hnswlib::EncodingVersion>(m, "VecSim_HNSWEncodingVersion")
+        .value("HNSWEncodingVersion_V0", hnswlib::EncodingVersion_V0)
+        .value("HNSWEncodingVersion_V1", hnswlib::EncodingVersion_V1)
         .export_values();
 
     py::class_<HNSWParams>(m, "HNSWParams")
@@ -218,9 +223,10 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        .def("set_ef", &PyHNSWLibIndex::setDefaultEf);
-//        .def("save_index", &PyHNSWLibIndex::saveIndex)
-//        .def("load_index", &PyHNSWLibIndex::loadIndex);
+        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
+        .def("save_index", &PyHNSWLibIndex::saveIndex)
+        .def("load_index", &PyHNSWLibIndex::loadIndex, py::arg("location"),
+             py::arg("enc_ver") = hnswlib::EncodingVersion_V1);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

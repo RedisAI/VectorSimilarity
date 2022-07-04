@@ -50,7 +50,7 @@ def create_hnsw_index(dataset, ef_construction, M):
 def populate_save_index(hnsw_index, index_file_name, X_train):
     if os.path.exists(index_file_name):
         print("Index already exist. Remove index file first to override it")
-        hnsw_index.load_index(index_file_name)
+        hnsw_index.load_index(index_file_name, HNSWEncodingVersion_V0)
         return
     # Build the index by inserting vectors to it one by one.
     t0 = time.time()

@@ -22,6 +22,4 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, float radius,
                        size_t expected_res_num, VecSimQueryResult_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);
 
-size_t getIncomingEdgesSetNodeSize();
-
 size_t getLabelsLookupNodeSize();

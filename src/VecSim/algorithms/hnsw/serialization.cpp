@@ -71,10 +71,10 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
-        auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, 0);
-        unsigned int set_size = set_ptr->size();
+        auto *incoming_edges_ptr = hnsw_index->getIncomingEdgesPtr(i, 0);
+        unsigned int set_size = incoming_edges_ptr->size();
         writeBinaryPOD(output, set_size);
-        for (auto id : *set_ptr) {
+        for (auto id : *incoming_edges_ptr) {
             writeBinaryPOD(output, id);
         }
     }
@@ -94,17 +94,18 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
         if (linkListSize)
             output.write(hnsw_index->linkLists_[i], linkListSize);
         for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-            auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
-            unsigned int set_size = set_ptr->size();
+            auto *incoming_edges_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
+            unsigned int set_size = incoming_edges_ptr->size();
             writeBinaryPOD(output, set_size);
-            for (auto id : *set_ptr) {
+            for (auto id : *incoming_edges_ptr) {
                 writeBinaryPOD(output, id);
             }
         }
     }
 }
 
-void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s) {
+void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s,
+                                             EncodingVersion version) {
     // Restore index build parameters
     readBinaryPOD(input, hnsw_index->max_elements_);
     readBinaryPOD(input, hnsw_index->M_);
@@ -153,7 +154,7 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterfac
     }
 }
 
-void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
+void HNSWIndexSerializer::restoreGraph(std::ifstream &input, EncodingVersion version) {
     // Restore graph layer 0
     hnsw_index->data_level0_memory_ = (char *)hnsw_index->allocator->reallocate(
         hnsw_index->data_level0_memory_,
@@ -167,16 +168,29 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
             continue;
         }
-        auto *set_ptr =
-            new (hnsw_index->allocator) vecsim_stl::set<tableint>(hnsw_index->allocator);
-        unsigned int set_size;
-        readBinaryPOD(input, set_size);
-        for (size_t j = 0; j < set_size; j++) {
-            tableint next_edge;
-            readBinaryPOD(input, next_edge);
-            set_ptr->insert(next_edge);
+        if (version == EncodingVersion_V0) {
+            auto *incoming_edges =
+                new (hnsw_index->allocator) vecsim_stl::set<tableint>(hnsw_index->allocator);
+            unsigned int incoming_edges_len;
+            readBinaryPOD(input, incoming_edges_len);
+            for (size_t j = 0; j < incoming_edges_len; j++) {
+                tableint next_edge;
+                readBinaryPOD(input, next_edge);
+                incoming_edges->insert(next_edge);
+            }
+            hnsw_index->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
+        } else {
+            auto *incoming_edges =
+                new (hnsw_index->allocator) vecsim_stl::vector<tableint>(hnsw_index->allocator);
+            unsigned int incoming_edges_len;
+            readBinaryPOD(input, incoming_edges_len);
+            for (size_t j = 0; j < incoming_edges_len; j++) {
+                tableint next_edge;
+                readBinaryPOD(input, next_edge);
+                incoming_edges->push_back(next_edge);
+            }
+            hnsw_index->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
         }
-        hnsw_index->setIncomingEdgesPtr(i, 0, (void *)set_ptr);
     }
 
 #ifdef ENABLE_PARALLELIZATION
@@ -216,16 +230,29 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
                     "Not enough memory: loadIndex failed to allocate linklist");
             input.read(hnsw_index->linkLists_[i], linkListSize);
             for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-                auto *set_ptr =
-                    new (hnsw_index->allocator) vecsim_stl::set<tableint>(hnsw_index->allocator);
-                unsigned int set_size;
-                readBinaryPOD(input, set_size);
-                for (size_t k = 0; k < set_size; k++) {
-                    tableint next_edge;
-                    readBinaryPOD(input, next_edge);
-                    set_ptr->insert(next_edge);
+                if (version == EncodingVersion_V0) {
+                    auto *incoming_edges = new (hnsw_index->allocator)
+                        vecsim_stl::set<tableint>(hnsw_index->allocator);
+                    unsigned int incoming_edges_len;
+                    readBinaryPOD(input, incoming_edges_len);
+                    for (size_t k = 0; k < incoming_edges_len; k++) {
+                        tableint next_edge;
+                        readBinaryPOD(input, next_edge);
+                        incoming_edges->insert(next_edge);
+                    }
+                    hnsw_index->setIncomingEdgesPtr(i, j, (void *)incoming_edges);
+                } else {
+                    auto *incoming_edges = new (hnsw_index->allocator)
+                        vecsim_stl::vector<tableint>(hnsw_index->allocator);
+                    unsigned int vector_len;
+                    readBinaryPOD(input, vector_len);
+                    for (size_t k = 0; k < vector_len; k++) {
+                        tableint next_edge;
+                        readBinaryPOD(input, next_edge);
+                        incoming_edges->push_back(next_edge);
+                    }
+                    hnsw_index->setIncomingEdgesPtr(i, j, (void *)incoming_edges);
                 }
-                hnsw_index->setIncomingEdgesPtr(i, j, (void *)set_ptr);
             }
         }
     }
@@ -235,22 +262,30 @@ HNSWIndexSerializer::HNSWIndexSerializer(std::shared_ptr<HierarchicalNSW<float>>
     hnsw_index = std::move(hnsw_index_); // Hold a reference of the index.
 }
 
-void HNSWIndexSerializer::saveIndex(const std::string &location) {
+void HNSWIndexSerializer::saveIndex_v1(const std::string &location) {
     std::ofstream output(location, std::ios::binary);
+    EncodingVersion version = EncodingVersion_V1;
+    output.write((char *)&version, sizeof(EncodingVersion));
     this->saveIndexFields(output);
     this->saveGraph(output);
     output.close();
 }
 
-void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<float> *s) {
+void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<float> *s,
+                                    EncodingVersion version) {
 
     std::ifstream input(location, std::ios::binary);
-    if (!input.is_open())
+    if (!input.is_open()) {
         throw std::runtime_error("Cannot open file");
-
+    }
     input.seekg(0, std::ifstream::beg);
-    this->restoreIndexFields(input, s);
-    this->restoreGraph(input);
+
+    // For version > 0, the version number is the first field that is serialized.
+    if (version != EncodingVersion_V0) {
+        readBinaryPOD(input, version);
+    }
+    this->restoreIndexFields(input, s, version);
+    this->restoreGraph(input, version);
     input.close();
 }
 
@@ -286,7 +321,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
                 auto *data = (tableint *)(ll_cur + 1);
-                std::set<tableint> s;
+                std::vector<tableint> incoming_edges;
                 for (unsigned int j = 0; j < size; j++) {
                     // Check if we found an invalid neighbor.
                     if (data[j] > hnsw_index->max_id || data[j] == i) {
@@ -294,7 +329,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                         return res;
                     }
                     inbound_connections_num[data[j]]++;
-                    s.insert(data[j]);
+                    incoming_edges.push_back(data[j]);
                     connections_checked++;
 
                     // Check if this connection is bidirectional.
@@ -309,7 +344,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                     }
                 }
                 // Check if a certain neighbor appeared more than once.
-                if (s.size() != size) {
+                if (incoming_edges.size() != size) {
                     res.valid_state = false;
                     return res;
                 }
@@ -332,7 +367,6 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
         return res;
     }
     res.valid_state = true;
-    std::cout << "HNSW index integrity OK\n";
     return res;
 }
 } // namespace hnswlib
