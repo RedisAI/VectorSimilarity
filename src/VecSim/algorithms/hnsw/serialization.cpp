@@ -82,26 +82,26 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // Save all graph layers other than layer 0: for every id of a vector in the graph,
     // store (<size>, data), where <size> is the data size, and the data is the concatenated
     // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
-    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            continue;
-        }
-        unsigned int linkListSize =
-            hnsw_index->element_levels_[i] > 0
-                ? hnsw_index->size_links_per_element_ * hnsw_index->element_levels_[i]
-                : 0;
-        writeBinaryPOD(output, linkListSize);
-        if (linkListSize)
-            output.write(hnsw_index->linkLists_[i], linkListSize);
-        for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-            auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
-            unsigned int set_size = set_ptr->size();
-            writeBinaryPOD(output, set_size);
-            for (auto id : *set_ptr) {
-                writeBinaryPOD(output, id);
-            }
-        }
-    }
+    // for (size_t i = 0; i <= hnsw_index->max_id; i++) {
+    //     if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
+    //         continue;
+    //     }
+    //     unsigned int linkListSize =
+    //         hnsw_index->element_levels_[i] > 0
+    //             ? hnsw_index->size_links_per_element_ * hnsw_index->element_levels_[i]
+    //             : 0;
+    //     writeBinaryPOD(output, linkListSize);
+    //     if (linkListSize)
+    //         output.write(hnsw_index->linkLists_[i], linkListSize);
+    //     for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
+    //         auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
+    //         unsigned int set_size = set_ptr->size();
+    //         writeBinaryPOD(output, set_size);
+    //         for (auto id : *set_ptr) {
+    //             writeBinaryPOD(output, id);
+    //         }
+    //     }
+    // }
 }
 
 void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s) {
@@ -190,43 +190,43 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    hnsw_index->linkLists_ = (char **)hnsw_index->allocator->reallocate(
-        hnsw_index->linkLists_, sizeof(void *) * hnsw_index->max_elements_);
-    hnsw_index->element_levels_ =
-        vecsim_stl::vector<size_t>(hnsw_index->max_elements_, hnsw_index->allocator);
-    hnsw_index->label_lookup_.clear();
+    // hnsw_index->linkLists_ = (char **)hnsw_index->allocator->reallocate(
+    //     hnsw_index->linkLists_, sizeof(void *) * hnsw_index->max_elements_);
+    // hnsw_index->element_levels_ =
+    //     vecsim_stl::vector<size_t>(hnsw_index->max_elements_, hnsw_index->allocator);
+    // hnsw_index->label_lookup_.clear();
 
-    for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            hnsw_index->element_levels_[i] = HNSW_INVALID_LEVEL;
-            continue;
-        }
-        hnsw_index->label_lookup_[hnsw_index->getExternalLabel(i)] = i;
-        unsigned int linkListSize;
-        readBinaryPOD(input, linkListSize);
-        if (linkListSize == 0) {
-            hnsw_index->element_levels_[i] = 0;
-            hnsw_index->linkLists_[i] = nullptr;
-        } else {
-            hnsw_index->element_levels_[i] = linkListSize / hnsw_index->size_links_per_element_;
-            hnsw_index->linkLists_[i] = (char *)hnsw_index->allocator->allocate(linkListSize);
-            if (hnsw_index->linkLists_[i] == nullptr)
-                throw std::runtime_error(
-                    "Not enough memory: loadIndex failed to allocate linklist");
-            input.read(hnsw_index->linkLists_[i], linkListSize);
-            for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-                auto *set_ptr = new vecsim_stl::set<tableint>(hnsw_index->allocator);
-                unsigned int set_size;
-                readBinaryPOD(input, set_size);
-                for (size_t k = 0; k < set_size; k++) {
-                    tableint next_edge;
-                    readBinaryPOD(input, next_edge);
-                    set_ptr->insert(next_edge);
-                }
-                hnsw_index->setIncomingEdgesPtr(i, j, (void *)set_ptr);
-            }
-        }
-    }
+    // for (size_t i = 0; i <= hnsw_index->max_id; i++) {
+    //     if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
+    //         hnsw_index->element_levels_[i] = HNSW_INVALID_LEVEL;
+    //         continue;
+    //     }
+    //     hnsw_index->label_lookup_[hnsw_index->getExternalLabel(i)] = i;
+    //     unsigned int linkListSize;
+    //     readBinaryPOD(input, linkListSize);
+    //     if (linkListSize == 0) {
+    //         hnsw_index->element_levels_[i] = 0;
+    //         hnsw_index->linkLists_[i] = nullptr;
+    //     } else {
+    //         hnsw_index->element_levels_[i] = linkListSize / hnsw_index->size_links_per_element_;
+    //         hnsw_index->linkLists_[i] = (char *)hnsw_index->allocator->allocate(linkListSize);
+    //         if (hnsw_index->linkLists_[i] == nullptr)
+    //             throw std::runtime_error(
+    //                 "Not enough memory: loadIndex failed to allocate linklist");
+    //         input.read(hnsw_index->linkLists_[i], linkListSize);
+    //         for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
+    //             auto *set_ptr = new vecsim_stl::set<tableint>(hnsw_index->allocator);
+    //             unsigned int set_size;
+    //             readBinaryPOD(input, set_size);
+    //             for (size_t k = 0; k < set_size; k++) {
+    //                 tableint next_edge;
+    //                 readBinaryPOD(input, next_edge);
+    //                 set_ptr->insert(next_edge);
+    //             }
+    //             hnsw_index->setIncomingEdgesPtr(i, j, (void *)set_ptr);
+    //         }
+    //     }
+    // }
 }
 
 HNSWIndexSerializer::HNSWIndexSerializer(std::shared_ptr<HierarchicalNSW<float>> hnsw_index_) {
@@ -270,65 +270,65 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                              .min_in_degree = HNSW_INVALID_META_DATA,
                              .max_in_degree = HNSW_INVALID_META_DATA};
 
-    // Save the current memory usage (before we use additional memory for the integrity check).
-    res.memory_usage = hnsw_index->getAllocator()->getAllocationSize();
-    size_t connections_checked = 0, double_connections = 0;
-    std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
-    size_t incoming_edges_sets_sizes = 0;
-    if (hnsw_index->max_id != HNSW_INVALID_ID) {
-        for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-            if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-                continue;
-            }
-            for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
-                linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
-                unsigned int size = hnsw_index->getListCount(ll_cur);
-                auto *data = (tableint *)(ll_cur + 1);
-                std::set<tableint> s;
-                for (unsigned int j = 0; j < size; j++) {
-                    // Check if we found an invalid neighbor.
-                    if (data[j] > hnsw_index->max_id || data[j] == i) {
-                        res.valid_state = false;
-                        return res;
-                    }
-                    inbound_connections_num[data[j]]++;
-                    s.insert(data[j]);
-                    connections_checked++;
+    // // Save the current memory usage (before we use additional memory for the integrity check).
+    // res.memory_usage = hnsw_index->getAllocator()->getAllocationSize();
+    // size_t connections_checked = 0, double_connections = 0;
+    // std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
+    // size_t incoming_edges_sets_sizes = 0;
+    // if (hnsw_index->max_id != HNSW_INVALID_ID) {
+    //     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
+    //         if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
+    //             continue;
+    //         }
+    //         for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
+    //             linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
+    //             unsigned int size = hnsw_index->getListCount(ll_cur);
+    //             auto *data = (tableint *)(ll_cur + 1);
+    //             std::set<tableint> s;
+    //             for (unsigned int j = 0; j < size; j++) {
+    //                 // Check if we found an invalid neighbor.
+    //                 if (data[j] > hnsw_index->max_id || data[j] == i) {
+    //                     res.valid_state = false;
+    //                     return res;
+    //                 }
+    //                 inbound_connections_num[data[j]]++;
+    //                 s.insert(data[j]);
+    //                 connections_checked++;
 
-                    // Check if this connection is bidirectional.
-                    linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
-                    int size_other = hnsw_index->getListCount(ll_other);
-                    auto *data_other = (tableint *)(ll_other + 1);
-                    for (int r = 0; r < size_other; r++) {
-                        if (data_other[r] == (tableint)i) {
-                            double_connections++;
-                            break;
-                        }
-                    }
-                }
-                // Check if a certain neighbor appeared more than once.
-                if (s.size() != size) {
-                    res.valid_state = false;
-                    return res;
-                }
-                incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
-            }
-        }
-    }
-    res.double_connections = double_connections;
-    res.unidirectional_connections = incoming_edges_sets_sizes;
-    res.min_in_degree =
-        !inbound_connections_num.empty()
-            ? *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
-            : 0;
-    res.max_in_degree =
-        !inbound_connections_num.empty()
-            ? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
-            : 0;
-    if (incoming_edges_sets_sizes + double_connections != connections_checked) {
-        res.valid_state = false;
-        return res;
-    }
+    //                 // Check if this connection is bidirectional.
+    //                 linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
+    //                 int size_other = hnsw_index->getListCount(ll_other);
+    //                 auto *data_other = (tableint *)(ll_other + 1);
+    //                 for (int r = 0; r < size_other; r++) {
+    //                     if (data_other[r] == (tableint)i) {
+    //                         double_connections++;
+    //                         break;
+    //                     }
+    //                 }
+    //             }
+    //             // Check if a certain neighbor appeared more than once.
+    //             if (s.size() != size) {
+    //                 res.valid_state = false;
+    //                 return res;
+    //             }
+    //             incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
+    //         }
+    //     }
+    // }
+    // res.double_connections = double_connections;
+    // res.unidirectional_connections = incoming_edges_sets_sizes;
+    // res.min_in_degree =
+    //     !inbound_connections_num.empty()
+    //         ? *std::min_element(inbound_connections_num.begin(), inbound_connections_num.end())
+    //         : 0;
+    // res.max_in_degree =
+    //     !inbound_connections_num.empty()
+    //         ? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
+    //         : 0;
+    // if (incoming_edges_sets_sizes + double_connections != connections_checked) {
+    //     res.valid_state = false;
+    //     return res;
+    // }
     res.valid_state = true;
     std::cout << "HNSW index integrity OK\n";
     return res;
