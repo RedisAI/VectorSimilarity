@@ -49,12 +49,12 @@ public:
         size_t ef_r = 500;
         reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
 
-        params = {.algo = VecSimAlgo_BF,
-                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                       .dim = dim,
-                                       .metric = VecSimMetric_Cosine,
-                                       .initialCapacity = n_vectors}};
-        bf_index = VecSimIndex_New(&params);
+        VecSimParams bf_params = {.algo = VecSimAlgo_BF,
+                                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                                       .dim = dim,
+                                                       .metric = VecSimMetric_Cosine,
+                                                       .initialCapacity = n_vectors}};
+        bf_index = VecSimIndex_New(&bf_params);
 
         // Add the same vectors to Flat index.
         for (size_t i = 0; i < n_vectors; ++i) {

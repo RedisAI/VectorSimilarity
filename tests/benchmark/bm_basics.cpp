@@ -65,24 +65,18 @@ public:
         size_t ef_r = 500;
         reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
 
-        params = {.algo = VecSimAlgo_BF,
-                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                       .dim = dim,
-                                       .metric = VecSimMetric_Cosine,
-                                       .initialCapacity = n_vectors}};
-        bf_index = VecSimIndex_New(&params);
+        VecSimParams bf_params = {.algo = VecSimAlgo_BF,
+                                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                                       .dim = dim,
+                                                       .metric = VecSimMetric_Cosine,
+                                                       .initialCapacity = n_vectors}};
+        bf_index = VecSimIndex_New(&bf_params);
 
         // Add the same vectors to Flat index.
         for (size_t i = 0; i < n_vectors; ++i) {
             char *blob =
                 reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
             VecSimIndex_AddVector(bf_index, blob, i);
-        }
-
-        // Generate random query vector before test.
-        std::uniform_real_distribution<> distrib;
-        for (size_t i = 0; i < dim; ++i) {
-            query[i] = (float)distrib(rng);
         }
     }
 
@@ -95,81 +89,111 @@ public:
 };
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
-    // Add a new single vector to the index, with the minimal unused id.
-    size_t vec_id = n_vectors;
+    // Save the first 500 vector, remove then from the index, and add a different vector in every
+    // execution.
+    size_t n_vectors_to_add = 500;
+    float *blobs[n_vectors_to_add];
+    for (size_t i = 0; i < n_vectors_to_add; i++) {
+        blobs[i] = new float[dim];
+        memcpy(blobs[i],
+               reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i),
+               dim * sizeof(float));
+        VecSimIndex_DeleteVector(hnsw_index, i);
+    }
     for (auto _ : st) {
-        VecSimIndex_AddVector(hnsw_index, query.data(), vec_id);
-        st.PauseTiming();
-        // Remove the vector, so we won't override it in the next iteration.
-        VecSimIndex_DeleteVector(hnsw_index, vec_id);
-        st.ResumeTiming();
+        size_t id = n_vectors - VecSimIndex_IndexSize(hnsw_index) - 1;
+        VecSimIndex_AddVector(hnsw_index, query.data(), id);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
-    // Remove a single vector from the index.
-    size_t vec_id = n_vectors;
+    // Remove a different vector in every execution.
     for (auto _ : st) {
         // First insert a new vector with the minimal unused id in every iteration.
-        st.PauseTiming();
-        VecSimIndex_AddVector(hnsw_index, query.data(), vec_id);
-        st.ResumeTiming();
-        VecSimIndex_DeleteVector(hnsw_index, vec_id);
+        size_t id = n_vectors - VecSimIndex_IndexSize(hnsw_index);
+        VecSimIndex_DeleteVector(hnsw_index, id);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
     for (auto _ : st) {
+        st.PauseTiming();
+        // Generate random query vector before test.
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; ++i) {
+            query[i] = (float)distrib(rng);
+        }
+        st.ResumeTiming();
         VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
     size_t k = st.range(0);
-    auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
-    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
-
-    // Measure recall:
-    auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-    size_t correct = 0;
-    while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-        auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-        auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-        while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-            auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-            if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
-                correct++;
-                break;
-            }
-        }
-        VecSimQueryResult_IteratorFree(bf_it);
-    }
-    VecSimQueryResult_IteratorFree(hnsw_it);
-    st.counters["Recall"] = (float)correct / k;
-
-    VecSimQueryResult_Free(bf_results);
-    VecSimQueryResult_Free(hnsw_results);
-
+    size_t correct = 0.0f;
+    size_t iter = 0;
     for (auto _ : st) {
+        st.PauseTiming();
+        // Generate random query vector before test.
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; ++i) {
+            query[i] = (float)distrib(rng);
+        }
+        auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
+
+        // Measure recall:
+        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+                if (VecSimQueryResult_GetId(hnsw_res_item) ==
+                    VecSimQueryResult_GetId(bf_res_item)) {
+                    correct++;
+                    break;
+                }
+            }
+            VecSimQueryResult_IteratorFree(bf_it);
+        }
+        VecSimQueryResult_IteratorFree(hnsw_it);
+
+        VecSimQueryResult_Free(bf_results);
+        VecSimQueryResult_Free(hnsw_results);
+        iter++;
+        st.ResumeTiming();
         VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
     }
+    st.counters["Recall"] = (float)correct / (k * iter);
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
-    float radius = 1.0f / 3 * (float)st.range(0);
-    auto res = VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
-    st.counters["Results number"] = (double)VecSimQueryResult_Len(res);
+    float radius = (1.0f / 100.0f) * (float)st.range(0);
+    size_t iter = 0;
+    size_t total_res = 0;
     for (auto _ : st) {
+        st.PauseTiming();
+        // Generate random query vector before test.
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; ++i) {
+            query[i] = (float)distrib(rng);
+        }
+        auto res = VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
+        total_res += VecSimQueryResult_Len(res);
+        iter++;
+        st.ResumeTiming();
         VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
     }
+    st.counters["Avg. results number"] = (double)total_res / iter;
 }
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-    ->Arg(1)
-    ->Arg(2)
-    ->Arg(3)
+    ->Arg(92)
+    ->Arg(95)
+    ->Arg(100)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);

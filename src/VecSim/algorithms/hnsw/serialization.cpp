@@ -321,7 +321,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
                 auto *data = (tableint *)(ll_cur + 1);
-                std::vector<tableint> incoming_edges;
+                std::set<tableint> s;
                 for (unsigned int j = 0; j < size; j++) {
                     // Check if we found an invalid neighbor.
                     if (data[j] > hnsw_index->max_id || data[j] == i) {
@@ -329,7 +329,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                         return res;
                     }
                     inbound_connections_num[data[j]]++;
-                    incoming_edges.push_back(data[j]);
+                    s.insert(data[j]);
                     connections_checked++;
 
                     // Check if this connection is bidirectional.
@@ -344,7 +344,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                     }
                 }
                 // Check if a certain neighbor appeared more than once.
-                if (incoming_edges.size() != size) {
+                if (s.size() != size) {
                     res.valid_state = false;
                     return res;
                 }
