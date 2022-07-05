@@ -2,7 +2,6 @@
 
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/hnsw/hnswlib.h"
-#include <memory>
 
 class HNSWIndex : public VecSimIndex {
 protected:

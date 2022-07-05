@@ -32,6 +32,286 @@ typedef size_t labeltype;
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
 
+typedef enum { INNER, LEAF } NodeRole;
+#define MAX_PER_LEAF 10
+// #include <functional>
+#include <forward_list>
+
+template <typename dist_t>
+class VPTree;
+template <typename dist_t>
+class HierarchicalNSW;
+
+template <typename dist_t>
+struct DistanceComparator {
+    const void *pivot;
+    const DISTFUNC<dist_t> dist_func;
+    const void *dfp;
+    HierarchicalNSW<dist_t> &idx;
+
+    DistanceComparator(const void *pivot, DISTFUNC<dist_t> df, void *dfp, HierarchicalNSW<dist_t> &idx)
+        : pivot(pivot), dist_func(df), dfp(dfp), idx(idx) {}
+    bool operator()(tableint a, tableint b) {
+        return dist_func(pivot, idx.getDataByInternalId(a), dfp) < dist_func(pivot, idx.getDataByInternalId(b), dfp);
+    }
+};
+
+// should be able to access data by id;
+template <typename dist_t>
+struct Node : public VecsimBaseObject {
+public:
+    NodeRole role;
+    vecsim_stl::forward_list<tableint>::iterator before_begin, back;
+    size_t size;
+    Node<dist_t> *left, *right;
+    void *pivot;
+    dist_t radius;
+
+public:
+    Node(vecsim_stl::forward_list<tableint>::iterator before,
+         vecsim_stl::forward_list<tableint>::iterator back, size_t size,
+         std::shared_ptr<VecSimAllocator> allocator);
+    ~Node();
+
+    inline vecsim_stl::forward_list<tableint>::iterator begin() { return before_begin._M_next(); }
+    inline vecsim_stl::forward_list<tableint>::iterator end() { return back._M_next(); }
+
+    void merge();
+    void split(VPTree<dist_t> &vpt);
+    void rebuild(VPTree<dist_t> &vpt);
+    inline bool has(tableint id);
+    inline bool unbalanced() const;
+};
+
+template <typename dist_t>
+Node<dist_t>::Node(vecsim_stl::forward_list<tableint>::iterator before,
+                   vecsim_stl::forward_list<tableint>::iterator back, size_t size,
+                   std::shared_ptr<VecSimAllocator> allocator)
+    : VecsimBaseObject(allocator), role(LEAF), before_begin(before), back(back), size(size),
+      left(NULL), right(NULL), pivot(NULL), radius(0) {}
+
+template <typename dist_t>
+Node<dist_t>::~Node() {
+    if (INNER == this->role) {
+        this->allocator->free_allocation(pivot);
+        delete left;
+        delete right;
+    }
+}
+
+template <typename dist_t>
+void Node<dist_t>::split(VPTree<dist_t> &vpt) {
+    assert(LEAF == this->role);
+    this->role = INNER;
+
+    // int i = (int)((double)rand() / RAND_MAX * (size()- 1));
+    // std::swap(*begin(), *(begin() + i));
+
+    // NEED TO HAVE Nth ELEMENT OF LINKED LIST
+    // auto median = begin();
+    // size_t lsize = size / 2;
+    // for (size_t i = lsize - 1; i > 0; i--) {
+    //     median++;
+    // }
+    // auto prevmed = median;
+    // median++;
+    //
+    // auto distComp = DistanceComparator(vpt.index.getDataByInternalId(*(begin())), vpt.dist_func,
+    //                                    vpt.dist_func_param_);
+    // std::nth_element(begin(), median, end, distComp);
+    auto tmp = vecsim_stl::vector<tableint>(begin(), end(), this->allocator);
+    auto distComp = DistanceComparator<dist_t>(vpt.index.getDataByInternalId(*(begin())),
+                                               vpt.dist_func, vpt.dist_func_param_, vpt.index);
+    size_t med_idx = size / 2;
+    auto med = tmp.begin() + med_idx;
+    std::nth_element(tmp.begin(), med, tmp.end(), distComp);
+    auto it = begin();
+    tableint beg_id = *it;
+    for (size_t i = 0; i < size; i++) {
+        *it = tmp[i];
+        it++;
+    }
+    auto before_median = before_begin;
+    for (size_t i = med_idx; i > 0; i--) {
+        before_median++;
+    }
+
+    auto med_data = vpt.index.getDataByInternalId(*(med));
+    auto beg_data = vpt.index.getDataByInternalId(beg_id);
+
+    radius = vpt.dist_func(beg_data, med_data, vpt.dist_func_param_);
+    pivot = this->allocator->allocate(vpt.data_size_);
+    memcpy(pivot, beg_data, vpt.data_size_);
+
+    left = new (this->allocator) Node<dist_t>(before_begin, before_median, med_idx, this->allocator);
+    right = new (this->allocator) Node<dist_t>(before_median, back, size - med_idx, this->allocator);
+}
+
+template <typename dist_t>
+void Node<dist_t>::rebuild(VPTree<dist_t> &vpt) {
+    if (size > MAX_PER_LEAF) {
+        split(vpt);
+        left->rebuild(vpt);
+        right->rebuild(vpt);
+    }
+}
+
+template <typename dist_t>
+void Node<dist_t>::merge() {
+    assert(INNER == this->role);
+    this->role = LEAF;
+    allocator->free_allocation(pivot);
+    pivot = NULL;
+
+    if (this->left) {
+        delete left;
+        left = NULL;
+    }
+    if (this->right) {
+        delete right;
+        right = NULL;
+    }
+}
+
+template <typename dist_t>
+inline bool Node<dist_t>::unbalanced() const {
+    double ratio = (double)left->size / right->size;
+    return (ratio <= 0.5) || (2 <= ratio);
+}
+
+template <typename dist_t>
+inline bool Node<dist_t>::has(tableint id) {
+    // flat search. can be upgraded to logarithmic
+    for (auto it = begin(); it != end(); ++it) {
+        if (*it == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+struct CandidatesItr {
+    vecsim_stl::forward_list<tableint>::iterator begin;
+    vecsim_stl::forward_list<tableint>::iterator end;
+    CandidatesItr(vecsim_stl::forward_list<tableint>::iterator begin,
+                  vecsim_stl::forward_list<tableint>::iterator end)
+        : begin(begin), end(end) {}
+};
+
+
+template <typename dist_t>
+class VPTree : public VecsimBaseObject {
+public:
+    Node<dist_t> *root;
+    vecsim_stl::forward_list<tableint> base;
+    DISTFUNC<dist_t> dist_func;
+    void *dist_func_param_;
+    size_t data_size_;
+    HierarchicalNSW<dist_t> &index;
+
+public:
+    VPTree(HierarchicalNSW<dist_t> &hnsw, SpaceInterface<dist_t> *s,
+           std::shared_ptr<VecSimAllocator> allocator)
+        : VecsimBaseObject(allocator),
+          root(new (this->allocator) Node<dist_t>(base.before_begin(), base.end(), 0, allocator)),
+          base(allocator), dist_func(s->get_dist_func()), dist_func_param_(s->get_data_dim()),
+          data_size_(s->get_data_size()), index(hnsw) {}
+    ~VPTree() { delete root; }
+    CandidatesItr find(const void *query, size_t batchSize) const;
+    void insert(tableint id, const void *data);
+    void remove(tableint id, const void *data);
+};
+
+// void VPTree::insert(tableint id) { root.insert(base, id, hnsw->get(id)); }
+template <typename dist_t>
+void VPTree<dist_t>::insert(tableint id, const void *data) {
+    auto curr = root;
+
+    while (curr->role != LEAF) {
+        curr->size++;
+        if (curr->unbalanced()) {
+            delete curr->left;
+            delete curr->right;
+            curr->role = LEAF;
+            base.insert_after(curr->before_begin, id);
+            curr->rebuild(*this);
+            return;
+        } else {
+            if (curr->radius < dist_func(curr->pivot, data, dist_func_param_)) {
+                curr = curr->right;
+            } else {
+                curr = curr->left;
+            }
+        }
+    }
+    curr->size++;
+    base.insert_after(curr->before_begin, id);
+    if (curr->size > MAX_PER_LEAF) {
+        curr->split(*this);
+    }
+}
+
+// assumes the id in the tree. this should be checked before calling this function.
+template <typename dist_t>
+void VPTree<dist_t>::remove(tableint id, const void *data) {
+
+    Node<dist_t> *curr = root;
+    Node<dist_t> *parent = NULL;
+
+    while (curr->role != LEAF) {
+        curr->size--;
+        if (curr->unbalanced()) {
+            // find(id)->remove(base, id);  // logarithmic search but calculates distances all the
+            // way
+            base.remove(id); // linear search but simple
+            delete curr->left;
+            delete curr->right;
+            curr->role = LEAF;
+            curr->rebuild(*this);
+            return;
+        } else {
+            parent = curr;
+            dist_t d = dist_func(curr->pivot, data, dist_func_param_);
+            if (curr->radius < d) {
+                curr = curr->right;
+            } else if (curr->radius > d) {
+                curr = curr->left;
+            } else {
+                if (curr->right->has(id)) {
+                    curr = curr->right;
+                } else {
+                    curr = curr->left;
+                }
+            }
+        }
+    }
+
+    auto prev = curr->before_begin;
+    for (auto it = curr->begin(); it != curr->end(); it++) {
+        if (*it == id) {
+            base.erase_after(prev);
+            break;
+        }
+        prev++;
+    }
+    if (parent->size < MAX_PER_LEAF) {
+        parent->merge();
+    }
+}
+
+template <typename dist_t>
+CandidatesItr VPTree<dist_t>::find(const void *query, size_t batchSize) const {
+    Node<dist_t> *curr = root;
+    while (curr->role != LEAF && curr->size > batchSize) {
+        if (curr->radius < dist_func(curr->pivot, query, dist_func_param_)) {
+            curr = curr->right;
+        } else {
+            curr = curr->left;
+        }
+    }
+    return CandidatesItr(curr->begin(), curr->end());
+}
+
 template <typename dist_t>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
 template <typename dist_t>
@@ -72,8 +352,9 @@ private:
     // Index data structures
     tableint entrypoint_node_;
     char *data_level0_memory_;
-    char **linkLists_;
-    vecsim_stl::vector<size_t> element_levels_;
+    // char **linkLists_;
+    // vecsim_stl::vector<size_t> element_levels_;
+    VPTree<dist_t> vptree;
     vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
@@ -118,8 +399,7 @@ private:
                                    dist_t lowerBound) const;
     candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
                                           size_t ef) const;
-    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(tableint ep_id,
-                                                                  const void *data_point, size_t ef,
+    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(const void *data_point, size_t ef,
                                                                   size_t k, void *timeoutCtx,
                                                                   VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
@@ -253,14 +533,16 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
 template <typename dist_t>
 vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
                                                                         size_t level) const {
+    assert(level == 0);
     if (level == 0) {
         return reinterpret_cast<vecsim_stl::set<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<vecsim_stl::set<tableint> *>(
-        *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
-                   incoming_links_offset));
+    return nullptr;
+    // return reinterpret_cast<vecsim_stl::set<tableint> *>(
+    //     *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
+    //                incoming_links_offset));
 }
 
 template <typename dist_t>
@@ -270,9 +552,9 @@ void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, size_t l
         memcpy(data_level0_memory_ + internal_id * size_data_per_element_ + incoming_links_offset0,
                &set_ptr, sizeof(void *));
     } else {
-        memcpy(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
-                   incoming_links_offset,
-               &set_ptr, sizeof(void *));
+        // memcpy(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
+        //            incoming_links_offset,
+        //        &set_ptr, sizeof(void *));
     }
 }
 
@@ -284,7 +566,8 @@ linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(tableint internal_id) co
 
 template <typename dist_t>
 linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(tableint internal_id, size_t level) const {
-    return (linklistsizeint *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_);
+    return nullptr;
+    // return (linklistsizeint *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_);
 }
 
 template <typename dist_t>
@@ -509,8 +792,8 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
         for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
             if (data[idx])
                 throw std::runtime_error("Possible memory corruption");
-            if (level > element_levels_[selectedNeighbors[idx]])
-                throw std::runtime_error("Trying to make a link on a non-existent level");
+            // if (level > element_levels_[selectedNeighbors[idx]])
+            //     throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
         auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
@@ -529,8 +812,8 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             throw std::runtime_error("Bad value of sz_link_list_other");
         if (selectedNeighbor == cur_c)
             throw std::runtime_error("Trying to connect an element to itself");
-        if (level > element_levels_[selectedNeighbor])
-            throw std::runtime_error("Trying to make a link on a non-existent level");
+        // if (level > element_levels_[selectedNeighbor])
+        //     throw std::runtime_error("Trying to make a link on a non-existent level");
 
         // get the array of neighbours - for the current neighbour
         auto *neighbor_neighbors = (tableint *)(ll_other + 1);
@@ -691,11 +974,11 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
                                          std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
-    : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
-      available_ids(allocator), label_lookup_(allocator)
+    : VecsimBaseObject(allocator), vptree(*this, s, allocator), available_ids(allocator),
+      label_lookup_(allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                    link_list_locks_(max_elements),
+          link_list_locks_(max_elements),
 #endif
 {
 
@@ -755,9 +1038,10 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     if (data_level0_memory_ == nullptr)
         throw std::runtime_error("Not enough memory");
 
-    linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
-    if (linkLists_ == nullptr)
-        throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate linklists");
+    // linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
+    // if (linkLists_ == nullptr)
+    //     throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate
+    //     linklists");
 
     // The i-th entry in linkLists array points to max_level[i] (continuous)
     // chunks of memory, each one will look like this:
@@ -776,15 +1060,15 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
             if (available_ids.find(id) != available_ids.end()) {
                 continue;
             }
-            for (size_t level = 0; level <= element_levels_[id]; level++) {
-                delete getIncomingEdgesPtr(id, level);
-            }
-            if (element_levels_[id] > 0)
-                this->allocator->free_allocation(linkLists_[id]);
+            // for (size_t level = 0; level <= element_levels_[id]; level++) {
+            delete getIncomingEdgesPtr(id, 0);
+            // }
+            // if (element_levels_[id] > 0)
+            //     this->allocator->free_allocation(linkLists_[id]);
         }
     }
 
-    this->allocator->free_allocation(linkLists_);
+    // this->allocator->free_allocation(linkLists_);
     this->allocator->free_allocation(data_level0_memory_);
 }
 
@@ -796,7 +1080,7 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     if (new_max_elements < cur_element_count)
         throw std::runtime_error(
             "Cannot resize, max element is less than the current number of elements");
-    element_levels_.resize(new_max_elements);
+        // element_levels_.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
@@ -814,11 +1098,12 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     data_level0_memory_ = data_level0_memory_new;
 
     // Reallocate all other layers
-    char **linkLists_new =
-        (char **)this->allocator->reallocate(linkLists_, sizeof(void *) * new_max_elements);
-    if (linkLists_new == nullptr)
-        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
-    linkLists_ = linkLists_new;
+    // char **linkLists_new =
+    //     (char **)this->allocator->reallocate(linkLists_, sizeof(void *) * new_max_elements);
+    // if (linkLists_new == nullptr)
+    //     throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other
+    //     layers");
+    // linkLists_ = linkLists_new;
 
     max_elements_ = new_max_elements;
 }
@@ -833,7 +1118,8 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     element_internal_id = label_lookup_[label];
 
     // go over levels and repair connections
-    size_t element_top_level = element_levels_[element_internal_id];
+    size_t element_top_level = /*element_levels_[element_internal_id]*/ 0;
+    this->vptree.remove(element_internal_id, getDataByInternalId(element_internal_id));
     for (size_t level = 0; level <= element_top_level; level++) {
         linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);
@@ -879,45 +1165,47 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     }
 
     // replace the entry point with another one, if we are deleting the current entry point.
-    if (element_internal_id == entrypoint_node_) {
-        assert(element_top_level == maxlevel_);
-        // Sets the (arbitrary) new entry point.
-        while (element_internal_id == entrypoint_node_) {
-            linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
+    // if (element_internal_id == entrypoint_node_) {
+    //     assert(element_top_level == maxlevel_);
+    //     // Sets the (arbitrary) new entry point.
+    //     while (element_internal_id == entrypoint_node_) {
+    //         linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id,
+    //         maxlevel_);
 
-            if (getListCount(top_level_list) > 0) {
-                // Tries to set the (arbitrary) first neighbor as the entry point.
-                entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
-            } else {
-                // If there is no neighbors in the current level, check for any vector at
-                // this level to be the new entry point.
-                for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
-                    if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
-                        entrypoint_node_ = cur_id;
-                        break;
-                    }
-                }
-            }
-            // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
-            // until we find a new entry point, or the index is empty.
-            if (element_internal_id == entrypoint_node_) {
-                maxlevel_--;
-                if ((int)maxlevel_ < 0) {
-                    maxlevel_ = HNSW_INVALID_LEVEL;
-                    entrypoint_node_ = HNSW_INVALID_ID;
-                }
-            }
-        }
-    }
+    //         if (getListCount(top_level_list) > 0) {
+    //             // Tries to set the (arbitrary) first neighbor as the entry point.
+    //             entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
+    //         } else {
+    //             // If there is no neighbors in the current level, check for any vector at
+    //             // this level to be the new entry point.
+    //             for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
+    //                 if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
+    //                     entrypoint_node_ = cur_id;
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //         // If we didn't find any vector at the top level, decrease the maxlevel_ and try
+    //         again,
+    //         // until we find a new entry point, or the index is empty.
+    //         if (element_internal_id == entrypoint_node_) {
+    //             maxlevel_--;
+    //             if ((int)maxlevel_ < 0) {
+    //                 maxlevel_ = HNSW_INVALID_LEVEL;
+    //                 entrypoint_node_ = HNSW_INVALID_ID;
+    //             }
+    //         }
+    //     }
+    // }
 
-    if (element_levels_[element_internal_id] > 0) {
-        this->allocator->free_allocation(linkLists_[element_internal_id]);
-    }
+    // if (element_levels_[element_internal_id] > 0) {
+    //     this->allocator->free_allocation(linkLists_[element_internal_id]);
+    // }
     // add the element id to the available ids for future reuse.
     cur_element_count--;
     label_lookup_.erase(label);
     available_ids.insert(element_internal_id);
-    element_levels_[element_internal_id] = HNSW_INVALID_LEVEL;
+    // element_levels_[element_internal_id] = HNSW_INVALID_LEVEL;
     memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
     return true;
@@ -953,13 +1241,13 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
 #endif
     // choose randomly the maximum level in which the new element will be in the index.
-    size_t element_max_level = getRandomLevel(mult_);
-    element_levels_[cur_c] = element_max_level;
+    // size_t element_max_level = getRandomLevel(mult_);
+    // element_levels_[cur_c] = element_max_level;
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> entry_point_lock(global);
 #endif
-    size_t maxlevelcopy = maxlevel_;
+    // size_t maxlevelcopy = maxlevel_;
 
 #ifdef ENABLE_PARALLELIZATION
     if (element_max_level <= maxlevelcopy)
@@ -974,81 +1262,83 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     memcpy(getExternalLabelPtr(cur_c), &label, sizeof(labeltype));
     memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 
-    if (element_max_level > 0) {
-        linkLists_[cur_c] =
-            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level + 1);
-        if (linkLists_[cur_c] == nullptr)
-            throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
-        memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level + 1);
-    }
+    // if (element_max_level > 0) {
+    //     linkLists_[cur_c] =
+    //         (char *)this->allocator->allocate(size_links_per_element_ * element_max_level + 1);
+    //     if (linkLists_[cur_c] == nullptr)
+    //         throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
+    //     memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level + 1);
+    // }
+    vptree.insert(cur_c, data_point);
 
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
-        if (element_max_level < maxlevelcopy) {
-            dist_t cur_dist =
-                fstdistfunc_(data_point, getDataByInternalId(currObj), dist_func_param_);
-            for (size_t level = maxlevelcopy; level > element_max_level; level--) {
-                // this is done for the levels which are above the max level
-                // to which we are going to insert the new element. We do
-                // a greedy search in the graph starting from the entry point
-                // at each level, and move on with the closest element we can find.
-                // When there is no improvement to do, we take a step down.
-                bool changed = true;
-                while (changed) {
-                    changed = false;
-                    unsigned int *data;
-#ifdef ENABLE_PARALLELIZATION
-                    std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
-#endif
-                    data = get_linklist(currObj, level);
-                    int size = getListCount(data);
+//         if (element_max_level < maxlevelcopy) {
+//             dist_t cur_dist =
+//                 fstdistfunc_(data_point, getDataByInternalId(currObj), dist_func_param_);
+//             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
+//                 // this is done for the levels which are above the max level
+//                 // to which we are going to insert the new element. We do
+//                 // a greedy search in the graph starting from the entry point
+//                 // at each level, and move on with the closest element we can find.
+//                 // When there is no improvement to do, we take a step down.
+//                 bool changed = true;
+//                 while (changed) {
+//                     changed = false;
+//                     unsigned int *data;
+// #ifdef ENABLE_PARALLELIZATION
+//                     std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
+// #endif
+//                     data = get_linklist(currObj, level);
+//                     int size = getListCount(data);
 
-                    auto *datal = (tableint *)(data + 1);
-                    for (int i = 0; i < size; i++) {
-                        tableint cand = datal[i];
-                        if (cand < 0 || cand > max_elements_)
-                            throw std::runtime_error(
-                                "candidate error: candidate id is out of index range");
+//                     auto *datal = (tableint *)(data + 1);
+//                     for (int i = 0; i < size; i++) {
+//                         tableint cand = datal[i];
+//                         if (cand < 0 || cand > max_elements_)
+//                             throw std::runtime_error(
+//                                 "candidate error: candidate id is out of index range");
 
-                        dist_t d =
-                            fstdistfunc_(data_point, getDataByInternalId(cand), dist_func_param_);
-                        if (d < cur_dist) {
-                            cur_dist = d;
-                            currObj = cand;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-        }
+//                         dist_t d =
+//                             fstdistfunc_(data_point, getDataByInternalId(cand), dist_func_param_);
+//                         if (d < cur_dist) {
+//                             cur_dist = d;
+//                             currObj = cand;
+//                             changed = true;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
 
-        for (size_t level = std::min(element_max_level, maxlevelcopy); (int)level >= 0; level--) {
-            if (level > maxlevelcopy || level < 0) // possible?
-                throw std::runtime_error("Level error");
+        // for (size_t level = std::min(element_max_level, maxlevelcopy); (int)level >= 0; level--) {
+        //     if (level > maxlevelcopy || level < 0) // possible?
+        //         throw std::runtime_error("Level error");
 
-            candidatesMaxHeap<dist_t> top_candidates =
-                searchLayer(currObj, data_point, level, ef_construction_);
-            currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
-        }
+        candidatesMaxHeap<dist_t> top_candidates =
+            searchLayer(currObj, data_point, 0, ef_construction_);
+        currObj = mutuallyConnectNewElement(cur_c, top_candidates, 0);
+        // }
 
         // updating the maximum level (holding a global lock)
-        if (element_max_level > maxlevelcopy) {
-            entrypoint_node_ = cur_c;
-            maxlevel_ = element_max_level;
-            // create the incoming edges set for the new levels.
-            for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-                auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
-                setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
-            }
-        }
+        // if (element_max_level > maxlevelcopy) {
+        //     entrypoint_node_ = cur_c;
+        //     maxlevel_ = element_max_level;
+        //     // create the incoming edges set for the new levels.
+        //     for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level;
+        //     level_idx++) {
+        //         auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+        //         setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
+        //     }
+        // }
     } else {
         // Do nothing for the first element
         entrypoint_node_ = 0;
-        for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
+        // for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
-            setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
-        }
-        maxlevel_ = element_max_level;
+            setIncomingEdgesPtr(cur_c, 0, incoming_edges);
+        // }
+        // maxlevel_ = element_max_level;
     }
 }
 
@@ -1094,8 +1384,8 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, vo
 
 template <typename dist_t>
 candidatesLabelsMaxHeap<dist_t>
-HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
-                                                       size_t ef, size_t k, void *timeoutCtx,
+HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(const void *data_point, size_t ef, size_t k,
+                                                       void *timeoutCtx,
                                                        VecSimQueryResult_Code *rc) const {
     candidatesLabelsMaxHeap<dist_t> results(this->allocator);
 
@@ -1106,18 +1396,28 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
+    CandidatesItr itr = vptree.find(data_point, ef);
+
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
-    dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
-    dist_t lowerBound = dist;
-    top_candidates.emplace(dist, ep_id);
-    candidate_set.emplace(-dist, ep_id);
+    for (auto it = itr.begin; it != itr.end; it++) {
+        dist_t dist = fstdistfunc_(data_point, getDataByInternalId(*it), dist_func_param_);
+        top_candidates.emplace(dist, *it);
+        candidate_set.emplace(-dist, *it);
+        this->visited_nodes_handler->tagNode(*it, visited_tag);
+    }
 
-    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+    // dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
+    // dist_t lowerBound = dist;
+    // top_candidates.emplace(dist, ep_id);
+    // candidate_set.emplace(-dist, ep_id);
+
+    // this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+    dist_t lowerBound = top_candidates.top().first;
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
+        pair<dist_t, tableint> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
@@ -1155,12 +1455,12 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
         return candidatesLabelsMaxHeap<dist_t>(this->allocator);
     }
 
-    tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
-    if (VecSim_OK != *rc) {
-        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
-    }
-    candidatesLabelsMaxHeap<dist_t> results = searchBottomLayer_WithTimeout(
-        bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, rc);
+    // tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
+    // if (VecSim_OK != *rc) {
+    //     return candidatesLabelsMaxHeap<dist_t>(this->allocator);
+    // }
+    candidatesLabelsMaxHeap<dist_t> results =
+        searchBottomLayer_WithTimeout(query_data, std::max(ef_, k), k, timeoutCtx, rc);
 
     return results;
 }

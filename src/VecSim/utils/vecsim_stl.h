@@ -5,6 +5,7 @@
 #include <set>
 #include <unordered_map>
 #include <queue>
+#include <forward_list>
 
 namespace vecsim_stl {
 
@@ -27,5 +28,8 @@ using max_priority_queue = std::priority_queue<T, Container, Compare>;
 template <typename T, typename Container = vecsim_stl::vector<T>,
           typename Compare = std::greater<typename Container::value_type>>
 using min_priority_queue = std::priority_queue<T, Container, Compare>;
+
+template <typename T>
+using forward_list = std::forward_list<T, VecsimSTLAllocator<T>>;
 
 } // namespace vecsim_stl
