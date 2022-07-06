@@ -77,13 +77,13 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
     size_t batch_size = st.range(0);
     size_t total_res_count = st.range(1);
     for (auto _ : st) {
-		st.PauseTiming();
-	    // Generate random query vector before test.
-	    std::uniform_real_distribution<> distrib;
-	    for (size_t i = 0; i < dim; ++i) {
-		    query[i] = (float)distrib(rng);
-	    }
-		st.ResumeTiming();
+        st.PauseTiming();
+        // Generate random query vector before test.
+        std::uniform_real_distribution<> distrib;
+        for (size_t i = 0; i < dim; ++i) {
+            query[i] = (float)distrib(rng);
+        }
+        st.ResumeTiming();
         VecSimBatchIterator *batchIterator =
             VecSimBatchIterator_New(bf_index, query.data(), nullptr);
         size_t res_num = 0;
@@ -112,59 +112,60 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
 
     size_t n_res = st.range(0);
     size_t total_res_num = st.range(1);
-	size_t iter = 0;
-	size_t correct = 0;
+    size_t iter = 0;
+    size_t correct = 0;
 
     for (auto _ : st) {
-		st.PauseTiming();
-	    // Generate random query vector before test.
-	    std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-	    for (size_t i = 0; i < dim; ++i) {
-		    query[i] = (float)distrib(rng);
-	    }
+        st.PauseTiming();
+        // Generate random query vector before test.
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; ++i) {
+            query[i] = (float)distrib(rng);
+        }
 
-	    st.ResumeTiming();
-		VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(hnsw_index, query.data(), nullptr);
-	    VecSimQueryResult_List accumulated_results[total_res_num];
-	    size_t batch_num = 0, res_num = 0;
-	    while (VecSimBatchIterator_HasNext(batchIterator)) {
-		    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
-		    res_num += VecSimQueryResult_Len(res);
-		    accumulated_results[batch_num++] = res;
-		    if (res_num == total_res_num) {
-			    break;
-		    }
-	    }
-	    VecSimBatchIterator_Free(batchIterator);
-	    st.PauseTiming();
+        st.ResumeTiming();
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(hnsw_index, query.data(), nullptr);
+        VecSimQueryResult_List accumulated_results[total_res_num];
+        size_t batch_num = 0, res_num = 0;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
+            res_num += VecSimQueryResult_Len(res);
+            accumulated_results[batch_num++] = res;
+            if (res_num == total_res_num) {
+                break;
+            }
+        }
+        VecSimBatchIterator_Free(batchIterator);
+        st.PauseTiming();
 
-	    // Measure recall
-	    auto bf_results =
-			    VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
-	    for (size_t i = 0; i < batch_num; i++) {
-		    auto hnsw_results = accumulated_results[i];
-		    auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-		    while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-			    auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-			    auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-			    while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-				    auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-				    if (VecSimQueryResult_GetId(hnsw_res_item) ==
-				        VecSimQueryResult_GetId(bf_res_item)) {
-					    correct++;
-					    break;
-				    }
-			    }
-			    VecSimQueryResult_IteratorFree(bf_it);
-		    }
-		    VecSimQueryResult_IteratorFree(hnsw_it);
-		    VecSimQueryResult_Free(hnsw_results);
-	    }
-	    VecSimQueryResult_Free(bf_results);
-		iter++;
-	    st.ResumeTiming();
+        // Measure recall
+        auto bf_results =
+            VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
+        for (size_t i = 0; i < batch_num; i++) {
+            auto hnsw_results = accumulated_results[i];
+            auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+            while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+                auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+                auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+                while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+                    auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+                    if (VecSimQueryResult_GetId(hnsw_res_item) ==
+                        VecSimQueryResult_GetId(bf_res_item)) {
+                        correct++;
+                        break;
+                    }
+                }
+                VecSimQueryResult_IteratorFree(bf_it);
+            }
+            VecSimQueryResult_IteratorFree(hnsw_it);
+            VecSimQueryResult_Free(hnsw_results);
+        }
+        VecSimQueryResult_Free(bf_results);
+        iter++;
+        st.ResumeTiming();
     }
-	st.counters["Intersection ratio"] = (float)correct / (total_res_num*iter);
+    st.counters["Intersection ratio"] = (float)correct / (total_res_num * iter);
 }
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, BatchedSearch_HNSW)
@@ -183,43 +184,43 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_BF)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
-	size_t k = st.range(0);
-	size_t correct = 0;
-	size_t iter = 0;
-	for (auto _ : st) {
-		st.PauseTiming();
-		// Generate random query vector before test.
-		std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-		for (size_t i = 0; i < dim; ++i) {
-			query[i] = (float)distrib(rng);
-		}
-		st.ResumeTiming();
-		auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
-		st.PauseTiming();
+    size_t k = st.range(0);
+    size_t correct = 0;
+    size_t iter = 0;
+    for (auto _ : st) {
+        st.PauseTiming();
+        // Generate random query vector before test.
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; ++i) {
+            query[i] = (float)distrib(rng);
+        }
+        st.ResumeTiming();
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
+        st.PauseTiming();
 
-		// Measure recall:
-		auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
-		auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-		while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-			auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-			auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-			while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-				auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-				if (VecSimQueryResult_GetId(hnsw_res_item) ==
-				    VecSimQueryResult_GetId(bf_res_item)) {
-					correct++;
-					break;
-				}
-			}
-			VecSimQueryResult_IteratorFree(bf_it);
-		}
-		VecSimQueryResult_IteratorFree(hnsw_it);
+        // Measure recall:
+        auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+                if (VecSimQueryResult_GetId(hnsw_res_item) ==
+                    VecSimQueryResult_GetId(bf_res_item)) {
+                    correct++;
+                    break;
+                }
+            }
+            VecSimQueryResult_IteratorFree(bf_it);
+        }
+        VecSimQueryResult_IteratorFree(hnsw_it);
 
-		VecSimQueryResult_Free(bf_results);
-		VecSimQueryResult_Free(hnsw_results);
-		iter++;
-	}
-	st.counters["Recall"] = (float)correct / (k * iter);
+        VecSimQueryResult_Free(bf_results);
+        VecSimQueryResult_Free(hnsw_results);
+        iter++;
+    }
+    st.counters["Recall"] = (float)correct / (k * iter);
 }
 
 // Register the function as a benchmark

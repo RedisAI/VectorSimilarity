@@ -348,12 +348,13 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity(EncodingVersion version) {
                     res.valid_state = false;
                     return res;
                 }
-				if (version == EncodingVersion_V0) {
-					incoming_edges_sets_sizes +=
-							reinterpret_cast<vecsim_stl::set<tableint>*>(hnsw_index->getIncomingEdgesPtr(i, l))->size();
-				} else {
-					incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
-				}
+                if (version == EncodingVersion_V0) {
+                    incoming_edges_sets_sizes += reinterpret_cast<vecsim_stl::set<tableint> *>(
+                                                     hnsw_index->getIncomingEdgesPtr(i, l))
+                                                     ->size();
+                } else {
+                    incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
+                }
             }
         }
     }

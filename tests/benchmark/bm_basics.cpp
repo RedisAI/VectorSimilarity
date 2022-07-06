@@ -139,13 +139,13 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
         for (size_t i = 0; i < dim; ++i) {
             query[i] = (float)distrib(rng);
         }
-	    st.ResumeTiming();
-	    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
-		st.PauseTiming();
+        st.ResumeTiming();
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
+        st.PauseTiming();
 
         // Measure recall:
-	    auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
-	    auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+        auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
         while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
             auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
             auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
@@ -164,9 +164,9 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
         VecSimQueryResult_Free(bf_results);
         VecSimQueryResult_Free(hnsw_results);
         iter++;
-	    st.ResumeTiming();
+        st.ResumeTiming();
     }
-	st.counters["Recall"] = (float)correct / (k * iter);
+    st.counters["Recall"] = (float)correct / (k * iter);
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
@@ -176,23 +176,23 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
     for (auto _ : st) {
         st.PauseTiming();
         // Generate random query vector before test.
-	    std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-	    for (size_t i = 0; i < dim; ++i) {
+        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+        for (size_t i = 0; i < dim; ++i) {
             query[i] = (float)distrib(rng);
         }
-	    st.ResumeTiming();
-	    auto res = VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
-	    st.PauseTiming();
-	    total_res += VecSimQueryResult_Len(res);
+        st.ResumeTiming();
+        auto res = VecSimIndex_RangeQuery(bf_index, query.data(), radius, nullptr, BY_ID);
+        st.PauseTiming();
+        total_res += VecSimQueryResult_Len(res);
         iter++;
-	    st.ResumeTiming();
+        st.ResumeTiming();
     }
     st.counters["Avg. results number"] = (double)total_res / iter;
 }
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-	// The actual radius will the given arg divided by 100, since arg must me and integer.
+    // The actual radius will the given arg divided by 100, since arg must me and integer.
     ->Arg(92)
     ->Arg(95)
     ->Arg(100)
