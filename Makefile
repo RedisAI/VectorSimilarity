@@ -236,7 +236,8 @@ _CTEST_ARGS += \
 endif
 
 unit_test:
-	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
+	export ROOT
+	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ROOT=$(ROOT) ctest $(_CTEST_ARGS)
 
 valgrind:
 	$(SHOW)$(MAKE) VG=1 build unit_test

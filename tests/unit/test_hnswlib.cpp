@@ -1126,8 +1126,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
                                                  .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    char *location = getcwd(NULL, 0);
-    auto file_name = std::string(location) + "/dump";
+	auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
     // Save and load an empty index.
     serializer.saveIndex_v1(file_name);
@@ -1205,9 +1204,65 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
 
     // Clean-up.
     remove(file_name.c_str());
-    free(location);
     VecSimIndex_Free(restored_index);
     serializer.reset();
+}
+
+// Test the previous serialization version, which is still used to load ann-benchmark datasets
+TEST_F(HNSWLibTest, hnsw_serialization_v0) {
+	size_t dim = 4;
+	size_t n = 1000;
+	size_t M = 8;
+	size_t ef = 10;
+
+	VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+			.hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+					.dim = dim,
+					.metric = VecSimMetric_L2,
+					.initialCapacity = n,
+					.M = M,
+					.efConstruction = ef,
+					.efRuntime = ef}};
+	VecSimIndex *index = VecSimIndex_New(&params);
+
+	//auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v0";
+	auto file_name = std::string("/home/alon/Code/VectorSimilarity/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v0");
+	auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+
+	for (size_t i = 0; i < n; i++) {
+		float f[dim];
+		for (size_t j = 0; j < dim; j++) {
+			f[j] = (float)i;
+		}
+		VecSimIndex_AddVector(index, (const void *)f, i);
+	}
+	// Get index info and copy it, so it will be available after the index is deleted.
+	VecSimIndexInfo info = VecSimIndex_Info(index);
+	VecSimIndex_Free(index);
+
+	// Create new index, set it into the serializer and extract the data to it using v0.
+	auto new_index = VecSimIndex_New(&params);
+	ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
+
+	auto space = reinterpret_cast<HNSWIndex *>(new_index)->getSpace().get();
+	serializer.reset(reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex());
+	serializer.loadIndex(file_name, space, EncodingVersion_V0);
+
+	// Validate that the loaded index has the same meta-data as the original pre-saved index.
+	VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
+	ASSERT_EQ(info.algo, new_info.algo);
+	ASSERT_EQ(info.hnswInfo.M, new_info.hnswInfo.M);
+	ASSERT_EQ(info.hnswInfo.efConstruction, new_info.hnswInfo.efConstruction);
+	ASSERT_EQ(info.hnswInfo.efRuntime, new_info.hnswInfo.efRuntime);
+	ASSERT_EQ(info.hnswInfo.indexSize, new_info.hnswInfo.indexSize);
+	ASSERT_EQ(info.hnswInfo.max_level, new_info.hnswInfo.max_level);
+	ASSERT_EQ(info.hnswInfo.entrypoint, new_info.hnswInfo.entrypoint);
+	ASSERT_EQ(info.hnswInfo.metric, new_info.hnswInfo.metric);
+	ASSERT_EQ(info.hnswInfo.type, new_info.hnswInfo.type);
+	ASSERT_EQ(info.hnswInfo.dim, new_info.hnswInfo.dim);
+
+	auto res = serializer.checkIntegrity(EncodingVersion_V0);
+	ASSERT_TRUE(res.valid_state);
 }
 
 TEST_F(HNSWLibTest, hnsw_get_distance) {

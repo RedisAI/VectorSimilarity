@@ -299,7 +299,7 @@ void HNSWIndexSerializer::reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>>
     hnsw_index = hnsw_index_;
 }
 
-HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
+HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity(EncodingVersion version) {
     HNSWIndexMetaData res = {.valid_state = false,
                              .memory_usage = -1,
                              .double_connections = HNSW_INVALID_META_DATA,
@@ -348,7 +348,12 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                     res.valid_state = false;
                     return res;
                 }
-                incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
+				if (version == EncodingVersion_V0) {
+					incoming_edges_sets_sizes +=
+							reinterpret_cast<vecsim_stl::set<tableint>*>(hnsw_index->getIncomingEdgesPtr(i, l))->size();
+				} else {
+					incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
+				}
             }
         }
     }

@@ -36,7 +36,7 @@ public:
     void saveIndex_v1(const std::string &location);
 
     // Check the validity of the reproduced index.
-    HNSWIndexMetaData checkIntegrity();
+    HNSWIndexMetaData checkIntegrity(EncodingVersion = EncodingVersion_V1);
 
     // Restore the index from the file in the specified location.
     void loadIndex(const std::string &location, SpaceInterface<float> *s,
