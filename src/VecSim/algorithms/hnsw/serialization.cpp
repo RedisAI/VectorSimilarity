@@ -135,7 +135,16 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterfac
     hnsw_index->dist_func_param_ = s->get_data_dim();
 
     // Restore index level generator of the top level for a new element
-    readBinaryPOD(input, hnsw_index->level_generator_);
+    if (version == EncodingVersion_V0) {
+        // The level_generator_ type is different between platforms. In linux it is unsigned long,
+        // while in MacOS for example it is a different type. Since the serialized index in v0 test
+        // was generated in linux, we're doing this conversion to adjust to other platforms.
+        unsigned long level_gen;
+        readBinaryPOD(input, level_gen);
+        hnsw_index->level_generator_ = (std::default_random_engine)level_gen;
+    } else {
+        readBinaryPOD(input, hnsw_index->level_generator_);
+    }
 
     // Restore index state
     readBinaryPOD(input, hnsw_index->cur_element_count);

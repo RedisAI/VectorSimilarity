@@ -1268,7 +1268,6 @@ TEST_F(HNSWLibTest, hnsw_serialization_v0) {
     ASSERT_EQ(info.hnswInfo.efRuntime, new_info.hnswInfo.efRuntime);
     ASSERT_EQ(info.hnswInfo.indexSize, new_info.hnswInfo.indexSize);
     ASSERT_EQ(info.hnswInfo.max_level, new_info.hnswInfo.max_level);
-    ASSERT_EQ(info.hnswInfo.entrypoint, new_info.hnswInfo.entrypoint);
     ASSERT_EQ(info.hnswInfo.metric, new_info.hnswInfo.metric);
     ASSERT_EQ(info.hnswInfo.type, new_info.hnswInfo.type);
     ASSERT_EQ(info.hnswInfo.dim, new_info.hnswInfo.dim);
