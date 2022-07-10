@@ -127,13 +127,13 @@ public:
     void saveIndex(const std::string &location) {
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-        serializer.saveIndex_v1(location);
+        serializer.saveIndex(location);
     }
-    void loadIndex(const std::string &location, hnswlib::EncodingVersion version) {
+    void loadIndex(const std::string &location) {
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
         auto space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
-        serializer.loadIndex(location, space, version);
+        serializer.loadIndex(location, space);
     }
 };
 
@@ -170,7 +170,6 @@ PYBIND11_MODULE(VecSim, m) {
         .export_values();
 
     py::enum_<hnswlib::EncodingVersion>(m, "VecSim_HNSWEncodingVersion")
-        .value("HNSWEncodingVersion_V0", hnswlib::EncodingVersion_V0)
         .value("HNSWEncodingVersion_V1", hnswlib::EncodingVersion_V1)
         .export_values();
 
@@ -225,8 +224,7 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("params"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
         .def("save_index", &PyHNSWLibIndex::saveIndex)
-        .def("load_index", &PyHNSWLibIndex::loadIndex, py::arg("location"),
-             py::arg("enc_ver") = hnswlib::EncodingVersion_V1);
+        .def("load_index", &PyHNSWLibIndex::loadIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

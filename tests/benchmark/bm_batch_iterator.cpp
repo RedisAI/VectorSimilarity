@@ -38,14 +38,13 @@ public:
         hnsw_index = VecSimIndex_New(&params);
 
         // Load pre-generated HNSW index.
-        char *location = getcwd(nullptr, 0);
+        auto location = std::string(std::string(getenv("ROOT")));
         auto file_name = std::string(location) +
                          "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-        free(location);
         size_t ef_r = 500;
         reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
 

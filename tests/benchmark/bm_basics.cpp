@@ -6,12 +6,17 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
 
+namespace benchmark {
+namespace internal {
+extern std::map<std::string, std::string> *global_context;
+}
+} // namespace benchmark
+
 static void GetHNSWIndex(VecSimIndex *hnsw_index) {
 
     // Load the index file, if it exists in the expected path.
-    char *location = getcwd(nullptr, 0);
-    auto file_name =
-        std::string(location) + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+    auto location = std::string(std::string(getenv("ROOT")));
+    auto file_name = location + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
@@ -26,7 +31,6 @@ static void GetHNSWIndex(VecSimIndex *hnsw_index) {
         std::cerr << "HNSW index file was not found in path. Exiting..." << std::endl;
         exit(1);
     }
-    free(location);
 }
 
 class BM_VecSimBasics : public benchmark::Fixture {
@@ -89,7 +93,7 @@ public:
 };
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
-    // Save the first 500 vector, remove then from the index, and add a different vector in every
+    // Save the first 500 vectors, remove then from the index, and add a different vector in every
     // execution.
     size_t n_vectors_to_add = 500;
     float *blobs[n_vectors_to_add];

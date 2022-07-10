@@ -61,6 +61,7 @@ ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
 $(shell mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
 endif
 include $(ROOT)/deps/readies/mk/main
+export ROOT
 
 #----------------------------------------------------------------------------------------------
 
@@ -236,8 +237,7 @@ _CTEST_ARGS += \
 endif
 
 unit_test:
-	export ROOT
-	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ROOT=$(ROOT) ctest $(_CTEST_ARGS)
+	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 valgrind:
 	$(SHOW)$(MAKE) VG=1 build unit_test

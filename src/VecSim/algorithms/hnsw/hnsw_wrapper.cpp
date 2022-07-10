@@ -85,8 +85,8 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of
      * requested buckets (which is the index capacity), and it is auto selected according to the
      * hashing policy and the max load factor.
-     * 2. The incoming edges that aren't bidirectional are stored in a dynamic array (std::vector)
-     * Those edges' memory *is omitted completely* from this estimation.
+     * 2. The incoming edges that aren't bidirectional are stored in a dynamic array
+     * (vecsim_stl::vector) Those edges' memory *is omitted completely* from this estimation.
      */
     return size_meta_data + size_total_data_per_element;
 }

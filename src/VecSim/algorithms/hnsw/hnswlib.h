@@ -78,10 +78,6 @@ private:
     char *data_level0_memory_;
     char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
-    // TODO: after introducing the memory reclaim upon delete, this can be removed (in upcoming
-    // serialization version), since we no longer leave "fragmentation" in the ids sequence
-    // and re-use ids.
-    vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
@@ -821,10 +817,10 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
-      available_ids(allocator), label_lookup_(max_elements, allocator)
+      label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                    link_list_locks_(max_elements),
+          link_list_locks_(max_elements),
 #endif
 {
 
