@@ -169,10 +169,6 @@ PYBIND11_MODULE(VecSim, m) {
         .value("BY_ID", BY_ID)
         .export_values();
 
-    py::enum_<hnswlib::EncodingVersion>(m, "VecSim_HNSWEncodingVersion")
-        .value("HNSWEncodingVersion_V1", hnswlib::EncodingVersion_V1)
-        .export_values();
-
     py::class_<HNSWParams>(m, "HNSWParams")
         .def(py::init())
         .def_readwrite("type", &HNSWParams::type)

@@ -6,12 +6,6 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
 
-namespace benchmark {
-namespace internal {
-extern std::map<std::string, std::string> *global_context;
-}
-} // namespace benchmark
-
 static void GetHNSWIndex(VecSimIndex *hnsw_index) {
 
     // Load the index file, if it exists in the expected path.

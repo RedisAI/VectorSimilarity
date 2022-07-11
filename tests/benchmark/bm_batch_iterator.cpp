@@ -218,6 +218,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
         VecSimQueryResult_Free(bf_results);
         VecSimQueryResult_Free(hnsw_results);
         iter++;
+        st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (k * iter);
 }

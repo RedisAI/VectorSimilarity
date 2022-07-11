@@ -231,7 +231,10 @@ void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<
     // The version number is the first field that is serialized.
     EncodingVersion version;
     readBinaryPOD(input, version);
-
+    // Only V1 is supported currently.
+    if (version != EncodingVersion_V1) {
+        throw std::runtime_error("Cannot load index: bad encoding version");
+    }
     loadIndex_v1(input, s);
     input.close();
 }

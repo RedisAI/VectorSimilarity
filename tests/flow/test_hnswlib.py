@@ -1,8 +1,4 @@
 import os
-import time
-
-import pytest
-
 from common import *
 import hnswlib
 
