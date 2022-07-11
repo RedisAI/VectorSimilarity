@@ -38,7 +38,7 @@ public:
         hnsw_index = VecSimIndex_New(&params);
 
         // Load pre-generated HNSW index.
-        auto location = std::string(std::string(getenv("ROOT")));
+        auto location = std::string(getenv("ROOT"));
         auto file_name = std::string(location) +
                          "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
         auto serializer =
