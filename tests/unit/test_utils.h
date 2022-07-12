@@ -16,3 +16,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
+
+size_t getIncomingEdgesSetNodeSize();
+
+size_t getLabelsLookupNodeSize();

@@ -21,7 +21,6 @@ void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
 
 void *VecSimAllocator::allocate(size_t size) {
     size_t *ptr = (size_t *)vecsim_malloc(size + allocation_header_size);
-
     if (ptr) {
         *this->allocated.get() += size + allocation_header_size;
         *ptr = size;

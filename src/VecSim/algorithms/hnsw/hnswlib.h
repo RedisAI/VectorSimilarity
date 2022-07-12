@@ -95,6 +95,7 @@ private:
     // Allow the following test to access the index size private member.
     friend class HNSWLibTest_preferAdHocOptimization_Test;
     friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
+    friend class AllocatorTest_testIncomingEdgesSet_Test;
 #endif
 
     HierarchicalNSW() {}                                // default constructor
@@ -513,7 +514,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::set<tableint>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
@@ -1037,7 +1038,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-                auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+                auto *incoming_edges =
+                    new (this->allocator) vecsim_stl::set<tableint>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
@@ -1045,7 +1047,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         // Do nothing for the first element
         entrypoint_node_ = 0;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+            auto *incoming_edges = new (this->allocator) vecsim_stl::set<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;
