@@ -17,6 +17,4 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
-size_t getIncomingEdgesSetNodeSize();
-
 size_t getLabelsLookupNodeSize();

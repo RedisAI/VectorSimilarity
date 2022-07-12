@@ -1067,7 +1067,7 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     array_free(rparams);
 }
 
-TEST_F(HNSWLibTest, hnsw_serialization) {
+TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1078,13 +1078,13 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
                                                  .initialCapacity = n,
+                                                 .blockSize = 1,
                                                  .M = M,
                                                  .efConstruction = ef,
                                                  .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    char *location = getcwd(NULL, 0);
-    auto file_name = std::string(location) + "/dump";
+    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
     // Save and load an empty index.
     serializer.saveIndex(file_name);
@@ -1131,19 +1131,20 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     ASSERT_TRUE(res.valid_state);
 
     // Add 1000 random vectors, override the existing ones to trigger deletions.
-    std::vector<float> data(n * dim);
+    std::vector<float> data((n + 1) * dim);
     std::mt19937 rng;
     rng.seed(47);
     std::uniform_real_distribution<> distrib;
-    for (size_t i = 0; i < n * dim; ++i) {
+    for (size_t i = 0; i < (n + 1) * dim; ++i) {
         data[i] = (float)distrib(rng);
     }
-    for (size_t i = 0; i < n; ++i) {
-        VecSimIndex_DeleteVector(new_index, i);
+    for (size_t i = 0; i < n + 1; ++i) {
         VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
     }
-    // Delete arbitrary vector to have an available id to restore.
-    VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * n));
+
+    // Delete arbitrary vector (trigger removal of a block).
+    VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * (n + 1)));
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Persist index, delete it from memory and restore.
     serializer.saveIndex(file_name);
@@ -1156,13 +1157,12 @@ TEST_F(HNSWLibTest, hnsw_serialization) {
     space = reinterpret_cast<HNSWIndex *>(restored_index)->getSpace().get();
     serializer.reset(reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex());
     serializer.loadIndex(file_name, space);
-    ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n - 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
     res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 
     // Clean-up.
     remove(file_name.c_str());
-    free(location);
     VecSimIndex_Free(restored_index);
     serializer.reset();
 }

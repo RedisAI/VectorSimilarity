@@ -153,15 +153,6 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
     }
 }
 
-size_t getIncomingEdgesSetNodeSize() {
-	std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-	auto dummy_set = vecsim_stl::set<unsigned int>(allocator);
-	size_t memory_before = allocator->getAllocationSize();
-	dummy_set.insert(1); // Insert a dummy element.
-	size_t memory_after = allocator->getAllocationSize();
-	return memory_after - memory_before;
-}
-
 size_t getLabelsLookupNodeSize() {
 	std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 	auto dummy_lookup = vecsim_stl::unordered_map<size_t, unsigned int>(1, allocator);
