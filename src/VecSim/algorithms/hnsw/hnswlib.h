@@ -66,6 +66,10 @@ private:
 
     // Index state
     size_t cur_element_count;
+    // TODO: after introducing the memory reclaim upon delete, max_id is redundant since the valid
+    // internal ids are being kept as a continuous sequence [0, 1, ..,, cur_element_count-1].
+    // We can remove this field completely if we change the serialization version, as the decoding
+    // relies on this field.
     tableint max_id;
     size_t maxlevel_;
 
@@ -74,7 +78,6 @@ private:
     char *data_level0_memory_;
     char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
-    vecsim_stl::set<tableint> available_ids;
     vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
@@ -95,6 +98,9 @@ private:
     // Allow the following test to access the index size private member.
     friend class HNSWLibTest_preferAdHocOptimization_Test;
     friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
+    friend class AllocatorTest_testIncomingEdgesSet_Test;
+    friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
+    friend class HNSWLibTest_testSizeEstimation_Test;
 #endif
 
     HierarchicalNSW() {}                                // default constructor
@@ -102,14 +108,14 @@ private:
     void setExternalLabel(tableint internal_id, labeltype label);
     labeltype *getExternalLabelPtr(tableint internal_id) const;
     size_t getRandomLevel(double reverse_size);
-    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
+    vecsim_stl::vector<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
     void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
     linklistsizeint *get_linklist0(tableint internal_id) const;
     linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
-                          const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
+                          const vecsim_stl::vector<bool> &bitmap, tableint *removed_links,
                           size_t *removed_links_num);
     inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
                                    size_t ef, tag_t visited_tag,
@@ -127,7 +133,10 @@ private:
                                        size_t level);
     void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
                                       tableint *neighbours_list,
-                                      tableint *neighbour_neighbours_list, size_t level);
+                                      tableint *neighbour_neighbours_list, size_t level,
+                                      vecsim_stl::vector<bool> &neighbours_bitmap);
+    void replaceEntryPoint(tableint element_internal_id);
+    void SwapLastIdWithDeletedId(tableint element_internal_id, tableint last_element_internal_id);
 
 public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
@@ -251,14 +260,14 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
 }
 
 template <typename dist_t>
-vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
-                                                                        size_t level) const {
+vecsim_stl::vector<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
+                                                                           size_t level) const {
     if (level == 0) {
-        return reinterpret_cast<vecsim_stl::set<tableint> *>(
+        return reinterpret_cast<vecsim_stl::vector<tableint> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<vecsim_stl::set<tableint> *>(
+    return reinterpret_cast<vecsim_stl::vector<tableint> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset));
 }
@@ -320,7 +329,7 @@ template <typename dist_t>
 void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
                                                candidatesMaxHeap<dist_t> candidates, size_t Mcurmax,
                                                tableint *node_neighbors,
-                                               const vecsim_stl::set<tableint> &orig_neighbors,
+                                               const vecsim_stl::vector<bool> &neighbors_bitmap,
                                                tableint *removed_links, size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
@@ -334,7 +343,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 
     while (orig_candidates.size() > 0) {
         if (orig_candidates.top().second != candidates.top().second) {
-            if (orig_neighbors.find(orig_candidates.top().second) != orig_neighbors.end()) {
+            if (neighbors_bitmap[orig_candidates.top().second]) {
                 removed_links[removed_idx++] = orig_candidates.top().second;
             }
             orig_candidates.pop();
@@ -513,11 +522,12 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<tableint>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
     // go over the selected neighbours - selectedNeighbor is the neighbour id
+    vecsim_stl::vector<bool> neighbors_bitmap(allocator);
     for (tableint selectedNeighbor : selectedNeighbors) {
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
@@ -542,24 +552,25 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
             candidatesMaxHeap<dist_t> candidates(this->allocator);
-            vecsim_stl::set<tableint> orig_neighbors_set(this->allocator);
+            // (re)use the bitmap to represent the set of the original neighbours for the current
+            // selected neighbour.
+            neighbors_bitmap.assign(max_id + 1, false);
             dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c),
                                         getDataByInternalId(selectedNeighbor), dist_func_param_);
             candidates.emplace(d_max, cur_c);
             // consider cur_c as if it was a link of the selected neighbor
-            orig_neighbors_set.insert(cur_c);
-
+            neighbors_bitmap[cur_c] = true;
             for (size_t j = 0; j < sz_link_list_other; j++) {
                 candidates.emplace(fstdistfunc_(getDataByInternalId(neighbor_neighbors[j]),
                                                 getDataByInternalId(selectedNeighbor),
                                                 dist_func_param_),
                                    neighbor_neighbors[j]);
-                orig_neighbors_set.insert(neighbor_neighbors[j]);
+                neighbors_bitmap[neighbor_neighbors[j]] = true;
             }
 
             tableint removed_links[sz_link_list_other + 1];
             size_t removed_links_num;
-            removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, orig_neighbors_set,
+            removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, neighbors_bitmap,
                              removed_links, &removed_links_num);
 
             // remove the current neighbor from the incoming list of nodes for the
@@ -571,7 +582,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
-                    neighbour_incoming_edges->insert(cur_c);
+                    neighbour_incoming_edges->push_back(cur_c);
                     continue;
                 }
 
@@ -581,10 +592,12 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 // otherwise, the edge turned from bidirectional to
                 // uni-directional, so we insert it to the neighbour's
                 // incoming edges set.
-                if (node_incoming_edges->find(selectedNeighbor) != node_incoming_edges->end()) {
-                    node_incoming_edges->erase(selectedNeighbor);
+                auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(),
+                                    selectedNeighbor);
+                if (it != node_incoming_edges->end()) {
+                    node_incoming_edges->erase(it);
                 } else {
-                    neighbour_incoming_edges->insert(node_id);
+                    neighbour_incoming_edges->push_back(node_id);
                 }
             }
         }
@@ -593,15 +606,13 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_internal_id,
-                                                           tableint neighbour_id,
-                                                           tableint *neighbours_list,
-                                                           tableint *neighbour_neighbours_list,
-                                                           size_t level) {
+void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
+    tableint element_internal_id, tableint neighbour_id, tableint *neighbours_list,
+    tableint *neighbour_neighbours_list, size_t level,
+    vecsim_stl::vector<bool> &neighbours_bitmap) {
 
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<dist_t> candidates(this->allocator);
-    vecsim_stl::set<tableint> candidates_set(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (tableint *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
@@ -612,18 +623,17 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
         candidates.emplace(fstdistfunc_(getDataByInternalId(neighbours[j]),
                                         getDataByInternalId(neighbour_id), dist_func_param_),
                            neighbours[j]);
-        candidates_set.insert(neighbours[j]);
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
-    vecsim_stl::set<tableint> neighbour_orig_neighbours_set(this->allocator);
+    vecsim_stl::vector<bool> neighbour_orig_neighbours_set(max_id + 1, false, this->allocator);
     unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
     auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
     for (size_t j = 0; j < neighbour_neighbours_count; j++) {
-        neighbour_orig_neighbours_set.insert(neighbour_neighbours[j]);
+        neighbour_orig_neighbours_set[neighbour_neighbours[j]] = true;
         // Don't add the removed element to the candidates, nor nodes that are already in the
         // candidates set.
-        if (candidates_set.find(neighbour_neighbours[j]) != candidates_set.end() ||
+        if (neighbours_bitmap[neighbour_neighbours[j]] ||
             neighbour_neighbours[j] == element_internal_id) {
             continue;
         }
@@ -652,10 +662,11 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
         // we should remove it from the node's incoming edges.
         // otherwise, edge turned from bidirectional to one directional,
         // and it should be saved in the neighbor's incoming edges.
-        if (node_incoming_edges->find(neighbour_id) != node_incoming_edges->end()) {
-            node_incoming_edges->erase(neighbour_id);
+        auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), neighbour_id);
+        if (it != node_incoming_edges->end()) {
+            node_incoming_edges->erase(it);
         } else {
-            neighbour_incoming_edges->insert(node_id);
+            neighbour_incoming_edges->push_back(node_id);
         }
     }
 
@@ -663,7 +674,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
     unsigned short updated_links_num = getListCount(neighbour_neighbours_list);
     for (size_t i = 0; i < updated_links_num; i++) {
         tableint node_id = neighbour_neighbours[i];
-        if (neighbour_orig_neighbours_set.find(node_id) == neighbour_orig_neighbours_set.end()) {
+        if (!neighbour_orig_neighbours_set[node_id]) {
             auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
             // if the node has an edge to the neighbour as well, remove it
             // from the incoming nodes of the neighbour
@@ -674,15 +685,129 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(node_id);
+                    neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
+                                                              neighbour_incoming_edges->end(),
+                                                              node_id));
                     bidirectional_edge = true;
                     break;
                 }
             }
             if (!bidirectional_edge) {
-                node_incoming_edges->insert(neighbour_id);
+                node_incoming_edges->push_back(neighbour_id);
             }
         }
+    }
+}
+
+template <typename dist_t>
+void HierarchicalNSW<dist_t>::replaceEntryPoint(tableint element_internal_id) {
+    // Sets an (arbitrary) new entry point, after deleting the current entry point.
+    while (element_internal_id == entrypoint_node_) {
+        linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
+        if (getListCount(top_level_list) > 0) {
+            // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
+            entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
+        } else {
+            // If there is no neighbors in the current level, check for any vector at
+            // this level to be the new entry point.
+            for (tableint cur_id = 0; cur_id < cur_element_count; cur_id++) {
+                if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
+                    entrypoint_node_ = cur_id;
+                    break;
+                }
+            }
+        }
+        // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
+        // until we find a new entry point, or the index is empty.
+        if (element_internal_id == entrypoint_node_) {
+            maxlevel_--;
+            if ((int)maxlevel_ < 0) {
+                maxlevel_ = HNSW_INVALID_LEVEL;
+                entrypoint_node_ = HNSW_INVALID_ID;
+            }
+        }
+    }
+}
+
+template <typename dist_t>
+void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_id,
+                                                      tableint last_element_internal_id) {
+    // swap label
+    labeltype last_element_label = getExternalLabel(last_element_internal_id);
+    label_lookup_[last_element_label] = element_internal_id;
+
+    // swap neighbours
+    size_t last_element_top_level = element_levels_[last_element_internal_id];
+    for (size_t level = 0; level <= last_element_top_level; level++) {
+        linklistsizeint *neighbours_list = get_linklist_at_level(last_element_internal_id, level);
+        unsigned short neighbours_count = getListCount(neighbours_list);
+        auto *neighbours = (tableint *)(neighbours_list + 1);
+
+        // go over the neighbours that also points back to the last element whose is going to
+        // change, and update the id.
+        for (size_t i = 0; i < neighbours_count; i++) {
+            tableint neighbour_id = neighbours[i];
+            linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
+            unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
+
+            auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+            bool bidirectional_edge = false;
+            for (size_t j = 0; j < neighbour_neighbours_count; j++) {
+                // if the edge is bidirectional, update for this neighbor
+                if (neighbour_neighbours[j] == last_element_internal_id) {
+                    bidirectional_edge = true;
+                    neighbour_neighbours[j] = element_internal_id;
+                    break;
+                }
+            }
+
+            // if this edge is uni-directional, we should update the id in the neighbor's
+            // incoming edges.
+            if (!bidirectional_edge) {
+                auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+                auto it = std::find(neighbour_incoming_edges->begin(),
+                                    neighbour_incoming_edges->end(), last_element_internal_id);
+                neighbour_incoming_edges->erase(it);
+                neighbour_incoming_edges->push_back(element_internal_id);
+            }
+        }
+
+        // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
+        // updates.
+        auto *incoming_edges = getIncomingEdgesPtr(last_element_internal_id, level);
+        for (auto incoming_edge : *incoming_edges) {
+            linklistsizeint *incoming_neighbour_neighbours_list =
+                get_linklist_at_level(incoming_edge, level);
+            unsigned short incoming_neighbour_neighbours_count =
+                getListCount(incoming_neighbour_neighbours_list);
+            auto *incoming_neighbour_neighbours =
+                (tableint *)(incoming_neighbour_neighbours_list + 1);
+            for (size_t j = 0; j < incoming_neighbour_neighbours_count; j++) {
+                if (incoming_neighbour_neighbours[j] == last_element_internal_id) {
+                    incoming_neighbour_neighbours[j] = element_internal_id;
+                    break;
+                }
+            }
+        }
+    }
+
+    // swap the last_id level 0 data, and invalidate the deleted id's data
+    memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
+           data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
+           size_data_per_element_);
+    memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
+           0, size_data_per_element_);
+
+    // swap pointer of higher levels links
+    linkLists_[element_internal_id] = linkLists_[last_element_internal_id];
+    linkLists_[last_element_internal_id] = nullptr;
+
+    // swap top element level
+    element_levels_[element_internal_id] = element_levels_[last_element_internal_id];
+    element_levels_[last_element_internal_id] = HNSW_INVALID_LEVEL;
+
+    if (last_element_internal_id == this->entrypoint_node_) {
+        this->entrypoint_node_ = element_internal_id;
     }
 }
 
@@ -692,10 +817,10 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
-      available_ids(allocator), label_lookup_(allocator)
+      label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                    link_list_locks_(max_elements),
+          link_list_locks_(max_elements),
 #endif
 {
 
@@ -773,9 +898,6 @@ template <typename dist_t>
 HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     if (max_id != HNSW_INVALID_ID) {
         for (tableint id = 0; id <= max_id; id++) {
-            if (available_ids.find(id) != available_ids.end()) {
-                continue;
-            }
             for (size_t level = 0; level <= element_levels_[id]; level++) {
                 delete getIncomingEdgesPtr(id, level);
             }
@@ -793,10 +915,9 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
  */
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
-    if (new_max_elements < cur_element_count)
-        throw std::runtime_error(
-            "Cannot resize, max element is less than the current number of elements");
     element_levels_.resize(new_max_elements);
+    element_levels_.shrink_to_fit();
+    label_lookup_.reserve(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
@@ -826,11 +947,11 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
 template <typename dist_t>
 bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // check that the label actually exists in the graph, and update the number of elements.
-    tableint element_internal_id;
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return true;
     }
-    element_internal_id = label_lookup_[label];
+    tableint element_internal_id = label_lookup_[label];
+    vecsim_stl::vector<bool> neighbours_bitmap(allocator);
 
     // go over levels and repair connections
     size_t element_top_level = element_levels_[element_internal_id];
@@ -838,7 +959,12 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);
         auto *neighbours = (tableint *)(neighbours_list + 1);
-
+        // reset the neighbours' bitmap for the current level.
+        neighbours_bitmap.assign(max_id + 1, false);
+        // store the deleted element's neighbours set in a bitmap for fast access.
+        for (size_t j = 0; j < neighbours_count; j++) {
+            neighbours_bitmap[neighbours[j]] = true;
+        }
         // go over the neighbours that also points back to the removed point and make a local
         // repair.
         for (size_t i = 0; i < neighbours_count; i++) {
@@ -853,7 +979,8 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
                 if (neighbour_neighbours[j] == element_internal_id) {
                     bidirectional_edge = true;
                     repairConnectionsForDeletion(element_internal_id, neighbour_id, neighbours_list,
-                                                 neighbour_neighbours_list, level);
+                                                 neighbour_neighbours_list, level,
+                                                 neighbours_bitmap);
                     break;
                 }
             }
@@ -862,7 +989,9 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->erase(element_internal_id);
+                neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
+                                                          neighbour_incoming_edges->end(),
+                                                          element_internal_id));
             }
         }
 
@@ -873,7 +1002,7 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             linklistsizeint *incoming_node_neighbours_list =
                 get_linklist_at_level(incoming_edge, level);
             repairConnectionsForDeletion(element_internal_id, incoming_edge, neighbours_list,
-                                         incoming_node_neighbours_list, level);
+                                         incoming_node_neighbours_list, level, neighbours_bitmap);
         }
         delete incoming_edges;
     }
@@ -881,52 +1010,32 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // replace the entry point with another one, if we are deleting the current entry point.
     if (element_internal_id == entrypoint_node_) {
         assert(element_top_level == maxlevel_);
-        // Sets the (arbitrary) new entry point.
-        while (element_internal_id == entrypoint_node_) {
-            linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
-
-            if (getListCount(top_level_list) > 0) {
-                // Tries to set the (arbitrary) first neighbor as the entry point.
-                entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
-            } else {
-                // If there is no neighbors in the current level, check for any vector at
-                // this level to be the new entry point.
-                for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
-                    if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
-                        entrypoint_node_ = cur_id;
-                        break;
-                    }
-                }
-            }
-            // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
-            // until we find a new entry point, or the index is empty.
-            if (element_internal_id == entrypoint_node_) {
-                maxlevel_--;
-                if ((int)maxlevel_ < 0) {
-                    maxlevel_ = HNSW_INVALID_LEVEL;
-                    entrypoint_node_ = HNSW_INVALID_ID;
-                }
-            }
-        }
+        replaceEntryPoint(element_internal_id);
     }
 
+    // Swap the last id with the deleted one, and invalidate the last id data.
+    tableint last_element_internal_id = --cur_element_count;
+    --max_id;
+    label_lookup_.erase(label);
     if (element_levels_[element_internal_id] > 0) {
         this->allocator->free_allocation(linkLists_[element_internal_id]);
+        linkLists_[element_internal_id] = nullptr;
     }
-    // add the element id to the available ids for future reuse.
-    cur_element_count--;
-    label_lookup_.erase(label);
-    available_ids.insert(element_internal_id);
-    element_levels_[element_internal_id] = HNSW_INVALID_LEVEL;
-    memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
-           size_data_per_element_);
+    if (last_element_internal_id == element_internal_id) {
+        // we're deleting the last internal id, just invalidate data without swapping.
+        memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ +
+                   offsetLevel0_,
+               0, size_data_per_element_);
+    } else {
+        SwapLastIdWithDeletedId(element_internal_id, last_element_internal_id);
+    }
     return true;
 }
 
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype label) {
 
-    tableint cur_c = 0;
+    tableint cur_c;
 
     {
 #ifdef ENABLE_PARALLELIZATION
@@ -939,14 +1048,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         if (cur_element_count >= max_elements_) {
             throw std::runtime_error("The number of elements exceeds the specified limit");
         }
-        if (available_ids.empty()) {
-            cur_c = cur_element_count;
-            max_id = cur_element_count;
-        } else {
-            cur_c = *available_ids.begin();
-            available_ids.erase(available_ids.begin());
-        }
-        cur_element_count++;
+        cur_c = max_id = cur_element_count++;
         label_lookup_[label] = cur_c;
     }
 #ifdef ENABLE_PARALLELIZATION
@@ -1037,7 +1139,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-                auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+                auto *incoming_edges =
+                    new (this->allocator) vecsim_stl::vector<tableint>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
@@ -1045,7 +1148,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         // Do nothing for the first element
         entrypoint_node_ = 0;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+            auto *incoming_edges =
+                new (this->allocator) vecsim_stl::vector<tableint>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;

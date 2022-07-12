@@ -1,6 +1,8 @@
 #include "test_utils.h"
 #include "gtest/gtest.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/utils/vecsim_stl.h"
 
 /*
  * helper function to run Top K search and iterate over the results. ResCB is a callback that takes
@@ -149,4 +151,13 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             ASSERT_TRUE(false);
         }
     }
+}
+
+size_t getLabelsLookupNodeSize() {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    auto dummy_lookup = vecsim_stl::unordered_map<size_t, unsigned int>(1, allocator);
+    size_t memory_before = allocator->getAllocationSize();
+    dummy_lookup.insert({1, 1}); // Insert a dummy {key, value} element pair.
+    size_t memory_after = allocator->getAllocationSize();
+    return memory_after - memory_before;
 }
