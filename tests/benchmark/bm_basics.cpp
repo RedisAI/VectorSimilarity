@@ -167,7 +167,6 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
     st.counters["Recall"] = (float)correct / (k * iter);
 }
 
-
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
 
