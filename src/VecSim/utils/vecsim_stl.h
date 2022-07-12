@@ -8,12 +8,20 @@
 
 namespace vecsim_stl {
 
-template <typename T>
-using vector = std::vector<T, VecsimSTLAllocator<T>>;
-
 template <typename K, typename V>
 using unordered_map = std::unordered_map<K, V, std::hash<K>, std::equal_to<K>,
                                          VecsimSTLAllocator<std::pair<const K, V>>>;
+
+template <typename T>
+class vector : public VecsimBaseObject, public std::vector<T, VecsimSTLAllocator<T>> {
+public:
+    explicit vector(const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(alloc) {}
+    explicit vector(size_t cap, const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, alloc) {}
+    explicit vector(size_t cap, T val, const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, val, alloc) {}
+};
 
 // max-heap
 template <typename T, typename Container = vecsim_stl::vector<T>,

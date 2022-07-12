@@ -51,12 +51,6 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
     writeBinaryPOD(output, hnsw_index->max_id);
     writeBinaryPOD(output, hnsw_index->maxlevel_);
     writeBinaryPOD(output, hnsw_index->entrypoint_node_);
-
-    // Save the available ids for reuse
-    writeBinaryPOD(output, hnsw_index->available_ids.size());
-    for (auto available_id : hnsw_index->available_ids) {
-        writeBinaryPOD(output, available_id);
-    }
 }
 
 void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
@@ -68,13 +62,10 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     }
     // Save the incoming edge sets.
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            continue;
-        }
-        auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, 0);
-        unsigned int set_size = set_ptr->size();
+        auto *incoming_edges_ptr = hnsw_index->getIncomingEdgesPtr(i, 0);
+        unsigned int set_size = incoming_edges_ptr->size();
         writeBinaryPOD(output, set_size);
-        for (auto id : *set_ptr) {
+        for (auto id : *incoming_edges_ptr) {
             writeBinaryPOD(output, id);
         }
     }
@@ -83,9 +74,6 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // store (<size>, data), where <size> is the data size, and the data is the concatenated
     // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            continue;
-        }
         unsigned int linkListSize =
             hnsw_index->element_levels_[i] > 0
                 ? hnsw_index->size_links_per_element_ * hnsw_index->element_levels_[i]
@@ -94,14 +82,19 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
         if (linkListSize)
             output.write(hnsw_index->linkLists_[i], linkListSize);
         for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-            auto *set_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
-            unsigned int set_size = set_ptr->size();
+            auto *incoming_edges_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
+            unsigned int set_size = incoming_edges_ptr->size();
             writeBinaryPOD(output, set_size);
-            for (auto id : *set_ptr) {
+            for (auto id : *incoming_edges_ptr) {
                 writeBinaryPOD(output, id);
             }
         }
     }
+}
+
+void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input, SpaceInterface<float> *s) {
+    this->restoreIndexFields(input, s);
+    this->restoreGraph(input);
 }
 
 void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s) {
@@ -141,16 +134,6 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterfac
     readBinaryPOD(input, hnsw_index->max_id);
     readBinaryPOD(input, hnsw_index->maxlevel_);
     readBinaryPOD(input, hnsw_index->entrypoint_node_);
-
-    // Restore the available ids
-    hnsw_index->available_ids.clear();
-    size_t available_ids_count;
-    readBinaryPOD(input, available_ids_count);
-    for (size_t i = 0; i < available_ids_count; i++) {
-        tableint next_id;
-        readBinaryPOD(input, next_id);
-        hnsw_index->available_ids.insert(next_id);
-    }
 }
 
 void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
@@ -164,19 +147,16 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         return; // Index is empty.
     }
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            continue;
-        }
-        auto *set_ptr =
-            new (hnsw_index->allocator) vecsim_stl::set<tableint>(hnsw_index->allocator);
-        unsigned int set_size;
-        readBinaryPOD(input, set_size);
-        for (size_t j = 0; j < set_size; j++) {
+        auto *incoming_edges =
+            new (hnsw_index->allocator) vecsim_stl::vector<tableint>(hnsw_index->allocator);
+        unsigned int incoming_edges_len;
+        readBinaryPOD(input, incoming_edges_len);
+        for (size_t j = 0; j < incoming_edges_len; j++) {
             tableint next_edge;
             readBinaryPOD(input, next_edge);
-            set_ptr->insert(next_edge);
+            incoming_edges->push_back(next_edge);
         }
-        hnsw_index->setIncomingEdgesPtr(i, 0, (void *)set_ptr);
+        hnsw_index->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
     }
 
 #ifdef ENABLE_PARALLELIZATION
@@ -198,10 +178,6 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     hnsw_index->label_lookup_.clear();
 
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-            hnsw_index->element_levels_[i] = HNSW_INVALID_LEVEL;
-            continue;
-        }
         hnsw_index->label_lookup_[hnsw_index->getExternalLabel(i)] = i;
         unsigned int linkListSize;
         readBinaryPOD(input, linkListSize);
@@ -216,16 +192,16 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
                     "Not enough memory: loadIndex failed to allocate linklist");
             input.read(hnsw_index->linkLists_[i], linkListSize);
             for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
-                auto *set_ptr =
-                    new (hnsw_index->allocator) vecsim_stl::set<tableint>(hnsw_index->allocator);
-                unsigned int set_size;
-                readBinaryPOD(input, set_size);
-                for (size_t k = 0; k < set_size; k++) {
+                auto *incoming_edges =
+                    new (hnsw_index->allocator) vecsim_stl::vector<tableint>(hnsw_index->allocator);
+                unsigned int vector_len;
+                readBinaryPOD(input, vector_len);
+                for (size_t k = 0; k < vector_len; k++) {
                     tableint next_edge;
                     readBinaryPOD(input, next_edge);
-                    set_ptr->insert(next_edge);
+                    incoming_edges->push_back(next_edge);
                 }
-                hnsw_index->setIncomingEdgesPtr(i, j, (void *)set_ptr);
+                hnsw_index->setIncomingEdgesPtr(i, j, (void *)incoming_edges);
             }
         }
     }
@@ -237,6 +213,8 @@ HNSWIndexSerializer::HNSWIndexSerializer(std::shared_ptr<HierarchicalNSW<float>>
 
 void HNSWIndexSerializer::saveIndex(const std::string &location) {
     std::ofstream output(location, std::ios::binary);
+    EncodingVersion version = EncodingVersion_V1;
+    output.write((char *)&version, sizeof(EncodingVersion));
     this->saveIndexFields(output);
     this->saveGraph(output);
     output.close();
@@ -245,12 +223,19 @@ void HNSWIndexSerializer::saveIndex(const std::string &location) {
 void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<float> *s) {
 
     std::ifstream input(location, std::ios::binary);
-    if (!input.is_open())
+    if (!input.is_open()) {
         throw std::runtime_error("Cannot open file");
-
+    }
     input.seekg(0, std::ifstream::beg);
-    this->restoreIndexFields(input, s);
-    this->restoreGraph(input);
+
+    // The version number is the first field that is serialized.
+    EncodingVersion version;
+    readBinaryPOD(input, version);
+    // Only V1 is supported currently.
+    if (version != EncodingVersion_V1) {
+        throw std::runtime_error("Cannot load index: bad encoding version");
+    }
+    loadIndex_v1(input, s);
     input.close();
 }
 
@@ -279,9 +264,6 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     size_t incoming_edges_sets_sizes = 0;
     if (hnsw_index->max_id != HNSW_INVALID_ID) {
         for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-            if (hnsw_index->available_ids.find(i) != hnsw_index->available_ids.end()) {
-                continue;
-            }
             for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
@@ -332,7 +314,6 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
         return res;
     }
     res.valid_state = true;
-    std::cout << "HNSW index integrity OK\n";
     return res;
 }
 } // namespace hnswlib
