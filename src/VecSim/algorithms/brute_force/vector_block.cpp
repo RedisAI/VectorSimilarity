@@ -30,4 +30,5 @@ void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *ve
     // Copy vector data and update block size.
     memcpy(this->vectors + (this->length * this->dim), vectorData, this->dim * sizeof(float));
     this->length++;
+	printf("haw");
 }
