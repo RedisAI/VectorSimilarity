@@ -47,10 +47,10 @@ def test_sanity_hnswlib_index_L2():
 
 def test_sanity_hnswlib_index_cosine():
     dim = 16
-    num_elements = 10000
+    num_elements = 100000
     space = 'cosine'
     M=16
-    efConstruction = 100
+    efConstruction = 200
 
     efRuntime = 10
 
@@ -80,10 +80,24 @@ def test_sanity_hnswlib_index_cosine():
         p.add_items(vector, i)
 
     query_data = np.float32(np.random.random((1, dim)))
-    hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
-    redis_labels, redis_distances = index.knn_query(query_data, 10)
-    assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
-    assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
+    # x = input('a for hnswlib\nb for vecsim\n')
+    x = 'ab'
+    r = 1000000
+    if 'a' in x:
+        s = time.time()
+        for i in range(r):
+            hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
+        e = time.time()
+        print(r/(e-s))
+    if 'b' in x:
+        s = time.time()
+        for i in range(r):
+            redis_labels, redis_distances = index.knn_query(query_data, 10)
+        e = time.time()
+        print(r/(e-s))
+    # assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
+    # assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
+test_sanity_hnswlib_index_cosine()
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not

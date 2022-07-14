@@ -118,7 +118,7 @@ private:
                           const vecsim_stl::vector<bool> &bitmap, tableint *removed_links,
                           size_t *removed_links_num);
     inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
-                                   size_t ef, tag_t visited_tag,
+                                   size_t ef, tag_t visited_tag, tag_t *elements_tags,
                                    candidatesMaxHeap<dist_t> &top_candidates,
                                    candidatesMaxHeap<dist_t> &candidates_set,
                                    dist_t lowerBound) const;
@@ -359,7 +359,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 
 template <typename dist_t>
 dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void *data_point,
-                                                 size_t layer, size_t ef, tag_t visited_tag,
+                                                 size_t layer, size_t ef, tag_t visited_tag, tag_t *elements_tags,
                                                  candidatesMaxHeap<dist_t> &top_candidates,
                                                  candidatesMaxHeap<dist_t> &candidate_set,
                                                  dist_t lowerBound) const {
@@ -371,20 +371,20 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
     size_t links_num = getListCount(node_ll);
     auto *node_links = (tableint *)(node_ll + 1);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
+    __builtin_prefetch(elements_tags + *(node_ll + 1));
+    __builtin_prefetch(elements_tags + *(node_ll + 1) + 64);
     __builtin_prefetch(getDataByInternalId(*node_links));
     __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
     for (size_t j = 0; j < links_num; j++) {
         tableint candidate_id = *(node_links + j);
 
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
+        __builtin_prefetch(elements_tags + *(node_links + j + 1));
         __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag)
             continue;
-        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+        elements_tags[candidate_id] = visited_tag;
         char *currObj1 = (getDataByInternalId(candidate_id));
 
         dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
@@ -416,6 +416,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
 #endif
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    auto elements_tags = this->visited_nodes_handler->getElementsTags();
 
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
@@ -434,7 +435,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
         }
         candidate_set.pop();
 
-        lowerBound = processCandidate(curr_el_pair.second, data_point, layer, ef, visited_tag,
+        lowerBound = processCandidate(curr_el_pair.second, data_point, layer, ef, visited_tag, elements_tags,
                                       top_candidates, candidate_set, lowerBound);
     }
 
@@ -1209,6 +1210,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
 #endif
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    auto elements_tags = this->visited_nodes_handler->getElementsTags();
 
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
@@ -1231,7 +1233,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
         }
         candidate_set.pop();
 
-        lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
+        lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag, elements_tags,
                                       top_candidates, candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
