@@ -28,7 +28,7 @@ void test() {
     idx_t n = 100000;
     idx_t nq = 10;
     size_t k = 10;
-    size_t itr = 1000000;
+    size_t itr = 100000;
    
     std::vector<float> data(n * d);
     std::vector<float> query(nq * d);
@@ -59,12 +59,13 @@ void test() {
 
     std::cout << "Ready for benchmark" << std::endl;
     double qps = 0;
-    // for (size_t i = 0; i < itr; i++) {
-    while (true) {
+    for (size_t i = 0; i < itr; i++) {
+    // while (true) {
         auto s = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
         for (size_t j = 0; j < nq; ++j) {
             const void* p = query.data() + j * d;
-            VecSimIndex_TopKQuery(index, p, k, NULL, BY_SCORE);
+            auto r = VecSimIndex_TopKQuery(index, p, k, NULL, BY_SCORE);
+            VecSimQueryResult_Free(r);
         }
         auto e = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
         // std::cout << "qps\t" << ((double)nq*1000000000/(e-s)) << std::endl;
