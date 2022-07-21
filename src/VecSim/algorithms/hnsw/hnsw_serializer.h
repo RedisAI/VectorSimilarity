@@ -16,8 +16,15 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // levels value than the loaded index.
     level_generator_.seed(200);
 
-    visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
+#ifdef ENABLE_PARALLELIZATION
+    this->pool_initial_size = 1;
+    this->visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(this->pool_initial_size, max_elements_, this->allocator));
+#else
+    this->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
+#endif
 
     data_level0_memory_ =
         (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);

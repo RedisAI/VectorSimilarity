@@ -60,7 +60,11 @@ public:
 
     void reset() override;
 
-    ~HNSW_BatchIterator() override {}
+    ~HNSW_BatchIterator() override {
+#ifdef ENABLE_PARALLELIZATION
+        // return the visited list to the pool.
+#endif
+    }
 };
 
 /******************** Ctor / Dtor **************/
