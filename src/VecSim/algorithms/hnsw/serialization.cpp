@@ -150,7 +150,7 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         hnsw_index->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
     }
 
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
     pool_initial_size = pool_initial_size;
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
