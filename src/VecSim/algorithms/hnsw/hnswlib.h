@@ -22,6 +22,8 @@
 #include <sys/resource.h>
 #include <fstream>
 
+#define ENABLE_PARALLELIZATION
+
 namespace hnswlib {
 using namespace std;
 
@@ -85,9 +87,9 @@ private:
 #ifdef ENABLE_PARALLELIZATION
     std::unique_ptr<VisitedNodesHandlerPool> visited_nodes_handler_pool;
     size_t pool_initial_size;
-    std::mutex global;
-    std::mutex cur_element_count_guard_;
-    std::vector<std::mutex> link_list_locks_;
+    // std::mutex global;
+    // std::mutex cur_element_count_guard_;
+    // std::vector<std::mutex> link_list_locks_;
 #endif
 
     // callback for computing distance between two points in the underline space.
@@ -118,7 +120,7 @@ private:
                           const vecsim_stl::vector<bool> &bitmap, tableint *removed_links,
                           size_t *removed_links_num);
     inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
-                                   size_t ef, tag_t visited_tag,
+                                   size_t ef, tag_t visited_tag, tag_t *elements_tags,
                                    candidatesMaxHeap<dist_t> &top_candidates,
                                    candidatesMaxHeap<dist_t> &candidates_set,
                                    dist_t lowerBound) const;
@@ -319,7 +321,11 @@ tableint HierarchicalNSW<dist_t>::getEntryPointId() const {
 
 template <typename dist_t>
 VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
+#ifdef ENABLE_PARALLELIZATION
+    return visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
+#else
     return visited_nodes_handler.get();
+#endif
 }
 
 /**
@@ -360,31 +366,32 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 template <typename dist_t>
 dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void *data_point,
                                                  size_t layer, size_t ef, tag_t visited_tag,
+                                                 tag_t *elements_tags,
                                                  candidatesMaxHeap<dist_t> &top_candidates,
                                                  candidatesMaxHeap<dist_t> &candidate_set,
                                                  dist_t lowerBound) const {
 
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
 #endif
     linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
     size_t links_num = getListCount(node_ll);
     auto *node_links = (tableint *)(node_ll + 1);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
+    __builtin_prefetch(elements_tags + *(node_ll + 1));
+    __builtin_prefetch(elements_tags + *(node_ll + 1) + 64);
     __builtin_prefetch(getDataByInternalId(*node_links));
     __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
     for (size_t j = 0; j < links_num; j++) {
         tableint candidate_id = *(node_links + j);
 
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
+        __builtin_prefetch(elements_tags + *(node_links + j + 1));
         __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag)
             continue;
-        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+        elements_tags[candidate_id] = visited_tag;
         char *currObj1 = (getDataByInternalId(candidate_id));
 
         dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
@@ -411,11 +418,11 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
                                                                size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
-    this->visited_nodes_handler =
+    auto visited_nodes_handler =
         this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
 #endif
 
-    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    tag_t visited_tag = visited_nodes_handler->getFreshTag();
 
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
@@ -425,7 +432,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
-    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+    visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
@@ -435,11 +442,12 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
         candidate_set.pop();
 
         lowerBound = processCandidate(curr_el_pair.second, data_point, layer, ef, visited_tag,
-                                      top_candidates, candidate_set, lowerBound);
+                                      visited_nodes_handler->getElementsTags(), top_candidates,
+                                      candidate_set, lowerBound);
     }
 
 #ifdef ENABLE_PARALLELIZATION
-    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes_handler);
 #endif
     return top_candidates;
 }
@@ -529,7 +537,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
     // go over the selected neighbours - selectedNeighbor is the neighbour id
     vecsim_stl::vector<bool> neighbors_bitmap(allocator);
     for (tableint selectedNeighbor : selectedNeighbors) {
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
         std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
 #endif
         linklistsizeint *ll_other = get_linklist_at_level(selectedNeighbor, level);
@@ -819,8 +827,9 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
       label_lookup_(max_elements, allocator)
 
-#ifdef ENABLE_PARALLELIZATION
-          link_list_locks_(max_elements),
+#ifdef ENABLE_PARALLELIZATION_
+      ,
+      link_list_locks_(max_elements)
 #endif
 {
 
@@ -922,7 +931,7 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
             VisitedNodesHandlerPool(this->pool_initial_size, new_max_elements, this->allocator));
-    std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+    // std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
 #else
     visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
@@ -1038,7 +1047,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     tableint cur_c;
 
     {
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
         // Checking if an element with the given label already exists. if so, remove it.
@@ -1051,19 +1060,19 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         cur_c = max_id = cur_element_count++;
         label_lookup_[label] = cur_c;
     }
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
     std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
 #endif
     // choose randomly the maximum level in which the new element will be in the index.
     size_t element_max_level = getRandomLevel(mult_);
     element_levels_[cur_c] = element_max_level;
 
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
     std::unique_lock<std::mutex> entry_point_lock(global);
 #endif
     size_t maxlevelcopy = maxlevel_;
 
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
     if (element_max_level <= maxlevelcopy)
         entry_point_lock.unlock();
 #endif
@@ -1099,7 +1108,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
                 while (changed) {
                     changed = false;
                     unsigned int *data;
-#ifdef ENABLE_PARALLELIZATION
+#ifdef ENABLE_PARALLELIZATION_
                     std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
 #endif
                     data = get_linklist(currObj, level);
@@ -1204,11 +1213,11 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
     candidatesLabelsMaxHeap<dist_t> results(this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION
-    this->visited_nodes_handler =
+    auto visited_nodes_handler =
         this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
 #endif
 
-    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    tag_t visited_tag = visited_nodes_handler->getFreshTag();
 
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
@@ -1218,7 +1227,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
-    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+    visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
@@ -1232,10 +1241,11 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
         candidate_set.pop();
 
         lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
-                                      top_candidates, candidate_set, lowerBound);
+                                      visited_nodes_handler->getElementsTags(), top_candidates,
+                                      candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
-    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes_handler);
 #endif
     while (top_candidates.size() > k) {
         top_candidates.pop();

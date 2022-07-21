@@ -212,4 +212,7 @@ void HNSW_BatchIterator::reset() {
     this->top_candidates_extras = candidatesMinHeap(this->allocator);
 }
 
-HNSW_BatchIterator::~HNSW_BatchIterator() { this->hnsw_index->setEf(this->orig_ef_runtime); }
+HNSW_BatchIterator::~HNSW_BatchIterator() {
+    this->hnsw_index->setEf(this->orig_ef_runtime);
+    delete this->visited_list;
+}
