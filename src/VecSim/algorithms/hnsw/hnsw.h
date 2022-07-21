@@ -357,7 +357,7 @@ idType HNSWIndex<DataType, DistType>::getEntryPointId() const {
 }
 
 template <typename DataType, typename DistType>
-VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
+VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
 #ifdef ENABLE_PARALLELIZATION
     return visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
 #else
@@ -949,10 +949,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     cur_element_count = 0;
     max_id = HNSW_INVALID_ID;
 #ifdef ENABLE_PARALLELIZATION
-    pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
-        new (this->allocator)
-            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
+    this->pool_initial_size = pool_initial_size;
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
+        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
 #else
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
