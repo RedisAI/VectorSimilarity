@@ -49,6 +49,7 @@ private:
 
     // Index search parameter
     size_t ef_;
+	float epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
     size_t data_size_;
@@ -128,6 +129,9 @@ private:
                                                                   const void *data_point, size_t ef,
                                                                   size_t k, void *timeoutCtx,
                                                                   VecSimQueryResult_Code *rc) const;
+	VecSimQueryResult *searchRangeBottomLayer_WithTimeout(tableint ep_id, const void *data_point, float epsilon,
+	                                                              float radius, void *timeoutCtx,
+	                                                              VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
     tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
                                        size_t level);
@@ -147,6 +151,8 @@ public:
 
     void setEf(size_t ef);
     size_t getEf() const;
+	void setEpsilon(float epsilon);
+	float getEpsilon() const;
     size_t getIndexSize() const;
     size_t getIndexCapacity() const;
     size_t getEfConstruction() const;
@@ -167,6 +173,8 @@ public:
                                  VecSimQueryResult_Code *rc) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+	VecSimQueryResult *searchRange(const void *query_data, float radius, void *timeoutCtx,
+	                                                                VecSimQueryResult_Code *rc) const;
 };
 
 /**
@@ -181,6 +189,16 @@ void HierarchicalNSW<dist_t>::setEf(size_t ef) {
 template <typename dist_t>
 size_t HierarchicalNSW<dist_t>::getEf() const {
     return ef_;
+}
+
+template <typename dist_t>
+void HierarchicalNSW<dist_t>::setEpsilon(float epsilon) {
+	epsilon_ = epsilon;
+}
+
+template <typename dist_t>
+float HierarchicalNSW<dist_t>::getEpsilon() const {
+	return epsilon_;
 }
 
 template <typename dist_t>
@@ -1268,5 +1286,74 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
 
     return results;
 }
+
+template <typename dist_t>
+VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
+																			   float epsilon, float radius,
+																			   void *timeoutCtx,
+																			   VecSimQueryResult_Code *rc) const {
+	auto *results = array_new<VecSimQueryResult>(10);  // arbitrary initial cap.
+
+#ifdef ENABLE_PARALLELIZATION
+	this->visited_nodes_handler =
+        this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
+#endif
+
+	tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+
+	candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+	dist_t dynamic_range = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
+
+	dist_t lowerBound = dynamic_range;
+	candidate_set.emplace(-dynamic_range, ep_id);
+	this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+
+	while (!candidate_set.empty()) {
+		std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
+		if ((-curr_el_pair.first) > lowerBound) {
+			break;
+		}
+		if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+			*rc = VecSim_QueryResult_TimedOut;
+			return results;
+		}
+		candidate_set.pop();
+
+		// todo: replace with a new adjusted processCandidate for range.
+//		lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
+//		                              top_candidates, candidate_set, lowerBound);
+	}
+#ifdef ENABLE_PARALLELIZATION
+	visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+#endif
+
+	size_t n_res = array_len(results);
+	for (size_t i = 0; i < n_res; i++) {
+		VecSimQueryResult_SetId(results[i], getExternalLabel(results[i].id));
+	}
+	*rc = VecSim_QueryResult_OK;
+	return results;
+}
+
+template <typename dist_t>
+VecSimQueryResult *HierarchicalNSW<dist_t>::searchRange(const void *query_data, float radius, void *timeoutCtx,
+										 VecSimQueryResult_Code *rc) const {
+
+	if (cur_element_count == 0) {
+		*rc = VecSim_QueryResult_OK;
+		return array_new<VecSimQueryResult>(0);
+	}
+
+	tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
+	if (VecSim_OK != *rc) {
+		return array_new<VecSimQueryResult>(0);
+	}
+	// search bottom layer
+	VecSimQueryResult *result = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data,
+																   this->epsilon_, radius, timeoutCtx, rc);
+	return result;
+
+}
+
 
 } // namespace hnswlib

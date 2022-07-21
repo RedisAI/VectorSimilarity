@@ -85,6 +85,7 @@ typedef struct {
 
 typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
+	float epsilon;    // Epsilon parameter for HNSW graph accuracy/latency for range search.
 } HNSWRuntimeParams;
 
 /**
