@@ -154,7 +154,7 @@ public:
     HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
-                    size_t initial_pool_size = 1);
+                    size_t initial_pool_size = 10);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -905,7 +905,6 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
                                          size_t pool_initial_size)
     : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
       label_lookup_(max_elements, allocator)
-
 #ifdef ENABLE_PARALLELIZATION_
       ,
       link_list_locks_(max_elements)
@@ -928,7 +927,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     cur_element_count = 0;
     max_id = HNSW_INVALID_ID;
 #ifdef ENABLE_PARALLELIZATION
-    pool_initial_size = pool_initial_size;
+    this->pool_initial_size = pool_initial_size;
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
         this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
 #else
