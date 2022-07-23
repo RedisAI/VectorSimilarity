@@ -7,10 +7,11 @@ extern "C" {
 #include <stdint.h>
 
 // HNSW default parameters
-#define HNSW_DEFAULT_M     16
-#define HNSW_DEFAULT_EF_C  200
-#define HNSW_DEFAULT_EF_RT 10
-#define DEFAULT_BLOCK_SIZE 1024
+#define HNSW_DEFAULT_M       16
+#define HNSW_DEFAULT_EF_C    200
+#define HNSW_DEFAULT_EF_RT   10
+#define HNSW_DEFAULT_EPSILON 0.1f
+#define DEFAULT_BLOCK_SIZE   1024
 
 // Datatypes for indexing.
 typedef enum {
@@ -65,6 +66,7 @@ typedef struct {
     size_t M;
     size_t efConstruction;
     size_t efRuntime;
+    float epsilon;
 } HNSWParams;
 
 typedef struct {
@@ -85,7 +87,7 @@ typedef struct {
 
 typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
-	float epsilon;    // Epsilon parameter for HNSW graph accuracy/latency for range search.
+    float epsilon;    // Epsilon parameter for HNSW graph accuracy/latency for range search.
 } HNSWRuntimeParams;
 
 /**
