@@ -425,13 +425,21 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    // Perform (or simulate) Search in 3 modes.
+    // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
+    VecSimQueryResult_Free(res);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -614,6 +622,10 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
+    res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
         float f[d];
@@ -634,6 +646,10 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
     VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
@@ -1492,6 +1508,12 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     rl = VecSimIndex_TopKQuery(index, vec, 2, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    // Check timeout again - range query
+    rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);

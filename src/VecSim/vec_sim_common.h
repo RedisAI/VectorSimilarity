@@ -10,7 +10,7 @@ extern "C" {
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
 #define HNSW_DEFAULT_EF_RT   10
-#define HNSW_DEFAULT_EPSILON 0.1f
+#define HNSW_DEFAULT_EPSILON 0.01f
 #define DEFAULT_BLOCK_SIZE   1024
 
 // Datatypes for indexing.

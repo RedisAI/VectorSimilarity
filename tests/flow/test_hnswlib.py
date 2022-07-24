@@ -323,3 +323,61 @@ def test_serialization():
     recall_after = float(correct_after)/(k*num_queries)
     print("\nrecall after is: \n", recall_after)
     assert recall == recall_after
+
+
+def test_range_query():
+    dim = 100
+    num_elements = 100000
+    epsilon = 0.01
+
+    params = VecSimParams()
+    hnswparams = HNSWParams()
+
+    params.algo = VecSimAlgo_HNSWLIB
+
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_L2
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.M = 32
+    hnswparams.efConstruction = 200
+    hnswparams.initialCapacity = num_elements
+    hnswparams.epsilon = epsilon
+
+    params.hnswParams = hnswparams
+    index = VecSimIndex(params)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_elements, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    query_data = np.float32(np.random.random((1, dim)))
+
+    radius = 13.0
+
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        if epsilon_rt != 0.01:
+            # Set epsilon for the current run, except for the default value which is 0.01.
+            query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+        end = time.time()
+        res_num = len(hnsw_labels[0])
+
+        dists = sorted([(key, spatial.distance.euclidean(query_data, vec)) for key, vec in vectors])
+        actual_results = [(key, dist) for key, dist in dists if dist <= radius**0.5]
+
+        print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+              f' got {res_num} results, which are {res_num/len(actual_results)} of the entire results in the range.')
+
+        # Compare the number of vectors that are actually within the range to the returned results.
+        assert np.all(np.isin(hnsw_labels, np.array([label for label, _ in actual_results])))
+
+        assert max(hnsw_distances[0]) <= radius
+
+    # Expect zero results for radius==0
+    hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
+    assert len(hnsw_labels[0]) == 0
