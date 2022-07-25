@@ -8,83 +8,103 @@
 
 class BM_BatchIterator : public benchmark::Fixture {
 protected:
-    std::mt19937 rng;
     VecSimIndex *bf_index;
     VecSimIndex *hnsw_index;
     size_t dim;
     size_t n_vectors;
-    std::vector<float> query;
+	std::vector<std::vector<float>> *queries;
+	static BM_BatchIterator *instance;
+	static size_t ref_count;
 
     BM_BatchIterator() {
-        dim = 768;
-        n_vectors = 1000000;
-        query.reserve(dim);
-        rng.seed(47);
+	    dim = 768;
+	    n_vectors = 1000000;
+	    ref_count++;
+	    if (instance != nullptr) {
+		    queries = instance->queries;
+		    bf_index = instance->bf_index;
+		    hnsw_index = instance->hnsw_index;
+	    } else {
+		    // Initialize and load HNSW index for DBPedia data set.
+		    size_t M = 64;
+		    size_t ef_c = 512;
+		    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+				    .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+						    .dim = dim,
+						    .metric = VecSimMetric_Cosine,
+						    .initialCapacity = n_vectors,
+						    .M = M,
+						    .efConstruction = ef_c}};
+		    hnsw_index = VecSimIndex_New(&params);
+
+		    // Load pre-generated HNSW index.
+		    auto location = std::string(std::string(getenv("ROOT")));
+		    auto file_name = location + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+		    auto serializer =
+				    hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
+		    serializer.loadIndex(file_name,
+		                         reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
+		    size_t ef_r = 10;
+		    reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
+
+		    VecSimParams bf_params = {.algo = VecSimAlgo_BF,
+				    .bfParams = BFParams{.type = VecSimType_FLOAT32,
+						    .dim = dim,
+						    .metric = VecSimMetric_Cosine,
+						    .initialCapacity = n_vectors}};
+		    bf_index = VecSimIndex_New(&bf_params);
+
+		    // Add the same vectors to Flat index.
+		    for (size_t i = 0; i < n_vectors; ++i) {
+			    char *blob =
+					    reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
+			    VecSimIndex_AddVector(bf_index, blob, i);
+		    }
+		    // Load the test query vectors.
+		    size_t n_query_vectors = 10000;
+		    queries = new std::vector<std::vector<float>>(n_query_vectors);
+		    file_name = location + "/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+		    std::ifstream input(file_name, std::ios::binary);
+		    input.seekg(0, std::ifstream::beg);
+		    for (size_t i = 0; i < n_query_vectors; i++) {
+			    std::vector<float> query(dim);
+			    input.read((char *) query.data(), dim * sizeof(float));
+			    (*queries)[i] = query;
+		    }
+		    instance = this;
+	    }
     }
 
 public:
     void SetUp(const ::benchmark::State &state) {
 
-        // Initialize and load HNSW index for DBPedia data set.
-        size_t M = 64;
-        size_t ef_c = 512;
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                        .dim = dim,
-                                                        .metric = VecSimMetric_Cosine,
-                                                        .initialCapacity = n_vectors + 1,
-                                                        .M = M,
-                                                        .efConstruction = ef_c}};
-        hnsw_index = VecSimIndex_New(&params);
-
-        // Load pre-generated HNSW index.
-        auto location = std::string(getenv("ROOT"));
-        auto file_name = std::string(location) +
-                         "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
-        serializer.loadIndex(file_name,
-                             reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-        size_t ef_r = 500;
-        reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
-
-        VecSimParams bf_params = {.algo = VecSimAlgo_BF,
-                                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                       .dim = dim,
-                                                       .metric = VecSimMetric_Cosine,
-                                                       .initialCapacity = n_vectors}};
-        bf_index = VecSimIndex_New(&bf_params);
-
-        // Add the same vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob =
-                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
-            VecSimIndex_AddVector(bf_index, blob, i);
-        }
     }
 
     void TearDown(const ::benchmark::State &state) {
-        VecSimIndex_Free(bf_index);
-        VecSimIndex_Free(hnsw_index);
+
     }
 
-    ~BM_BatchIterator() {}
+    ~BM_BatchIterator() {
+	    ref_count--;
+	    if (ref_count == 0) {
+		    VecSimIndex_Free(hnsw_index);
+		    VecSimIndex_Free(bf_index);
+		    delete queries;
+	    }
+	}
 };
+
+size_t BM_BatchIterator::ref_count = 0;
+BM_BatchIterator *BM_BatchIterator::instance = nullptr;
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
 
     size_t batch_size = st.range(0);
     size_t total_res_count = st.range(1);
+	size_t iter = 0;
     for (auto _ : st) {
-        st.PauseTiming();
-        // Generate random query vector before test.
-        std::uniform_real_distribution<> distrib;
-        for (size_t i = 0; i < dim; ++i) {
-            query[i] = (float)distrib(rng);
-        }
-        st.ResumeTiming();
         VecSimBatchIterator *batchIterator =
-            VecSimBatchIterator_New(bf_index, query.data(), nullptr);
+            VecSimBatchIterator_New(bf_index, (*queries)[iter++].data(), nullptr);
         size_t res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             VecSimQueryResult_List res =
@@ -115,16 +135,9 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
     size_t correct = 0;
 
     for (auto _ : st) {
-        st.PauseTiming();
-        // Generate random query vector before test.
-        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-        for (size_t i = 0; i < dim; ++i) {
-            query[i] = (float)distrib(rng);
-        }
 
-        st.ResumeTiming();
         VecSimBatchIterator *batchIterator =
-            VecSimBatchIterator_New(hnsw_index, query.data(), nullptr);
+            VecSimBatchIterator_New(hnsw_index, (*queries)[iter].data(), nullptr);
         VecSimQueryResult_List accumulated_results[total_res_num];
         size_t batch_num = 0, res_num = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -140,7 +153,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
 
         // Measure recall
         auto bf_results =
-            VecSimIndex_TopKQuery(bf_index, query.data(), total_res_num, nullptr, BY_SCORE);
+            VecSimIndex_TopKQuery(bf_index, (*queries)[iter].data(), total_res_num, nullptr, BY_SCORE);
         for (size_t i = 0; i < batch_num; i++) {
             auto hnsw_results = accumulated_results[i];
             auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
@@ -177,8 +190,9 @@ BENCHMARK_REGISTER_F(BM_BatchIterator, BatchedSearch_HNSW)
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
+	size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(bf_index, (*queries)[iter++].data(), k, nullptr, BY_SCORE);
     }
 }
 
@@ -187,18 +201,12 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
     size_t correct = 0;
     size_t iter = 0;
     for (auto _ : st) {
-        st.PauseTiming();
-        // Generate random query vector before test.
-        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-        for (size_t i = 0; i < dim; ++i) {
-            query[i] = (float)distrib(rng);
-        }
-        st.ResumeTiming();
-        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
+
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, (*queries)[iter].data(), k, nullptr, BY_SCORE);
         st.PauseTiming();
 
         // Measure recall:
-        auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+        auto bf_results = VecSimIndex_TopKQuery(bf_index, (*queries)[iter].data(), k, nullptr, BY_SCORE);
         auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
         while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
             auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
