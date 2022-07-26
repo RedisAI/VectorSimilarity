@@ -20,8 +20,8 @@ protected:
 public:
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
-        v1 = (float *)malloc(dim * sizeof(float));
-        v2 = (float *)malloc(dim * sizeof(float));
+        v1 = new float[dim];
+        v2 = new float[dim];
         std::uniform_real_distribution<double> distrib(-1.0, 1.0);
         for (size_t i = 0; i < dim; i++) {
             v1[i] = (float)distrib(rng);
@@ -30,8 +30,8 @@ public:
     }
 
     void TearDown(const ::benchmark::State &state) {
-        free(v1);
-        free(v2);
+        delete v1;
+        delete v2;
     }
 
     ~BM_VecSimSpaces() {}
@@ -188,21 +188,22 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_L2)(benchmark::State &st) {
 }
 
 // Register the function as a benchmark
-#define EXACT_PARAMS                                                                               \
-    ->Arg(16)                                                                                      \
-        ->Arg(128)                                                                                 \
-        ->Arg(400)                                                                                 \
-        ->ArgName("Dimension")                                                                     \
-        ->Unit(benchmark::kNanosecond)
-        // ->Iterations(1000000)
 
+// For exact functions, taking dimensions that are 16 multiplications.
+#define EXACT_PARAMS                                                                               \
+    ->Arg(16)->Arg(128)->Arg(400)->ArgName("Dimension")->Unit(benchmark::kNanosecond)
+
+// For residual functions, taking dimensions that are 16 multiplications +-1, to show which of
+// 16_residual and 4_residual is better in which case.
 #define RESIDUAL_PARAMS                                                                            \
     ->Arg(16 - 1)                                                                                  \
+        ->Arg(16 + 1)                                                                              \
         ->Arg(128 - 1)                                                                             \
+        ->Arg(128 + 1)                                                                             \
         ->Arg(400 - 1)                                                                             \
+        ->Arg(400 + 1)                                                                             \
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
-        // ->Iterations(1000000)
 
 #ifdef __AVX512F__
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_L2_16) EXACT_PARAMS;
