@@ -110,6 +110,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_BF)(benchmark::State &st) {
             }
         }
         VecSimBatchIterator_Free(batchIterator);
+        if (iter == queries->size())
+            break;
     }
 }
 
@@ -169,6 +171,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BatchedSearch_HNSW)(benchmark::State &st) {
         }
         VecSimQueryResult_Free(bf_results);
         iter++;
+        if (iter == queries->size())
+            break;
         st.ResumeTiming();
     }
     st.counters["Intersection ratio"] = (float)correct / (total_res_num * iter);
@@ -187,6 +191,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_BF)(benchmark::State &st) {
     size_t iter = 0;
     for (auto _ : st) {
         VecSimIndex_TopKQuery(bf_index, (*queries)[iter++].data(), k, nullptr, BY_SCORE);
+        if (iter == queries->size())
+            break;
     }
 }
 
@@ -221,6 +227,8 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, TopK_HNSW)(benchmark::State &st) {
         VecSimQueryResult_Free(bf_results);
         VecSimQueryResult_Free(hnsw_results);
         iter++;
+        if (iter == queries->size())
+            break;
         st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (k * iter);

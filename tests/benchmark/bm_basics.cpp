@@ -139,25 +139,25 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     // Remove a different vector in every execution.
-    float *blobs[1000];
+    std::vector<std::vector<float>> blobs;
     size_t id_to_remove = 0;
 
     for (auto _ : st) {
         st.PauseTiming();
-        blobs[id_to_remove] = new float[dim];
-        memcpy(blobs[id_to_remove],
+        auto removed_vec = std::vector<float>(dim);
+        memcpy(removed_vec.data(),
                reinterpret_cast<HNSWIndex *>(hnsw_index)
                    ->getHNSWIndex()
                    ->getDataByInternalId(id_to_remove),
                dim * sizeof(float));
+        blobs.push_back(removed_vec);
         st.ResumeTiming();
         VecSimIndex_DeleteVector(hnsw_index, id_to_remove++);
     }
 
     // Restore index state.
-    for (size_t i = 0; i < id_to_remove; i++) {
-        VecSimIndex_AddVector(hnsw_index, blobs[i], i);
-        delete[] blobs[i];
+    for (size_t i = 0; i < blobs.size(); i++) {
+        VecSimIndex_AddVector(hnsw_index, blobs[i].data(), i);
     }
 }
 
@@ -166,6 +166,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
     size_t iter = 0;
     for (auto _ : st) {
         VecSimIndex_TopKQuery(bf_index, (*queries)[iter++].data(), k, nullptr, BY_SCORE);
+        if (iter == queries->size())
+            break;
     }
 }
 
@@ -203,6 +205,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
         VecSimQueryResult_Free(bf_results);
         VecSimQueryResult_Free(hnsw_results);
         iter++;
+        if (iter == queries->size())
+            break;
         st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (k * iter);
@@ -217,6 +221,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
         auto res =
             VecSimIndex_RangeQuery(bf_index, (*queries)[iter++].data(), radius, nullptr, BY_ID);
         total_res += VecSimQueryResult_Len(res);
+        if (iter == queries->size())
+            break;
     }
     st.counters["Avg. results number"] = (double)total_res / iter;
 }
@@ -242,13 +248,9 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
     // {ef_runtime, k} (recall that always ef_runtime >= k)
     ->Args({10, 10})
-    ->Iterations(100)
     ->Args({200, 10})
-    ->Iterations(100)
     ->Args({100, 100})
-    ->Iterations(100)
     ->Args({200, 100})
-    ->Iterations(100)
     ->Args({500, 500})
     ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
