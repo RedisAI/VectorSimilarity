@@ -8,9 +8,9 @@ float L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, const void *q
     float *pVect2 = (float *)pVect2v;
     size_t qty = *((size_t *)qty_ptr);
     float PORTABLE_ALIGN32 TmpRes[8];
-    size_t qty16 = qty >> 4;
+    size_t qty16 = qty >> 4 << 4;
 
-    const float *pEnd1 = pVect1 + (qty16 << 4);
+    const float *pEnd1 = pVect1 + qty16;
 
     __m256 diff, v1, v2;
     __m256 sum = _mm256_set1_ps(0);
