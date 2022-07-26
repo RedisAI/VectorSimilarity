@@ -113,7 +113,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     int64_t expectedAllocationDelta = 0;
     expectedAllocationDelta +=
         2 * ((sizeof(VectorBlockMember *) +
-              vecsimAllocationOverhead)); // resize idToVectorBlockMemberMapping to 2
+              vecsimAllocationOverhead)); // resize idToLabelMapping to 2
     expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
     expectedAllocationDelta += sizeof(VectorBlockMember *) +

@@ -53,13 +53,13 @@ TEST_F(BruteForceTest, resizeIndex) {
         }
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (by 10% factor from the new index size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
               std::ceil(1.1 * (n + 1)));
     VecSimIndex_Free(index);
 }

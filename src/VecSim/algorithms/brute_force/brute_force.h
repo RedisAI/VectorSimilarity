@@ -41,9 +41,11 @@ public:
 
 private:
     void updateVector(idType id, const void *vector_data);
+    inline VectorBlock *getVectorBlock(idType id);
+    inline size_t getVectorRelativeIndex(idType id);
+
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
-    vecsim_stl::vector<VectorBlockMember *> idToVectorBlockMemberMapping;
-    vecsim_stl::set<idType> deletedIds;
+    vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
@@ -57,3 +59,16 @@ private:
     friend class BruteForceTest_resizeIndex_Test;
 #endif
 };
+
+
+VectorBlock *BruteForceIndex::getVectorBlock(idType id)
+{
+    size_t vectorBlock_index = id / vectorBlockSize;
+    return vectorBlocks.at(vectorBlock_index);
+
+}
+size_t BruteForceIndex::getVectorRelativeIndex(idType id)
+{
+    //get the relative index of this id inside the vectorBlock
+    return id % vectorBlockSize;
+}

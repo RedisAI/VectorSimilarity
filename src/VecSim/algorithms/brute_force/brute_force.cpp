@@ -17,8 +17,7 @@ using namespace std;
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
-      labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator), deletedIds(allocator),
-      vectorBlocks(allocator),
+      labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
@@ -26,7 +25,7 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
                 : static_cast<SpaceInterface<float> *>(
                       new (allocator) InnerProductSpace(params->dim, allocator))),
       last_mode(EMPTY_MODE) {
-    this->idToVectorBlockMemberMapping.resize(params->initialCapacity);
+    this->idToLabelMapping.resize(params->initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
 
@@ -43,7 +42,7 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
            sizeof(size_t);
     // Parameters related part.
-    est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type) +
+    est += params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) +
            sizeof(size_t);
 
     return est;
@@ -54,14 +53,16 @@ size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
 }
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
-    // Get the vector block
-    VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
-    VectorBlock *vectorBlock = vectorBlockMember->block;
-    size_t index = vectorBlockMember->index;
+    
+    // TODO Get the vector block
+    VectorBlock *vectorBlock = getVectorBlock(id);
+    size_t index = getVectorRelativeIndex(id);
+
     // Update vector data in the block.
-    float *destinaion = vectorBlock->getVector(index);
-    memcpy(destinaion, vector_data, this->dim);
+    vectorBlock->updateVector(index, vector_data);
 }
+
+
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
@@ -73,28 +74,34 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         vector_data = normalized_data;
     }
 
-    idType id = 0;
+    
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
-        id = optionalID->second;
+        idType id = optionalID->second;
         updateVector(id, vector_data);
         return true;
-    } else {
-        // Try re-use deleted id.
-        if (this->deletedIds.size() != 0) {
-            id = *this->deletedIds.begin();
-            this->deletedIds.erase(this->deletedIds.begin());
-            this->count++;
-        } else {
-            id = this->count++;
-        }
     }
 
-    // See if new id is bigger than current vector count. Needs to resize the index.
-    if (id >= this->idToVectorBlockMemberMapping.size()) {
-        this->idToVectorBlockMemberMapping.resize(std::ceil(this->count * 1.1));
+	//give the vector new id
+	idType id = count;
+
+    //increase count
+    ++count;
+
+
+    // if idToLabelMapping is full,
+	// meaning also the last vector block is full
+	// resize by idToLabelMapping vectorBlockSiz
+	// add new vectorblock
+    size_t idToLabelMapping_size =  this->idToLabelMapping.size();
+
+    if (id >=idToLabelMapping_size){
+        this->idToLabelMapping.resize(idToLabelMapping_size + vectorBlockSize, 0);
     }
+
+	//add label to idToLabelMapping
+	idToLabelMapping[id] = label;
 
     // Get vector block to store the vector in.
     VectorBlock *vectorBlock;
@@ -105,7 +112,9 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         this->vectorBlocks.push_back(vectorBlock);
     } else {
         // Get the last vector block.
-        vectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
+        vectorBlock = this->vectorBlocks.back();
+		assert(vectorBlock == vectorBlocks[id / vectorBlockSize]);
+
         if (vectorBlock->getLength() == this->vectorBlockSize) {
             // Last vector block is full, create a new one.
             vectorBlock = new (this->allocator)
@@ -115,9 +124,8 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     }
 
     // Create vector block membership.
-    VectorBlockMember *vectorBlockMember = new (this->allocator) VectorBlockMember(this->allocator);
-    this->idToVectorBlockMemberMapping[id] = vectorBlockMember;
-    vectorBlockMember->label = label;
+
+    this->idToLabelMapping[id] = label;
     vectorBlock->addVector(vectorBlockMember, vector_data);
     this->labelToIdLookup.emplace(label, id);
     return true;
@@ -134,7 +142,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     }
 
     // Get the vector block, and vector block member of the vector to be deleted.
-    VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
+    VectorBlockMember *vectorBlockMember = this->idToLabelMapping[id];
     VectorBlock *vectorBlock = vectorBlockMember->block;
     size_t vectorIndex = vectorBlockMember->index;
 
@@ -151,7 +159,7 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     // Delete the vector block membership
     delete vectorBlockMember;
-    this->idToVectorBlockMemberMapping[id] = NULL;
+    this->idToLabelMapping[id] = NULL;
     // Add deleted id to reusable ids.
     this->deletedIds.emplace(id);
     this->labelToIdLookup.erase(label);
@@ -173,7 +181,7 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
         return INVALID_SCORE;
     }
     idType id = optionalId->second;
-    VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
+    VectorBlockMember *vector_index = this->idToLabelMapping[id];
 
     return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
                            &this->dim);
