@@ -57,7 +57,7 @@ protected:
     std::vector<std::vector<float>> *queries;
 
     // We use this class as a single-tone for every test case, so we won't hold several indices (to
-    // reduce memory).
+    // reduce memory consumption).
     static BM_VecSimBasics *instance;
     static size_t ref_count;
 
