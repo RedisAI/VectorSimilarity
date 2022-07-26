@@ -20,8 +20,8 @@ float L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void
         v2 = _mm512_loadu_ps(pVect2);
         pVect2 += 16;
         diff = _mm512_sub_ps(v1, v2);
-        sum = _mm512_fmadd_ps(diff, diff, sum);
-        // sum = _mm512_add_ps(sum, _mm512_mul_ps(diff, diff));
+        // sum = _mm512_fmadd_ps(diff, diff, sum);
+        sum = _mm512_add_ps(sum, _mm512_mul_ps(diff, diff));
     }
 
     return _mm512_reduce_add_ps(sum);
