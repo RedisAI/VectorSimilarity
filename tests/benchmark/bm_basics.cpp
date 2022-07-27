@@ -223,35 +223,35 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
-	float radius = (1.0f / 1000.0f) * (float)st.range(0);
-	float epsilon = (1.0f / 10000.0f) * (float)st.range(1);
-	size_t iter = 0;
-	size_t total_res = 0;
-	size_t total_res_bf = 0;
+    float radius = (1.0f / 100.0f) * (float)st.range(0);
+    float epsilon = (1.0f / 1000.0f) * (float)st.range(1);
+    size_t iter = 0;
+    size_t total_res = 0;
+    size_t total_res_bf = 0;
 
-	for (auto _ : st) {
-		st.PauseTiming();
+    for (auto _ : st) {
+        st.PauseTiming();
 
-		auto query_params =
-				VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
-		st.ResumeTiming();
-		auto hnsw_results =
-				VecSimIndex_RangeQuery(hnsw_index, queries[iter].data(), radius, &query_params, BY_ID);
-		st.PauseTiming();
-		total_res += VecSimQueryResult_Len(hnsw_results);
+        auto query_params =
+            VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
+        st.ResumeTiming();
+        auto hnsw_results = VecSimIndex_RangeQuery(hnsw_index, (*queries)[iter % n_queries].data(),
+                                                   radius, &query_params, BY_ID);
+        st.PauseTiming();
+        total_res += VecSimQueryResult_Len(hnsw_results);
 
-		// Measure recall:
-		auto bf_results =
-				VecSimIndex_RangeQuery(bf_index, queries[iter].data(), radius, nullptr, BY_ID);
-		total_res_bf += VecSimQueryResult_Len(bf_results);
+        // Measure recall:
+        auto bf_results = VecSimIndex_RangeQuery(bf_index, (*queries)[iter % n_queries].data(),
+                                                 radius, nullptr, BY_ID);
+        total_res_bf += VecSimQueryResult_Len(bf_results);
 
-		VecSimQueryResult_Free(bf_results);
-		VecSimQueryResult_Free(hnsw_results);
-		iter++;
-		st.ResumeTiming();
-	}
-	st.counters["Avg. results number"] = (double)total_res / iter;
-	st.counters["Recall"] = (float)total_res / total_res_bf;
+        VecSimQueryResult_Free(bf_results);
+        VecSimQueryResult_Free(hnsw_results);
+        iter++;
+        st.ResumeTiming();
+    }
+    st.counters["Avg. results number"] = (double)total_res / iter;
+    st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
 // Register the function as a benchmark
@@ -264,12 +264,17 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
-    // {radius*1000, epsilon*10000}
-    ->Args({910, 0})
-    ->Args({910, 5})
-    ->Args({910, 10})
-    ->Args({920, 5})
-    ->Args({920, 10})
+    // {radius*100, epsilon*1000}
+    ->Args({20, 1})
+    ->Args({20, 10})
+    ->Args({20, 100})
+    ->Args({35, 1})
+    ->Args({35, 10})
+    ->Args({35, 100})
+    ->Args({50, 1})
+    ->Args({50, 10})
+    ->Args({50, 100})
+    ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
