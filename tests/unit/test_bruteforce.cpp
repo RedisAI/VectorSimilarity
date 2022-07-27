@@ -38,11 +38,13 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
 TEST_F(BruteForceTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 15;
+    size_t blockSize = 10;
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
+                                             .initialCapacity = n,
+                                             .blockSize = blockSize}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -56,11 +58,11 @@ TEST_F(BruteForceTest, resizeIndex) {
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (by 10% factor from the new index size).
+    // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
-              std::ceil(1.1 * (n + 1)));
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() % blockSize,
+              0);
     VecSimIndex_Free(index);
 }
 
@@ -236,6 +238,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndex_Free(index);
+
 }
 
 TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {

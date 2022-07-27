@@ -85,7 +85,6 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         if (this->deletedIds.size() != 0) {
             id = *this->deletedIds.begin();
             this->deletedIds.erase(this->deletedIds.begin());
-            this->count++;
         } else {
             id = count;
 			// save current id2vec size
