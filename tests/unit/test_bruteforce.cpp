@@ -65,7 +65,7 @@ TEST_F(BruteForceTest, resizeIndex) {
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
                   blockSize,
               0);
-    
+
     VecSimIndex_Free(index);
 }
 

@@ -118,14 +118,14 @@ int HNSWIndex::deleteVector(size_t id) {
     size_t block_size = this->blockSize;
     size_t curr_capacity = this->hnsw->getIndexCapacity();
 
-    //if we need to free a complete block & there is a least one block between the 
-    //capacity and the size
-    if ( index_size % block_size == 0 && index_size + block_size <= curr_capacity) {
-        
-        //check if the capacity is aligned to block size
+    // if we need to free a complete block & there is a least one block between the
+    // capacity and the size
+    if (index_size % block_size == 0 && index_size + block_size <= curr_capacity) {
+
+        // check if the capacity is aligned to block size
         size_t extra_space_to_free = curr_capacity % block_size;
 
-        //remove one block from the capacity
+        // remove one block from the capacity
         this->hnsw->resizeIndex(curr_capacity - block_size - extra_space_to_free);
     }
     return res;
