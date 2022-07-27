@@ -18,12 +18,10 @@ static void GetHNSWIndex(VecSimIndex *hnsw_index) {
         serializer.loadIndex(file_name,
                              reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
         if (!serializer.checkIntegrity().valid_state) {
-            std::cerr << "The loaded HNSW index is corrupted. Exiting..." << std::endl;
-            exit(1);
+            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
     } else {
-        std::cerr << "HNSW index file was not found in path. Exiting..." << std::endl;
-        exit(1);
+        throw std::runtime_error("HNSW index file was not found in path. Exiting...");
     }
 }
 
@@ -42,8 +40,7 @@ static void GetTestVectors(std::vector<std::vector<float>> &queries, size_t n_qu
             queries[i] = query;
         }
     } else {
-        std::cerr << "Test vectors file was not found in path. Exiting..." << std::endl;
-        exit(1);
+        throw std::runtime_error("Test vectors file was not found in path. Exiting...");
     }
 }
 
@@ -56,7 +53,7 @@ protected:
     std::vector<std::vector<float>> *queries;
     size_t n_queries;
 
-    // We use this class as a single-tone for every test case, so we won't hold several indices (to
+    // We use this class as a singleton for every test case, so we won't hold several indices (to
     // reduce memory consumption).
     static BM_VecSimBasics *instance;
     static size_t ref_count;
@@ -229,7 +226,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
 
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-    // The actual radius will the given arg divided by 100, since arg must me and integer.
+    // The actual radius will be the given arg divided by 100, since arg must be an integer.
     ->Arg(20)
     ->Arg(35)
     ->Arg(50)
