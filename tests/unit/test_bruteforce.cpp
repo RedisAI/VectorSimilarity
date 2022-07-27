@@ -61,9 +61,11 @@ TEST_F(BruteForceTest, resizeIndex) {
     // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+    // check alignment
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
                   blockSize,
               0);
+    
     VecSimIndex_Free(index);
 }
 

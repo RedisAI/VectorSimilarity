@@ -39,11 +39,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
     VecSimIndex_Free(index);
 }
+/**** resizing cases ****/
 
-TEST_F(HNSWLibTest, resizeIndex) {
+//add up to capacity
+TEST_F(HNSWLibTest, resizeNAlignIndex) {
     size_t dim = 4;
-    size_t n = 15;
-    size_t bs = 50;
+    size_t n = 10;
+    size_t bs = 3;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
@@ -54,20 +56,130 @@ TEST_F(HNSWLibTest, resizeIndex) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     float a[dim];
+
+    //add up to n
     for (size_t i = 0; i < n; i++) {
         for (size_t j = 0; j < dim; j++) {
             a[j] = (float)i;
         }
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
+    //the size and the capacity should be equal
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), VecSimIndex_IndexSize(index));
+    //the capcity shouldnt be changed 
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
-    // Add another vector, since index size equals to the capacity, this should cause resizing
-    // by the block size parameter.
-    VecSimIndex_AddVector(index, (const void *)a, n + 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs + n);
+    // add another vector to exceed the initial capacity
+    VecSimIndex_AddVector(index, (const void *)a, n);
+
+    //the capacity should be now aligned with the block size
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity() % bs, 0);
+    //new capacity = intiailcapacity + blockSize - intiailcapacity % blockSize
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n + bs - n % bs);
+
+    
     VecSimIndex_Free(index);
+
+}
+
+
+// case 1: intiailCapacity much larger than block size, and it is not aligned
+TEST_F(HNSWLibTest, resizeNAlignIndex_initailCapacity_is_big) {
+    size_t dim = 4;
+    size_t n = 32;
+    size_t bs = 3;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+
+    //add up to blocksize + 1
+    for (size_t i = 0; i < bs + 1; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+
+    //the capcity shouldnt be changed
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
+
+    // delete random vector, to get size % block_size == 0
+    VecSimIndex_DeleteVector(index, 1);
+
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexSize(), bs );
+
+    //the capacity should be now aligned with the block size
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity() % bs, 0);
+    //new capacity = intiailcapacity - block_size - number_of_vectors_to_align
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n - bs - n % bs);
+
+    size_t curr_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
+    //add another vector - > the capacity remains the same
+    VecSimIndex_AddVector(index, (const void *)a, n);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), curr_capacity);
+
+    //delete the vector -> the capacity is decreased by block size
+    VecSimIndex_DeleteVector(index, bs);
+
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), curr_capacity - bs);
+
+    VecSimIndex_Free(index);
+
+}
+
+// case 2: intiailCapacity smaller than block_size
+TEST_F(HNSWLibTest, resizeNAlignIndex_blocksize_is_bigger) {
+    size_t dim = 4;
+    size_t n = 4;
+    size_t bs = 6;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+
+    //add up to initial capacity
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+
+    //the capcity shouldnt be changed
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
+
+    //size equals capacity
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexSize(), n);
+
+    //add another vector - > the capacity is increased to a multiplication of block_size
+    VecSimIndex_AddVector(index, (const void *)a, n);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity() % bs, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity() , bs);
+
+    //size increased by 1
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexSize(), n + 1);
+
+    // delete random vector
+    VecSimIndex_DeleteVector(index, 1);
+
+    //the capacity should remain the same
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity() , bs);
+
+    VecSimIndex_Free(index);
+
 }
 
 TEST_F(HNSWLibTest, hnswlib_vector_search_test) {

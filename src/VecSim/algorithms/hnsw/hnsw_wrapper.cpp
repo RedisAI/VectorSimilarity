@@ -100,8 +100,10 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
             float_vector_normalize(normalized_data, this->dim);
             vector_data = normalized_data;
         }
-        if (hnsw->getIndexSize() == this->hnsw->getIndexCapacity()) {
-            this->hnsw->resizeIndex(this->hnsw->getIndexCapacity() + this->blockSize);
+        size_t index_capacity = this->hnsw->getIndexCapacity();
+        if (hnsw->getIndexSize() == index_capacity) {
+            size_t vectors_to_add = blockSize - index_capacity % blockSize;
+            this->hnsw->resizeIndex(index_capacity + vectors_to_add);
         }
         this->hnsw->addPoint(vector_data, id);
         return true;
@@ -112,8 +114,19 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) {
     bool res = this->hnsw->removePoint(id);
-    if (hnsw->getIndexSize() + this->blockSize <= this->hnsw->getIndexCapacity()) {
-        this->hnsw->resizeIndex(this->hnsw->getIndexCapacity() - this->blockSize);
+    size_t index_size = hnsw->getIndexSize();
+    size_t block_size = this->blockSize;
+    size_t curr_capacity = this->hnsw->getIndexCapacity();
+
+    //if we need to free a complete block & there is a least one block between the 
+    //capacity and the size
+    if ( index_size % block_size == 0 && index_size + block_size <= curr_capacity) {
+        
+        //check if the capacity is aligned to block size
+        size_t extra_space_to_free = curr_capacity % block_size;
+
+        //remove one block from the capacity
+        this->hnsw->resizeIndex(curr_capacity - block_size - extra_space_to_free);
     }
     return res;
 }
