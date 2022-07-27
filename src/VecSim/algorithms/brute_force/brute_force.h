@@ -43,9 +43,10 @@ private:
     void updateVector(idType id, const void *vector_data);
     inline VectorBlock *getVectorBlock(idType id);
     inline size_t getVectorRelativeIndex(idType id);
+    inline labelType getVectorLabel(idType id); //throws out_of_range
 
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
-    vecsim_stl::vector<labelType> idToLabelMapping;
+    vecsim_stl::vector<labelType> idToLabelMapping; 
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
@@ -67,8 +68,11 @@ VectorBlock *BruteForceIndex::getVectorBlock(idType id)
     return vectorBlocks.at(vectorBlock_index);
 
 }
-size_t BruteForceIndex::getVectorRelativeIndex(idType id)
-{
+size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
     //get the relative index of this id inside the vectorBlock
     return id % vectorBlockSize;
+}
+
+labelType BruteForceIndex::getVectorLabel(idType id){
+    return idToLabelMapping.at(id);
 }

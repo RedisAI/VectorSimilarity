@@ -122,7 +122,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     //increase count
     ++count;
-    
+
     return true;
 }
 
@@ -220,6 +220,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     float upperBound = std::numeric_limits<float>::lowest();
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
+    idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
@@ -228,19 +229,21 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.
             if (TopCandidates.size() < k) {
-                TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
+                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
                 upperBound = TopCandidates.top().first;
             } else {
                 // Otherwise, try greedily to improve the top candidates with a vector that
                 // has a better score than the one that has the worst score until now.
                 if (scores[i] >= upperBound) {
+                    ++curr_id;
                     continue;
                 } else {
-                    TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
+                    TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
                     TopCandidates.pop();
                     upperBound = TopCandidates.top().first;
                 }
             }
+            ++curr_id;
         }
     }
     rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
@@ -270,6 +273,8 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
     // Compute scores in every block and save results that are within the range.
     rl.results =
         array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
+
+    idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
@@ -277,9 +282,10 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
         }
         for (size_t i = 0; i < scores.size(); i++) {
             if (scores[i] <= radius) {
-                auto res = VecSimQueryResult{vectorBlock->getMember(i)->label, scores[i]};
+                auto res = VecSimQueryResult{getVectorLabel(curr_id), scores[i]};
                 rl.results = array_append(rl.results, res);
             }
+            ++curr_id;
         }
     }
     rl.code = VecSim_QueryResult_OK;

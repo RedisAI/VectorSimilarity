@@ -24,14 +24,6 @@ public:
 
     inline size_t getLength() { return length; }
 
-    inline VectorBlockMember *getMember(size_t index) { return this->members[index]; }
-
-    inline void setMember(size_t index, VectorBlockMember *member) {
-        this->members[index] = member;
-        member->index = index;
-        member->block = this;
-    }
-
     virtual ~VectorBlock();
 
 private:

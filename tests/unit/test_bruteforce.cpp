@@ -38,11 +38,13 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
 TEST_F(BruteForceTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 15;
+    size_t bs = 20;
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -54,13 +56,32 @@ TEST_F(BruteForceTest, resizeIndex) {
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (by 10% factor from the new index size).
-    VecSimIndex_AddVector(index, (const void *)a, n + 1);
+    // to be aligned with the blockSize
+    VecSimIndex_AddVector(index, (const void *)a, n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+
+    size_t curr_id2labelmapping_size = reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+    ASSERT_EQ(curr_id2labelmapping_size, bs);
+
+    //add up to blockSize + 1 
+    for (size_t i = n + 1; i < bs + 1; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+
+    //size should be bs + 1
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs + 1);
+
+    //id2labelMappting should be increased by blocksize and aligned 
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
-              std::ceil(1.1 * (n + 1)));
+              curr_id2labelmapping_size + bs); 
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size() % bs,
+              0); 
     VecSimIndex_Free(index);
 }
 
