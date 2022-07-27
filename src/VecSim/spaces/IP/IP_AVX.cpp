@@ -46,7 +46,7 @@ float InnerProductSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, const 
 }
 
 float InnerProductSIMD4Ext_AVX_impl(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    float PORTABLE_ALIGN32 TmpRes[4];
+    float PORTABLE_ALIGN16 TmpRes[4];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
     size_t qty = *((size_t *)qty_ptr);
