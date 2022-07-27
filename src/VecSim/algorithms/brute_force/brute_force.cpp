@@ -87,14 +87,22 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
             this->deletedIds.erase(this->deletedIds.begin());
             this->count++;
         } else {
-            id = this->count++;
+            id = count;
+			// save current id2vec size
+			size_t ids_mapping_size = idToVectorBlockMemberMapping.size();
+
+			//if its full - resize index to be a multiplication of block size
+			if (id >= ids_mapping_size) {
+				size_t last_block_vectors_count = count % vectorBlockSize;
+				this->idToVectorBlockMemberMapping.resize(ids_mapping_size + vectorBlockSize - last_block_vectors_count);
+
+			}
+
         }
     }
 
-    // See if new id is bigger than current vector count. Needs to resize the index.
-    if (id >= this->idToVectorBlockMemberMapping.size()) {
-        this->idToVectorBlockMemberMapping.resize(std::ceil(this->count * 1.1));
-    }
+	//anyway - increse count
+	++count;
 
     // Get vector block to store the vector in.
     VectorBlock *vectorBlock;
