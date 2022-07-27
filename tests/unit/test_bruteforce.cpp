@@ -61,7 +61,8 @@ TEST_F(BruteForceTest, resizeIndex) {
     // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() % blockSize,
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
+                  blockSize,
               0);
     VecSimIndex_Free(index);
 }
@@ -238,7 +239,6 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndex_Free(index);
-
 }
 
 TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {

@@ -87,21 +87,20 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
             this->deletedIds.erase(this->deletedIds.begin());
         } else {
             id = count;
-			// save current id2vec size
-			size_t ids_mapping_size = idToVectorBlockMemberMapping.size();
+            // save current id2vec size
+            size_t ids_mapping_size = idToVectorBlockMemberMapping.size();
 
-			//if its full - resize index to be a multiplication of block size
-			if (id >= ids_mapping_size) {
-				size_t last_block_vectors_count = count % vectorBlockSize;
-				this->idToVectorBlockMemberMapping.resize(ids_mapping_size + vectorBlockSize - last_block_vectors_count);
-
-			}
-
+            // if its full - resize index to be a multiplication of block size
+            if (id >= ids_mapping_size) {
+                size_t last_block_vectors_count = count % vectorBlockSize;
+                this->idToVectorBlockMemberMapping.resize(ids_mapping_size + vectorBlockSize -
+                                                          last_block_vectors_count);
+            }
         }
     }
 
-	//anyway - increse count
-	++count;
+    // anyway - increse count
+    ++count;
 
     // Get vector block to store the vector in.
     VectorBlock *vectorBlock;
