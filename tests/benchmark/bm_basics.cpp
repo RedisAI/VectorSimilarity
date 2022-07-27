@@ -27,17 +27,16 @@ static void GetHNSWIndex(VecSimIndex *hnsw_index) {
     }
 }
 
-static void GetTestVectors(std::vector<std::vector<float>> &queries, size_t dim) {
+static void GetTestVectors(std::vector<std::vector<float>> &queries, size_t n_queries, size_t dim) {
     auto location = std::string(std::string(getenv("ROOT")));
     auto file_name = location + "/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
     std::ifstream input(file_name, std::ios::binary);
-    size_t n_query_vectors = 10000;
 
-    queries.reserve(n_query_vectors);
+    queries.reserve(n_queries);
     if (input.is_open()) {
         input.seekg(0, std::ifstream::beg);
-        for (size_t i = 0; i < n_query_vectors; i++) {
+        for (size_t i = 0; i < n_queries; i++) {
             std::vector<float> query(dim);
             input.read((char *)query.data(), dim * sizeof(float));
             queries[i] = query;
@@ -55,6 +54,7 @@ protected:
     size_t dim;
     size_t n_vectors;
     std::vector<std::vector<float>> *queries;
+    size_t n_queries;
 
     // We use this class as a single-tone for every test case, so we won't hold several indices (to
     // reduce memory).
@@ -64,6 +64,7 @@ protected:
     BM_VecSimBasics() {
         dim = 768;
         n_vectors = 1000000;
+        n_queries = 10000;
         ref_count++;
         if (instance != nullptr) {
             // Use the same indices and query vectors for every instance.
@@ -104,7 +105,7 @@ protected:
             }
             // Load the test query vectors form file.
             queries = new std::vector<std::vector<float>>;
-            GetTestVectors(*queries, dim);
+            GetTestVectors(*queries, n_queries, dim);
             instance = this;
         }
     }
@@ -128,7 +129,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
     size_t iter = 0;
     size_t new_id = VecSimIndex_IndexSize(hnsw_index);
     for (auto _ : st) {
-        VecSimIndex_AddVector(hnsw_index, (*queries)[iter++].data(), new_id++);
+        VecSimIndex_AddVector(hnsw_index, (*queries)[(iter % n_queries)].data(), new_id++);
+        iter++;
     }
     // Clean-up.
     size_t new_index_size = VecSimIndex_IndexSize(hnsw_index);
@@ -165,9 +167,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index, (*queries)[iter++].data(), k, nullptr, BY_SCORE);
-        if (iter == queries->size())
-            break;
+        VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
+        iter++;
     }
 }
 
@@ -179,13 +180,13 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
     for (auto _ : st) {
         auto query_params =
             VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-        auto hnsw_results =
-            VecSimIndex_TopKQuery(hnsw_index, (*queries)[iter].data(), k, &query_params, BY_SCORE);
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, (*queries)[iter % n_queries].data(),
+                                                  k, &query_params, BY_SCORE);
         st.PauseTiming();
 
         // Measure recall:
-        auto bf_results =
-            VecSimIndex_TopKQuery(bf_index, (*queries)[iter].data(), k, nullptr, BY_SCORE);
+        auto bf_results = VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k,
+                                                nullptr, BY_SCORE);
         auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
         while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
             auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
@@ -218,11 +219,10 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
     size_t total_res = 0;
 
     for (auto _ : st) {
-        auto res =
-            VecSimIndex_RangeQuery(bf_index, (*queries)[iter++].data(), radius, nullptr, BY_ID);
+        auto res = VecSimIndex_RangeQuery(bf_index, (*queries)[iter % n_queries].data(), radius,
+                                          nullptr, BY_ID);
         total_res += VecSimQueryResult_Len(res);
-        if (iter == queries->size())
-            break;
+        iter++;
     }
     st.counters["Avg. results number"] = (double)total_res / iter;
 }
