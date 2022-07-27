@@ -83,51 +83,52 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         return true;
     }
 
-	//give the vector new id
+    //give the vector new id
 	idType id = count;
 
-    //increase count
-    ++count;
+    // Get vector block to store the vector in.
 
+    //if vectorBlocks vector is empty ||last_vector_block is full create a new block
+    if(count % vectorBlockSize == 0) {
+        VectorBlock *new_vectorBlock = new (this->allocator)
+            VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+        this->vectorBlocks.push_back(new_vectorBlock);
+    }
+
+    // get the last vectors block
+    VectorBlock *vectorBlock = this->vectorBlocks.back();
+
+    assert(vectorBlock == vectorBlocks[count / vectorBlockSize]);
 
     // if idToLabelMapping is full,
-	// meaning also the last vector block is full
-	// resize by idToLabelMapping vectorBlockSiz
-	// add new vectorblock
+	// resize and align idToLabelMapping by vectorBlockSize
     size_t idToLabelMapping_size =  this->idToLabelMapping.size();
 
-    if (id >=idToLabelMapping_size){
+    if (count >= idToLabelMapping_size) {
+        size_t extra_space_to_free = curr_capacity % block_size;
+
         this->idToLabelMapping.resize(idToLabelMapping_size + vectorBlockSize, 0);
     }
+
+
+
+
+
+
 
 	//add label to idToLabelMapping
 	idToLabelMapping[id] = label;
 
-    // Get vector block to store the vector in.
-    VectorBlock *vectorBlock;
-    if (this->vectorBlocks.size() == 0) {
-        // No vector blocks, create new one.
-        vectorBlock =
-            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
-        this->vectorBlocks.push_back(vectorBlock);
-    } else {
-        // Get the last vector block.
-        vectorBlock = this->vectorBlocks.back();
-		assert(vectorBlock == vectorBlocks[id / vectorBlockSize]);
-
-        if (vectorBlock->getLength() == this->vectorBlockSize) {
-            // Last vector block is full, create a new one.
-            vectorBlock = new (this->allocator)
-                VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
-            this->vectorBlocks.push_back(vectorBlock);
-        }
-    }
-
+    
     // Create vector block membership.
 
     this->idToLabelMapping[id] = label;
     vectorBlock->addVector(vectorBlockMember, vector_data);
     this->labelToIdLookup.emplace(label, id);
+
+
+    //increase count
+    ++count;
     return true;
 }
 
