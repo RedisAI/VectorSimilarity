@@ -1559,7 +1559,7 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    estimation = VecSimIndex_EstimateElementSize(&params) * (bs % n + bs);
 
     actual = 0;
     for (size_t i = 0; i < bs; i++) {
