@@ -5,6 +5,13 @@
 InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
     : SpaceInterface(allocator) {
     fstdistfunc_ = InnerProduct;
+
+    // General optimization logic:
+    // SIMD16 perform computations on 16 float at a time in each iteration, while SIMD4 perform
+    // computations on 16 float on most of the vector, and on the residual performing on 4 floats at
+    // a time.
+    // When we have a dimension that is not divisible by 4, we should use SIMD16ExtResiduals only if
+    // the reminder is less than 4, because otherwise we can still perform SIMD4 operations.
 #if defined(M1)
 
 #elif defined(__x86_64__)
