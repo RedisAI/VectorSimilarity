@@ -14,11 +14,7 @@ VectorBlock::~VectorBlock() {
     this->allocator->deallocate(vectors, sizeof(float) * blockSize * dim);
 }
 
-void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *vectorData) {
-    // Mutual point both structs on each other.
-    this->members[this->length] = vectorBlockMember;
-    vectorBlockMember->block = this;
-    vectorBlockMember->index = this->length;
+void VectorBlock::addVector(const void *vectorData) {
 
     // Copy vector data and update block size.
     memcpy(this->vectors + (this->length * this->dim), vectorData, this->dim * sizeof(float));

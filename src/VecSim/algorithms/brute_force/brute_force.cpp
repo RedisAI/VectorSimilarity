@@ -100,35 +100,29 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     assert(vectorBlock == vectorBlocks[count / vectorBlockSize]);
 
+    // add vector data to vectorBlock
+    vectorBlock->addVector(vector_data);
+
+
     // if idToLabelMapping is full,
 	// resize and align idToLabelMapping by vectorBlockSize
     size_t idToLabelMapping_size =  this->idToLabelMapping.size();
 
     if (count >= idToLabelMapping_size) {
-        size_t extra_space_to_free = curr_capacity % block_size;
-
-        this->idToLabelMapping.resize(idToLabelMapping_size + vectorBlockSize, 0);
+        size_t last_block_vectors_count = count % vectorBlockSize;
+        this->idToLabelMapping.resize(idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
     }
-
-
-
-
-
-
 
 	//add label to idToLabelMapping
 	idToLabelMapping[id] = label;
-
     
-    // Create vector block membership.
-
-    this->idToLabelMapping[id] = label;
-    vectorBlock->addVector(vectorBlockMember, vector_data);
+    //add id to label:id map
     this->labelToIdLookup.emplace(label, id);
 
 
     //increase count
     ++count;
+    
     return true;
 }
 

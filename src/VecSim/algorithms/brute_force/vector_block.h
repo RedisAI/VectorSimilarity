@@ -14,7 +14,7 @@ struct VectorBlock : public VecsimBaseObject {
 public:
     VectorBlock(size_t blockSize, size_t vectorSize, std::shared_ptr<VecSimAllocator> allocator);
 
-    void addVector(VectorBlockMember *vectorBlockMember, const void *vectorData);
+    void addVector(const void *vectorData);
 
     void updateVector(size_t index, const void *vector_data);
 
