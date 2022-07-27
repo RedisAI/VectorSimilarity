@@ -1499,6 +1499,17 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
+    // Check timeout again - range query.
+    VecSimIndex_AddVector(index, vec, 1);
+    ASSERT_EQ(VecSimIndex_Info(index).hnswInfo.max_level, 0);
+    // Here, the entry point is inserted to the results set before we test for timeout.
+    // hence, expect a single result to be returned (instead of 2 that would have return without
+    // timeout).
+    rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 1);
+    VecSimQueryResult_Free(rl);
+
     // Fail on searching bottom layer entry point.
     // We need to have at least 1 vector in layer higher than 0 to fail there.
     size_t next = 0;
@@ -1512,7 +1523,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
-    // Check timeout again - range query
+    // Timeout on searching bottom layer entry point - range query.
     rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
@@ -1640,7 +1651,7 @@ TEST_F(HNSWLibTest, rangeQuery) {
 }
 
 TEST_F(HNSWLibTest, rangeQueryCosine) {
-    size_t n = 100;
+    size_t n = 800;
     size_t dim = 4;
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -1659,6 +1670,7 @@ TEST_F(HNSWLibTest, rangeQueryCosine) {
         // Use as label := n - (internal id)
         VecSimIndex_AddVector(index, (const void *)f, n - i);
     }
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     float query[dim];
     for (size_t i = 0; i < dim; i++) {
@@ -1685,6 +1697,13 @@ TEST_F(HNSWLibTest, rangeQueryCosine) {
                 (sqrtf((float)dim) *
                  sqrtf((float)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
+
+    // Rerun with query params.
+    auto query_params =
+        VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = 0.0001}};
+    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE,
+                      &query_params);
+
     // Return results BY_ID should give the same results.
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
 

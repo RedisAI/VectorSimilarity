@@ -1367,7 +1367,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         dynamic_range = radius; // to ensure that dyn_range >= radius.
     }
 
-    candidate_set.emplace(-dynamic_range, ep_id);
+    candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
