@@ -6,15 +6,9 @@
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/spaces/space_aux.h"
 
-#include "VecSim/spaces/IP/IP.h"
-#include "VecSim/spaces/IP/IP_SSE.h"
-#include "VecSim/spaces/IP/IP_AVX.h"
-#include "VecSim/spaces/IP/IP_AVX512.h"
-
 #include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/L2/L2_SSE.h"
-#include "VecSim/spaces/L2/L2_AVX.h"
-#include "VecSim/spaces/L2/L2_AVX512.h"
+#include "VecSim/spaces/IP/IP.h"
+
 
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
@@ -55,6 +49,9 @@ public:
 };
 
 // AVX512 functions
+#ifdef __AVX512F__
+#include "VecSim/spaces/L2/L2_AVX512.h"
+#include "VecSim/spaces/IP/IP_AVX512.h"
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_L2_16)(benchmark::State &st) {
     ASSERT_OPT(ARCH_OPT_AVX512);
@@ -105,7 +102,12 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_IP_4_Residuals)(benchmark::State &st)
     }
 }
 
+#endif // AVX512F
+
 // AVX functions
+#ifdef __AVX__
+#include "VecSim/spaces/L2/L2_AVX.h"
+#include "VecSim/spaces/IP/IP_AVX.h"
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_L2_16)(benchmark::State &st) {
     ASSERT_OPT(ARCH_OPT_AVX);
@@ -155,8 +157,12 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_IP_4_Residuals)(benchmark::State &st) {
         InnerProductSIMD4ExtResiduals_AVX(v1, v2, &dim);
     }
 }
+#endif // AVX
 
 // SSE functions
+#ifdef __SSE__
+#include "VecSim/spaces/L2/L2_SSE.h"
+#include "VecSim/spaces/IP/IP_SSE.h"
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_L2_16)(benchmark::State &st) {
     ASSERT_OPT(ARCH_OPT_SSE);
@@ -207,6 +213,8 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_IP_4_Residuals)(benchmark::State &st) {
     }
 }
 
+#endif // SSE
+
 // Naive algorithms
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_IP)(benchmark::State &st) {
@@ -239,7 +247,7 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_L2)(benchmark::State &st) {
         ->ArgName("Dimension")                                                                     \
         ->Unit(benchmark::kNanosecond)
 
-// AVX512
+#ifdef __AVX512F__
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_L2_16) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_L2_4) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_L2_16_Residuals) RESIDUAL_PARAMS;
@@ -248,8 +256,9 @@ BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_IP_16) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_IP_4) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_IP_16_Residuals) RESIDUAL_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX512_IP_4_Residuals) RESIDUAL_PARAMS;
+#endif
 
-// AVX
+#ifdef __AVX__
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_L2_16) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_L2_4) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_L2_16_Residuals) RESIDUAL_PARAMS;
@@ -258,8 +267,9 @@ BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_IP_16) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_IP_4) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_IP_16_Residuals) RESIDUAL_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, AVX_IP_4_Residuals) RESIDUAL_PARAMS;
+#endif
 
-// SSE
+#ifdef __SSE__
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_L2_16) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_L2_4) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_L2_16_Residuals) RESIDUAL_PARAMS;
@@ -268,6 +278,7 @@ BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_IP_16) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_IP_4) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_IP_16_Residuals) RESIDUAL_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, SSE_IP_4_Residuals) RESIDUAL_PARAMS;
+#endif
 
 // Naive
 BENCHMARK_REGISTER_F(BM_VecSimSpaces, NAIVE_L2) EXACT_PARAMS;
