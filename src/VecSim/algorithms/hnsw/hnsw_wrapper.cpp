@@ -114,6 +114,11 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) {
     bool res = this->hnsw->removePoint(id);
+
+    // If id doesnt exist
+    if(false == res) { 
+        return res;
+    }
     size_t index_size = hnsw->getIndexSize();
     size_t curr_capacity = this->hnsw->getIndexCapacity();
 
@@ -124,7 +129,7 @@ int HNSWIndex::deleteVector(size_t id) {
         // Check if the capacity is aligned to block size.
         size_t extra_space_to_free = curr_capacity % blockSize;
 
-        // Remove one block from the capacity.
+        // Remove one block from the capacity. TODO check that we dont go below zero
         this->hnsw->resizeIndex(curr_capacity - blockSize - extra_space_to_free);
     }
     return res;

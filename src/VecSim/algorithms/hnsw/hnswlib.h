@@ -948,7 +948,7 @@ template <typename dist_t>
 bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // check that the label actually exists in the graph, and update the number of elements.
     if (label_lookup_.find(label) == label_lookup_.end()) {
-        return true;
+        return false;
     }
     tableint element_internal_id = label_lookup_[label];
     vecsim_stl::vector<bool> neighbours_bitmap(allocator);
