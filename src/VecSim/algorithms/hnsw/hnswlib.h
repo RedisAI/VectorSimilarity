@@ -160,7 +160,7 @@ public:
     linklistsizeint *get_linklist_at_level(tableint internal_id, size_t level) const;
     unsigned short int getListCount(const linklistsizeint *ptr) const;
     void resizeIndex(size_t new_max_elements);
-    bool removePoint(labeltype label);
+    void removePoint(labeltype label);
     void addPoint(const void *data_point, labeltype label);
     dist_t getDistanceByLabelFromPoint(labeltype label, const void *data_point);
     tableint searchBottomLayerEP(const void *query_data, void *timeoutCtx,
@@ -950,11 +950,8 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
 }
 
 template <typename dist_t>
-bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
-    // check that the label actually exists in the graph, and update the number of elements.
-    if (!isLabelExist(label)) {
-        return false;
-    }
+void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
+
     tableint element_internal_id = label_lookup_[label];
     vecsim_stl::vector<bool> neighbours_bitmap(allocator);
 
@@ -1046,10 +1043,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
-        // Checking if an element with the given label already exists. if so, remove it.
-        if (label_lookup_.find(label) != label_lookup_.end()) {
-            removePoint(label);
-        }
+
         if (cur_element_count >= max_elements_) {
             throw std::runtime_error("The number of elements exceeds the specified limit");
         }

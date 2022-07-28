@@ -120,11 +120,12 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) {
 
-    // If id doesnt exist
+    // If id doesnt exist.
     if (!this->hnsw->isLabelExist(id)) {
         return false;
     }
 
+    //Else delte it from the graph.
     this->hnsw->removePoint(id);
 
     size_t index_size = hnsw->getIndexSize();
