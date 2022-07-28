@@ -125,7 +125,7 @@ int HNSWIndex::deleteVector(size_t id) {
         return false;
     }
 
-    //Else delte it from the graph.
+    // Else delte it from the graph.
     this->hnsw->removePoint(id);
 
     size_t index_size = hnsw->getIndexSize();

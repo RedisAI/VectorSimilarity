@@ -1031,7 +1031,6 @@ void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     } else {
         SwapLastIdWithDeletedId(element_internal_id, last_element_internal_id);
     }
-    return true;
 }
 
 template <typename dist_t>
