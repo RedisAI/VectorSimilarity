@@ -87,6 +87,9 @@ commands:
           name: Build
           command: bash -l -c "make build"
       - run:
+          name: Benchmark
+          command: bash -l -c "make benchmark"
+      - run:
           name: Unit test
           command: bash -l -c "make unit_test"
       - run:
@@ -110,6 +113,9 @@ commands:
       - run:
           name: Build
           command: bash -l -c "make build"
+      - run:
+          name: Benchmark
+          command: bash -l -c "make benchmark"
       - run:
           name: Unit test
           command: bash -l -c "make unit_test"
