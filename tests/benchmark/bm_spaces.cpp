@@ -16,12 +16,6 @@ protected:
     float *v1, *v2;
     Arch_Optimization opt;
 
-#define ASSERT_OPT(OPT)                                                                            \
-    if (1) {                                                                                       \
-        if (opt < OPT)                                                                             \
-            return;                                                                                \
-    } else
-
     BM_VecSimSpaces() {
         rng.seed(47);
         opt = getArchitectureOptimization();
@@ -47,60 +41,31 @@ public:
     ~BM_VecSimSpaces() {}
 };
 
+// Defining the generic benchmark flow: if there is support for the optimization, benchmark the
+// function.
+#define BENCHMARK_DISTANCE_F(arch, settings, func)                                                 \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, arch##_##settings)(benchmark::State & st) {                \
+        if (opt < ARCH_OPT_##arch)                                                                 \
+            return;                                                                                \
+        for (auto _ : st) {                                                                        \
+            func(v1, v2, &dim);                                                                    \
+        }                                                                                          \
+    }
+
 // AVX512 functions
 #ifdef __AVX512F__
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_L2_16)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        L2SqrSIMD16Ext_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_L2_4)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        L2SqrSIMD4Ext_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_L2_16_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        L2SqrSIMD16ExtResiduals_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_L2_4_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        L2SqrSIMD4ExtResiduals_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_IP_16)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        InnerProductSIMD16Ext_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_IP_4)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        InnerProductSIMD4Ext_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_IP_16_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        InnerProductSIMD16ExtResiduals_AVX512(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_IP_4_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX512);
-    for (auto _ : st) {
-        InnerProductSIMD4ExtResiduals_AVX512(v1, v2, &dim);
-    }
-}
+BENCHMARK_DISTANCE_F(AVX512, L2_16, L2SqrSIMD16Ext_AVX512)
+BENCHMARK_DISTANCE_F(AVX512, L2_4, L2SqrSIMD4Ext_AVX512)
+BENCHMARK_DISTANCE_F(AVX512, L2_16_Residuals, L2SqrSIMD16ExtResiduals_AVX512)
+BENCHMARK_DISTANCE_F(AVX512, L2_4_Residuals, L2SqrSIMD4ExtResiduals_AVX512)
 
+BENCHMARK_DISTANCE_F(AVX512, IP_16, InnerProductSIMD16Ext_AVX512)
+BENCHMARK_DISTANCE_F(AVX512, IP_4, InnerProductSIMD4Ext_AVX512)
+BENCHMARK_DISTANCE_F(AVX512, IP_16_Residuals, InnerProductSIMD16ExtResiduals_AVX512)
+BENCHMARK_DISTANCE_F(AVX512, IP_4_Residuals, InnerProductSIMD4ExtResiduals_AVX512)
 #endif // AVX512F
 
 // AVX functions
@@ -108,54 +73,15 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX512_IP_4_Residuals)(benchmark::State &st)
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_L2_16)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        L2SqrSIMD16Ext_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_L2_4)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        L2SqrSIMD4Ext_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_L2_16_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        L2SqrSIMD16ExtResiduals_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_L2_4_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        L2SqrSIMD4ExtResiduals_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_IP_16)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        InnerProductSIMD16Ext_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_IP_4)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        InnerProductSIMD4Ext_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_IP_16_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        InnerProductSIMD16ExtResiduals_AVX(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_IP_4_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_AVX);
-    for (auto _ : st) {
-        InnerProductSIMD4ExtResiduals_AVX(v1, v2, &dim);
-    }
-}
+BENCHMARK_DISTANCE_F(AVX, L2_16, L2SqrSIMD16Ext_AVX)
+BENCHMARK_DISTANCE_F(AVX, L2_4, L2SqrSIMD4Ext_AVX)
+BENCHMARK_DISTANCE_F(AVX, L2_16_Residuals, L2SqrSIMD16ExtResiduals_AVX)
+BENCHMARK_DISTANCE_F(AVX, L2_4_Residuals, L2SqrSIMD4ExtResiduals_AVX)
+
+BENCHMARK_DISTANCE_F(AVX, IP_16, InnerProductSIMD16Ext_AVX)
+BENCHMARK_DISTANCE_F(AVX, IP_4, InnerProductSIMD4Ext_AVX)
+BENCHMARK_DISTANCE_F(AVX, IP_16_Residuals, InnerProductSIMD16ExtResiduals_AVX)
+BENCHMARK_DISTANCE_F(AVX, IP_4_Residuals, InnerProductSIMD4ExtResiduals_AVX)
 #endif // AVX
 
 // SSE functions
@@ -163,55 +89,15 @@ BENCHMARK_DEFINE_F(BM_VecSimSpaces, AVX_IP_4_Residuals)(benchmark::State &st) {
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
 
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_L2_16)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        L2SqrSIMD16Ext_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_L2_4)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        L2SqrSIMD4Ext_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_L2_16_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        L2SqrSIMD16ExtResiduals_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_L2_4_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        L2SqrSIMD4ExtResiduals_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_IP_16)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        InnerProductSIMD16Ext_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_IP_4)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        InnerProductSIMD4Ext_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_IP_16_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        InnerProductSIMD16ExtResiduals_SSE(v1, v2, &dim);
-    }
-}
-BENCHMARK_DEFINE_F(BM_VecSimSpaces, SSE_IP_4_Residuals)(benchmark::State &st) {
-    ASSERT_OPT(ARCH_OPT_SSE);
-    for (auto _ : st) {
-        InnerProductSIMD4ExtResiduals_SSE(v1, v2, &dim);
-    }
-}
+BENCHMARK_DISTANCE_F(SSE, L2_16, L2SqrSIMD16Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_4, L2SqrSIMD4Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_16_Residuals, L2SqrSIMD16ExtResiduals_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_4_Residuals, L2SqrSIMD4ExtResiduals_SSE)
 
+BENCHMARK_DISTANCE_F(SSE, IP_16, InnerProductSIMD16Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_4, InnerProductSIMD4Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_16_Residuals, InnerProductSIMD16ExtResiduals_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_4_Residuals, InnerProductSIMD4ExtResiduals_SSE)
 #endif // SSE
 
 // Naive algorithms
