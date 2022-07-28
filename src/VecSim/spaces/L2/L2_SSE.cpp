@@ -7,10 +7,10 @@ float L2SqrSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, const void *q
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
     size_t qty = *((size_t *)qty_ptr);
-    float PORTABLE_ALIGN32 TmpRes[8];
-    size_t qty16 = qty >> 4;
+    float PORTABLE_ALIGN16 TmpRes[4];
+    size_t qty16 = qty >> 4 << 4;
 
-    const float *pEnd1 = pVect1 + (qty16 << 4);
+    const float *pEnd1 = pVect1 + qty16;
 
     __m128 diff, v1, v2;
     __m128 sum = _mm_set1_ps(0);
@@ -62,14 +62,14 @@ float L2SqrSIMD16ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, cons
 }
 
 float L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-    float PORTABLE_ALIGN32 TmpRes[8];
+    float PORTABLE_ALIGN16 TmpRes[4];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
     size_t qty = *((size_t *)qty_ptr);
 
-    size_t qty4 = qty >> 2;
+    size_t qty4 = qty >> 2 << 2;
 
-    const float *pEnd1 = pVect1 + (qty4 << 2);
+    const float *pEnd1 = pVect1 + qty4;
 
     __m128 diff, v1, v2;
     __m128 sum = _mm_set1_ps(0);
