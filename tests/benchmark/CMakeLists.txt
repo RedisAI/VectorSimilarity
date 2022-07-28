@@ -16,7 +16,11 @@ target_link_libraries(bm_batch_iterator VectorSimilarity benchmark::benchmark)
 add_executable(bm_basics bm_basics.cpp)
 target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
 
-# This benchmark calls
+#########################################################################################
+# Passed this line we have optimization enabled by the compiler.                        #
+# Adding files to complie after this line will have an effect on the resulted binaries. #
+#########################################################################################
+
 include(CheckCXXCompilerFlag)
 # TODO: Remove this once cpu_features get support for M1
 if(NOT APPLE)
