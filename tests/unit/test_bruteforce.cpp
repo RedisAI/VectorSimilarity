@@ -57,6 +57,12 @@ TEST_F(BruteForceTest, resizeIndex) {
     }
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
 
+    // remove invalid id
+    VecSimIndex_DeleteVector(index, 3459);
+
+    // This should do nothing
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);

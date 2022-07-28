@@ -1043,9 +1043,6 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
 
-        if (cur_element_count >= max_elements_) {
-            throw std::runtime_error("The number of elements exceeds the specified limit");
-        }
         cur_c = max_id = cur_element_count++;
         label_lookup_[label] = cur_c;
     }
