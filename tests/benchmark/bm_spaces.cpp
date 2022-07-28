@@ -9,7 +9,6 @@
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/IP/IP.h"
 
-
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
