@@ -176,7 +176,7 @@ TEST_F(SpacesTest, l2_16) {
     }
 }
 
-// This test will trigger the function for dimension % 16 == 0 and dimension % 4 == 0, for each
+// This test will trigger the function for dimension % 4 == 0 for each optimization.
 // optimization.
 TEST_F(SpacesTest, ip_20) {
     Arch_Optimization optimization = getArchitectureOptimization();
