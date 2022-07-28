@@ -905,7 +905,7 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
 }
 
 TEST_F(HNSWLibTest, hnsw_override) {
-    size_t n = 50;
+    size_t n = 100;
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 300;
@@ -932,7 +932,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Insert again n == 50 vectors with the same id.
+    // Insert again n == 100 vectors with the same id.
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
