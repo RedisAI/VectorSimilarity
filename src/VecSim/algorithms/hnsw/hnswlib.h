@@ -167,6 +167,7 @@ public:
                                  VecSimQueryResult_Code *rc) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+    bool isLabelExist(labeltype label);
 };
 
 /**
@@ -322,6 +323,10 @@ VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
     return visited_nodes_handler.get();
 }
 
+template <typename dist_t>
+bool HierarchicalNSW<dist_t>::isLabelExist(labeltype label) {
+    return (label_lookup_.find(label) != label_lookup_.end());
+}
 /**
  * helper functions
  */
@@ -947,7 +952,7 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
 template <typename dist_t>
 bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     // check that the label actually exists in the graph, and update the number of elements.
-    if (label_lookup_.find(label) == label_lookup_.end()) {
+    if (!isLabelExist(label)) {
         return false;
     }
     tableint element_internal_id = label_lookup_[label];

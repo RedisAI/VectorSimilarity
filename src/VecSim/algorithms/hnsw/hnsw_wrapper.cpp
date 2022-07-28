@@ -92,6 +92,12 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
 }
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
+
+    // If id already exists
+    if (this->hnsw->isLabelExist(id)) {
+        return false;
+    }
+
     try {
         float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
@@ -113,12 +119,14 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 }
 
 int HNSWIndex::deleteVector(size_t id) {
-    bool res = this->hnsw->removePoint(id);
 
     // If id doesnt exist
-    if (false == res) {
-        return res;
+    if (!this->hnsw->isLabelExist(id)) {
+        return false;
     }
+
+    this->hnsw->removePoint(id);
+
     size_t index_size = hnsw->getIndexSize();
     size_t curr_capacity = this->hnsw->getIndexCapacity();
 
@@ -132,7 +140,7 @@ int HNSWIndex::deleteVector(size_t id) {
         // Remove one block from the capacity. TODO check that we dont go below zero
         this->hnsw->resizeIndex(curr_capacity - blockSize - extra_space_to_free);
     }
-    return res;
+    return true;
 }
 
 double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {

@@ -905,7 +905,7 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
 }
 
 TEST_F(HNSWLibTest, hnsw_override) {
-    size_t n = 100;
+    size_t n = 50;
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 300;
@@ -922,6 +922,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_TRUE(index != nullptr);
 
+    // Insert n == initialCapacity vectors
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -931,7 +932,19 @@ TEST_F(HNSWLibTest, hnsw_override) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Insert again 300 vectors, the first 100 will be overwritten (deleted first).
+    // Insert again n == 50 vectors with the same id.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    // Nothing should happen, as addVector first checks wheather the id already exists.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
+
+    // Insert another 300 vectors
     n = 300;
     for (size_t i = 0; i < n; i++) {
         float f[dim];
@@ -940,6 +953,12 @@ TEST_F(HNSWLibTest, hnsw_override) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
+
+    // We expect 300 vectors and the capacity aligned to a vector blockSize
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
+              DEFAULT_BLOCK_SIZE);
+
     float query[dim];
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
@@ -1359,7 +1378,10 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
         VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
     }
 
-    // Delete arbitrary vector (trigger removal of a block).
+    // Nothing should happen since addVector first checks if id exists.
+    ASSERT_EQ(VecSimIndex_IndexSize(new_index), VecSimIndex_IndexSize(index));
+
+    // Delete arbitrary vector, capacity wont be affected.
     VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * (n + 1)));
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex()->getIndexCapacity(), n);
 
