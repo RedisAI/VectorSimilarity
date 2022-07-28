@@ -93,9 +93,9 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
-    // If id already exists
+    // If id already exists remove and re-add
     if (this->hnsw->isLabelExist(id)) {
-        return false;
+        this->hnsw->removePoint(id);
     }
 
     try {
