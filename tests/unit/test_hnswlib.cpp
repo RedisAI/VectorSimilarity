@@ -79,9 +79,8 @@ TEST_F(HNSWLibTest, resizeNAlignIndex) {
     // New capacity = intiailcapacity + blockSize - intiailcapacity % blockSize.
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
               n + bs - n % bs);
-    //Check actual numbers **cahnge this if you change the intial parameters**
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              12);
+    // Check actual numbers **cahnge this if you change the intial parameters**
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), 12);
     VecSimIndex_Free(index);
 }
 
@@ -119,14 +118,12 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_initailCapacity_is_big) {
 
     // The capacity should be now aligned with the block size.
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity() % bs, 0);
-    // New capacity = intiailcapacity - block_size - number_of_vectors_to_align = 
+    // New capacity = intiailcapacity - block_size - number_of_vectors_to_align =
     // 32  - 3 - 32 % 3 (2) = 27
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
               n - bs - n % bs);
-    //Check actual numbers **cahnge this if you change the intial parameters**
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              27);
-
+    // Check actual numbers **cahnge this if you change the intial parameters**
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), 27);
 
     size_t curr_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
     // Add another vector - > the capacity remains the same.
@@ -139,9 +136,8 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_initailCapacity_is_big) {
 
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
               curr_capacity - bs);
-    //Check actual numbers **cahnge this if you change the intial parameters**
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              24);
+    // Check actual numbers **cahnge this if you change the intial parameters**
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), 24);
     VecSimIndex_Free(index);
 }
 

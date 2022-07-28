@@ -65,14 +65,14 @@ TEST_F(BruteForceTest, resizeIndex) {
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
                   blockSize,
               0);
-    //Check new capacity size, should be blockSize * 2.
+    // Check new capacity size, should be blockSize * 2.
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
               2 * blockSize);
 
-	// Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again 
-	// to check that it stays aligned with blocksize.
+    // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
+    // to check that it stays aligned with blocksize.
 
-	size_t add_vectors_count = 8;
+    size_t add_vectors_count = 8;
     for (size_t i = 0; i < add_vectors_count; i++) {
         for (size_t j = 0; j < dim; j++) {
             a[j] = (float)i;
@@ -80,17 +80,16 @@ TEST_F(BruteForceTest, resizeIndex) {
         VecSimIndex_AddVector(index, (const void *)a, n + 2 + i);
     }
 
-	//Size should be n + 1 + 8 = 24.
-	ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
+    // Size should be n + 1 + 8 = 24.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
     // Check alignment of the capacity
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
                   blockSize,
               0);
-    //Check new capacity size, should be blockSize * 3.
+    // Check new capacity size, should be blockSize * 3.
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
               3 * blockSize);
 
-    
     VecSimIndex_Free(index);
 }
 
