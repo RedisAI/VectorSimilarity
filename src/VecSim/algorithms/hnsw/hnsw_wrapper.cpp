@@ -116,7 +116,7 @@ int HNSWIndex::deleteVector(size_t id) {
     bool res = this->hnsw->removePoint(id);
 
     // If id doesnt exist
-    if(false == res) { 
+    if (false == res) {
         return res;
     }
     size_t index_size = hnsw->getIndexSize();
