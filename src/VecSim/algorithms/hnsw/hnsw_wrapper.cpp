@@ -37,7 +37,7 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
            sizeof(size_t);
     est += sizeof(*hnsw) + sizeof(size_t);
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
-    // used for synchronization only when parallel indexing / searching is enabled.
+    // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool);
 #endif
@@ -46,7 +46,7 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
     est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
     est += sizeof(size_t) * params->initialCapacity +
-           sizeof(size_t); // labels lookup hash table buckets
+           sizeof(size_t); // Labels lookup hash table buckets.
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
@@ -93,7 +93,7 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
     try {
-        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, vector_data, this->dim * sizeof(float));
@@ -115,18 +115,17 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 int HNSWIndex::deleteVector(size_t id) {
     bool res = this->hnsw->removePoint(id);
     size_t index_size = hnsw->getIndexSize();
-    size_t block_size = this->blockSize;
     size_t curr_capacity = this->hnsw->getIndexCapacity();
 
-    // if we need to free a complete block & there is a least one block between the
-    // capacity and the size
-    if (index_size % block_size == 0 && index_size + block_size <= curr_capacity) {
+    // If we need to free a complete block & there is a least one block between the
+    // capacity and the size.
+    if (index_size % blockSize == 0 && index_size + blockSize <= curr_capacity) {
 
-        // check if the capacity is aligned to block size
-        size_t extra_space_to_free = curr_capacity % block_size;
+        // Check if the capacity is aligned to block size.
+        size_t extra_space_to_free = curr_capacity % blockSize;
 
-        // remove one block from the capacity
-        this->hnsw->resizeIndex(curr_capacity - block_size - extra_space_to_free);
+        // Remove one block from the capacity.
+        this->hnsw->resizeIndex(curr_capacity - blockSize - extra_space_to_free);
     }
     return res;
 }
@@ -145,7 +144,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
     void *timeoutCtx = nullptr;
     try {
         this->last_mode = STANDARD_KNN;
-        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, query_data, this->dim * sizeof(float));
@@ -171,7 +170,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
             VecSimQueryResult_SetScore(rl.results[i], knn_res.top().first);
             knn_res.pop();
         }
-        // Restore efRuntime
+        // Restore efRuntime.
         hnsw->setEf(originalEF);
         assert(hnsw->getEf() == originalEF);
 
@@ -217,7 +216,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    // For readability. Update this number when needed;
+    // For readability. Update this number when needed.
     size_t numberOfInfoFields = 12;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
