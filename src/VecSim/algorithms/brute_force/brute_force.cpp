@@ -127,48 +127,74 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 }
 
 int BruteForceIndex::deleteVector(size_t label) {
-    idType id;
-    auto optionalId = this->labelToIdLookup.find(label);
-    if (optionalId == this->labelToIdLookup.end()) {
-        // Nothing to delete;
+    
+    //Find the id to delete.
+    auto deleted_label_id_pair = this->labelToIdLookup.find(label); 
+    if (deleted_label_id_pair == this->labelToIdLookup.end()) {
+        // Nothing to delete.
         return true;
-    } else {
-        id = optionalId->second;
-    }
+    } 
+    
+    //Get deleted vector id + label.
+    labelType deleted_label = deleted_label_id_pair->first; 
+    idType id_to_delete = deleted_label_id_pair->second;
 
-    // Get the vector block, and vector block member of the vector to be deleted.
-    VectorBlockMember *vectorBlockMember = this->idToLabelMapping[id];
-    VectorBlock *vectorBlock = vectorBlockMember->block;
-    size_t vectorIndex = vectorBlockMember->index;
+    
+    idType last_idx = count - 1;
 
-    VectorBlock *lastVectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
-    VectorBlockMember *lastVectorBlockMember =
-        lastVectorBlock->getMember(lastVectorBlock->getLength() - 1);
+    //Update id2labelmapping.
 
-    // Swap the last vector with the deleted vector;
-    vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
+    //Put the label of the last_id in the deleted_id.
+    labelType last_idx_label = getVectorLabel(last_idx);
+    setVectorLabel(id_to_delete, last_idx_label);
 
-    float *destination = vectorBlock->getVector(vectorIndex);
-    float *origin = lastVectorBlock->removeAndFetchVector();
-    memmove(destination, origin, sizeof(float) * this->dim);
 
-    // Delete the vector block membership
-    delete vectorBlockMember;
-    this->idToLabelMapping[id] = NULL;
-    // Add deleted id to reusable ids.
-    this->deletedIds.emplace(id);
-    this->labelToIdLookup.erase(label);
+    //Update label2id mapping.
 
-    // If the last vector block is emtpy;
-    if (lastVectorBlock->getLength() == 0) {
-        delete lastVectorBlock;
+    //Update this id in label:id pair of last index.
+    auto last_label_id_pair = labelToIdLookup.find(last_idx_label); 
+    deleted_label_id_pair->second = id_to_delete;
+    //Remove the pair of the deleted vector.
+    labelToIdLookup.erase(label);
+
+
+    //Get last vector data.
+    VectorBlock *last_vector_block = vectorBlocks.back();
+    assert(last_vector_block == vectorBlocks.at(last_idx / vectorBlockSize));
+
+    float *last_vector_data = last_vector_block->removeAndFetchVector();
+
+    // Get the vectorBlock and the relative index of the deleted id.
+    VectorBlock *deleted_vectorBlock = getVectorBlock(id_to_delete);
+    size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
+
+    //Put data of last vector inpalce of the deleted vector.
+    deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
+
+    //Update count.
+    --count;
+
+    // If the last vector block is emtpy.
+    if (last_vector_block->getLength() == 0) {
+        delete last_vector_block;
         this->vectorBlocks.pop_back();
+
+        //Resize and align the id2labelmapping.
+        size_t id2label_size = idToLabelMapping.size();
+        //If the new size is smaller by at least one block comparing to the id2labemapping
+        // align to be a multlipication of blocksize  and resize by one block.
+        if(count + vectorBlockSize <= id2label_size) {
+            size_t vector_to_align_count = id2label_size % vectorBlockSize;
+            this->idToLabelMapping.resize(id2label_size - vectorBlockSize - vector_to_align_count);
+
+        }
+        
     }
 
-    // Reduce index size.
-    this->count--;
     return true;
 }
+
+
 
 double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     auto optionalId = this->labelToIdLookup.find(label);
@@ -176,9 +202,13 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
         return INVALID_SCORE;
     }
     idType id = optionalId->second;
-    VectorBlockMember *vector_index = this->idToLabelMapping[id];
 
-    return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
+    // Get the vectorBlock and the relative index of the required id.
+    VectorBlock *req_vectorBlock = getVectorBlock(id);
+    size_t req_rel_idx = getVectorRelativeIndex(id);
+    
+
+    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data,
                            &this->dim);
 }
 
