@@ -167,7 +167,11 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
 
+<<<<<<< HEAD
     // The capcity shouldnt change.
+=======
+    // The capacity shouldn't change.
+>>>>>>> 394e7922ab865eb1ad418eac3bf7d3a6a8636362
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Size equals capacity.
@@ -212,7 +216,7 @@ TEST_F(HNSWLibTest, emptyIndex) {
     VecSimIndex_AddVector(index, (const void *)a, 1);
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
-    // The capcity should be changed and aligned to vector size.
+    // The capacity should change to be aligned with the vector size.
 
     size_t new_capcaity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
     ASSERT_EQ(new_capcaity, n - n % bs - bs);
