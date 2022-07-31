@@ -42,7 +42,6 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
-
 private:
     void updateVector(idType id, const void *vector_data);
     inline VectorBlock *getVectorVectorBlock(idType id);
@@ -80,12 +79,9 @@ size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
     return id % vectorBlockSize;
 }
 
-labelType BruteForceIndex::getVectorLabel(idType id) const {
-
-    return idToLabelMapping.at(id); }
-     
+labelType BruteForceIndex::getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
 void BruteForceIndex::setVectorLabel(idType id, labelType new_label) {
-    assert(id < count);
+    // assert(id < count);
     idToLabelMapping.at(id) = new_label;
 }

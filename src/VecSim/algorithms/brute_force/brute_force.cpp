@@ -49,7 +49,7 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
 }
 
 size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
-    return params->dim * sizeof(float) + sizeof(labelType);
+    return params->dim * sizeof(float) + sizeof(idType);
 }
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
@@ -110,14 +110,14 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
             idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
     }
 
+    // increase count
+    ++count;
+
     // add label to idToLabelMapping
-    idToLabelMapping[id] = label;
+    setVectorLabel(id, label);
 
     // add id to label:id map
     this->labelToIdLookup.emplace(label, id);
-
-    // increase count
-    ++count;
 
     return true;
 }
