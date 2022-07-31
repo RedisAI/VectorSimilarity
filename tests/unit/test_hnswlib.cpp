@@ -177,7 +177,7 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_blocksize_is_bigger) {
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
 
-    // The capcity shouldnt be changed.
+    // The capacity shouldn't change.
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Size equals capacity.
