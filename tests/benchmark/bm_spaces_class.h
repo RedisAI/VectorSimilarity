@@ -13,18 +13,10 @@ protected:
     float *v1, *v2;
     Arch_Optimization opt;
 
-    BM_VecSimSpaces() {
-        rng.seed(47);
-        opt = getArchitectureOptimization();
-    }
-
 public:
-    void SetUp(const ::benchmark::State &state);
-
-    void TearDown(const ::benchmark::State &state) {
-        delete v1;
-        delete v2;
-    }
-
+    BM_VecSimSpaces();
     ~BM_VecSimSpaces() {}
+
+    void SetUp(const ::benchmark::State &state);
+    void TearDown(const ::benchmark::State &state);
 };
