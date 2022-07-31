@@ -69,12 +69,10 @@ private:
 };
 
 VectorBlock *BruteForceIndex::getVectorVectorBlock(idType id) {
-    assert(id < count);
     size_t vectorBlock_index = id / vectorBlockSize;
     return vectorBlocks.at(vectorBlock_index);
 }
 size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
-    assert(id < count);
     // get the relative index of this id inside the vectorBlock
     return id % vectorBlockSize;
 }
@@ -82,6 +80,5 @@ size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
 labelType BruteForceIndex::getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
 void BruteForceIndex::setVectorLabel(idType id, labelType new_label) {
-    // assert(id < count);
     idToLabelMapping.at(id) = new_label;
 }

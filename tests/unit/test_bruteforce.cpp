@@ -104,7 +104,7 @@ TEST_F(BruteForceTest, resizeIndex) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // to be aligned with the blockSize
+    // to be aligned with the blockSize.
     VecSimIndex_AddVector(index, (const void *)a, n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
 
@@ -121,13 +121,11 @@ TEST_F(BruteForceTest, resizeIndex) {
     }
 
     // Size should be bs + 1.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs + 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), bs + 1);
 
     // id2labelMappting should be increased by blocksize and aligned
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
               curr_id2labelmapping_size + bs);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size() % bs, 0);
-    VecSimIndex_Free(index);
 }
 
 TEST_F(BruteForceTest, brute_force_vector_search_test_ip) {

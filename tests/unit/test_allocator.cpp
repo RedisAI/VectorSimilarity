@@ -134,8 +134,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
     expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta +=
-        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
+    expectedAllocationDelta += sizeof(labelType);  // resize idToLabelMapping
     expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
