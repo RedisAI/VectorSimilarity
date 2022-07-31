@@ -42,8 +42,12 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
            sizeof(size_t);
     // Parameters related part.
-    est +=
-        params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) + sizeof(size_t);
+    
+    if(params->initialCapacity) {
+        est +=
+            params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) +
+            sizeof(size_t);
+    }
 
     return est;
 }

@@ -1378,8 +1378,8 @@ TEST_F(BruteForceTest, testCosine) {
 
 TEST_F(BruteForceTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 100;
-    size_t bs = 1;
+    size_t n = 0;
+    size_t bs = DEFAULT_BLOCK_SIZE;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
