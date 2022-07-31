@@ -228,7 +228,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
 
     this->last_mode = STANDARD_KNN;
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
@@ -281,7 +281,7 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
 
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
@@ -327,7 +327,7 @@ VecSimIndexInfo BruteForceIndex::info() const {
 
 VecSimInfoIterator *BruteForceIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    // For readability. Update this number when needed;
+    // For readability. Update this number when needed.
     size_t numberOfInfoFields = 8;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 

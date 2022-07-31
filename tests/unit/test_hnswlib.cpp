@@ -39,11 +39,13 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
     VecSimIndex_Free(index);
 }
+/**** resizing cases ****/
 
-TEST_F(HNSWLibTest, resizeIndex) {
+// Add up to capacity.
+TEST_F(HNSWLibTest, resizeNAlignIndex) {
     size_t dim = 4;
-    size_t n = 15;
-    size_t bs = 50;
+    size_t n = 10;
+    size_t bs = 3;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
@@ -54,19 +56,176 @@ TEST_F(HNSWLibTest, resizeIndex) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     float a[dim];
+
+    // Add up to n.
     for (size_t i = 0; i < n; i++) {
         for (size_t j = 0; j < dim; j++) {
             a[j] = (float)i;
         }
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
+    // The size and the capacity should be equal.
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
+              VecSimIndex_IndexSize(index));
+    // The capcity shouldnt be changed.
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
-    // Add another vector, since index size equals to the capacity, this should cause resizing
-    // by the block size parameter.
-    VecSimIndex_AddVector(index, (const void *)a, n + 1);
+    // Add another vector to exceed the initial capacity.
+    VecSimIndex_AddVector(index, (const void *)a, n);
+
+    // The capacity should be now aligned with the block size.
+    // bs = 3, size = 11 -> capacity = 12
+    // New capacity = intiailcapacity + blockSize - intiailcapacity % blockSize.
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
+              n + bs - n % bs);
+    VecSimIndex_Free(index);
+}
+
+// Case 1: initial cpapcity is much larger than block size, and it is not aligned.
+TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
+    size_t dim = 4;
+    size_t n = 32;
+    size_t bs = 3;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+
+    // add up to blocksize + 1 = 3 + 1 = 4
+    for (size_t i = 0; i < bs + 1; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+
+    // The capcity shouldnt change, should remain n.
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
+
+    // Delete random vector, to get size % block_size == 0. size = 3
+    VecSimIndex_DeleteVector(index, 1);
+
+    // Index size = bs = 3.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), bs);
+
+    // New capacity = intiailcapacity - block_size - number_of_vectors_to_align =
+    // 32  - 3 - 32 % 3 (2) = 27
+    size_t curr_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
+    ASSERT_EQ(curr_capacity, n - bs - n % bs);
+
+    // Add another vector - > the capacity remains the same, size = 4.
+    VecSimIndex_AddVector(index, (const void *)a, n);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
+              curr_capacity);
+
+    // Delete the vector -> the capacity is again decreased by block size.
+    VecSimIndex_DeleteVector(index, 2);
+
+    size_t new_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
+    ASSERT_EQ(new_capacity, curr_capacity - bs);
+
+    // Delete another vector
+    VecSimIndex_DeleteVector(index, 3);
+
+    // Size + bs <= capacity (2 + 3 <= 24), but size % bs != 0.
+    // capacity should remain the same.
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
+              new_capacity);
+
+    VecSimIndex_Free(index);
+}
+
+// Case 2: initial cpapcity is smaller than block_size.
+TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
+    size_t dim = 4;
+    size_t n = 4;
+    size_t bs = 6;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+
+    // Add up to initial capacity.
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+
+    // The capcity shouldnt change.
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
+
+    // Size equals capacity.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Add another vector - > the capacity is increased to a multiplication of block_size.
+    VecSimIndex_AddVector(index, (const void *)a, n);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs);
+
+    // Size increased by 1.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs + n);
+
+    // Delete random vector.
+    VecSimIndex_DeleteVector(index, 1);
+
+    // The capacity should remain the same.
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs);
+
+    VecSimIndex_Free(index);
+}
+
+// Test empty index corner cases.
+TEST_F(HNSWLibTest, emptyIndex) {
+    size_t dim = 4;
+    size_t n = 20;
+    size_t bs = 6;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Add one vector.
+    float a[dim];
+    for (size_t j = 0; j < dim; j++) {
+        a[j] = (float)1.7;
+    }
+
+    VecSimIndex_AddVector(index, (const void *)a, 1);
+    // Try to remove it.
+    VecSimIndex_DeleteVector(index, 1);
+    // The capacity should change to be aligned with the vector size.
+
+    size_t new_capcaity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
+    ASSERT_EQ(new_capcaity, n - n % bs - bs);
+
+    // Size equals 0.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Try to remove it again.
+    // The capacity should remain unchanged.
+    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
+              new_capcaity);
+    // Nor the size.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
     VecSimIndex_Free(index);
 }
 
@@ -284,7 +443,7 @@ TEST_F(HNSWLibTest, sanity_rinsert_1280) {
 
     auto *vectors = (float *)malloc(n * d * sizeof(float));
 
-    // Generate random vectors in every iteration and inert them under different ids
+    // Generate random vectors in every iteration and inert them under different ids.
     for (size_t iter = 1; iter <= 3; iter++) {
         for (size_t i = 0; i < n; i++) {
             for (size_t j = 0; j < d; j++) {
@@ -330,7 +489,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
-    // Default args
+    // Default args.
     ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
@@ -352,7 +511,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
-    // User args
+    // User args.
     ASSERT_EQ(info.hnswInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
@@ -366,7 +525,7 @@ TEST_F(HNSWLibTest, test_basic_hnsw_info_iterator) {
 
     VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
     for (size_t i = 0; i < 3; i++) {
-        // Build with default args
+        // Build with default args.
         VecSimParams params{
             .algo = VecSimAlgo_HNSWLIB,
             .hnswParams = HNSWParams{
@@ -468,7 +627,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     size_t d = 4;
     size_t k = 11;
 
-    // Build with default args
+    // Build with default args.
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = d,
@@ -496,17 +655,17 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    // Check that default args did not change
+    // Check that default args did not change.
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
 
-    // Run same query again, set efRuntime to 300
+    // Run same query again, set efRuntime to 300.
     VecSimQueryParams queryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = 300}};
     runTopKSearchTest(index, query, k, verify_res, &queryParams);
 
     info = VecSimIndex_Info(index);
-    // Check that default args did not change
+    // Check that default args did not change.
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
@@ -531,7 +690,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     size_t M = 100;
     size_t efConstruction = 300;
     size_t efRuntime = 500;
-    // Build with default args
+    // Build with default args.
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = d,
@@ -562,17 +721,17 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    // Check that user args did not change
+    // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
 
-    // Run same query again, set efRuntime to 300
+    // Run same query again, set efRuntime to 300.
     VecSimQueryParams queryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = 300}};
     runTopKSearchTest(index, query, k, verify_res, &queryParams);
 
     info = VecSimIndex_Info(index);
-    // Check that user args did not change
+    // Check that user args did not change.
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, efConstruction);
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
@@ -605,7 +764,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
 
     float query[] = {50, 50, 50, 50};
 
-    // We do not expect any results
+    // We do not expect any results.
     VecSimQueryResult_List res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
@@ -628,7 +787,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Again - we do not expect any results
+    // Again - we do not expect any results.
     res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     it = VecSimQueryResult_List_GetIterator(res);
@@ -748,6 +907,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_TRUE(index != nullptr);
 
+    // Insert n == 100 vectors.
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -766,6 +926,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
+
     float query[dim];
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
@@ -1386,7 +1547,7 @@ TEST_F(HNSWLibTest, testCosine) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
-    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+    // Get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
     // in every iteration. The order should be from the largest to the lowest id.
     size_t n_res = 10;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -1447,7 +1608,7 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    estimation = VecSimIndex_EstimateElementSize(&params) * (bs % n + bs);
 
     actual = 0;
     for (size_t i = 0; i < bs; i++) {
@@ -1477,7 +1638,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     VecSimIndex_AddVector(index, vec, 0);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
-    // Checks return code on timeout
+    // Checks return code on timeout.
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
@@ -1489,7 +1650,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
         VecSimIndex_AddVector(index, vec, next++);
     }
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
 
     rl = VecSimIndex_TopKQuery(index, vec, 2, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
@@ -1497,7 +1658,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     VecSimQueryResult_Free(rl);
 
     VecSimIndex_Free(index);
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // Cleanup.
 }
 
 TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
@@ -1519,7 +1680,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Fail on second batch (after some calculation already completed in the first one)
+    // Fail on second batch (after some calculation already completed in the first one).
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
@@ -1527,7 +1688,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     ASSERT_NE(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
@@ -1535,7 +1696,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
 
     VecSimBatchIterator_Free(batchIterator);
 
-    // Fail on first batch (while calculating)
+    // Fail on first batch (while calculating).
     auto timeoutcb = [](void *ctx) {
         static size_t flag = 1;
         if (flag) {
@@ -1561,7 +1722,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
         VecSimIndex_AddVector(index, vec, next++);
     }
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
     batchIterator = VecSimBatchIterator_New(index, vec, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
@@ -1572,6 +1733,6 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // Cleanup.
 }
 } // namespace hnswlib
