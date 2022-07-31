@@ -108,14 +108,13 @@ TEST_F(BruteForceTest, resizeIndex) {
 
     // This should do nothing
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
     // Check new capacity size, should be blockSize * 2.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
-              2 * blockSize);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 2 * blockSize);
 
     // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
     // to check that it stays aligned with blocksize.
@@ -132,8 +131,7 @@ TEST_F(BruteForceTest, resizeIndex) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
 
     // Check new capacity size, should be blockSize * 3.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
-              3 * blockSize);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 3 * blockSize);
 
     VecSimIndex_Free(index);
 }
