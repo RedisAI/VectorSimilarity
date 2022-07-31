@@ -6,22 +6,20 @@
 #include "VecSim/spaces/space_interface.h"
 #include "VecSim/spaces/space_aux.h"
 
-#include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/IP/IP.h"
-#include "bm_classspaces.h"
+#include "bm_spaces_class.h"
+
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
 #define BENCHMARK_DISTANCE_F(arch, settings, func)                                                 \
     BENCHMARK_DEFINE_F(BM_VecSimSpaces, arch##_##settings)(benchmark::State & st) {                \
-        if (opt < ARCH_OPT_##arch)                                                                 \
-            for (auto _ : st) {                                                                    \
-            }                                                                                      \
-        else {                                                                                     \
-            for (auto _ : st) {                                                                    \
-                func(v1, v2, &dim);                                                                \
-            }                                                                                      \
-    }                                                                                              \
-}
+        if (opt < ARCH_OPT_##arch) {                                                               \
+            st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
+            return;                                                                                \
+        }                                                                                          \
+        for (auto _ : st) {                                                                        \
+            func(v1, v2, &dim);                                                                    \
+        }                                                                                          \
+    }
 
 // AVX512 functions
 #ifdef __AVX512F__
@@ -72,6 +70,9 @@ BENCHMARK_DISTANCE_F(SSE, IP_4_Residuals, InnerProductSIMD4ExtResiduals_SSE)
 #endif // SSE
 
 // Naive algorithms
+
+#include "VecSim/spaces/L2/L2.h"
+#include "VecSim/spaces/IP/IP.h"
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_IP)(benchmark::State &st) {
     for (auto _ : st) {
