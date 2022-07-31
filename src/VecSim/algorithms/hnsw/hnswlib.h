@@ -127,7 +127,7 @@ private:
                                              size_t layer, double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
                                              candidatesMaxHeap<dist_t> &candidate_set,
-                                             dist_t lowerBound, float radius) const;
+                                             dist_t lowerBound, dist_t radius) const;
     candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
                                           size_t ef) const;
     candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(tableint ep_id,
@@ -135,7 +135,7 @@ private:
                                                                   size_t k, void *timeoutCtx,
                                                                   VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
-                                                          double epsilon, float radius,
+                                                          double epsilon, dist_t radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
@@ -179,7 +179,7 @@ public:
                                  VecSimQueryResult_Code *rc) const;
     vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
-    VecSimQueryResult *searchRange(const void *query_data, float radius, void *timeoutCtx,
+    VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
                                    VecSimQueryResult_Code *rc) const;
 };
 
@@ -435,7 +435,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
                                                            double epsilon, tag_t visited_tag,
                                                            VecSimQueryResult **results,
                                                            candidatesMaxHeap<dist_t> &candidate_set,
-                                                           dist_t dyn_range, float radius) const {
+                                                           dist_t dyn_range, dist_t radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -445,11 +445,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
     auto *node_links = (tableint *)(node_ll + 1);
 
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
     __builtin_prefetch(getDataByInternalId(*node_links));
-    __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
-
-    dist_t dynamic_range_search_boundaries = dyn_range * (1.0 + epsilon);
 
     for (size_t j = 0; j < links_num; j++) {
         tableint candidate_id = *(node_links + j);
@@ -460,13 +456,13 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *candidate_data = (getDataByInternalId(candidate_id));
+        char *candidate_data = getDataByInternalId(candidate_id);
 
         dist_t candidate_dist = fstdistfunc_(query_data, candidate_data, dist_func_param_);
-        if (candidate_dist < dynamic_range_search_boundaries) {
+        if (candidate_dist < dyn_range) {
             candidate_set.emplace(-candidate_dist, candidate_id);
 
-            __builtin_prefetch(getDataByInternalId(candidate_set.top().second));
+            __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
 
             // If the new candidate is in the requested radius, add it to the results set.
             if (candidate_dist <= radius) {
@@ -1345,7 +1341,7 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
 
 template <typename dist_t>
 VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
-    tableint ep_id, const void *data_point, double epsilon, float radius, void *timeoutCtx,
+    tableint ep_id, const void *data_point, double epsilon, dist_t radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
@@ -1387,15 +1383,17 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         candidate_set.pop();
 
         // Decrease the effective range, but keep dyn_range >= radius.
-        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first > radius) {
+        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius) {
             dynamic_range = -curr_el_pair.first;
+            dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
         }
 
         // Go over the candidate neighbours, add them to the candidates list if they are within the
         // epsilon environment of the dynamic range, and add them to the results if they are in the
         // requested radius.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
-                                     &results, candidate_set, dynamic_range, radius);
+                                     &results, candidate_set, dynamic_range_search_boundaries,
+                                     radius);
     }
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
@@ -1406,7 +1404,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
 }
 
 template <typename dist_t>
-VecSimQueryResult *HierarchicalNSW<dist_t>::searchRange(const void *query_data, float radius,
+VecSimQueryResult *HierarchicalNSW<dist_t>::searchRange(const void *query_data, dist_t radius,
                                                         void *timeoutCtx,
                                                         VecSimQueryResult_Code *rc) const {
 

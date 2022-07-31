@@ -1614,7 +1614,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
 }
 
 TEST_F(HNSWLibTest, rangeQuery) {
-    size_t n = 2000;
+    size_t n = 5000;
     size_t dim = 4;
 
     VecSimParams params{
@@ -1644,6 +1644,14 @@ TEST_F(HNSWLibTest, rangeQuery) {
     // in the boundaries.
     float radius = dim * powf(expected_num_results / 2, 2);
     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
+
+    // Rerun with a given query params. This high epsilon value will cause the range search main
+    // loop to break since we insert a candidate whose distance is within the dynamic range
+    // boundaries at the beginning of the search, but when this candidate is popped out from the
+    // queue, it's no longer within the dynamic range boundaries.
+    auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = 1.0}};
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE,
+                      &query_params);
 
     // Get results by id.
     auto verify_res_by_id = [&](size_t id, float score, size_t index) {
@@ -1702,12 +1710,6 @@ TEST_F(HNSWLibTest, rangeQueryCosine) {
                 (sqrtf((float)dim) *
                  sqrtf((float)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
-
-    // Rerun with query params.
-    auto query_params =
-        VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = 0.0001}};
-    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE,
-                      &query_params);
 
     // Return results BY_ID should give the same results.
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
