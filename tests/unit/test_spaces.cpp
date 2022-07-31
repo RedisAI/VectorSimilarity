@@ -63,10 +63,10 @@ TEST_F(SpacesTest, l2_9) {
     float baseline = L2Sqr(v, v, &dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, L2SqrSIMD16ExtResiduals_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, L2SqrSIMD4ExtResiduals_AVX512(v, v, &dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, L2SqrSIMD16ExtResiduals_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, L2SqrSIMD4ExtResiduals_AVX(v, v, &dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, L2SqrSIMD4ExtResiduals_SSE(v, v, &dim));
@@ -113,7 +113,7 @@ TEST_F(SpacesTest, ip_9) {
     float baseline = InnerProduct(v, v, &dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, InnerProductSIMD16ExtResiduals_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, InnerProductSIMD4ExtResiduals_AVX512(v, v, &dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, InnerProductSIMD4ExtResiduals_AVX(v, v, &dim));
@@ -126,8 +126,7 @@ TEST_F(SpacesTest, ip_9) {
     }
 }
 
-// This test will trigger the function for dimension % 16 == 0 and dimension % 4 == 0, for each
-// optimization.
+// This test will trigger the function for dimension % 16 == 0 for each optimization.
 TEST_F(SpacesTest, ip_16) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
@@ -143,11 +142,85 @@ TEST_F(SpacesTest, ip_16) {
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, InnerProductSIMD16Ext_AVX(v, v, &dim));
-        ASSERT_EQ(baseline, InnerProductSIMD4Ext_AVX(v, v, &dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, InnerProductSIMD16Ext_SSE(v, v, &dim));
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 16 == 0 for each optimization.
+TEST_F(SpacesTest, l2_16) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 16;
+    float v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+    }
+
+    float baseline = L2Sqr(v, v, &dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, L2SqrSIMD16Ext_AVX512(v, v, &dim));
+        optimization = ARCH_OPT_AVX;
+    case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, L2SqrSIMD16Ext_AVX(v, v, &dim));
+        optimization = ARCH_OPT_SSE;
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, L2SqrSIMD16Ext_SSE(v, v, &dim));
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 4 == 0 for each optimization.
+// optimization.
+TEST_F(SpacesTest, ip_20) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 20;
+    float v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+    }
+
+    float baseline = InnerProduct(v, v, &dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, InnerProductSIMD4Ext_AVX512(v, v, &dim));
+        optimization = ARCH_OPT_AVX;
+    case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, InnerProductSIMD4Ext_AVX(v, v, &dim));
+        optimization = ARCH_OPT_SSE;
+    case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, InnerProductSIMD4Ext_SSE(v, v, &dim));
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 4 == 0 for each optimization.
+TEST_F(SpacesTest, l2_20) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 20;
+    float v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+    }
+
+    float baseline = L2Sqr(v, v, &dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, L2SqrSIMD4Ext_AVX512(v, v, &dim));
+        optimization = ARCH_OPT_AVX;
+    case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, L2SqrSIMD4Ext_AVX(v, v, &dim));
+        optimization = ARCH_OPT_SSE;
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, L2SqrSIMD4Ext_SSE(v, v, &dim));
         break;
     default:
         ASSERT_TRUE(false);
