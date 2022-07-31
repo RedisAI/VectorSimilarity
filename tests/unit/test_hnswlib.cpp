@@ -127,10 +127,8 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
     // Delete the vector -> the capacity is again decreased by block size.
     VecSimIndex_DeleteVector(index, 2);
 
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              curr_capacity - bs);
-
-    curr_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
+    size_t new_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
+    ASSERT_EQ(new_capacity, curr_capacity - bs);
 
     // Delete another vector
     VecSimIndex_DeleteVector(index, 3);
@@ -138,7 +136,7 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
     // Size + bs <= capacity (2 + 3 <= 24), but size % bs != 0.
     // capacity should remain the same.
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              curr_capacity);
+              new_capacity);
 
     VecSimIndex_Free(index);
 }
@@ -167,11 +165,7 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
 
-<<<<<<< HEAD
     // The capcity shouldnt change.
-=======
-    // The capacity shouldn't change.
->>>>>>> 394e7922ab865eb1ad418eac3bf7d3a6a8636362
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
     // Size equals capacity.
@@ -220,7 +214,6 @@ TEST_F(HNSWLibTest, emptyIndex) {
 
     size_t new_capcaity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
     ASSERT_EQ(new_capcaity, n - n % bs - bs);
-
 
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
