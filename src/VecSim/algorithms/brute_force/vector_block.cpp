@@ -2,7 +2,6 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
 
-
 VectorBlock::VectorBlock(size_t blockSize, size_t vectorSize,
                          std::shared_ptr<VecSimAllocator> allocator)
     : VecsimBaseObject(allocator), dim(vectorSize), length(0), blockSize(blockSize) {
@@ -21,9 +20,7 @@ void VectorBlock::addVector(const void *vectorData) {
     this->length++;
 }
 
-void VectorBlock::updateVector(size_t index, const void *vector_data)
-{
+void VectorBlock::updateVector(size_t index, const void *vector_data) {
     float *destinaion = getVector(index);
     memcpy(destinaion, vector_data, this->dim);
-
 }

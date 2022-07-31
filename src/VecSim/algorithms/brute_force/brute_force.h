@@ -6,6 +6,8 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include <memory>
 #include <queue>
+#include <cassert>
+#include <limits>
 
 class BruteForceIndex : public VecSimIndex {
 protected:
@@ -33,21 +35,22 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    inline labelType getVectorLabel(idType id) const; // throws out_of_range
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
+
 private:
     void updateVector(idType id, const void *vector_data);
-    inline VectorBlock *getVectorBlock(idType id);
-    inline size_t getVectorRelativeIndex(idType id);    
-    inline labelType getVectorLabel(idType id) const; //throws out_of_range
-    inline void setVectorLabel(idType id, labelType new_label); //throws out_of_range
+    inline VectorBlock *getVectorVectorBlock(idType id);
+    inline size_t getVectorRelativeIndex(idType id);
+    inline void setVectorLabel(idType id, labelType new_label); // throws out_of_range
 
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
-    vecsim_stl::vector<labelType> idToLabelMapping; 
+    vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
@@ -59,25 +62,30 @@ private:
     friend class BruteForceTest_preferAdHocOptimization_Test;
     friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
     friend class BruteForceTest_resizeIndex_Test;
+    friend class BruteForceTest_brute_force_vector_update_test_Test;
+    friend class BruteForceTest_brute_force_reindexing_same_vector_Test;
+    friend class BruteForceTest_test_delete_swap_block_Test;
+    friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
 #endif
 };
 
-
-VectorBlock *BruteForceIndex::getVectorBlock(idType id)
-{
+VectorBlock *BruteForceIndex::getVectorVectorBlock(idType id) {
+    assert(id < count);
     size_t vectorBlock_index = id / vectorBlockSize;
     return vectorBlocks.at(vectorBlock_index);
-
 }
 size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
-    //get the relative index of this id inside the vectorBlock
+    assert(id < count);
+    // get the relative index of this id inside the vectorBlock
     return id % vectorBlockSize;
 }
 
-labelType BruteForceIndex::getVectorLabel(idType id) const{
-    return idToLabelMapping.at(id);
-}
+labelType BruteForceIndex::getVectorLabel(idType id) const {
 
-void BruteForceIndex::setVectorLabel(idType id, labelType new_label){
+    return idToLabelMapping.at(id); }
+     
+
+void BruteForceIndex::setVectorLabel(idType id, labelType new_label) {
+    assert(id < count);
     idToLabelMapping.at(id) = new_label;
 }

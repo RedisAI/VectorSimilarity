@@ -42,8 +42,8 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
            sizeof(size_t);
     // Parameters related part.
-    est += params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) +
-           sizeof(size_t);
+    est +=
+        params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) + sizeof(size_t);
 
     return est;
 }
@@ -53,16 +53,14 @@ size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
 }
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
-    
+
     // TODO Get the vector block
-    VectorBlock *vectorBlock = getVectorBlock(id);
+    VectorBlock *vectorBlock = getVectorVectorBlock(id);
     size_t index = getVectorRelativeIndex(id);
 
     // Update vector data in the block.
     vectorBlock->updateVector(index, vector_data);
 }
-
-
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
@@ -74,7 +72,6 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         vector_data = normalized_data;
     }
 
-    
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
@@ -83,15 +80,15 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         return true;
     }
 
-    //give the vector new id
-	idType id = count;
+    // give the vector new id
+    idType id = count;
 
     // Get vector block to store the vector in.
 
-    //if vectorBlocks vector is empty ||last_vector_block is full create a new block
-    if(count % vectorBlockSize == 0) {
-        VectorBlock *new_vectorBlock = new (this->allocator)
-            VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+    // if vectorBlocks vector is empty ||last_vector_block is full create a new block
+    if (count % vectorBlockSize == 0) {
+        VectorBlock *new_vectorBlock =
+            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
@@ -103,75 +100,70 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     // add vector data to vectorBlock
     vectorBlock->addVector(vector_data);
 
-
     // if idToLabelMapping is full,
-	// resize and align idToLabelMapping by vectorBlockSize
-    size_t idToLabelMapping_size =  this->idToLabelMapping.size();
+    // resize and align idToLabelMapping by vectorBlockSize
+    size_t idToLabelMapping_size = this->idToLabelMapping.size();
 
     if (count >= idToLabelMapping_size) {
         size_t last_block_vectors_count = count % vectorBlockSize;
-        this->idToLabelMapping.resize(idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
+        this->idToLabelMapping.resize(
+            idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
     }
 
-	//add label to idToLabelMapping
-	idToLabelMapping[id] = label;
-    
-    //add id to label:id map
+    // add label to idToLabelMapping
+    idToLabelMapping[id] = label;
+
+    // add id to label:id map
     this->labelToIdLookup.emplace(label, id);
 
-
-    //increase count
+    // increase count
     ++count;
 
     return true;
 }
 
 int BruteForceIndex::deleteVector(size_t label) {
-    
-    //Find the id to delete.
-    auto deleted_label_id_pair = this->labelToIdLookup.find(label); 
+
+    // Find the id to delete.
+    auto deleted_label_id_pair = this->labelToIdLookup.find(label);
     if (deleted_label_id_pair == this->labelToIdLookup.end()) {
         // Nothing to delete.
         return true;
-    } 
-    
-    //Get deleted vector id + label.
-    labelType deleted_label = deleted_label_id_pair->first; 
+    }
+
+    // Get deleted vector id.
     idType id_to_delete = deleted_label_id_pair->second;
 
-    
     idType last_idx = count - 1;
 
-    //Update id2labelmapping.
+    // Update id2labelmapping.
 
-    //Put the label of the last_id in the deleted_id.
+    // Put the label of the last_id in the deleted_id.
     labelType last_idx_label = getVectorLabel(last_idx);
     setVectorLabel(id_to_delete, last_idx_label);
 
+    // Update label2id mapping.
 
-    //Update label2id mapping.
-
-    //Update this id in label:id pair of last index.
-    auto last_label_id_pair = labelToIdLookup.find(last_idx_label); 
-    deleted_label_id_pair->second = id_to_delete;
-    //Remove the pair of the deleted vector.
+    // Update this id in label:id pair of last index.
+    auto last_label_id_pair = labelToIdLookup.find(last_idx_label);
+    last_label_id_pair->second = id_to_delete;
+    // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
 
-
-    //Get last vector data.
+    // Get last vector data.
     VectorBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == vectorBlocks.at(last_idx / vectorBlockSize));
 
     float *last_vector_data = last_vector_block->removeAndFetchVector();
 
     // Get the vectorBlock and the relative index of the deleted id.
-    VectorBlock *deleted_vectorBlock = getVectorBlock(id_to_delete);
+    VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
     size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
 
-    //Put data of last vector inpalce of the deleted vector.
+    // Put data of last vector inpalce of the deleted vector.
     deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
 
-    //Update count.
+    // Update count.
     --count;
 
     // If the last vector block is emtpy.
@@ -179,22 +171,18 @@ int BruteForceIndex::deleteVector(size_t label) {
         delete last_vector_block;
         this->vectorBlocks.pop_back();
 
-        //Resize and align the id2labelmapping.
+        // Resize and align the id2labelmapping.
         size_t id2label_size = idToLabelMapping.size();
-        //If the new size is smaller by at least one block comparing to the id2labemapping
+        // If the new size is smaller by at least one block comparing to the id2labemapping
         // align to be a multlipication of blocksize  and resize by one block.
-        if(count + vectorBlockSize <= id2label_size) {
+        if (count + vectorBlockSize <= id2label_size) {
             size_t vector_to_align_count = id2label_size % vectorBlockSize;
             this->idToLabelMapping.resize(id2label_size - vectorBlockSize - vector_to_align_count);
-
         }
-        
     }
 
     return true;
 }
-
-
 
 double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     auto optionalId = this->labelToIdLookup.find(label);
@@ -204,12 +192,10 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     idType id = optionalId->second;
 
     // Get the vectorBlock and the relative index of the required id.
-    VectorBlock *req_vectorBlock = getVectorBlock(id);
+    VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
     size_t req_rel_idx = getVectorRelativeIndex(id);
-    
 
-    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data,
-                           &this->dim);
+    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
 }
 
 size_t BruteForceIndex::indexSize() const { return this->count; }

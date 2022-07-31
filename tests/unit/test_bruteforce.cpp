@@ -31,7 +31,52 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
         a[i] = (float)i;
     }
     VecSimIndex_AddVector(index, (const void *)a, 1);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(BruteForceTest, brute_force_vector_update_test) {
+    size_t dim = 4;
+    size_t n = 1;
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_IP,
+                                             .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (float)1;
+    }
+    VecSimIndex_AddVector(index, (const void *)a, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    //Prepare new vector data.
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (float)2;
+    }
+    // Call addVEctor with the same id, different data.
+    VecSimIndex_AddVector(index, (const void *)a, 1);
+
+    //Index size shouldn't cahnge.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    //id2label size should remain the same, although we seemingly tried to exceed 
+    //initialcapacity.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+
+    //Check update.
+    VectorBlock *block = reinterpret_cast<BruteForceIndex *>(index)->getVectorVectorBlock(0);
+    float *vector_data = block->getVector(0);
+    for (size_t i = 0; i < dim; ++i) {
+        ASSERT_EQ(*vector_data, (float)2);
+        ++vector_data;
+    }
+
     VecSimIndex_Free(index);
 }
 
@@ -63,10 +108,11 @@ TEST_F(BruteForceTest, resizeIndex) {
     VecSimIndex_AddVector(index, (const void *)a, n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
 
-    size_t curr_id2labelmapping_size = reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+    size_t curr_id2labelmapping_size =
+        reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
     ASSERT_EQ(curr_id2labelmapping_size, bs);
 
-    //add up to blockSize + 1 
+    // Add up to blockSize + 1.
     for (size_t i = n + 1; i < bs + 1; i++) {
         for (size_t j = 0; j < dim; j++) {
             a[j] = (float)i;
@@ -74,14 +120,13 @@ TEST_F(BruteForceTest, resizeIndex) {
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
 
-    //size should be bs + 1
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs + 1);
+    // Size should be 2 * bs.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), bs + 1);
 
-    //id2labelMappting should be increased by blocksize and aligned 
+    // id2labelMappting should be increased by blocksize and aligned.
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
-              curr_id2labelmapping_size + bs); 
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size() % bs,
-              0); 
+              curr_id2labelmapping_size + bs);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size() % bs, 0);
     VecSimIndex_Free(index);
 }
 
@@ -214,12 +259,13 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     size_t n = 100;
     size_t k = 10;
     size_t dim = 4;
+    size_t initial_capacity = 200;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200}};
+                                             .initialCapacity = initial_capacity}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
@@ -238,10 +284,18 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     };
     runTopKSearchTest(index, query, k, verify_res);
 
+    // Delete all vectors.
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // The vector block should be removed.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->getVectorBlocks().size(), 0);
+
+    // id2label size should remain the same.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
+              initial_capacity);
 
     // Reinsert the same vectors under the same ids
     for (size_t i = 0; i < n; i++) {
@@ -320,9 +374,9 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     // Insert 6 vectors with ascending ids; The vector blocks will look like
     // 0 [0, 1, 2]
     // 1 [3, 4, 5]
-    // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move id 5
-    // from block 1 [3, 4, 5] to vector block 0, so our vector blocks will look like 0 [0, 5, 2] 1
-    // [3, 4]
+    // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move vector
+    // data of id 5 to vector block 0 at index 1. id2label[1] should hold the label of the vector
+    // that was in id 5.
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
@@ -330,7 +384,7 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
                                              .initialCapacity = 3,
                                              .blockSize = 3}};
     VecSimIndex *index = VecSimIndex_New(&params);
-
+     BruteForceIndex *bf_index = reinterpret_cast<BruteForceIndex *>(index);
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -340,8 +394,26 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
+    labelType id1_prev_label = bf_index->getVectorLabel(1);
+    labelType id5_prev_label = bf_index->getVectorLabel(5);
+   
     // Here the shift should happen.
     VecSimIndex_DeleteVector(index, 1);
+
+    // id1 gets what was previously id5's label.
+    ASSERT_EQ(bf_index->getVectorLabel(1), id5_prev_label);
+    
+    //The label of what initiailly was in id1 should be removed.
+    auto deleted_label_id_pair = bf_index->labelToIdLookup.find(id1_prev_label);
+    ASSERT_EQ(deleted_label_id_pair, bf_index->labelToIdLookup.end());
+
+    // The vector in index1 should hold id5 data.
+    VectorBlock *block = reinterpret_cast<BruteForceIndex *>(index)->getVectorVectorBlock(1);
+    float *vector_data = block->getVector(1);
+    for (size_t i = 0; i < dim; ++i) {
+        ASSERT_EQ(*vector_data, 5);
+        ++vector_data;
+    }
 
     float query[] = {0.0, 0.0};
     auto verify_res = [&](size_t id, float score, size_t index) {
@@ -751,11 +823,16 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
+    // id2label size should be the same as index size
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+
     // After deleting the first vector, the second one will be moved to the first block
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // id2label size should be the same as index size
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
 
     VecSimIndex_Free(index);
 }

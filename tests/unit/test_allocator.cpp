@@ -112,12 +112,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     int addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 1);
     int64_t expectedAllocationDelta = 0;
     expectedAllocationDelta +=
-        2 * ((sizeof(VectorBlockMember *) +
-              vecsimAllocationOverhead)); // resize idToLabelMapping to 2
+        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
     expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
-    expectedAllocationDelta += sizeof(VectorBlockMember *) +
-                               vecsimAllocationOverhead; // Pointer for the new vector block member
     expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
@@ -138,9 +134,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
     expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
-    expectedAllocationDelta += sizeof(VectorBlockMember) + vecsimAllocationOverhead;
-    expectedAllocationDelta += sizeof(VectorBlockMember *) +
-                               vecsimAllocationOverhead; // Pointer for the new vector block member
+    expectedAllocationDelta +=
+        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
     expectedAllocationDelta +=
         sizeof(float) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
@@ -162,12 +157,14 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
     expectedAllocationDelta -=
         (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
     expectedAllocationDelta -=
-        (sizeof(VectorBlockMember *) +
-         vecsimAllocationOverhead); // Pointer for the new vector block member
+        sizeof(VectorBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
+    expectedAllocationDelta -=
+        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
     expectedAllocationDelta -=
         (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
+    expectedAllocationDelta -=
+        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
 
     // Assert that the reclaiming of memory did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
@@ -186,12 +183,15 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
     expectedAllocationDelta -=
         (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -= (sizeof(VectorBlockMember) + vecsimAllocationOverhead);
     expectedAllocationDelta -=
-        (sizeof(VectorBlockMember *) +
-         vecsimAllocationOverhead); //  Pointer for the new vector block member
+        sizeof(VectorBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
+    expectedAllocationDelta -=
+        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
     expectedAllocationDelta -=
         (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
+    expectedAllocationDelta -=
+        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
+
     // Assert that the reclaiming of memory did occur, and it is limited, as some STL
     // collection allocate additional structures for their internal implementation.
     ASSERT_EQ(allocator->getAllocationSize(),
