@@ -49,7 +49,7 @@ private:
 
     // Index search parameter
     size_t ef_;
-    float epsilon_;
+    double epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
     size_t data_size_;
@@ -124,7 +124,7 @@ private:
                                    candidatesMaxHeap<dist_t> &candidates_set,
                                    dist_t lowerBound) const;
     inline void processCandidate_RangeSearch(tableint curNodeId, const void *data_point,
-                                             size_t layer, float epsilon, tag_t visited_tag,
+                                             size_t layer, double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
                                              candidatesMaxHeap<dist_t> &candidate_set,
                                              dist_t lowerBound, float radius) const;
@@ -135,7 +135,7 @@ private:
                                                                   size_t k, void *timeoutCtx,
                                                                   VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
-                                                          float epsilon, float radius,
+                                                          double epsilon, float radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
@@ -157,8 +157,8 @@ public:
 
     void setEf(size_t ef);
     size_t getEf() const;
-    void setEpsilon(float epsilon);
-    float getEpsilon() const;
+    void setEpsilon(double epsilon);
+    double getEpsilon() const;
     size_t getIndexSize() const;
     size_t getIndexCapacity() const;
     size_t getEfConstruction() const;
@@ -198,12 +198,12 @@ size_t HierarchicalNSW<dist_t>::getEf() const {
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::setEpsilon(float epsilon) {
+void HierarchicalNSW<dist_t>::setEpsilon(double epsilon) {
     epsilon_ = epsilon;
 }
 
 template <typename dist_t>
-float HierarchicalNSW<dist_t>::getEpsilon() const {
+double HierarchicalNSW<dist_t>::getEpsilon() const {
     return epsilon_;
 }
 
@@ -432,7 +432,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
                                                            const void *query_data, size_t layer,
-                                                           float epsilon, tag_t visited_tag,
+                                                           double epsilon, tag_t visited_tag,
                                                            VecSimQueryResult **results,
                                                            candidatesMaxHeap<dist_t> &candidate_set,
                                                            dist_t dyn_range, float radius) const {
@@ -449,6 +449,8 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
     __builtin_prefetch(getDataByInternalId(*node_links));
     __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
+    dist_t dynamic_range_search_boundaries = dyn_range * (1.0 + epsilon);
+
     for (size_t j = 0; j < links_num; j++) {
         tableint candidate_id = *(node_links + j);
 
@@ -461,7 +463,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
         char *candidate_data = (getDataByInternalId(candidate_id));
 
         dist_t candidate_dist = fstdistfunc_(query_data, candidate_data, dist_func_param_);
-        if (candidate_dist < dyn_range * (1.0f + epsilon)) {
+        if (candidate_dist < dynamic_range_search_boundaries) {
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             __builtin_prefetch(getDataByInternalId(candidate_set.top().second));
@@ -1343,7 +1345,7 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
 
 template <typename dist_t>
 VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
-    tableint ep_id, const void *data_point, float epsilon, float radius, void *timeoutCtx,
+    tableint ep_id, const void *data_point, double epsilon, float radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
@@ -1367,6 +1369,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         dynamic_range = radius; // to ensure that dyn_range >= radius.
     }
 
+    dist_t dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
     candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
@@ -1374,7 +1377,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
         // finish the search.
-        if ((-curr_el_pair.first) > dynamic_range * (1.0f + epsilon)) {
+        if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
         if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {

@@ -228,13 +228,10 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
     size_t iter = 0;
     size_t total_res = 0;
     size_t total_res_bf = 0;
+    auto query_params =
+        VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
 
     for (auto _ : st) {
-        st.PauseTiming();
-
-        auto query_params =
-            VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
-        st.ResumeTiming();
         auto hnsw_results = VecSimIndex_RangeQuery(hnsw_index, (*queries)[iter % n_queries].data(),
                                                    radius, &query_params, BY_ID);
         st.PauseTiming();

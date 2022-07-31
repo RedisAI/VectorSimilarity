@@ -356,12 +356,11 @@ def test_range_query():
     query_data = np.float32(np.random.random((1, dim)))
 
     radius = 13.0
+    recalls = {}
 
     for epsilon_rt in [0.001, 0.01, 0.1]:
         query_params = VecSimQueryParams()
-        if epsilon_rt != 0.01:
-            # Set epsilon for the current run, except for the default value which is 0.01.
-            query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt
         start = time.time()
         hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
         end = time.time()
@@ -377,6 +376,10 @@ def test_range_query():
         assert np.all(np.isin(hnsw_labels, np.array([label for label, _ in actual_results])))
 
         assert max(hnsw_distances[0]) <= radius
+        recalls[epsilon_rt] = res_num/len(actual_results)
+
+    # Expect higher recalls for higher epsilon values.
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
 
     # Expect zero results for radius==0
     hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)

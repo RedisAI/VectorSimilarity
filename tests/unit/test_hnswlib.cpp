@@ -335,6 +335,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
+    ASSERT_DOUBLE_EQ(info.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
     VecSimIndex_Free(index);
 
     d = 1280;
@@ -347,7 +348,8 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
                                        .blockSize = bs,
                                        .M = 200,
                                        .efConstruction = 1000,
-                                       .efRuntime = 500}};
+                                       .efRuntime = 500,
+                                       .epsilon = 0.005}};
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
@@ -357,6 +359,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
+    ASSERT_EQ(info.hnswInfo.epsilon, 0.005);
     VecSimIndex_Free(index);
 }
 
@@ -390,7 +393,8 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
                                                  .initialCapacity = n,
                                                  .M = 100,
                                                  .efConstruction = 250,
-                                                 .efRuntime = 400}};
+                                                 .efRuntime = 400,
+                                                 .epsilon = 0.004}};
     float v[d];
     for (size_t i = 0; i < d; i++) {
         v[i] = (float)i;
@@ -401,6 +405,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(100, info.hnswInfo.M);
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
+    ASSERT_EQ(0.004, info.hnswInfo.epsilon);
     ASSERT_EQ(0, info.hnswInfo.indexSize);
     ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);

@@ -28,7 +28,7 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
           params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
       last_mode(EMPTY_MODE) {
     hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
-    hnsw->setEpsilon((params->epsilon > 0.0f) ? params->epsilon : HNSW_DEFAULT_EPSILON);
+    hnsw->setEpsilon((params->epsilon > 0.0) ? params->epsilon : HNSW_DEFAULT_EPSILON);
 }
 
 /******************** Implementation **************/
@@ -183,10 +183,10 @@ VecSimQueryResult_List HNSWIndex::rangeQuery(const void *queryBlob, float radius
         queryBlob = normalized_blob;
     }
 
-    float originalEpsilon = this->hnsw->getEpsilon();
+    double originalEpsilon = this->hnsw->getEpsilon();
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
-        if (queryParams->hnswRuntimeParams.epsilon != 0) {
+        if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
             hnsw->setEpsilon(queryParams->hnswRuntimeParams.epsilon);
         }
     }
@@ -216,6 +216,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.M = this->hnsw->getM();
     info.hnswInfo.efConstruction = this->hnsw->getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw->getEf();
+    info.hnswInfo.epsilon = this->hnsw->getEpsilon();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
@@ -286,6 +287,10 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
         VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+                         .fieldType = INFOFIELD_FLOAT64,
+                         .floatingPointValue = info.hnswInfo.epsilon});
 
     return infoIterator;
 }
