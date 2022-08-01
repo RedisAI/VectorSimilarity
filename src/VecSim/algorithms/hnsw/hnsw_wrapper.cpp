@@ -138,7 +138,7 @@ int HNSWIndex::deleteVector(size_t id) {
         // Check if the capacity is aligned to block size.
         size_t extra_space_to_free = curr_capacity % blockSize;
 
-        // Remove one block from the capacity. TODO check that we dont go below zero
+        // Remove one block from the capacity.
         this->hnsw->resizeIndex(curr_capacity - blockSize - extra_space_to_free);
     }
     return true;
