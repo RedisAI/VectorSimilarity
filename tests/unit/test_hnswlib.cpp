@@ -187,7 +187,7 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
     VecSimIndex_Free(index);
 }
 
-// Test empty index corner cases.
+// Test empty index edge cases.
 TEST_F(HNSWLibTest, emptyIndex) {
     size_t dim = 4;
     size_t n = 20;
