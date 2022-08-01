@@ -81,10 +81,10 @@ TEST_F(HNSWLibTest, resizeNAlignIndex) {
     VecSimIndex_Free(index);
 }
 
-// Case 1: initial cpapcity is much larger than block size, and it is not aligned.
+// Case 1: initial cpapcity is larger than block size, and it is not aligned.
 TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
     size_t dim = 4;
-    size_t n = 32;
+    size_t n = 10;
     size_t bs = 3;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
@@ -108,35 +108,37 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
     // The capcity shouldnt change, should remain n.
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), n);
 
-    // Delete random vector, to get size % block_size == 0. size = 3
-    VecSimIndex_DeleteVector(index, 1);
+    // Delete last vector, to get size % block_size == 0. size = 3
+    VecSimIndex_DeleteVector(index, bs);
 
     // Index size = bs = 3.
     ASSERT_EQ(VecSimIndex_IndexSize(index), bs);
 
     // New capacity = intiailcapacity - block_size - number_of_vectors_to_align =
-    // 32  - 3 - 32 % 3 (2) = 27
+    // 10  - 3 - 10 % 3 (1) = 6
     size_t curr_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
     ASSERT_EQ(curr_capacity, n - bs - n % bs);
 
-    // Add another vector - > the capacity remains the same, size = 4.
-    VecSimIndex_AddVector(index, (const void *)a, n);
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              curr_capacity);
+    // Delete all the vectors to decrease capacity by another bs.
+    size_t i = 0;
+    while (VecSimIndex_IndexSize(index) > 0) {
+        VecSimIndex_DeleteVector(index, i);
+        ++i;
+    }
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs);
+    // Add and delete a vector to acheive:
+    // size % block_size == 0 && size + bs <= capacity(3).
+    // the capacity should be resized to zero
+    VecSimIndex_AddVector(index, (const void *)a, 0);
+    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), 0);
 
-    // Delete the vector -> the capacity is again decreased by block size.
-    VecSimIndex_DeleteVector(index, 2);
-
-    size_t new_capacity = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity();
-    ASSERT_EQ(new_capacity, curr_capacity - bs);
-
-    // Delete another vector
-    VecSimIndex_DeleteVector(index, 3);
-
-    // Size + bs <= capacity (2 + 3 <= 24), but size % bs != 0.
-    // capacity should remain the same.
-    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
-              new_capacity);
+    // Do it again. This time after adding a vector the capacity is increased by bs.
+    // Upon deletion it will be resized to zero again.
+    VecSimIndex_AddVector(index, (const void *)a, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), bs);
+    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -201,6 +203,9 @@ TEST_F(HNSWLibTest, emptyIndex) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
+    // Try to remove from an empty index - should faul because label doesnt exist.
+    VecSimIndex_DeleteVector(index, 0);
+
     // Add one vector.
     float a[dim];
     for (size_t j = 0; j < dim; j++) {
@@ -219,7 +224,7 @@ TEST_F(HNSWLibTest, emptyIndex) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove it again.
-    // The capacity should remain unchanged.
+    // The capacity should remain unchanged, as we are trying to delete a label that doesnt exist.
     VecSimIndex_DeleteVector(index, 1);
     ASSERT_EQ(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getIndexCapacity(),
               new_capcaity);
