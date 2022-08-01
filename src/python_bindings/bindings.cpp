@@ -177,7 +177,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
         .def_readwrite("M", &HNSWParams::M)
         .def_readwrite("efConstruction", &HNSWParams::efConstruction)
-        .def_readwrite("efRuntime", &HNSWParams::efRuntime);
+        .def_readwrite("efRuntime", &HNSWParams::efRuntime)
+        .def_readwrite("epsilon", &HNSWParams::epsilon);
 
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
@@ -200,7 +201,8 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<HNSWRuntimeParams>(queryParams, "HNSWRuntimeParams")
         .def(py::init<>())
-        .def_readwrite("efRuntime", &HNSWRuntimeParams::efRuntime);
+        .def_readwrite("efRuntime", &HNSWRuntimeParams::efRuntime)
+        .def_readwrite("epsilon", &HNSWRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
         .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),

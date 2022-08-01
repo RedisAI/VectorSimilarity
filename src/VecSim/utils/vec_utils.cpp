@@ -32,6 +32,7 @@ const char *VecSimCommonStrings::MEMORY_STRING = "MEMORY";
 const char *VecSimCommonStrings::HNSW_EF_RUNTIME_STRING = "EF_RUNTIME";
 const char *VecSimCommonStrings::HNSW_M_STRING = "M";
 const char *VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION";
+const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 
