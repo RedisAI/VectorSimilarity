@@ -38,11 +38,13 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
 TEST_F(BruteForceTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 15;
+    size_t blockSize = 10;
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
+                                             .initialCapacity = n,
+                                             .blockSize = blockSize}};
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -55,12 +57,45 @@ TEST_F(BruteForceTest, resizeIndex) {
     }
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
 
+    // remove invalid id
+    VecSimIndex_DeleteVector(index, 3459);
+
+    // This should do nothing
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(), n);
     // Add another vector, since index size equals to the capacity, this should cause resizing
-    // (by 10% factor from the new index size).
+    // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+    // Check alignment.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
+                  blockSize,
+              0);
+    // Check new capacity size, should be blockSize * 2.
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
-              std::ceil(1.1 * (n + 1)));
+              2 * blockSize);
+
+    // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
+    // to check that it stays aligned with blocksize.
+
+    size_t add_vectors_count = 8;
+    for (size_t i = 0; i < add_vectors_count; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, n + 2 + i);
+    }
+
+    // Size should be n + 1 + 8 = 24.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
+    // Check alignment of the capacity
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size() %
+                  blockSize,
+              0);
+    // Check new capacity size, should be blockSize * 3.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToVectorBlockMemberMapping.size(),
+              3 * blockSize);
+
     VecSimIndex_Free(index);
 }
 
@@ -173,7 +208,7 @@ TEST_F(BruteForceTest, brute_force_indexing_same_vector) {
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value).
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
@@ -222,7 +257,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Reinsert the same vectors under the same ids
+    // Reinsert the same vectors under the same ids.
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -232,7 +267,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Run the same query again
+    // Run the same query again.
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndex_Free(index);
@@ -271,7 +306,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Reinsert the same vectors under different ids than before
+    // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -281,7 +316,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Run the same query again
+    // Run the same query again.
     auto verify_res_different_id = [&](int id, float score, size_t index) {
         ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
     };
@@ -347,7 +382,7 @@ TEST_F(BruteForceTest, sanity_rinsert_1280) {
 
     auto *vectors = (float *)malloc(n * d * sizeof(float));
 
-    // Generate random vectors in every iteration and inert them under different ids
+    // Generate random vectors in every iteration and inert them under different ids.
     for (size_t iter = 1; iter <= 3; iter++) {
         for (size_t i = 0; i < n; i++) {
             for (size_t j = 0; j < d; j++) {
@@ -381,7 +416,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     size_t n = 100;
     size_t d = 128;
 
-    // Build with default args
+    // Build with default args.
     VecSimParams params = {
         .algo = VecSimAlgo_BF,
         .bfParams = BFParams{
@@ -390,7 +425,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
-    // Default args
+    // Default args.
     ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
     VecSimIndex_Free(index);
@@ -406,7 +441,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
-    // User args
+    // User args.
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
     VecSimIndex_Free(index);
@@ -418,7 +453,7 @@ TEST_F(BruteForceTest, test_basic_bf_info_iterator) {
     VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
 
     for (size_t i = 0; i < 3; i++) {
-        // Build with default args
+        // Build with default args.
         VecSimParams params{
             .algo = VecSimAlgo_BF,
             .bfParams = BFParams{
@@ -603,7 +638,7 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
 
     float query[] = {50, 50, 50, 50};
 
-    // We do not expect any results
+    // We do not expect any results.
     VecSimQueryResult_List res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
@@ -630,7 +665,7 @@ TEST_F(BruteForceTest, brute_force_search_empty_index) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Again - we do not expect any results
+    // Again - we do not expect any results.
     res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     it = VecSimQueryResult_List_GetIterator(res);
@@ -701,7 +736,7 @@ TEST_F(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // After deleting the first vector, the second one will be moved to the first block
+    // After deleting the first vector, the second one will be moved to the first block.
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
@@ -730,7 +765,7 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // After deleting the first vector, the second one will be moved to the first block
+    // After deleting the first vector, the second one will be moved to the first block.
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
@@ -764,7 +799,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-        // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+        // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
         float query[dim];
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
@@ -772,7 +807,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
-        // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+        // Get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
         // in every iteration. The order should be from the largest to the lowest id.
         size_t n_res = 5;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
@@ -803,7 +838,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
                                              .blockSize = 5}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    // run the test twice - for index of size 100, every iteration will run select-based search,
+    // Run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
@@ -817,7 +852,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-        // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+        // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
         float query[dim];
         for (size_t j = 0; j < dim; j++) {
             query[j] = (float)n;
@@ -825,13 +860,13 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
-        // get the 5 vectors whose ids are the maximal among those that hasn't been returned yet, in
+        // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet, in
         // every iteration. there are n/10 groups of 10 different vectors with the same score.
         size_t n_res = 5;
         bool even_iteration = false;
         std::set<size_t> expected_ids;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            // insert the maximal 10 ids in every odd iteration
+            // Insert the maximal 10 ids in every odd iteration.
             if (!even_iteration) {
                 for (size_t i = 1; i <= 2 * n_res; i++) {
                     expected_ids.insert(n - iteration_num * n_res - i);
@@ -842,7 +877,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
                 expected_ids.erase(id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
-            // make sure that the expected ids set is empty after two iterations.
+            // Make sure that the expected ids set is empty after two iterations.
             if (even_iteration) {
                 ASSERT_TRUE(expected_ids.empty());
             }
@@ -876,14 +911,14 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_reset) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
     float query[dim];
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
     }
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    // get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
+    // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
     // every iteration. run this flow for 5 times, each time for 10 iteration, and reset the
     // iterator.
     size_t n_res = 100;
@@ -924,7 +959,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
                                              .initialCapacity = n}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    // query for (n,n,...,n) vector (recall that n is the largest id in te index)
+    // Query for (n,n,...,n) vector (recall that n is the largest id in te index)
     float query[dim];
     for (size_t j = 0; j < dim; j++) {
         query[j] = (float)n;
@@ -932,11 +967,11 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
     // Create batch iterator for empty index.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-    // try to get more results even though there are no.
+    // Try to get more results even though there are no.
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
-    // retry to get results.
+    // Retry to get results.
     res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
@@ -958,7 +993,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
 
-    // get all in first iteration, expect to use select search.
+    // Get all in first iteration, expect to use select search.
     size_t n_res = n;
     auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_TRUE(id == n - 1 - index);
@@ -966,7 +1001,7 @@ TEST_F(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
-    // try to get more results even though there are no.
+    // Try to get more results even though there are no.
     res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
@@ -1108,7 +1143,7 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
 
     for (size_t index_size : {1000, 6000, 600000}) {
         for (size_t dim : {4, 80, 350, 780}) {
-            // create index and check for the expected output of "prefer ad-hoc"
+            // Create index and check for the expected output of "prefer ad-hoc".
             VecSimParams params{.algo = VecSimAlgo_BF,
                                 .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                                      .dim = dim,
@@ -1174,7 +1209,7 @@ TEST_F(BruteForceTest, batchIteratorSwapIndices) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // query for (1,1,1,1) vector.
+    // Query for (1,1,1,1) vector.
     float query[dim];
     query[0] = query[1] = query[2] = query[3] = 1.0;
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
@@ -1416,7 +1451,7 @@ TEST_F(BruteForceTest, rangeQuery) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    size_t pivot_id = n / 2; // the id to return vectors around it.
+    size_t pivot_id = n / 2; // The id to return vectors around it.
     float query[] = {(float)pivot_id, (float)pivot_id, (float)pivot_id, (float)pivot_id};
 
     // Validate invalid params are caught with runtime exception.
