@@ -163,7 +163,6 @@ commands:
 
 jobs:
   build-focal:
-    context: common
     resource_class: large
     docker:
       - image: ubuntu:focal
@@ -380,6 +379,7 @@ workflows:
   default_flow:
     jobs:
       - build-focal:
+          context: common
           <<: *on-any-branch
       - build-bionic:
           <<: *on-any-branch
@@ -411,7 +411,8 @@ workflows:
               only:
                 - main
     jobs:
-    - nightly_flow
+    - nightly_flow:
+        context: common
     - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
