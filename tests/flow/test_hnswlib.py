@@ -366,8 +366,8 @@ def test_range_query():
         end = time.time()
         res_num = len(hnsw_labels[0])
 
-        dists = sorted([(key, spatial.distance.euclidean(query_data, vec)) for key, vec in vectors])
-        actual_results = [(key, dist) for key, dist in dists if dist <= radius**0.5]
+        dists = sorted([(key, spatial.distance.sqeuclidean(query_data, vec)) for key, vec in vectors])
+        actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
         print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
               f' got {res_num} results, which are {res_num/len(actual_results)} of the entire results in the range.')

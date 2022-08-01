@@ -223,8 +223,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
-    float radius = (1.0f / 100.0f) * (float)st.range(0);
-    float epsilon = (1.0f / 1000.0f) * (float)st.range(1);
+    double radius = (1.0f / 100.0f) * (float)st.range(0);
+    double epsilon = (1.0f / 1000.0f) * (float)st.range(1);
     size_t iter = 0;
     size_t total_res = 0;
     size_t total_res_bf = 0;
@@ -262,6 +262,8 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
     // {radius*100, epsilon*1000}
+    // The actual radius will be the given arg divided by 100, and the actual epsilon values
+    // will be the given arg divided by 1000.
     ->Args({20, 1})
     ->Args({20, 10})
     ->Args({20, 100})

@@ -157,8 +157,8 @@ public:
 
     void setEf(size_t ef);
     size_t getEf() const;
-    void setEpsilon(double epsilon);
-    double getEpsilon() const;
+    inline void setEpsilon(double epsilon);
+    inline double getEpsilon() const;
     size_t getIndexSize() const;
     size_t getIndexCapacity() const;
     size_t getEfConstruction() const;
@@ -448,10 +448,13 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
     __builtin_prefetch(getDataByInternalId(*node_links));
 
     for (size_t j = 0; j < links_num; j++) {
-        tableint candidate_id = *(node_links + j);
+        tableint *candidate_pos = node_links + j;
+        tableint candidate_id = *candidate_pos;
 
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
-        __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
+        // Pre-fetch the next candidate data into memory cache, to improve performance.
+        tableint *next_candidate_pos = node_links + j + 1;
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
@@ -462,8 +465,6 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
         if (candidate_dist < dyn_range) {
             candidate_set.emplace(-candidate_dist, candidate_id);
 
-            __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
-
             // If the new candidate is in the requested radius, add it to the results set.
             if (candidate_dist <= radius) {
                 auto new_result = VecSimQueryResult{};
@@ -473,6 +474,9 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
             }
         }
     }
+    // Pre-fetch the neighbours list of the top candidate (the one that is going
+    // to be processed in the next iteration) into memory cache, to improve performance.
+    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
 }
 
 template <typename dist_t>
