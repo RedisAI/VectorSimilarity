@@ -15,6 +15,8 @@ add_executable(bm_batch_iterator bm_batch_iterator.cpp)
 target_link_libraries(bm_batch_iterator VectorSimilarity benchmark::benchmark)
 add_executable(bm_basics bm_basics.cpp)
 target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
+add_executable(bm_updated_index bm_updated_index.cpp)
+target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
 
 #########################################################################################
 # Passed this line we have optimization enabled by the compiler.                        #

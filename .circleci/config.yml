@@ -163,6 +163,7 @@ commands:
 
 jobs:
   build-focal:
+    context: common
     resource_class: large
     docker:
       - image: ubuntu:focal
