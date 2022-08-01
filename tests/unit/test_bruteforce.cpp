@@ -80,7 +80,9 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, resizeIndex) {
+/**** resizing cases ****/
+
+TEST_F(BruteForceTest, resizeNAlignIndex) {
     size_t dim = 4;
     size_t n = 15;
     size_t blockSize = 10;
@@ -109,6 +111,7 @@ TEST_F(BruteForceTest, resizeIndex) {
     // This should do nothing
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
@@ -132,6 +135,118 @@ TEST_F(BruteForceTest, resizeIndex) {
 
     // Check new capacity size, should be blockSize * 3.
     ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 3 * blockSize);
+
+    VecSimIndex_Free(index);
+}
+
+// Case 1: initial cpapcity is larger than block size, and it is not aligned.
+TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
+    size_t dim = 4;
+    size_t n = 10; // Determines the initial size of idToLabelMapping.
+    size_t bs = 3;
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim];
+
+    // add up to blocksize + 1 = 3 + 1 = 4
+    for (size_t i = 0; i < bs + 1; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            a[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)a, i);
+    }
+
+    size_t idToLabelMapping_size =
+        reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+    // The idToLabelMapping size shouldnt change, should remain n.
+    ASSERT_EQ(idToLabelMapping_size, n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), bs + 1);
+
+    // Delete last vector, to get size % block_size == 0. size = 3
+    VecSimIndex_DeleteVector(index, bs);
+
+    // Index size = bs = 3.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), bs);
+
+    // New idToLabelMapping size = idToLabelMapping_size - block_size - number_of_vectors_to_align =
+    // 10  - 3 - 10 % 3 (1) = 6
+    idToLabelMapping_size = reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+    ASSERT_EQ(idToLabelMapping_size, n - bs - n % bs);
+
+    // Delete all the vectors to decrease idToLabelMapping size by another bs.
+    size_t i = 0;
+    while (VecSimIndex_IndexSize(index) > 0) {
+        VecSimIndex_DeleteVector(index, i);
+        ++i;
+    }
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs);
+    // Add and delete a vector to acheive:
+    // size % block_size == 0 && size + bs <= idToLabelMapping_size(3).
+    // idToLabelMapping_size should be resized to zero.
+    VecSimIndex_AddVector(index, (const void *)a, 0);
+    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
+
+    // Do it again. This time after adding a vector idToLabelMapping_size is increased by bs.
+    // Upon deletion it will be resized to zero again.
+    VecSimIndex_AddVector(index, (const void *)a, 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs);
+    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
+
+    VecSimIndex_Free(index);
+}
+
+// Test empty index edge cases.
+TEST_F(BruteForceTest, brute_force_empty_index) {
+    size_t dim = 4;
+    size_t n = 20;
+    size_t bs = 6;
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Try to remove from an empty index - should fail because label doesnt exist.
+    VecSimIndex_DeleteVector(index, 0);
+
+    // Add one vector.
+    float a[dim];
+    for (size_t j = 0; j < dim; j++) {
+        a[j] = (float)1.7;
+    }
+
+    VecSimIndex_AddVector(index, (const void *)a, 1);
+    // Try to remove it.
+    VecSimIndex_DeleteVector(index, 1);
+    // The idToLabelMapping_size should change to be aligned with the vector size.
+    size_t idToLabelMapping_size =
+        reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+
+    ASSERT_EQ(idToLabelMapping_size, n - n % bs - bs);
+
+    // Size equals 0.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Try to remove it again.
+    // The idToLabelMapping_size should remain unchanged, as we are trying to delete a label that
+    // doesnt exist.
+    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
+              idToLabelMapping_size);
+    // Nor the size.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
 }
