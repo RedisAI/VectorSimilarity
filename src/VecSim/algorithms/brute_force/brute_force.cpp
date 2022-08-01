@@ -90,7 +90,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
             // Save current id2vec size.
             size_t ids_mapping_size = idToVectorBlockMemberMapping.size();
 
-            // If its full - resize index to be a multiplication of block size.
+            // If it's full - resize the index to be a multiplication of block size.
             if (id >= ids_mapping_size) {
                 size_t last_block_vectors_count = count % vectorBlockSize;
                 this->idToVectorBlockMemberMapping.resize(ids_mapping_size + vectorBlockSize -
