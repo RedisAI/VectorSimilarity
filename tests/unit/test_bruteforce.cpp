@@ -1412,6 +1412,27 @@ TEST_F(BruteForceTest, testSizeEstimation) {
     VecSimIndex_Free(index);
 }
 
+TEST_F(BruteForceTest, testInitialSizeEstimationWithInitialCapacity) {
+    size_t dim = 128;
+    size_t n = 100;
+    size_t bs = DEFAULT_BLOCK_SIZE;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_Cosine,
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
+
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    size_t actual = index->getAllocator()->getAllocationSize();
+    ASSERT_EQ(estimation, actual);
+
+    VecSimIndex_Free(index);
+}
+
 TEST_F(BruteForceTest, testTimeoutReturn) {
     size_t dim = 4;
     float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
