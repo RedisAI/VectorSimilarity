@@ -61,8 +61,8 @@ public:
     void reset() override;
 
     ~HNSW_BatchIterator() override {
-#ifdef ENABLE_PARALLELIZATION
-        // return the visited list to the pool.
+#ifdef ENABLE_PARALLELIZATION_READ
+        this->index->returnVisitedList(this->visited_list);
 #endif
     }
 };
