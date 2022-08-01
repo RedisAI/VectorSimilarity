@@ -124,7 +124,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
             float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
                                              this->space->get_data_dim());
             candidates.emplace(candidate_dist, candidate_id);
-	        __builtin_prefetch(hnsw_index->get_linklist_at_level(candidates.top().second, 0));
+            __builtin_prefetch(hnsw_index->get_linklist_at_level(candidates.top().second, 0));
         }
     }
 
