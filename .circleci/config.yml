@@ -114,6 +114,33 @@ commands:
           name: Unit test
           command: bash -l -c "make unit_test"
       - run:
+          name: Download pre-generated indices
+          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+      - run:
+          name: Install benchmark dependencies
+          command: |
+            apt update
+            apt install python3-pip -y
+            pip3 install redisbench-admin
+      - run:
+          name: Benchmark
+          command: |
+            bash -l -c "make benchmark"
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --benchmark-result-file basics_results.json
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --benchmark-result-file batch_iterator_results.json
+          no_output_timeout: 180m
+
+      - run:
           name: Valgrind test
           command: bash -l -c "make VG=1 build unit_test"
       - run:
