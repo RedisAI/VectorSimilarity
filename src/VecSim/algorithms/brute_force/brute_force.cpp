@@ -85,16 +85,22 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         if (this->deletedIds.size() != 0) {
             id = *this->deletedIds.begin();
             this->deletedIds.erase(this->deletedIds.begin());
-            this->count++;
         } else {
-            id = this->count++;
+            id = count;
+            // Save current id2vec size.
+            size_t ids_mapping_size = idToVectorBlockMemberMapping.size();
+
+            // If it's full - resize the index to be a multiplication of block size.
+            if (id >= ids_mapping_size) {
+                size_t last_block_vectors_count = count % vectorBlockSize;
+                this->idToVectorBlockMemberMapping.resize(ids_mapping_size + vectorBlockSize -
+                                                          last_block_vectors_count);
+            }
         }
     }
 
-    // See if new id is bigger than current vector count. Needs to resize the index.
-    if (id >= this->idToVectorBlockMemberMapping.size()) {
-        this->idToVectorBlockMemberMapping.resize(std::ceil(this->count * 1.1));
-    }
+    // Anyway - increse count.
+    ++count;
 
     // Get vector block to store the vector in.
     VectorBlock *vectorBlock;
@@ -127,7 +133,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     idType id;
     auto optionalId = this->labelToIdLookup.find(label);
     if (optionalId == this->labelToIdLookup.end()) {
-        // Nothing to delete;
+        // Nothing to delete.
         return true;
     } else {
         id = optionalId->second;
@@ -142,21 +148,21 @@ int BruteForceIndex::deleteVector(size_t label) {
     VectorBlockMember *lastVectorBlockMember =
         lastVectorBlock->getMember(lastVectorBlock->getLength() - 1);
 
-    // Swap the last vector with the deleted vector;
+    // Swap the last vector with the deleted vector.
     vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
 
     float *destination = vectorBlock->getVector(vectorIndex);
     float *origin = lastVectorBlock->removeAndFetchVector();
     memmove(destination, origin, sizeof(float) * this->dim);
 
-    // Delete the vector block membership
+    // Delete the vector block membership.
     delete vectorBlockMember;
     this->idToVectorBlockMemberMapping[id] = NULL;
     // Add deleted id to reusable ids.
     this->deletedIds.emplace(id);
     this->labelToIdLookup.erase(label);
 
-    // If the last vector block is emtpy;
+    // If the last vector block is emtpy.
     if (lastVectorBlock->getLength() == 0) {
         delete lastVectorBlock;
         this->vectorBlocks.pop_back();
@@ -218,7 +224,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
 
     this->last_mode = STANDARD_KNN;
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
@@ -228,7 +234,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
 
     float upperBound = std::numeric_limits<float>::lowest();
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
-    // For every block, compute its vectors scores and update the Top candidates max heap
+    // For every block, compute its vectors scores and update the Top candidates max heap.
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
@@ -278,7 +284,7 @@ VecSimIndexInfo BruteForceIndex::info() const {
 
 VecSimInfoIterator *BruteForceIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    // For readability. Update this number when needed;
+    // For readability. Update this number when needed.
     size_t numberOfInfoFields = 8;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
