@@ -94,7 +94,7 @@ private:
     size_t pool_initial_size;
 #endif
 #ifdef ENABLE_PARALLELIZATION
-    std::mutex global;  // shared_timed_mutex for read/write lock
+    std::mutex global; // shared_timed_mutex for read/write lock
     std::mutex cur_element_count_guard_;
     mutable std::vector<std::mutex> link_list_locks_;
 #endif
