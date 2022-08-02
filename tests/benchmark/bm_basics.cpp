@@ -5,6 +5,7 @@
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 
 static void GetHNSWIndex(VecSimIndex *hnsw_index) {
 
@@ -136,6 +137,21 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
     }
 }
 
+BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorBF)(benchmark::State &st) {
+    // Add a new vector from the test vectors in every iteration.
+    size_t iter = 0;
+    size_t new_id = VecSimIndex_IndexSize(bf_index);
+    for (auto _ : st) {
+        VecSimIndex_AddVector(bf_index, (*queries)[(iter % n_queries)].data(), new_id++);
+        iter++;
+    }
+    // Clean-up.
+    size_t new_index_size = VecSimIndex_IndexSize(bf_index);
+    for (size_t id = n_vectors; id < new_index_size; id++) {
+        VecSimIndex_DeleteVector(bf_index, id);
+    }
+}
+
 BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     // Remove a different vector in every execution.
     std::vector<std::vector<float>> blobs;
@@ -157,6 +173,31 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     // Restore index state.
     for (size_t i = 0; i < blobs.size(); i++) {
         VecSimIndex_AddVector(hnsw_index, blobs[i].data(), i);
+    }
+}
+
+BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorBF)(benchmark::State &st) {
+    // Remove a different vector in every execution.
+    std::vector<std::vector<float>> blobs;
+    size_t id_to_remove = 0;
+
+    for (auto _ : st) {
+        st.PauseTiming();
+        auto removed_vec = std::vector<float>(dim);
+        auto *vector_block_member = reinterpret_cast<BruteForceIndex *>(bf_index)
+                                        ->idToVectorBlockMemberMapping[id_to_remove];
+        size_t index = vector_block_member->index;
+        float *destination = vector_block_member->block->getVector(index);
+        memcpy(removed_vec.data(), destination, dim * sizeof(float));
+        blobs.push_back(removed_vec);
+        st.ResumeTiming();
+
+        VecSimIndex_DeleteVector(bf_index, id_to_remove++);
+    }
+
+    // Restore index state.
+    for (size_t i = 0; i < blobs.size(); i++) {
+        VecSimIndex_AddVector(bf_index, blobs[i].data(), i);
     }
 }
 
@@ -251,34 +292,11 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
     st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
-// Register the function as a benchmark
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-    // The actual radius will be the given arg divided by 100, since arg must be an integer.
-    ->Arg(20)
-    ->Arg(35)
-    ->Arg(50)
-    ->Unit(benchmark::kMillisecond);
-
-// Register the function as a benchmark
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
-    // {radius*100, epsilon*1000}
-    // The actual radius will be the given arg divided by 100, and the actual epsilon values
-    // will be the given arg divided by 1000.
-    ->Args({20, 1})
-    ->Args({20, 10})
-    ->Args({20, 100})
-    ->Args({35, 1})
-    ->Args({35, 10})
-    ->Args({35, 100})
-    ->Args({50, 1})
-    ->Args({50, 10})
-    ->Args({50, 100})
-    ->Iterations(100)
-    ->Unit(benchmark::kMillisecond);
-
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
+BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)->Unit(benchmark::kMillisecond);
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
     ->Arg(10)
@@ -293,6 +311,29 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
     ->Args({100, 100})
     ->Args({200, 100})
     ->Args({500, 500})
+    ->Iterations(100)
+    ->Unit(benchmark::kMillisecond);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
+    // The actual radius will be the given arg divided by 100, since arg must be an integer.
+    ->Arg(20)
+    ->Arg(35)
+    ->Arg(50)
+    ->Unit(benchmark::kMillisecond);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
+    // {radius*100, epsilon*1000}
+    // The actual radius will be the given arg divided by 100, and the actual epsilon values
+    // will be the given arg divided by 1000.
+    ->Args({20, 1})
+    ->Args({20, 10})
+    ->Args({20, 100})
+    ->Args({35, 1})
+    ->Args({35, 10})
+    ->Args({35, 100})
+    ->Args({50, 1})
+    ->Args({50, 10})
+    ->Args({50, 100})
     ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 

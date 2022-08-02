@@ -9,8 +9,10 @@
 static void GetHNSWIndex(VecSimIndex *hnsw_index, const char *file_name) {
 
     // Load the index file, if it exists in the expected path.
-    auto location = std::string(std::string(getenv("ROOT")));
+    auto location = std::string(getenv("ROOT"));
     auto full_file_name = location + "/tests/benchmark/data/" + std::string(file_name);
+    // auto full_file_name = "/home/alon/Code/VectorSimilarity/tests/benchmark/data/" +
+    // std::string(file_name);
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(full_file_name, std::ios::binary);
@@ -111,6 +113,8 @@ protected:
             queries = new std::vector<std::vector<float>>(n_queries);
             auto location = std::string(std::string(getenv("ROOT")));
             auto file_name = location + "/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+            // auto file_name =
+            // "/home/alon/Code/VectorSimilarity/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
             std::ifstream input(file_name, std::ios::binary);
             input.seekg(0, std::ifstream::beg);
             for (size_t i = 0; i < n_queries; i++) {

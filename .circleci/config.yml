@@ -77,6 +77,53 @@ commands:
           command: |
             yum install -y git
 
+  benchmark:
+    steps:
+      - run:
+          name: Download pre-generated indices
+          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+      - run:
+          name: Install benchmark dependencies
+          command: |
+            apt update
+            apt install python3-pip -y
+            pip3 install --ignore-installed PyYAML
+            pip3 install redisbench-admin
+      - run:
+          name: Benchmark
+          command: |
+            bash -l -c "make benchmark"
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --extra-tags group=A \
+                          --benchmark-result-file basics_results.json
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --extra-tags group=A \
+                          --benchmark-result-file batch_iterator_results.json
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --extra-tags group=A \
+                          --benchmark-result-file updated_index_results.json
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --extra-tags group=B \
+                          --benchmark-result-file spaces_results.json
+          no_output_timeout: 180m
+
+
   tiny-build-steps:
     steps:
       - abort_for_docs
@@ -113,46 +160,6 @@ commands:
       - run:
           name: Unit test
           command: bash -l -c "make unit_test"
-      - run:
-          name: Download pre-generated indices
-          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-      - run:
-          name: Install benchmark dependencies
-          command: |
-            apt update
-            apt install python3-pip -y
-            pip3 install --ignore-installed PyYAML
-            pip3 install redisbench-admin
-      - run:
-          name: Benchmark
-          command: |
-            bash -l -c "make benchmark"
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --benchmark-result-file basics_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --benchmark-result-file batch_iterator_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --benchmark-result-file updated_index_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --benchmark-result-file batch_iterator_results.json
-          no_output_timeout: 180m
-
       - run:
           name: Valgrind test
           command: bash -l -c "make VG=1 build unit_test"
@@ -282,6 +289,7 @@ jobs:
           command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
 
   nightly_flow:
+    # todo: change the machine to be the same as benchmark machine
     resource_class: large
     docker:
       - image: redisfab/rmbuilder:6.2.5-x64-bullseye
@@ -293,16 +301,7 @@ jobs:
       - abort_for_docs
       - abort_for_noci
       - build-steps
-      - run:
-          name: Build Python bindings
-          command: bash -l -c "make pybind"
-      - run:
-          name: Download pre-generated indices
-          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-      - run:
-          name: Benchmark
-          command: bash -l -c "make benchmark"
-          no_output_timeout: 180m
+      - benchmark
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -322,6 +321,24 @@ jobs:
           command: |
             make coverage
             make upload-cov
+
+  run-benchmarks:
+    machine:
+      enabled: true
+      image: ubuntu-2004:202010-01
+      resource_class: large
+    docker:
+      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
+    steps:
+      - setup-ubuntu
+      - abort_for_docs
+      - abort_for_noci
+      - checkout-all
+      - install-prerequisites
+      - run:
+          name: Build
+          command: bash -l -c "make build"
+      - benchmark
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -383,6 +400,15 @@ on-integ-and-version-tags: &on-integ-and-version-tags
     tags:
       only: /^v[0-9].*/
 
+on-perf-and-version-tags: &on-perf-and-version-tags
+  filters:
+    branches:
+      only:
+        - main
+        - /^\d+\.\d+.*$/
+        - /^perf.*$/
+    tags:
+      only: /^v[0-9].*/
 #----------------------------------------------------------------------------------------------------------------------------------
 
 workflows:
@@ -391,7 +417,6 @@ workflows:
   default_flow:
     jobs:
       - build-focal:
-          context: common
           <<: *on-any-branch
       - build-bionic:
           <<: *on-any-branch
@@ -412,6 +437,9 @@ workflows:
           <<: *on-any-branch
       - codecov:
           <<: *on-any-branch
+      - run-benchmarks:
+          context: common
+          <<: *on-perf-and-version-tags
 
 
   nightly:
