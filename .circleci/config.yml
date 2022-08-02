@@ -272,8 +272,6 @@ jobs:
             poetry install
             tox -e flowenv
 
-
-
   sanitize:
     docker:
       - image: redisfab/clang:13-x64-bullseye
@@ -325,6 +323,7 @@ jobs:
   run-benchmarks:
     machine:
       image: ubuntu-2004:202010-01
+    resource_class: large
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
