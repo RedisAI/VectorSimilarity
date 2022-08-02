@@ -138,6 +138,7 @@ private:
     inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
                                              double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
+                                             tag_t *elements_tags,
                                              candidatesMaxHeap<DistType> &candidate_set,
                                              DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
@@ -473,7 +474,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
-    VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
+    tag_t *elements_tags, VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
     double radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
@@ -483,7 +484,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     size_t links_num = getListCount(node_ll);
     auto *node_links = (idType *)(node_ll + 1);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
+    __builtin_prefetch(elements_tags + *(node_ll + 1));
     __builtin_prefetch(getDataByInternalId(*node_links));
 
     // Cast radius once instead of each time we check that candidate_dist <= radius_
@@ -493,13 +494,13 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         idType candidate_id = *candidate_pos;
 
         // Pre-fetch the next candidate data into memory cache, to improve performance.
-        idType *next_candidate_pos = node_links + j + 1;
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+	    idType *next_candidate_pos = node_links + j + 1;
+        __builtin_prefetch(elements_tags + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag)
             continue;
-        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+        elements_tags[candidate_id] = visited_tag;
         char *candidate_data = getDataByInternalId(candidate_id);
 
         DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
@@ -1468,12 +1469,12 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
-#ifdef ENABLE_PARALLELIZATION
-    this->visited_nodes_handler =
+#ifdef ENABLE_PARALLELIZATION_READ
+    auto visited_nodes_handler =
         this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
 #endif
 
-    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    tag_t visited_tag = visited_nodes_handler->getFreshTag();
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
@@ -1491,7 +1492,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 
     DistType dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
     candidate_set.emplace(-ep_dist, ep_id);
-    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+    visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     // Cast radius once instead of each time we check that -curr_el_pair.first >= radius_.
     DistType radius_ = DistType(radius);
@@ -1519,11 +1520,11 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         // requested radius.
         // Here we send the radius as double to match the function arguments type.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
-                                     &results, candidate_set, dynamic_range_search_boundaries,
-                                     radius);
+                                     visited_nodes_handler->getElementsTags(), &results,
+                                     candidate_set, dynamic_range_search_boundaries, radius);
     }
-#ifdef ENABLE_PARALLELIZATION
-    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+#ifdef ENABLE_PARALLELIZATION_READ
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes_handler);
 #endif
 
     *rc = VecSim_QueryResult_OK;
