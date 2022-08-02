@@ -133,6 +133,7 @@ private:
                                    dist_t lowerBound) const;
     inline void processCandidate_RangeSearch(tableint curNodeId, const void *data_point,
                                              size_t layer, double epsilon, tag_t visited_tag,
+                                             tag_t *elements_tags,
                                              VecSimQueryResult **top_candidates,
                                              candidatesMaxHeap<dist_t> &candidate_set,
                                              dist_t lowerBound, dist_t radius) const;
@@ -459,12 +460,10 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
-                                                           const void *query_data, size_t layer,
-                                                           double epsilon, tag_t visited_tag,
-                                                           VecSimQueryResult **results,
-                                                           candidatesMaxHeap<dist_t> &candidate_set,
-                                                           dist_t dyn_range, dist_t radius) const {
+void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(
+    tableint curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
+    tag_t *elements_tags, VecSimQueryResult **results, candidatesMaxHeap<dist_t> &candidate_set,
+    dist_t dyn_range, dist_t radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -473,7 +472,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
     size_t links_num = getListCount(node_ll);
     auto *node_links = (tableint *)(node_ll + 1);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
+    __builtin_prefetch(elements_tags + *(node_ll + 1));
     __builtin_prefetch(getDataByInternalId(*node_links));
 
     for (size_t j = 0; j < links_num; j++) {
@@ -482,12 +481,12 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
 
         // Pre-fetch the next candidate data into memory cache, to improve performance.
         tableint *next_candidate_pos = node_links + j + 1;
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        __builtin_prefetch(elements_tags + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag)
             continue;
-        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+        elements_tags[candidate_id] = visited_tag;
         char *candidate_data = getDataByInternalId(candidate_id);
 
         dist_t candidate_dist = fstdistfunc_(query_data, candidate_data, dist_func_param_);
@@ -1372,12 +1371,12 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
     VecSimQueryResult_Code *rc) const {
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
-#ifdef ENABLE_PARALLELIZATION
-    this->visited_nodes_handler =
+#ifdef ENABLE_PARALLELIZATION_READ
+    auto visited_nodes_handler =
         this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
 #endif
 
-    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    tag_t visited_tag = visited_nodes_handler->getFreshTag();
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
@@ -1394,7 +1393,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
 
     dist_t dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
     candidate_set.emplace(-ep_dist, ep_id);
-    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+    visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
@@ -1419,11 +1418,11 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         // epsilon environment of the dynamic range, and add them to the results if they are in the
         // requested radius.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
-                                     &results, candidate_set, dynamic_range_search_boundaries,
-                                     radius);
+                                     visited_nodes_handler->getElementsTags(), &results,
+                                     candidate_set, dynamic_range_search_boundaries, radius);
     }
-#ifdef ENABLE_PARALLELIZATION
-    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+#ifdef ENABLE_PARALLELIZATION_READ
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes_handler);
 #endif
 
     *rc = VecSim_QueryResult_OK;
