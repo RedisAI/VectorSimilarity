@@ -144,6 +144,29 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     float *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
+    // Remove the pair of the deleted vector.
+    labelToIdLookup.erase(label);
+
+
+    // If we are *not* trying to remove the last vector, update mappind and move
+    // the data of the last vector in the index in place of the deleted vector.
+    if (id_to_delete != last_idx) {
+        // Update id2labelmapping.
+        // Put the label of the last_id in the deleted_id.
+        setVectorLabel(id_to_delete, last_idx_label);
+
+        // Update label2id mapping.
+        // Update this id in label:id pair of last index.
+        setLabelToId(last_idx_label, id_to_delete);
+
+        // Get the vectorBlock and the relative index of the deleted id.
+        VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
+        size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
+
+        // Put data of last vector inpalce of the deleted vector.
+        deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
+    }
+
     // If the last vector block is emtpy.
     if (last_vector_block->getLength() == 0) {
         delete last_vector_block;
@@ -159,28 +182,8 @@ int BruteForceIndex::deleteVector(size_t label) {
         }
     }
 
-    // Remove the pair of the deleted vector.
-    labelToIdLookup.erase(label);
 
-    // If we are trying to remove the last vector, return.
-    if (id_to_delete == last_idx) {
-        return true;
-    }
-
-    // Update id2labelmapping.
-    // Put the label of the last_id in the deleted_id.
-    setVectorLabel(id_to_delete, last_idx_label);
-
-    // Update label2id mapping.
-    // Update this id in label:id pair of last index.
-    setLabelToId(last_idx_label, id_to_delete);
-
-    // Get the vectorBlock and the relative index of the deleted id.
-    VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
-    size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
-
-    // Put data of last vector inpalce of the deleted vector.
-    deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
+   
 
     return true;
 }
