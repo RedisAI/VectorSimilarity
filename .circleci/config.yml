@@ -324,11 +324,7 @@ jobs:
 
   run-benchmarks:
     machine:
-      enabled: true
       image: ubuntu-2004:202010-01
-      resource_class: large
-    docker:
-      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
     steps:
       - setup-ubuntu
       - abort_for_docs
