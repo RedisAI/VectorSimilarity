@@ -326,7 +326,7 @@ jobs:
     machine:
       image: ubuntu-2004:202010-01
     steps:
-      - setup-ubuntu
+      - setup-ubuntu-sudo
       - abort_for_docs
       - abort_for_noci
       - checkout-all
