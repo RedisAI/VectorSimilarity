@@ -94,7 +94,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 }
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(12, VecSimInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(13, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -131,6 +131,10 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // EF runtime.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.efRuntime);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
+            // Epsilon.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_FLOAT64);
+            ASSERT_EQ(infoFiled->floatingPointValue, info.hnswInfo.epsilon);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_M_STRING)) {
             // M.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
