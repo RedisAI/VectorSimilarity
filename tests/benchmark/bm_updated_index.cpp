@@ -11,8 +11,6 @@ static void GetHNSWIndex(VecSimIndex *hnsw_index, const char *file_name) {
     // Load the index file, if it exists in the expected path.
     auto location = std::string(std::string(getenv("ROOT")));
     auto full_file_name = location + "/tests/benchmark/data/" + std::string(file_name);
-    // auto full_file_name = "/home/alon/Code/VectorSimilarity/tests/benchmark/data/" +
-    // std::string(file_name);
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(full_file_name, std::ios::binary);
@@ -87,8 +85,10 @@ protected:
                 char *blob = reinterpret_cast<HNSWIndex *>(hnsw_index)
                                  ->getHNSWIndex()
                                  ->getDataByInternalId(i);
-                VecSimIndex_AddVector(bf_index, blob, i);
-                VecSimIndex_AddVector(bf_index_updated, blob, i);
+                size_t label =
+                    reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getExternalLabel(i);
+                VecSimIndex_AddVector(bf_index, blob, label);
+                VecSimIndex_AddVector(bf_index_updated, blob, label);
             }
 
             // Load pre-generated *updated* HNSW index.
@@ -101,7 +101,10 @@ protected:
                 char *blob = reinterpret_cast<HNSWIndex *>(hnsw_index_updated)
                                  ->getHNSWIndex()
                                  ->getDataByInternalId(i);
-                VecSimIndex_AddVector(bf_index_updated, blob, i);
+                size_t label = reinterpret_cast<HNSWIndex *>(hnsw_index_updated)
+                                   ->getHNSWIndex()
+                                   ->getExternalLabel(i);
+                VecSimIndex_AddVector(bf_index_updated, blob, label);
             }
 
             // Load the test query vectors.

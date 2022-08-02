@@ -139,6 +139,18 @@ commands:
                           --github_org $CIRCLE_PROJECT_USERNAME \
                           --github_branch $CIRCLE_BRANCH \
                           --benchmark-result-file batch_iterator_results.json
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --benchmark-result-file updated_index_results.json
+            redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $CIRCLE_BRANCH \
+                          --benchmark-result-file batch_iterator_results.json
           no_output_timeout: 180m
 
       - run:
