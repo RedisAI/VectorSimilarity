@@ -23,6 +23,9 @@ target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
 # Adding files to complie after this line will have an effect on the resulted binaries. #
 #########################################################################################
 
+add_library(bm_spaces_class bm_spaces_class.cpp)
+target_link_libraries(bm_spaces_class benchmark::benchmark)
+
 include(CheckCXXCompilerFlag)
 # TODO: Remove this once cpu_features get support for M1
 if(NOT APPLE)
@@ -53,5 +56,6 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with SSE")
 	endif()
 endif()
+
 add_executable(bm_spaces bm_spaces.cpp)
-target_link_libraries(bm_spaces VectorSimilarity benchmark::benchmark)
+target_link_libraries(bm_spaces VectorSimilarity benchmark::benchmark bm_spaces_class)
