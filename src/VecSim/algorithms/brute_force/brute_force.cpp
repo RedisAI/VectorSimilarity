@@ -147,7 +147,6 @@ int BruteForceIndex::deleteVector(size_t label) {
     // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
 
-
     // If we are *not* trying to remove the last vector, update mappind and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
@@ -181,9 +180,6 @@ int BruteForceIndex::deleteVector(size_t label) {
             this->idToLabelMapping.resize(id2label_size - vectorBlockSize - vector_to_align_count);
         }
     }
-
-
-   
 
     return true;
 }
