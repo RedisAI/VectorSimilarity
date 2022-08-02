@@ -40,6 +40,7 @@ TEST_F(BruteForceTest, brute_force_vector_add_test) {
 TEST_F(BruteForceTest, brute_force_vector_update_test) {
     size_t dim = 4;
     size_t n = 1;
+    size_t bs = DEFAULT_BLOCK_SIZE;
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
@@ -76,6 +77,51 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
         ASSERT_EQ(*vector_data, 2);
         ++vector_data;
     }
+
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (float)3;
+    }
+    // Add another vector and try to remove the first.
+    size_t last_vec_label = 2;
+    VecSimIndex_AddVector(index, (const void *)a, last_vec_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+    // Since we reached the limit of the initial capacity(1) id2label is
+    // increased and aligned with vector block size.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs);
+
+    size_t first_vec_label = 1;
+    size_t deleted_id = 0;
+    VecSimIndex_DeleteVector(index, first_vec_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    // id2label size should remain unchanged..
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs);
+
+    // id2label at the deleted id should equal the label of the last vector.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->getVectorLabel(deleted_id),
+              last_vec_label);
+    // label2id value at the label of the last vector is the deleted id.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->getVectorId(last_vec_label), deleted_id);
+
+    // The data of the added vector should be moved to the first index.
+    block = reinterpret_cast<BruteForceIndex *>(index)->getVectorVectorBlock(deleted_id);
+    vector_data = block->getVector(deleted_id);
+    for (size_t i = 0; i < dim; ++i) {
+        ASSERT_EQ(*vector_data, 3);
+        ++vector_data;
+    }
+
+    // Delete the last vector.
+    VecSimIndex_DeleteVector(index, last_vec_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // VectorBlocks vector is empty.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->vectorBlocks.size(), 0);
+    // id2label size is also empty.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
+
+    // Label2id of the last vector doesn't exist.
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->labelToIdLookup.find(last_vec_label),
+              reinterpret_cast<BruteForceIndex *>(index)->labelToIdLookup.end());
 
     VecSimIndex_Free(index);
 }

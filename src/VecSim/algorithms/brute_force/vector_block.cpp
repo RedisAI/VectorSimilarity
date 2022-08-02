@@ -22,5 +22,5 @@ void VectorBlock::addVector(const void *vectorData) {
 
 void VectorBlock::updateVector(size_t index, const void *vector_data) {
     float *destinaion = getVector(index);
-    memmove(destinaion, vector_data, this->dim * sizeof(float));
+    memcpy(destinaion, vector_data, this->dim * sizeof(float));
 }

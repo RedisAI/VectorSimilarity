@@ -151,6 +151,7 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
                 ++curr_id;
             }
         }
+        assert(curr_id == index->indexSize());
     }
     if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
         return {NULL, VecSim_QueryResult_TimedOut};

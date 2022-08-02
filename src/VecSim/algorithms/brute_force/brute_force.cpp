@@ -57,7 +57,7 @@ size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
 
-    // TODO Get the vector block
+    // Get the vector block
     VectorBlock *vectorBlock = getVectorVectorBlock(id);
     size_t index = getVectorRelativeIndex(id);
 
@@ -83,13 +83,13 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         return true;
     }
 
-    // give the vector new id
-    idType id = count;
+    // Give the vector new id and increase count.
+    idType id = count++;
 
     // Get vector block to store the vector in.
 
     // if vectorBlocks vector is empty ||last_vector_block is full create a new block
-    if (count % vectorBlockSize == 0) {
+    if (id % vectorBlockSize == 0) {
         VectorBlock *new_vectorBlock =
             new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
@@ -98,7 +98,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     // get the last vectors block
     VectorBlock *vectorBlock = this->vectorBlocks.back();
 
-    assert(vectorBlock == vectorBlocks[count / vectorBlockSize]);
+    assert(vectorBlock == getVectorVectorBlock(id));
 
     // add vector data to vectorBlock
     vectorBlock->addVector(vector_data);
@@ -107,14 +107,11 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     // resize and align idToLabelMapping by vectorBlockSize
     size_t idToLabelMapping_size = this->idToLabelMapping.size();
 
-    if (count >= idToLabelMapping_size) {
-        size_t last_block_vectors_count = count % vectorBlockSize;
+    if (id >= idToLabelMapping_size) {
+        size_t last_block_vectors_count = id % vectorBlockSize;
         this->idToLabelMapping.resize(
             idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
     }
-
-    // increase count
-    ++count;
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);
@@ -137,37 +134,15 @@ int BruteForceIndex::deleteVector(size_t label) {
     // Get deleted vector id.
     idType id_to_delete = deleted_label_id_pair->second;
 
-    idType last_idx = count - 1;
-
-    // Update id2labelmapping.
-
-    // Put the label of the last_id in the deleted_id.
+    // Get last vector id and label
+    idType last_idx = --count;
     labelType last_idx_label = getVectorLabel(last_idx);
-    setVectorLabel(id_to_delete, last_idx_label);
-
-    // Update label2id mapping.
-
-    // Update this id in label:id pair of last index.
-    auto last_label_id_pair = labelToIdLookup.find(last_idx_label);
-    last_label_id_pair->second = id_to_delete;
-    // Remove the pair of the deleted vector.
-    labelToIdLookup.erase(label);
 
     // Get last vector data.
     VectorBlock *last_vector_block = vectorBlocks.back();
-    assert(last_vector_block == vectorBlocks.at(last_idx / vectorBlockSize));
+    assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    float *last_vector_data = last_vector_block->removeAndFetchVector();
-
-    // Get the vectorBlock and the relative index of the deleted id.
-    VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
-    size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
-
-    // Put data of last vector inpalce of the deleted vector.
-    deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
-
-    // Update count.
-    --count;
+    float *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
     // If the last vector block is emtpy.
     if (last_vector_block->getLength() == 0) {
@@ -183,6 +158,29 @@ int BruteForceIndex::deleteVector(size_t label) {
             this->idToLabelMapping.resize(id2label_size - vectorBlockSize - vector_to_align_count);
         }
     }
+
+    // Remove the pair of the deleted vector.
+    labelToIdLookup.erase(label);
+
+    // If we are trying to remove the last vector, return.
+    if (id_to_delete == last_idx) {
+        return true;
+    }
+
+    // Update id2labelmapping.
+    // Put the label of the last_id in the deleted_id.
+    setVectorLabel(id_to_delete, last_idx_label);
+
+    // Update label2id mapping.
+    // Update this id in label:id pair of last index.
+    setLabelToId(last_idx_label, id_to_delete);
+
+    // Get the vectorBlock and the relative index of the deleted id.
+    VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
+    size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
+
+    // Put data of last vector inpalce of the deleted vector.
+    deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
 
     return true;
 }
@@ -250,21 +248,18 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
             if (TopCandidates.size() < k) {
                 TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
                 upperBound = TopCandidates.top().first;
-            } else {
+            } else if (scores[i] < upperBound) {
                 // Otherwise, try greedily to improve the top candidates with a vector that
                 // has a better score than the one that has the worst score until now.
-                if (scores[i] >= upperBound) {
-                    ++curr_id;
-                    continue;
-                } else {
-                    TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
-                    TopCandidates.pop();
-                    upperBound = TopCandidates.top().first;
-                }
+                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
+                TopCandidates.pop();
+                upperBound = TopCandidates.top().first;
             }
             ++curr_id;
         }
     }
+    assert(curr_id == count);
+
     rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
@@ -307,6 +302,7 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
             ++curr_id;
         }
     }
+    assert(curr_id == count);
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }

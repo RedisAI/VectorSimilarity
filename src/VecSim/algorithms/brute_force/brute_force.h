@@ -35,7 +35,8 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
-    inline labelType getVectorLabel(idType id) const; // throws out_of_range
+    inline labelType getVectorLabel(idType id) const;    // throws out_of_range
+    inline labelType getVectorId(labelType label) const; // throws out_of_range
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
@@ -47,6 +48,7 @@ private:
     inline VectorBlock *getVectorVectorBlock(idType id);
     inline size_t getVectorRelativeIndex(idType id);
     inline void setVectorLabel(idType id, labelType new_label); // throws out_of_range
+    inline void setLabelToId(labelType label, idType new_id);   // throws out_of_range
 
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
     vecsim_stl::vector<labelType> idToLabelMapping;
@@ -81,6 +83,11 @@ size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
 
 labelType BruteForceIndex::getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
+labelType BruteForceIndex::getVectorId(labelType label) const { return labelToIdLookup.at(label); }
+
 void BruteForceIndex::setVectorLabel(idType id, labelType new_label) {
     idToLabelMapping.at(id) = new_label;
+}
+void BruteForceIndex::setLabelToId(labelType label, idType new_id) {
+    labelToIdLookup.at(label) = new_id;
 }

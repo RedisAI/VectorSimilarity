@@ -157,11 +157,9 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationDelta -=
         (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
-    expectedAllocationDelta -=
-        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
-    expectedAllocationDelta -=
-        (sizeof(float) * dim + vecsimAllocationOverhead); // Free the vector in the vector block
+        sizeof(float) * dim + vecsimAllocationOverhead; // Free the vector in the vector block
+    expectedAllocationDelta -= sizeof(VectorBlock *);   // remove from vectorBlocks vector
+    expectedAllocationDelta -= sizeof(labelType);       // resize idToLabelMapping
     expectedAllocationDelta -=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
 
