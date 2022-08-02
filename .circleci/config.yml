@@ -85,8 +85,8 @@ commands:
       - run:
           name: Install benchmark dependencies
           command: |
-            apt update
-            apt install python3-pip -y
+            sudo apt update
+            sudo apt install python3-pip -y
             pip3 install --ignore-installed PyYAML
             pip3 install redisbench-admin
       - run:
