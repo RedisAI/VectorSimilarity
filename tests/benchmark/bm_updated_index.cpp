@@ -242,33 +242,49 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)(benchmark::State &s
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF)
     ->Arg(10)
+    ->ArgName("k")
     ->Arg(100)
+    ->ArgName("k")
     ->Arg(500)
+    ->ArgName("k")
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_HNSW)
     // {ef_runtime, k} (recall that always ef_runtime >= k)
     ->Args({10, 10})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({200, 10})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({100, 100})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({200, 100})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({500, 500})
+    ->ArgNames({"ef_runtime", "k"})
     ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)
     ->Arg(10)
+    ->ArgName("k")
     ->Arg(100)
+    ->ArgName("k")
     ->Arg(500)
+    ->ArgName("k")
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)
     // {ef_runtime, k} (recall that always ef_runtime >= k)
     ->Args({10, 10})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({200, 10})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({100, 100})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({200, 100})
+    ->ArgNames({"ef_runtime", "k"})
     ->Args({500, 500})
+    ->ArgNames({"ef_runtime", "k"})
     ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 
