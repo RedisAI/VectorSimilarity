@@ -431,8 +431,7 @@ workflows:
           <<: *on-any-branch
       - run-benchmarks:
           context: common
-          # <<: *on-perf-and-version-tags
-          <<: *on-any-branch
+          <<: *on-perf-and-version-tags
 
 
   nightly:
