@@ -11,8 +11,6 @@ static void GetHNSWIndex(VecSimIndex *hnsw_index, const char *file_name) {
     // Load the index file, if it exists in the expected path.
     auto location = std::string(getenv("ROOT"));
     auto full_file_name = location + "/tests/benchmark/data/" + std::string(file_name);
-    // auto full_file_name = "/home/alon/Code/VectorSimilarity/tests/benchmark/data/" +
-    // std::string(file_name);
     auto serializer =
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(full_file_name, std::ios::binary);
@@ -113,8 +111,6 @@ protected:
             queries = new std::vector<std::vector<float>>(n_queries);
             auto location = std::string(std::string(getenv("ROOT")));
             auto file_name = location + "/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
-            // auto file_name =
-            // "/home/alon/Code/VectorSimilarity/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
             std::ifstream input(file_name, std::ios::binary);
             input.seekg(0, std::ifstream::beg);
             for (size_t i = 0; i < n_queries; i++) {
@@ -125,6 +121,37 @@ protected:
 
             instance = this;
         }
+    }
+
+    void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k, size_t &correct,
+                      VecSimIndex *hnsw_index_, VecSimIndex *bf_index_) {
+        auto query_params =
+            VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
+        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index_, (*queries)[iter % n_queries].data(),
+                                                  k, &query_params, BY_SCORE);
+        st.PauseTiming();
+
+        // Measure recall:
+        auto bf_results = VecSimIndex_TopKQuery(bf_index_, (*queries)[iter % n_queries].data(), k,
+                                                nullptr, BY_SCORE);
+        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+                if (VecSimQueryResult_GetId(hnsw_res_item) ==
+                    VecSimQueryResult_GetId(bf_res_item)) {
+                    correct++;
+                    break;
+                }
+            }
+            VecSimQueryResult_IteratorFree(bf_it);
+        }
+        VecSimQueryResult_IteratorFree(hnsw_it);
+
+        VecSimQueryResult_Free(bf_results);
+        VecSimQueryResult_Free(hnsw_results);
     }
 
 public:
@@ -165,79 +192,27 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)(benchmark::State &st)
 BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW)(benchmark::State &st) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
-    size_t correct = 0.0f;
+    size_t correct = 0;
     size_t iter = 0;
     for (auto _ : st) {
-        auto query_params =
-            VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, (*queries)[iter % n_queries].data(),
-                                                  k, &query_params, BY_SCORE);
-        st.PauseTiming();
-
-        // Measure recall:
-        auto bf_results = VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k,
-                                                nullptr, BY_SCORE);
-        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-                if (VecSimQueryResult_GetId(hnsw_res_item) ==
-                    VecSimQueryResult_GetId(bf_res_item)) {
-                    correct++;
-                    break;
-                }
-            }
-            VecSimQueryResult_IteratorFree(bf_it);
-        }
-        VecSimQueryResult_IteratorFree(hnsw_it);
-
-        VecSimQueryResult_Free(bf_results);
-        VecSimQueryResult_Free(hnsw_results);
+        RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index, bf_index);
         iter++;
         st.ResumeTiming();
     }
-    st.counters["Recall"] = (float)correct / (k * iter);
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)(benchmark::State &st) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
-    size_t correct = 0.0f;
+    size_t correct = 0;
     size_t iter = 0;
     for (auto _ : st) {
-        auto query_params =
-            VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-        auto hnsw_results = VecSimIndex_TopKQuery(
-            hnsw_index_updated, (*queries)[iter % n_queries].data(), k, &query_params, BY_SCORE);
-        st.PauseTiming();
-
-        // Measure recall:
-        auto bf_results = VecSimIndex_TopKQuery(
-            bf_index_updated, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
-        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-                if (VecSimQueryResult_GetId(hnsw_res_item) ==
-                    VecSimQueryResult_GetId(bf_res_item)) {
-                    correct++;
-                    break;
-                }
-            }
-            VecSimQueryResult_IteratorFree(bf_it);
-        }
-        VecSimQueryResult_IteratorFree(hnsw_it);
-
-        VecSimQueryResult_Free(bf_results);
-        VecSimQueryResult_Free(hnsw_results);
+        RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index_updated, bf_index_updated);
         iter++;
         st.ResumeTiming();
     }
-    st.counters["Recall"] = (float)correct / (k * iter);
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF)
