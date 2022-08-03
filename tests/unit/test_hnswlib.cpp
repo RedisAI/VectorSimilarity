@@ -39,6 +39,49 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
+    size_t dim = 4;
+    size_t bs = 1;
+    void *v;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{
+                            .type = VecSimType_FLOAT32,
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .blockSize = bs,
+                        }};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    float a[dim], b[dim], c[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (float)0;
+        b[i] = (float)1;
+        c[i] = (float)2;
+    }
+    VecSimIndex_AddVector(index, (const void *)a, 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(0);
+    ASSERT_FALSE(memcmp(v, a, sizeof(a)));
+
+    VecSimIndex_AddVector(index, (const void *)b, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(1);
+    ASSERT_FALSE(memcmp(v, b, sizeof(b)));
+
+    // After inserting c with label 0, we first delete id 0 and move the last id (1) to be 0.
+    // Then we add the new vector c under the internal id 1.
+    VecSimIndex_AddVector(index, (const void *)c, 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+
+    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(0);
+    ASSERT_FALSE(memcmp(v, b, sizeof(b)));
+    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(1);
+    ASSERT_FALSE(memcmp(v, c, sizeof(c)));
+
+    VecSimIndex_Free(index);
+}
 /**** resizing cases ****/
 
 // Add up to capacity.
