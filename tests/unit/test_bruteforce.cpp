@@ -504,7 +504,6 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 }
 
 TEST_F(BruteForceTest, test_delete_swap_block) {
-    size_t n = 6;                 // idToLabelMapping initial size.
     size_t initiail_capacity = 5; // idToLabelMapping initial size.
     size_t k = 5;
     size_t dim = 2;
@@ -528,6 +527,7 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     // idToLabelMapping initial size equals n.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), initiail_capacity);
 
+    size_t n = 6;
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
