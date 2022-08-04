@@ -504,7 +504,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 }
 
 TEST_F(BruteForceTest, test_delete_swap_block) {
-    size_t n = 6; // idToLabelMapping initial size.
+    size_t n = 6;                 // idToLabelMapping initial size.
     size_t initiail_capacity = 5; // idToLabelMapping initial size.
     size_t k = 5;
     size_t dim = 2;
