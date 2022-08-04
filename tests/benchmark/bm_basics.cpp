@@ -203,8 +203,6 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
         VecSimQueryResult_Free(bf_results);
         VecSimQueryResult_Free(hnsw_results);
         iter++;
-        if (iter == queries->size())
-            break;
         st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (k * iter);
@@ -224,12 +222,58 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
     st.counters["Avg. results number"] = (double)total_res / iter;
 }
 
+BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
+    double radius = (1.0f / 100.0f) * (float)st.range(0);
+    double epsilon = (1.0f / 1000.0f) * (float)st.range(1);
+    size_t iter = 0;
+    size_t total_res = 0;
+    size_t total_res_bf = 0;
+    auto query_params =
+        VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
+
+    for (auto _ : st) {
+        auto hnsw_results = VecSimIndex_RangeQuery(hnsw_index, (*queries)[iter % n_queries].data(),
+                                                   radius, &query_params, BY_ID);
+        st.PauseTiming();
+        total_res += VecSimQueryResult_Len(hnsw_results);
+
+        // Measure recall:
+        auto bf_results = VecSimIndex_RangeQuery(bf_index, (*queries)[iter % n_queries].data(),
+                                                 radius, nullptr, BY_ID);
+        total_res_bf += VecSimQueryResult_Len(bf_results);
+
+        VecSimQueryResult_Free(bf_results);
+        VecSimQueryResult_Free(hnsw_results);
+        iter++;
+        st.ResumeTiming();
+    }
+    st.counters["Avg. results number"] = (double)total_res / iter;
+    st.counters["Recall"] = (float)total_res / total_res_bf;
+}
+
 // Register the function as a benchmark
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
     // The actual radius will be the given arg divided by 100, since arg must be an integer.
     ->Arg(20)
     ->Arg(35)
     ->Arg(50)
+    ->Unit(benchmark::kMillisecond);
+
+// Register the function as a benchmark
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
+    // {radius*100, epsilon*1000}
+    // The actual radius will be the given arg divided by 100, and the actual epsilon values
+    // will be the given arg divided by 1000.
+    ->Args({20, 1})
+    ->Args({20, 10})
+    ->Args({20, 100})
+    ->Args({35, 1})
+    ->Args({35, 10})
+    ->Args({35, 100})
+    ->Args({50, 1})
+    ->Args({50, 10})
+    ->Args({50, 100})
+    ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
