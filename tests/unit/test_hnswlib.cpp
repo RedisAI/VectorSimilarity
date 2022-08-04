@@ -43,7 +43,12 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
 TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
     size_t dim = 4;
     size_t bs = 1;
-    void *v;
+#define ASSERT_HNSW_BLOB_EQ(id, blob)                                                              \
+    do {                                                                                           \
+        void *v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(id);   \
+        ASSERT_FALSE(memcmp(v, blob, sizeof(blob)));                                               \
+    } while (0)
+
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{
                             .type = VecSimType_FLOAT32,
@@ -54,31 +59,34 @@ TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    float a[dim], b[dim], c[dim];
+    float a[dim], b[dim], c[dim], d[dim];
     for (size_t i = 0; i < dim; i++) {
         a[i] = (float)0;
         b[i] = (float)1;
         c[i] = (float)2;
+        d[i] = (float)3;
     }
     VecSimIndex_AddVector(index, (const void *)a, 0);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(0);
-    ASSERT_FALSE(memcmp(v, a, sizeof(a)));
+    ASSERT_HNSW_BLOB_EQ(0, a);
 
     VecSimIndex_AddVector(index, (const void *)b, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
-    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(1);
-    ASSERT_FALSE(memcmp(v, b, sizeof(b)));
+    ASSERT_HNSW_BLOB_EQ(1, b);
 
-    // After inserting c with label 0, we first delete id 0 and move the last id (1) to be 0.
-    // Then we add the new vector c under the internal id 1.
-    VecSimIndex_AddVector(index, (const void *)c, 0);
+    // After inserting c with label 1, we first delete id 1 from the index.
+    // we expect id 0 to not change
+    VecSimIndex_AddVector(index, (const void *)c, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+    ASSERT_HNSW_BLOB_EQ(0, a);
+    ASSERT_HNSW_BLOB_EQ(1, c);
 
-    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(0);
-    ASSERT_FALSE(memcmp(v, b, sizeof(b)));
-    v = reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByInternalId(1);
-    ASSERT_FALSE(memcmp(v, c, sizeof(c)));
+    // After inserting d with label 0, we first delete id 0 and move the last id (1) to be 0.
+    // Then we add the new vector d under the internal id 1.
+    VecSimIndex_AddVector(index, (const void *)d, 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+    ASSERT_HNSW_BLOB_EQ(0, c);
+    ASSERT_HNSW_BLOB_EQ(1, d);
 
     VecSimIndex_Free(index);
 }
