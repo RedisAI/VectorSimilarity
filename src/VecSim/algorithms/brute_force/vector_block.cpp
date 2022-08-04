@@ -9,7 +9,6 @@ VectorBlock::VectorBlock(size_t blockSize, size_t vectorSize,
 }
 
 VectorBlock::~VectorBlock() {
-
     this->allocator->deallocate(vectors, sizeof(float) * blockSize * dim);
 }
 

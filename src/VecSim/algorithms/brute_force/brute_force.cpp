@@ -88,7 +88,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     // Get vector block to store the vector in.
 
-    // if vectorBlocks vector is empty ||last_vector_block is full create a new block
+    // if vectorBlocks vector is empty or last_vector_block is full create a new block
     if (id % vectorBlockSize == 0) {
         VectorBlock *new_vectorBlock =
             new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);

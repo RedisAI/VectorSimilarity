@@ -35,8 +35,12 @@ public:
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
-    inline labelType getVectorLabel(idType id) const;    // throws out_of_range
-    inline labelType getVectorId(labelType label) const; // throws out_of_range
+    inline labelType getVectorLabel(idType id) const {
+        return idToLabelMapping.at(id);
+    } // throws out_of_range
+    inline labelType getVectorId(labelType label) const {
+        return labelToIdLookup.at(label);
+    } // throws out_of_range
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline DISTFUNC<float> distFunc() const { return dist_func; }
@@ -45,10 +49,16 @@ public:
 
 private:
     void updateVector(idType id, const void *vector_data);
-    inline VectorBlock *getVectorVectorBlock(idType id);
-    inline size_t getVectorRelativeIndex(idType id);
-    inline void setVectorLabel(idType id, labelType new_label); // throws out_of_range
-    inline void setLabelToId(labelType label, idType new_id);   // throws out_of_range
+    inline VectorBlock *getVectorVectorBlock(idType id) {
+        return vectorBlocks.at(id / vectorBlockSize);
+    }
+    inline size_t getVectorRelativeIndex(idType id) { return id % vectorBlockSize; }
+    inline void setVectorLabel(idType id, labelType new_label) {
+        idToLabelMapping.at(id) = new_label;
+    } // throws out_of_range
+    inline void setLabelToId(labelType label, idType new_id) {
+        labelToIdLookup.at(label) = new_id;
+    } // throws out_of_range
 
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
     vecsim_stl::vector<labelType> idToLabelMapping;
@@ -71,23 +81,3 @@ private:
     friend class BruteForceTest_brute_force_empty_index_Test;
 #endif
 };
-
-VectorBlock *BruteForceIndex::getVectorVectorBlock(idType id) {
-    size_t vectorBlock_index = id / vectorBlockSize;
-    return vectorBlocks.at(vectorBlock_index);
-}
-size_t BruteForceIndex::getVectorRelativeIndex(idType id) {
-    // get the relative index of this id inside the vectorBlock
-    return id % vectorBlockSize;
-}
-
-labelType BruteForceIndex::getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
-
-labelType BruteForceIndex::getVectorId(labelType label) const { return labelToIdLookup.at(label); }
-
-void BruteForceIndex::setVectorLabel(idType id, labelType new_label) {
-    idToLabelMapping.at(id) = new_label;
-}
-void BruteForceIndex::setLabelToId(labelType label, idType new_id) {
-    labelToIdLookup.at(label) = new_id;
-}
