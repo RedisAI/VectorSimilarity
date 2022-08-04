@@ -78,7 +78,7 @@ TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
     ASSERT_HNSW_BLOB_EQ(1, b);
     ASSERT_EQ(GET_LABEL(1), 46);
 
-    // After inserting c with label 1, we first delete id 1 from the index.
+    // After inserting c with label 46, we first delete id 1 from the index.
     // we expect id 0 to not change
     VecSimIndex_AddVector(index, (const void *)c, 46);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
@@ -87,7 +87,7 @@ TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
     ASSERT_EQ(GET_LABEL(0), 42);
     ASSERT_EQ(GET_LABEL(1), 46);
 
-    // After inserting d with label 0, we first delete id 0 and move the last id (1) to be 0.
+    // After inserting d with label 42, we first delete id 0 and move the last id (1) to be 0.
     // Then we add the new vector d under the internal id 1.
     VecSimIndex_AddVector(index, (const void *)d, 42);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
