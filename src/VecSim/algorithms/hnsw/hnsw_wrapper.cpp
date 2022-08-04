@@ -28,6 +28,7 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
           params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
       last_mode(EMPTY_MODE) {
     hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
+    hnsw->setEpsilon((params->epsilon > 0.0) ? params->epsilon : HNSW_DEFAULT_EPSILON);
 }
 
 /******************** Implementation **************/
@@ -37,7 +38,7 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
            sizeof(size_t);
     est += sizeof(*hnsw) + sizeof(size_t);
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
-    // used for synchronization only when parallel indexing / searching is enabled.
+    // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool);
 #endif
@@ -46,7 +47,7 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
     est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
     est += sizeof(size_t) * params->initialCapacity +
-           sizeof(size_t); // labels lookup hash table buckets
+           sizeof(size_t); // Labels lookup hash table buckets.
 
     size_t size_links_level0 =
         sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
@@ -92,16 +93,24 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
 }
 
 int HNSWIndex::addVector(const void *vector_data, size_t id) {
+
+    // If id already exists remove and re-add
+    if (this->hnsw->isLabelExist(id)) {
+        this->hnsw->removePoint(id);
+    }
+
     try {
-        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, vector_data, this->dim * sizeof(float));
             float_vector_normalize(normalized_data, this->dim);
             vector_data = normalized_data;
         }
-        if (hnsw->getIndexSize() == this->hnsw->getIndexCapacity()) {
-            this->hnsw->resizeIndex(this->hnsw->getIndexCapacity() + this->blockSize);
+        size_t index_capacity = this->hnsw->getIndexCapacity();
+        if (hnsw->getIndexSize() == index_capacity) {
+            size_t vectors_to_add = blockSize - index_capacity % blockSize;
+            this->hnsw->resizeIndex(index_capacity + vectors_to_add);
         }
         this->hnsw->addPoint(vector_data, id);
         return true;
@@ -111,11 +120,29 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 }
 
 int HNSWIndex::deleteVector(size_t id) {
-    bool res = this->hnsw->removePoint(id);
-    if (hnsw->getIndexSize() + this->blockSize <= this->hnsw->getIndexCapacity()) {
-        this->hnsw->resizeIndex(this->hnsw->getIndexCapacity() - this->blockSize);
+
+    // If id doesnt exist.
+    if (!this->hnsw->isLabelExist(id)) {
+        return false;
     }
-    return res;
+
+    // Else, *delete* it from the graph.
+    this->hnsw->removePoint(id);
+
+    size_t index_size = hnsw->getIndexSize();
+    size_t curr_capacity = this->hnsw->getIndexCapacity();
+
+    // If we need to free a complete block & there is a least one block between the
+    // capacity and the size.
+    if (index_size % blockSize == 0 && index_size + blockSize <= curr_capacity) {
+
+        // Check if the capacity is aligned to block size.
+        size_t extra_space_to_free = curr_capacity % blockSize;
+
+        // Remove one block from the capacity.
+        this->hnsw->resizeIndex(curr_capacity - blockSize - extra_space_to_free);
+    }
+    return true;
 }
 
 double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
@@ -132,7 +159,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
     void *timeoutCtx = nullptr;
     try {
         this->last_mode = STANDARD_KNN;
-        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+        float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, query_data, this->dim * sizeof(float));
@@ -158,13 +185,49 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
             VecSimQueryResult_SetScore(rl.results[i], knn_res.top().first);
             knn_res.pop();
         }
-        // Restore efRuntime
+        // Restore efRuntime.
         hnsw->setEf(originalEF);
         assert(hnsw->getEf() == originalEF);
 
     } catch (...) {
         rl.code = VecSim_QueryResult_Err;
     }
+    return rl;
+}
+
+VecSimQueryResult_List HNSWIndex::rangeQuery(const void *queryBlob, float radius,
+                                             VecSimQueryParams *queryParams) {
+    auto rl = (VecSimQueryResult_List){0};
+    void *timeoutCtx = nullptr;
+    this->last_mode = RANGE_QUERY;
+
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic when other types will be supported.
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        float_vector_normalize(normalized_blob, this->dim);
+        queryBlob = normalized_blob;
+    }
+
+    double originalEpsilon = this->hnsw->getEpsilon();
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
+            hnsw->setEpsilon(queryParams->hnswRuntimeParams.epsilon);
+        }
+    }
+    // Call searchRange internally in HNSWlib to obtains results. This will return and set the
+    // rl.code to "TimedOut" if timeout occurs.
+    rl.results = hnsw->searchRange(queryBlob, radius, timeoutCtx, &rl.code);
+    if (VecSim_QueryResult_OK != rl.code) {
+        return rl;
+    }
+
+    // Restore the default epsilon.
+    hnsw->setEpsilon(originalEpsilon);
+    assert(hnsw->getEpsilon() == originalEpsilon);
+
+    rl.code = VecSim_QueryResult_OK;
     return rl;
 }
 
@@ -179,6 +242,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.M = this->hnsw->getM();
     info.hnswInfo.efConstruction = this->hnsw->getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw->getEf();
+    info.hnswInfo.epsilon = this->hnsw->getEpsilon();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
@@ -204,7 +268,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
 
 VecSimInfoIterator *HNSWIndex::infoIterator() {
     VecSimIndexInfo info = this->info();
-    // For readability. Update this number when needed;
+    // For readability. Update this number when needed.
     size_t numberOfInfoFields = 12;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
@@ -249,6 +313,10 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
         VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+                         .fieldType = INFOFIELD_FLOAT64,
+                         .floatingPointValue = info.hnswInfo.epsilon});
 
     return infoIterator;
 }

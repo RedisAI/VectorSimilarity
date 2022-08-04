@@ -6,8 +6,8 @@ project(VectorSimilarity_Benchmark)
 
 set(CMAKE_CXX_STANDARD 14)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
-
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 enable_testing()
 
@@ -15,11 +15,16 @@ add_executable(bm_batch_iterator bm_batch_iterator.cpp)
 target_link_libraries(bm_batch_iterator VectorSimilarity benchmark::benchmark)
 add_executable(bm_basics bm_basics.cpp)
 target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
+add_executable(bm_updated_index bm_updated_index.cpp)
+target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
 
 #########################################################################################
 # Passed this line we have optimization enabled by the compiler.                        #
 # Adding files to complie after this line will have an effect on the resulted binaries. #
 #########################################################################################
+
+add_library(bm_spaces_class bm_spaces_class.cpp)
+target_link_libraries(bm_spaces_class benchmark::benchmark)
 
 include(CheckCXXCompilerFlag)
 # TODO: Remove this once cpu_features get support for M1
@@ -51,5 +56,6 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with SSE")
 	endif()
 endif()
+
 add_executable(bm_spaces bm_spaces.cpp)
-target_link_libraries(bm_spaces VectorSimilarity benchmark::benchmark)
+target_link_libraries(bm_spaces VectorSimilarity benchmark::benchmark bm_spaces_class)
