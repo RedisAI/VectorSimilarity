@@ -82,6 +82,7 @@ commands:
       - run:
           name: Download pre-generated indices
           command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+          no_output_timeout: 30m
       - run:
           name: Install benchmark dependencies
           command: |
