@@ -95,22 +95,23 @@ commands:
 
   benchmark:
     steps:
-      - run:
-          name: Download pre-generated indices
-          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-          no_output_timeout: 30m
-      - run:
-          name: Install benchmark dependencies
-          command: |
-            sudo apt update
-            sudo apt install python3-pip -y
-            pip3 install --ignore-installed PyYAML
-            pip3 install redisbench-admin
+#      - run:
+#          name: Download pre-generated indices
+#          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+#          no_output_timeout: 30m
+#      - run:
+#          name: Install benchmark dependencies
+#          command: |
+#            sudo apt update
+#            sudo apt install python3-pip -y
+#            pip3 install --ignore-installed PyYAML
+#            pip3 install redisbench-admin
       - run:
           name: Benchmark
           command: |
-            bash -l -c "make benchmark"
+            # bash -l -c "make benchmark"
             for bm_class in basics updated_index spaces batch_iterator; do
+            echo ${bm_class}_results.json
               redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo $CIRCLE_PROJECT_REPONAME \
