@@ -95,17 +95,17 @@ commands:
 
   benchmark:
     steps:
-#      - run:
-#          name: Download pre-generated indices
-#          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-#          no_output_timeout: 30m
-#      - run:
-#          name: Install benchmark dependencies
-#          command: |
-#            sudo apt update
-#            sudo apt install python3-pip -y
-#            pip3 install --ignore-installed PyYAML
-#            pip3 install redisbench-admin
+      - run:
+          name: Download pre-generated indices
+          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+          no_output_timeout: 30m
+      - run:
+          name: Install benchmark dependencies
+          command: |
+            sudo apt update
+            sudo apt install python3-pip -y
+            pip3 install --ignore-installed PyYAML
+            pip3 install redisbench-admin
       - run:
           name: Benchmark
           command: |
