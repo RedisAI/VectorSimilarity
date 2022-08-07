@@ -278,6 +278,9 @@ jobs:
       - abort_for_noci
       - build-steps
       - benchmark
+        matrix:
+          parameters:
+            bm-class: [ basics, updated_index, spaces, batch_iterator ]
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -313,6 +316,9 @@ jobs:
           name: Build
           command: bash -l -c "make build"
       - benchmark
+        matrix:
+          parameters:
+            bm-class: [ basics, updated_index, spaces, batch_iterator ]
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -432,10 +438,6 @@ workflows:
     jobs:
     - nightly_flow:
         context: common
-        name: benchmark-<< matrix.bm-class >>
-        matrix:
-          parameters:
-            bm-class: [ basics, updated_index, spaces, batch_iterator ]
     - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
