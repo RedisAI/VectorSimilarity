@@ -78,9 +78,6 @@ commands:
             yum install -y git
 
   benchmark:
-    parameters:
-      bm-class:
-        type: string
     steps:
       - run:
           name: Download pre-generated indices
@@ -97,12 +94,14 @@ commands:
           name: Benchmark
           command: |
             bash -l -c "make benchmark"
-            redisbench-admin export \
+            for bm_class in basics, updated_index, spaces, batch_iterator; do
+              redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo $CIRCLE_PROJECT_REPONAME \
                           --github_org $CIRCLE_PROJECT_USERNAME \
                           --github_branch $CIRCLE_BRANCH \
-                          --benchmark-result-file << parameters.bm-class >>_results.json
+                          --benchmark-result-file ${bm_class}_results.json
+            done
           no_output_timeout: 180m
 
   tiny-build-steps:
@@ -272,16 +271,12 @@ jobs:
     # Run on the same machine - for steady benchmarks
     machine:
       image: ubuntu-2004:202010-01
-    parameters:
-      bm-class:
-        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
       - abort_for_noci
       - build-steps
-      - benchmark:
-          bm-class: << parameters.bm-class >>
+      - benchmark
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -307,9 +302,6 @@ jobs:
     machine:
       image: ubuntu-2004:202010-01
     resource_class: large
-    parameters:
-      bm-class:
-        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
@@ -319,8 +311,7 @@ jobs:
       - run:
           name: Build
           command: bash -l -c "make build"
-      - benchmark:
-          bm-class: << parameters.bm-class >>
+      - benchmark
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -420,10 +411,6 @@ workflows:
       - codecov:
           <<: *on-any-branch
       - run-benchmarks:
-          name: benchmark-<< matrix.bm-class >>
-          matrix:
-            parameters:
-              bm-class: [ basics, updated_index, spaces, batch_iterator ]
           context: common
           <<: *on-perf-and-version-tags
 
@@ -440,10 +427,6 @@ workflows:
     jobs:
     - nightly_flow:
         context: common
-        name: benchmark-<< matrix.bm-class >>
-        matrix:
-          parameters:
-            bm-class: [ basics, updated_index, spaces, batch_iterator ]
     - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
