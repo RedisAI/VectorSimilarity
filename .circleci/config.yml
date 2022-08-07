@@ -281,7 +281,7 @@ jobs:
       - abort_for_noci
       - build-steps
       - benchmark
-          bm-class: bm-class
+          bm-class: <<parameters.bm-class>>
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -320,7 +320,7 @@ jobs:
           name: Build
           command: bash -l -c "make build"
       - benchmark
-          bm-class: bm-class
+          bm-class: <<parameters.bm-class>>
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
