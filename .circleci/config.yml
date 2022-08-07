@@ -280,8 +280,8 @@ jobs:
       - abort_for_docs
       - abort_for_noci
       - build-steps
-      - benchmark
-          bm-class: <<parameters.bm-class>>
+      - benchmark:
+          bm-class: << parameters.bm-class >>
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -319,8 +319,8 @@ jobs:
       - run:
           name: Build
           command: bash -l -c "make build"
-      - benchmark
-          bm-class: <<parameters.bm-class>>
+      - benchmark:
+          bm-class: << parameters.bm-class >>
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
