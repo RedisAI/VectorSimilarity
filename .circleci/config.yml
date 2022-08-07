@@ -272,15 +272,16 @@ jobs:
     # Run on the same machine - for steady benchmarks
     machine:
       image: ubuntu-2004:202010-01
+    parameters:
+      bm-class:
+        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
       - abort_for_noci
       - build-steps
       - benchmark
-        matrix:
-          parameters:
-            bm-class: [ basics, updated_index, spaces, batch_iterator ]
+          bm-class: bm-class
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -306,6 +307,9 @@ jobs:
     machine:
       image: ubuntu-2004:202010-01
     resource_class: large
+    parameters:
+      bm-class:
+        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
@@ -316,9 +320,7 @@ jobs:
           name: Build
           command: bash -l -c "make build"
       - benchmark
-        matrix:
-          parameters:
-            bm-class: [ basics, updated_index, spaces, batch_iterator ]
+          bm-class: bm-class
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -438,6 +440,10 @@ workflows:
     jobs:
     - nightly_flow:
         context: common
+        name: benchmark-<< matrix.bm-class >>
+        matrix:
+          parameters:
+            bm-class: [ basics, updated_index, spaces, batch_iterator ]
     - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
