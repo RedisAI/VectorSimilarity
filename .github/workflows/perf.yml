@@ -10,7 +10,7 @@ on:
 
 jobs:
   pref-ci:
-    if: github.event.label.name == 'performance'
+    if: github.event.label.name == 'run-micro-benchmarks'
     runs-on: ubuntu-latest
     name: Run performance benchamrks
 
@@ -18,8 +18,9 @@ jobs:
       - uses: actions/checkout@v2
       - name: circle-ci job runner
         id: curl-circle-ci
-        uses: Open-Source-Contrib/circle-ci-trigger-action@latest
-        with:
-          circle_ci_token: ${{ secrets.CIRCLE_CI_SECRET}}
-          circle_ci_job: run-benchmarks
-          circle_ci_project_url: ${{ github.event.pull_request.head.ref }}
+        run: |
+          curl --request POST \
+          --url https://circleci.com/api/v2/project/github/RedisAI/VectorSimilarity/pipeline \
+          --header 'Circle-Token: ${{ secrets.CIRCLE_CI_SECRET }}' \
+          --header 'content-type: application/json' \
+          --data '{"parameters":{"run_default_flow":false, "run_benchmark_flow":true, "run_nightly_flow": false}}'

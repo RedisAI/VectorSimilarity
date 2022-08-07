@@ -292,70 +292,70 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
     st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)->Unit(benchmark::kMillisecond);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)->Unit(benchmark::kMillisecond);
+//
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)->Unit(benchmark::kMillisecond);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)->Unit(benchmark::kMillisecond);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)->Unit(benchmark::kMillisecond);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
-    ->Arg(10)
-    ->ArgName("k")
-    ->Arg(100)
-    ->ArgName("k")
-    ->Arg(500)
-    ->ArgName("k")
-    ->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
-    // {ef_runtime, k} (recall that always ef_runtime >= k)
-    ->Args({10, 10})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({200, 10})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({100, 100})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({200, 100})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({500, 500})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Iterations(100)
-    ->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-    // The actual radius will be the given arg divided by 100, since arg must be an integer.
-    ->Arg(20)
-    ->ArgName("radiusX100")
-    ->Arg(35)
-    ->ArgName("radiusX100")
-    ->Arg(50)
-    ->ArgName("radiusX100")
-    ->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
-    // {radius*100, epsilon*1000}
-    // The actual radius will be the given arg divided by 100, and the actual epsilon values
-    // will be the given arg divided by 1000.
-    ->Args({20, 1})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({20, 10})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({20, 100})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({35, 1})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({35, 10})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({35, 100})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({50, 1})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({50, 10})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Args({50, 100})
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Iterations(100)
-    ->ArgNames({"radiusX100", "epsilonX1000"})
-    ->Unit(benchmark::kMillisecond);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
+//    ->Arg(10)
+//    ->ArgName("k")
+//    ->Arg(100)
+//    ->ArgName("k")
+//    ->Arg(500)
+//    ->ArgName("k")
+//    ->Unit(benchmark::kMillisecond);
+//
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
+//    // {ef_runtime, k} (recall that always ef_runtime >= k)
+//    ->Args({10, 10})
+//    ->ArgNames({"ef_runtime", "k"})
+//    ->Args({200, 10})
+//    ->ArgNames({"ef_runtime", "k"})
+//    ->Args({100, 100})
+//    ->ArgNames({"ef_runtime", "k"})
+//    ->Args({200, 100})
+//    ->ArgNames({"ef_runtime", "k"})
+//    ->Args({500, 500})
+//    ->ArgNames({"ef_runtime", "k"})
+//    ->Iterations(100)
+//    ->Unit(benchmark::kMillisecond);
+//
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
+//    // The actual radius will be the given arg divided by 100, since arg must be an integer.
+//    ->Arg(20)
+//    ->ArgName("radiusX100")
+//    ->Arg(35)
+//    ->ArgName("radiusX100")
+//    ->Arg(50)
+//    ->ArgName("radiusX100")
+//    ->Unit(benchmark::kMillisecond);
+//
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
+//    // {radius*100, epsilon*1000}
+//    // The actual radius will be the given arg divided by 100, and the actual epsilon values
+//    // will be the given arg divided by 1000.
+//    ->Args({20, 1})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({20, 10})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({20, 100})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({35, 1})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({35, 10})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({35, 100})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({50, 1})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({50, 10})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Args({50, 100})
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Iterations(100)
+//    ->ArgNames({"radiusX100", "epsilonX1000"})
+//    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
