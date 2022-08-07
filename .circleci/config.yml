@@ -416,9 +416,9 @@ workflows:
           <<: *on-any-branch
       - run-benchmarks:
           name: benchmark-<< matrix.bm-class >>
-            matrix:
-              parameters:
-                bm-class: [ basics, updated_index, spaces, batch_iterator ]
+          matrix:
+            parameters:
+              bm-class: [ basics, updated_index, spaces, batch_iterator ]
           context: common
           <<: *on-perf-and-version-tags
 
@@ -436,9 +436,9 @@ workflows:
     - nightly_flow:
         context: common
         name: benchmark-<< matrix.bm-class >>
-          matrix:
-            parameters:
-              bm-class: [ basics, updated_index, spaces, batch_iterator ]
+        matrix:
+          parameters:
+            bm-class: [ basics, updated_index, spaces, batch_iterator ]
     - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
