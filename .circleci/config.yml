@@ -5,6 +5,10 @@ parameters:
     type: boolean
 
   run_benchmark_flow:
+    default: true
+    type: boolean
+
+  run_benchmark_flow_label:
     default: false
     type: boolean
 
@@ -427,14 +431,19 @@ workflows:
 
   benchmark_flow:
     when:
-      or:
-        - << pipeline.parameters.run_benchmark_flow >>
-        - equal: [ main, << pipeline.git.branch >> ]
-        - equal: [ /^\d+\.\d+.*$/, << pipeline.git.branch >> ]
-        - equal: [ /^perf.*$/, << pipeline.git.branch >> ]
+        << pipeline.parameters.run_benchmark_flow >>
     jobs:
       - run-benchmarks:
           context: common
+      <<: *on-perf-and-version-tags
+
+  benchmark_flow_label:
+    when:
+      << pipeline.parameters.run_benchmark_flow_label >>
+    jobs:
+      - run-benchmarks:
+          context: common
+      <<: *on-any-branch
 
   nightly:
     when:
