@@ -427,11 +427,12 @@ workflows:
 
   benchmark_flow:
     when:
-      << pipeline.parameters.run_benchmark_flow >>
+      or:
+        - << pipeline.parameters.run_benchmark_flow >>
+        - <<: *on-perf-and-version-tags
     jobs:
       - run-benchmarks:
           context: common
-          <<: *on-any-branch
 
   nightly:
     when:
