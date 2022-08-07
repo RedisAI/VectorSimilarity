@@ -435,7 +435,7 @@ workflows:
     jobs:
       - run-benchmarks:
           context: common
-        <<: *on-perf-and-version-tags
+          <<: *on-perf-and-version-tags
 
   benchmark_flow_label:
     when:
@@ -443,7 +443,7 @@ workflows:
     jobs:
       - run-benchmarks:
           context: common
-        <<: *on-any-branch
+          <<: *on-any-branch
 
   nightly:
     when:
