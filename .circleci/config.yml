@@ -78,6 +78,9 @@ commands:
             yum install -y git
 
   benchmark:
+    parameters:
+      bm-class:
+        type: string
     steps:
       - run:
           name: Download pre-generated indices
@@ -269,9 +272,6 @@ jobs:
     # Run on the same machine - for steady benchmarks
     machine:
       image: ubuntu-2004:202010-01
-    parameters:
-      bm-class:
-        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
@@ -303,9 +303,6 @@ jobs:
     machine:
       image: ubuntu-2004:202010-01
     resource_class: large
-    parameters:
-      bm-class:
-        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
