@@ -5,7 +5,7 @@ parameters:
     type: boolean
 
   run_benchmark_flow:
-    default: true
+    default: false
     type: boolean
 
   run_nightly_flow:
