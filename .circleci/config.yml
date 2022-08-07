@@ -1,4 +1,16 @@
 version: 2.1
+parameters:
+  run_default_flow:
+    default: true
+    type: boolean
+
+  run_benchmark_flow:
+    default: true
+    type: boolean
+
+  run_nightly_flow:
+    default: true
+    type: boolean
 
 commands:
   abort_for_docs:
@@ -82,6 +94,7 @@ commands:
       - run:
           name: Download pre-generated indices
           command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+          no_output_timeout: 30m
       - run:
           name: Install benchmark dependencies
           command: |
@@ -93,34 +106,14 @@ commands:
           name: Benchmark
           command: |
             bash -l -c "make benchmark"
-            redisbench-admin export \
+            for bm_class in basics updated_index spaces batch_iterator; do
+              redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo $CIRCLE_PROJECT_REPONAME \
                           --github_org $CIRCLE_PROJECT_USERNAME \
                           --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=A \
-                          --benchmark-result-file basics_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=A \
-                          --benchmark-result-file batch_iterator_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=A \
-                          --benchmark-result-file updated_index_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=B \
-                          --benchmark-result-file spaces_results.json
+                          --benchmark-result-file ${bm_class}_results.json
+            done
           no_output_timeout: 180m
 
   tiny-build-steps:
@@ -407,6 +400,8 @@ workflows:
   version: 2
 
   default_flow:
+    when:
+      << pipeline.parameters.run_default_flow >>
     jobs:
       - build-focal:
           <<: *on-any-branch
@@ -429,12 +424,18 @@ workflows:
           <<: *on-any-branch
       - codecov:
           <<: *on-any-branch
+
+  benchmark_flow:
+    when:
+      << pipeline.parameters.run_benchmark_flow >>
+    jobs:
       - run-benchmarks:
           context: common
           <<: *on-perf-and-version-tags
 
-
   nightly:
+    when:
+      << pipeline.parameters.run_nightly_flow >>
     triggers:
       - schedule:
           cron: "0 0 * * *"
