@@ -99,29 +99,7 @@ commands:
                           --github_repo $CIRCLE_PROJECT_REPONAME \
                           --github_org $CIRCLE_PROJECT_USERNAME \
                           --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=A \
-                          --benchmark-result-file basics_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=A \
-                          --benchmark-result-file batch_iterator_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=A \
-                          --benchmark-result-file updated_index_results.json
-            redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
-                          --extra-tags group=B \
-                          --benchmark-result-file spaces_results.json
+                          --benchmark-result-file << parameters.bm-class >>_results.json
           no_output_timeout: 180m
 
   tiny-build-steps:
@@ -291,6 +269,9 @@ jobs:
     # Run on the same machine - for steady benchmarks
     machine:
       image: ubuntu-2004:202010-01
+    parameters:
+      bm-class:
+        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
@@ -322,6 +303,9 @@ jobs:
     machine:
       image: ubuntu-2004:202010-01
     resource_class: large
+    parameters:
+      san-type:
+        type: string
     steps:
       - setup-ubuntu-sudo
       - abort_for_docs
@@ -431,6 +415,10 @@ workflows:
       - codecov:
           <<: *on-any-branch
       - run-benchmarks:
+          name: benchmark-<< matrix.bm-class >>
+            matrix:
+              parameters:
+                bm-class: [ basics, updated_index, spaces, batch_iterator ]
           context: common
           <<: *on-perf-and-version-tags
 
@@ -443,9 +431,14 @@ workflows:
             branches:
               only:
                 - main
+                - perf_test_google_benchmark_in_CI #todo: remove before merge
     jobs:
     - nightly_flow:
         context: common
+        name: benchmark-<< matrix.bm-class >>
+          matrix:
+            parameters:
+              bm-class: [ basics, updated_index, spaces, batch_iterator ]
     - sanitize:
           name: sanitize-<< matrix.san-type >>
           matrix:
