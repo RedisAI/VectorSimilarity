@@ -109,7 +109,7 @@ commands:
       - run:
           name: Benchmark
           command: |
-            # bash -l -c "make benchmark"
+            bash -l -c "make benchmark"
             for bm_class in basics updated_index spaces batch_iterator; do
             echo ${bm_class}_results.json
               redisbench-admin export \
