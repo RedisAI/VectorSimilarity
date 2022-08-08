@@ -1,92 +1,39 @@
 #include <benchmark/benchmark.h>
 #include <random>
-#include <iostream>
 #include <unistd.h>
-#include <VecSim/algorithms/hnsw/serialization.h>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
+#include "bm_utils.h"
 
-class BM_BatchIterator : public benchmark::Fixture {
+// Global benchmark data
+size_t BM_VecSimBasics::n_vectors = 1000000;
+size_t BM_VecSimBasics::n_queries = 10000;
+size_t BM_VecSimBasics::dim = 768;
+VecSimIndex *BM_VecSimBasics::bf_index;
+VecSimIndex *BM_VecSimBasics::hnsw_index;
+std::vector<std::vector<float>> *BM_VecSimBasics::queries;
+size_t HNSW_M = 64;
+size_t HNSW_EF_C = 512;
+const char *hnsw_index_file = "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+const char *test_vectors_file = "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+
+size_t BM_VecSimBasics::ref_count = 0;
+
+class BM_BatchIterator : public BM_VecSimBasics {
 protected:
-    VecSimIndex *bf_index;
-    VecSimIndex *hnsw_index;
-    size_t dim;
-    size_t n_vectors;
-    std::vector<std::vector<float>> *queries;
-    size_t n_queries;
-    static BM_BatchIterator *instance;
-    static size_t ref_count;
+    BM_BatchIterator() : BM_VecSimBasics() {}
 
-    BM_BatchIterator() {
-        dim = 768;
-        n_vectors = 1000000;
-        n_queries = 10000;
-        ref_count++;
-        if (instance != nullptr) {
-            // Use the same indices and query vectors for every instance.
-            queries = instance->queries;
-            bf_index = instance->bf_index;
-            hnsw_index = instance->hnsw_index;
-        } else {
-            // Initialize and load HNSW index for DBPedia data set.
-            size_t M = 64;
-            size_t ef_c = 512;
-            VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                                   .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                            .dim = dim,
-                                                            .metric = VecSimMetric_Cosine,
-                                                            .initialCapacity = n_vectors,
-                                                            .M = M,
-                                                            .efConstruction = ef_c}};
-            hnsw_index = VecSimIndex_New(&params);
+    static void RunBatchedSearch_HNSW(benchmark::State &st, size_t &correct, size_t iter,
+                                      size_t num_batches, size_t batch_size, size_t &total_res_num,
+                                      size_t batch_increase_factor) {
 
-            // Load pre-generated HNSW index.
-            auto location = std::string(std::string(getenv("ROOT")));
-            auto file_name =
-                location + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
-            auto serializer = hnswlib::HNSWIndexSerializer(
-                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
-            serializer.loadIndex(file_name,
-                                 reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-            size_t ef_r = 10;
-            reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
-
-            VecSimParams bf_params = {.algo = VecSimAlgo_BF,
-                                      .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                           .dim = dim,
-                                                           .metric = VecSimMetric_Cosine,
-                                                           .initialCapacity = n_vectors}};
-            bf_index = VecSimIndex_New(&bf_params);
-
-            // Add the same vectors to Flat index.
-            for (size_t i = 0; i < n_vectors; ++i) {
-                char *blob = reinterpret_cast<HNSWIndex *>(hnsw_index)
-                                 ->getHNSWIndex()
-                                 ->getDataByInternalId(i);
-                VecSimIndex_AddVector(bf_index, blob, i);
-            }
-            // Load the test query vectors.
-            queries = new std::vector<std::vector<float>>(n_queries);
-            file_name = location + "/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
-            std::ifstream input(file_name, std::ios::binary);
-            input.seekg(0, std::ifstream::beg);
-            for (size_t i = 0; i < n_queries; i++) {
-                std::vector<float> query(dim);
-                input.read((char *)query.data(), dim * sizeof(float));
-                (*queries)[i] = query;
-            }
-            instance = this;
-        }
-    }
-
-    void RunBatchedSearch_HNSW(benchmark::State &st, size_t &correct, size_t iter,
-                               size_t num_batches, size_t batch_size, size_t &total_res_num,
-                               size_t batch_increase_factor) {
         VecSimBatchIterator *batchIterator =
             VecSimBatchIterator_New(hnsw_index, (*queries)[iter % n_queries].data(), nullptr);
         VecSimQueryResult_List accumulated_results[num_batches];
         size_t batch_num = 0;
         total_res_num = 0;
+
+        // Run search in batches, collect the accumulated results.
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             if (batch_num == num_batches) {
                 break;
@@ -99,7 +46,7 @@ protected:
         VecSimBatchIterator_Free(batchIterator);
         st.PauseTiming();
 
-        // Measure recall
+        // Measure recall - compare every result that was collected in some batch to the BF results.
         auto bf_results = VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(),
                                                 total_res_num, nullptr, BY_SCORE);
         for (size_t i = 0; i < batch_num; i++) {
@@ -122,21 +69,11 @@ protected:
             VecSimQueryResult_Free(hnsw_results);
         }
         VecSimQueryResult_Free(bf_results);
+        st.ResumeTiming();
     }
 
-public:
-    ~BM_BatchIterator() {
-        ref_count--;
-        if (ref_count == 0) {
-            VecSimIndex_Free(hnsw_index);
-            VecSimIndex_Free(bf_index);
-            delete queries;
-        }
-    }
+    ~BM_BatchIterator() = default;
 };
-
-size_t BM_BatchIterator::ref_count = 0;
-BM_BatchIterator *BM_BatchIterator::instance = nullptr;
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, BF_FixedBatchSize)(benchmark::State &st) {
 
@@ -284,32 +221,31 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_FixedBatchSize)(benchmark::State &st) 
     for (auto _ : st) {
         RunBatchedSearch_HNSW(st, correct, iter, num_batches, batch_size, total_res_num, 1);
         iter++;
-        st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (total_res_num * iter);
 }
 
-// BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_FixedBatchSize)
-//    ->Args({10, 1})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({10, 3})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({10, 5})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({100, 1})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({100, 3})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({100, 5})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({1000, 1})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({1000, 3})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Args({1000, 5})
-//    ->ArgNames({"batch size", "number of batches"})
-//    ->Iterations(50)
-//    ->Unit(benchmark::kMillisecond);
+BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_FixedBatchSize)
+    ->Args({10, 1})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({10, 3})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({10, 5})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({100, 1})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({100, 3})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({100, 5})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({1000, 1})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({1000, 3})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Args({1000, 5})
+    ->ArgNames({"batch size", "number of batches"})
+    ->Iterations(50)
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize)(benchmark::State &st) {
 
@@ -322,27 +258,26 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize)(benchmark::State &s
     for (auto _ : st) {
         RunBatchedSearch_HNSW(st, correct, iter, num_batches, initial_batch_size, total_res_num, 2);
         iter++;
-        st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (float)(total_res_num * iter);
 }
 
-// BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_VariableBatchSize)
-//    // batch size is increased by factor of 2 from iteration to the next one.
-//    ->Args({10, 2})
-//    ->ArgNames({"batch initial size", "number of batches"})
-//    ->Args({10, 4})
-//    ->ArgNames({"batch initial size", "number of batches"})
-//    ->Args({100, 2})
-//    ->ArgNames({"batch initial size", "number of batches"})
-//    ->Args({100, 4})
-//    ->ArgNames({"batch initial size", "number of batches"})
-//    ->Args({1000, 2})
-//    ->ArgNames({"batch initial size", "number of batches"})
-//    ->Args({1000, 4})
-//    ->ArgNames({"batch initial size", "number of batches"})
-//    ->Iterations(50)
-//    ->Unit(benchmark::kMillisecond);
+BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_VariableBatchSize)
+    // batch size is increased by factor of 2 from iteration to the next one.
+    ->Args({10, 2})
+    ->ArgNames({"batch initial size", "number of batches"})
+    ->Args({10, 4})
+    ->ArgNames({"batch initial size", "number of batches"})
+    ->Args({100, 2})
+    ->ArgNames({"batch initial size", "number of batches"})
+    ->Args({100, 4})
+    ->ArgNames({"batch initial size", "number of batches"})
+    ->Args({1000, 2})
+    ->ArgNames({"batch initial size", "number of batches"})
+    ->Args({1000, 4})
+    ->ArgNames({"batch initial size", "number of batches"})
+    ->Iterations(50)
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)(benchmark::State &st) {
 
@@ -354,7 +289,6 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)(benchmark::State &st
 
     for (auto _ : st) {
         RunBatchedSearch_HNSW(st, correct, iter, num_batches, 10, total_res_num, 2);
-        st.ResumeTiming();
         // Switch to ad-hoc BF
         for (size_t i = 0; i < n_vectors; i += step) {
             VecSimIndex_GetDistanceFrom(hnsw_index, i, (*queries)[iter % n_queries].data());
@@ -363,34 +297,34 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)(benchmark::State &st
     }
 }
 
-// BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)
-//    // batch size is increased by factor of 2 from iteration to the next one.
-//    ->Args({5, 0})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({5, 2})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({5, 5})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({10, 0})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({10, 2})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({10, 5})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({20, 0})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({20, 2})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({20, 5})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({50, 0})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({50, 2})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({50, 5})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Args({100, 0})
-//    ->ArgNames({"step", "number of batches"})
-//    ->Unit(benchmark::kMillisecond);
+BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)
+    // batch size is increased by factor of 2 from iteration to the next one.
+    ->Args({5, 0})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({5, 2})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({5, 5})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({10, 0})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({10, 2})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({10, 5})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({20, 0})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({20, 2})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({20, 5})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({50, 0})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({50, 2})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({50, 5})
+    ->ArgNames({"step", "number of batches"})
+    ->Args({100, 0})
+    ->ArgNames({"step", "number of batches"})
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

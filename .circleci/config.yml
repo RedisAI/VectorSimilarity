@@ -166,6 +166,7 @@ commands:
       - run:
           name: Flow tests
           command: |
+            python3 -m pip install --upgrade pip
             python3 -m pip install -r sbin/requirements.txt
             python3 -m tox -e flowenv
       - save_cache:
@@ -290,8 +291,6 @@ jobs:
       image: ubuntu-2004:202010-01
     steps:
       - setup-ubuntu-sudo
-      - abort_for_docs
-      - abort_for_noci
       - build-steps
       - benchmark
       - run:
@@ -451,7 +450,7 @@ workflows:
       << pipeline.parameters.run_nightly_flow >>
     triggers:
       - schedule:
-          cron: "30 7 * * *"
+          cron: "10 12 * * *"
           filters:
             branches:
               only:

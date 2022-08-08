@@ -3,172 +3,88 @@
 #include <unistd.h>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
+#include "bm_utils.h"
 
-static void GetHNSWIndex(VecSimIndex *hnsw_index, const char *file_name) {
+// Global benchmark data
+size_t BM_VecSimBasics::n_vectors = 500000;
+size_t BM_VecSimBasics::n_queries = 10000;
+size_t BM_VecSimBasics::dim = 768;
+VecSimIndex *BM_VecSimBasics::bf_index;
+VecSimIndex *BM_VecSimBasics::hnsw_index;
+std::vector<std::vector<float>> *BM_VecSimBasics::queries;
+size_t HNSW_M = 65;
+size_t HNSW_EF_C = 512;
+const char *hnsw_index_file = "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512.hnsw";
+const char *updated_hnsw_index_file =
+    "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw";
+const char *test_vectors_file = "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
-    // Load the index file, if it exists in the expected path.
-    auto location = std::string(getenv("ROOT"));
-    auto full_file_name = location + "/tests/benchmark/data/" + std::string(file_name);
-    auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
-    std::ifstream input(full_file_name, std::ios::binary);
-    if (input.is_open()) {
-        serializer.loadIndex(full_file_name,
-                             reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-        if (!serializer.checkIntegrity().valid_state) {
-            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
-        }
-    } else {
-        throw std::runtime_error("HNSW index file was not found in path. Exiting...");
-    }
-}
+size_t BM_VecSimBasics::ref_count = 0;
 
-class BM_VecSimUpdatedIndex : public benchmark::Fixture {
+class BM_VecSimUpdatedIndex : public BM_VecSimBasics {
 protected:
-    VecSimIndex *bf_index;
-    VecSimIndex *hnsw_index;
-    VecSimIndex *bf_index_updated;
-    VecSimIndex *hnsw_index_updated;
-    size_t dim;
-    size_t n_vectors;
-    std::vector<std::vector<float>> *queries;
-    size_t n_queries;
+    static VecSimIndex *bf_index_updated;
+    static VecSimIndex *hnsw_index_updated;
 
-    // We use this class as a singleton for every test case, so we won't hold several indices (to
-    // reduce memory consumption).
-    static BM_VecSimUpdatedIndex *instance;
-    static size_t ref_count;
-
-    BM_VecSimUpdatedIndex() {
-        dim = 768;
-        n_vectors = 500000;
-        n_queries = 10000;
-        ref_count++;
-        if (instance != nullptr) {
-            // Use the same indices and query vectors for every instance.
-            queries = instance->queries;
-            bf_index = instance->bf_index;
-            hnsw_index = instance->hnsw_index;
-            bf_index_updated = instance->bf_index_updated;
-            hnsw_index_updated = instance->hnsw_index_updated;
-        } else {
-            // Initialize and load HNSW index for the first half of DBPedia data set.
-            size_t M = 65;
-            size_t ef_c = 512;
-            VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                                   .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                            .dim = dim,
-                                                            .metric = VecSimMetric_Cosine,
-                                                            .initialCapacity = n_vectors,
-                                                            .M = M,
-                                                            .efConstruction = ef_c}};
-
-            // Load pre-generated HNSW index.
-            hnsw_index = VecSimIndex_New(&params);
-            GetHNSWIndex(hnsw_index, "DBpedia-n500K-cosine-d768-M65-EFC512.hnsw");
-            size_t ef_r = 10;
-            reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
-
-            // Create two FLAT indexes.
-            VecSimParams bf_params = {.algo = VecSimAlgo_BF,
-                                      .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                           .dim = dim,
-                                                           .metric = VecSimMetric_Cosine,
-                                                           .initialCapacity = n_vectors}};
-            bf_index = VecSimIndex_New(&bf_params);
-            bf_index_updated = VecSimIndex_New(&bf_params);
-
-            // Add the same vector to the FLAT indexes.
-            for (size_t i = 0; i < n_vectors; ++i) {
-                char *blob = reinterpret_cast<HNSWIndex *>(hnsw_index)
-                                 ->getHNSWIndex()
-                                 ->getDataByInternalId(i);
-                size_t label =
-                    reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getExternalLabel(i);
-                VecSimIndex_AddVector(bf_index, blob, label);
-                VecSimIndex_AddVector(bf_index_updated, blob, label);
-            }
-
-            // Load pre-generated *updated* HNSW index.
-            hnsw_index_updated = VecSimIndex_New(&params);
-            GetHNSWIndex(hnsw_index_updated, "DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw");
-            reinterpret_cast<HNSWIndex *>(hnsw_index_updated)->setEf(ef_r);
-
-            // Add the same vectors to the *updated* FLAT index (override the previous vectors).
-            for (size_t i = 0; i < n_vectors; ++i) {
-                char *blob = reinterpret_cast<HNSWIndex *>(hnsw_index_updated)
-                                 ->getHNSWIndex()
-                                 ->getDataByInternalId(i);
-                size_t label = reinterpret_cast<HNSWIndex *>(hnsw_index_updated)
-                                   ->getHNSWIndex()
-                                   ->getExternalLabel(i);
-                VecSimIndex_AddVector(bf_index_updated, blob, label);
-            }
-
-            // Load the test query vectors.
-            queries = new std::vector<std::vector<float>>(n_queries);
-            auto location = std::string(std::string(getenv("ROOT")));
-            auto file_name = location + "/tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
-            std::ifstream input(file_name, std::ios::binary);
-            input.seekg(0, std::ifstream::beg);
-            for (size_t i = 0; i < n_queries; i++) {
-                std::vector<float> query(dim);
-                input.read((char *)query.data(), dim * sizeof(float));
-                (*queries)[i] = query;
-            }
-
-            instance = this;
+    BM_VecSimUpdatedIndex() : BM_VecSimBasics() {
+        if (ref_count == 1) {
+            // Initialize the updated indexes as well, if this is the first instance.
+            Initialize(HNSW_M, HNSW_EF_C, updated_hnsw_index_file);
         }
     }
+    static void Initialize(size_t M_, size_t ef_c_, const char *updated_hnsw_index_path) {
 
-    void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k, size_t &correct,
-                      VecSimIndex *hnsw_index_, VecSimIndex *bf_index_) {
-        auto query_params =
-            VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index_, (*queries)[iter % n_queries].data(),
-                                                  k, &query_params, BY_SCORE);
-        st.PauseTiming();
+        VecSimParams bf_params = {.algo = VecSimAlgo_BF,
+                                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                                       .dim = dim,
+                                                       .metric = VecSimMetric_Cosine,
+                                                       .initialCapacity = n_vectors}};
+        bf_index_updated = VecSimIndex_New(&bf_params);
 
-        // Measure recall:
-        auto bf_results = VecSimIndex_TopKQuery(bf_index_, (*queries)[iter % n_queries].data(), k,
-                                                nullptr, BY_SCORE);
-        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-                if (VecSimQueryResult_GetId(hnsw_res_item) ==
-                    VecSimQueryResult_GetId(bf_res_item)) {
-                    correct++;
-                    break;
-                }
-            }
-            VecSimQueryResult_IteratorFree(bf_it);
+        // Initially, load all the vectors to the updated bf index (before we override it).
+        for (size_t i = 0; i < n_vectors; ++i) {
+            char *blob =
+                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
+            size_t label =
+                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getExternalLabel(i);
+            VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
-        VecSimQueryResult_IteratorFree(hnsw_it);
 
-        VecSimQueryResult_Free(bf_results);
-        VecSimQueryResult_Free(hnsw_results);
+        // Initialize and populate an HNSW index where all vectors have been updated.
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                        .dim = dim,
+                                                        .metric = VecSimMetric_Cosine,
+                                                        .initialCapacity = n_vectors,
+                                                        .M = M_,
+                                                        .efConstruction = ef_c_}};
+        hnsw_index_updated = VecSimIndex_New(&params);
+        load_HNSW_index(updated_hnsw_index_path, hnsw_index_updated);
+
+        // Add the same vectors to the *updated* FLAT index (override the previous vectors).
+        for (size_t i = 0; i < n_vectors; ++i) {
+            char *blob = reinterpret_cast<HNSWIndex *>(hnsw_index_updated)
+                             ->getHNSWIndex()
+                             ->getDataByInternalId(i);
+            size_t label = reinterpret_cast<HNSWIndex *>(hnsw_index_updated)
+                               ->getHNSWIndex()
+                               ->getExternalLabel(i);
+            VecSimIndex_AddVector(bf_index_updated, blob, label);
+        }
     }
 
 public:
     ~BM_VecSimUpdatedIndex() {
-        ref_count--;
-        if (ref_count == 0) {
-            VecSimIndex_Free(hnsw_index);
+        if (ref_count == 1) {
             VecSimIndex_Free(hnsw_index_updated);
-            VecSimIndex_Free(bf_index);
             VecSimIndex_Free(bf_index_updated);
-            delete queries;
         }
     }
 };
 
-size_t BM_VecSimUpdatedIndex::ref_count = 0;
-BM_VecSimUpdatedIndex *BM_VecSimUpdatedIndex::instance = nullptr;
+VecSimIndex *BM_VecSimUpdatedIndex::bf_index_updated;
+VecSimIndex *BM_VecSimUpdatedIndex::hnsw_index_updated;
 
 BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
@@ -197,7 +113,6 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW)(benchmark::State &st) {
     for (auto _ : st) {
         RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index, bf_index);
         iter++;
-        st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
@@ -210,7 +125,6 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)(benchmark::State &s
     for (auto _ : st) {
         RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index_updated, bf_index_updated);
         iter++;
-        st.ResumeTiming();
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
