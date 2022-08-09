@@ -70,6 +70,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
         ASSERT_EQ(*vector_data, 2.0f);
         ++vector_data;
     }
+    VecSimIndex_Free(index);
 }
 
 TEST_F(BruteForceTest, resizeIndex) {
