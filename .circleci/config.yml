@@ -449,7 +449,7 @@ workflows:
       << pipeline.parameters.run_nightly_flow >>
     triggers:
       - schedule:
-          cron: "40 11 * * *"
+          cron: "10 13 * * *"
           filters:
             branches:
               only:
