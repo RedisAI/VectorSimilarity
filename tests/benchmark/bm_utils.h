@@ -8,11 +8,17 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 
 class BM_VecSimBasics : public benchmark::Fixture {
-protected:
+public:
     static VecSimIndex *bf_index;
     static VecSimIndex *hnsw_index;
     static size_t dim;
     static size_t n_vectors;
+    static size_t M;
+    static size_t EF_C;
+    static size_t block_size;
+    static const char *hnsw_index_file;
+
+    static const char *test_vectors_file;
     static std::vector<std::vector<float>> *queries;
     static size_t n_queries;
 
@@ -22,9 +28,7 @@ protected:
 
     BM_VecSimBasics();
 
-public:
-    static void Initialize(size_t M, size_t ef_c, const char *hnsw_index_path,
-                           const char *test_vectors_path);
+    static void Initialize();
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
                              size_t &correct, VecSimIndex *hnsw_index_, VecSimIndex *bf_index_);
     virtual ~BM_VecSimBasics();

@@ -15,10 +15,13 @@ size_t BM_VecSimBasics::dim = 768;
 VecSimIndex *BM_VecSimBasics::bf_index;
 VecSimIndex *BM_VecSimBasics::hnsw_index;
 std::vector<std::vector<float>> *BM_VecSimBasics::queries;
-size_t HNSW_M = 64;
-size_t HNSW_EF_C = 512;
-const char *hnsw_index_file = "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
-const char *test_vectors_file = "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+size_t BM_VecSimBasics::M = 64;
+size_t BM_VecSimBasics::EF_C = 512;
+size_t BM_VecSimBasics::block_size = 1024;
+const char *BM_VecSimBasics::hnsw_index_file =
+    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+const char *BM_VecSimBasics::test_vectors_file =
+    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
 size_t BM_VecSimBasics::ref_count = 0;
 
@@ -26,10 +29,14 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
     // Add a new vector from the test vectors in every iteration.
     size_t iter = 0;
     size_t new_id = VecSimIndex_IndexSize(hnsw_index);
+    size_t memory_delta = 0;
     for (auto _ : st) {
-        VecSimIndex_AddVector(hnsw_index, (*queries)[(iter % n_queries)].data(), new_id++);
+        memory_delta +=
+            VecSimIndex_AddVector(hnsw_index, (*queries)[(iter % n_queries)].data(), new_id++);
         iter++;
     }
+    st.counters["memory delta"] = (double)memory_delta / (double)iter;
+
     // Clean-up.
     size_t new_index_size = VecSimIndex_IndexSize(hnsw_index);
     for (size_t id = n_vectors; id < new_index_size; id++) {
@@ -41,10 +48,14 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorBF)(benchmark::State &st) {
     // Add a new vector from the test vectors in every iteration.
     size_t iter = 0;
     size_t new_id = VecSimIndex_IndexSize(bf_index);
+    size_t memory_delta = 0;
     for (auto _ : st) {
-        VecSimIndex_AddVector(bf_index, (*queries)[(iter % n_queries)].data(), new_id++);
+        memory_delta +=
+            VecSimIndex_AddVector(bf_index, (*queries)[(iter % n_queries)].data(), new_id++);
         iter++;
     }
+    st.counters["memory delta"] = (double)memory_delta / (double)iter;
+
     // Clean-up.
     size_t new_index_size = VecSimIndex_IndexSize(bf_index);
     for (size_t id = n_vectors; id < new_index_size; id++) {
@@ -56,7 +67,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     // Remove a different vector in every execution.
     std::vector<std::vector<float>> blobs;
     size_t id_to_remove = 0;
-
+    double memory_delta = 0;
+    size_t iter = 0;
     for (auto _ : st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
@@ -67,8 +79,12 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
                dim * sizeof(float));
         blobs.push_back(removed_vec);
         st.ResumeTiming();
-        VecSimIndex_DeleteVector(hnsw_index, id_to_remove++);
+
+        iter++;
+        auto delta = (double)VecSimIndex_DeleteVector(hnsw_index, id_to_remove++);
+        memory_delta += delta;
     }
+    st.counters["memory delta"] = memory_delta / (double)iter;
 
     // Restore index state.
     for (size_t i = 0; i < blobs.size(); i++) {
@@ -80,7 +96,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorBF)(benchmark::State &st) {
     // Remove a different vector in every execution.
     std::vector<std::vector<float>> blobs;
     size_t id_to_remove = 0;
-
+    double memory_delta = 0;
+    size_t iter = 0;
     for (auto _ : st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
@@ -90,10 +107,12 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorBF)(benchmark::State &st) {
         float *destination = vector_block_member->block->getVector(index);
         memcpy(removed_vec.data(), destination, dim * sizeof(float));
         blobs.push_back(removed_vec);
+        iter++;
         st.ResumeTiming();
 
-        VecSimIndex_DeleteVector(bf_index, id_to_remove++);
+        memory_delta += (double)VecSimIndex_DeleteVector(bf_index, id_to_remove++);
     }
+    st.counters["memory delta"] = memory_delta / (double)iter;
 
     // Restore index state.
     for (size_t i = 0; i < blobs.size(); i++) {
@@ -165,11 +184,38 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
     st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)->Unit(benchmark::kMillisecond);
+BENCHMARK_DEFINE_F(BM_VecSimBasics, Memory_FLAT)(benchmark::State &st) {
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_Info(bf_index).bfInfo.memory;
+}
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)->Unit(benchmark::kMillisecond);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)->Unit(benchmark::kMillisecond);
+BENCHMARK_DEFINE_F(BM_VecSimBasics, Memory_HNSW)(benchmark::State &st) {
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index).hnswInfo.memory;
+}
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_FLAT)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_HNSW)->Iterations(1);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
     ->Arg(10)
