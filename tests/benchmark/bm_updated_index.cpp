@@ -135,24 +135,39 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)(benchmark::State &s
     st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT)(benchmark::State &st) {
+// Index memory metrics - run only once.
+BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT_before)(benchmark::State &st) {
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory before"] = (double)VecSimIndex_Info(bf_index).bfInfo.memory;
-    st.counters["memory updated"] = (double)VecSimIndex_Info(bf_index_updated).bfInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_Info(bf_index).bfInfo.memory;
 }
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW)(benchmark::State &st) {
+BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated)(benchmark::State &st) {
     for (auto _ : st) {
         // Do nothing...
     }
-    st.counters["memory before"] = (double)VecSimIndex_Info(hnsw_index).hnswInfo.memory;
-    st.counters["memory updated"] = (double)VecSimIndex_Info(hnsw_index_updated).hnswInfo.memory;
+    st.counters["memory"] = (double)VecSimIndex_Info(bf_index_updated).bfInfo.memory;
 }
 
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_HNSW)->Iterations(1);
+BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW_before)(benchmark::State &st) {
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index).hnswInfo.memory;
+}
+
+BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW_updated)(benchmark::State &st) {
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index_updated).hnswInfo.memory;
+}
+
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_before)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_HNSW_before)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated)->Iterations(1);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF)
     ->Arg(10)
@@ -164,19 +179,12 @@ BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_HNSW)
-    // {ef_runtime, k} (recall that always ef_runtime >= k)
-    ->Args({10, 10})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({200, 10})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({100, 100})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({200, 100})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({500, 500})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Iterations(100)
-    ->Unit(benchmark::kMillisecond);
+// {ef_runtime, k} (recall that always ef_runtime >= k)
+HNSW_TOP_K_ARGS(10, 10)
+HNSW_TOP_K_ARGS(200, 10)
+HNSW_TOP_K_ARGS(100, 100)
+HNSW_TOP_K_ARGS(200, 100)
+HNSW_TOP_K_ARGS(500, 500)->Iterations(100)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)
     ->Arg(10)
@@ -188,18 +196,11 @@ BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)
-    // {ef_runtime, k} (recall that always ef_runtime >= k)
-    ->Args({10, 10})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({200, 10})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({100, 100})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({200, 100})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Args({500, 500})
-    ->ArgNames({"ef_runtime", "k"})
-    ->Iterations(100)
-    ->Unit(benchmark::kMillisecond);
+// {ef_runtime, k} (recall that always ef_runtime >= k)
+HNSW_TOP_K_ARGS(10, 10)
+HNSW_TOP_K_ARGS(200, 10)
+HNSW_TOP_K_ARGS(100, 100)
+HNSW_TOP_K_ARGS(200, 100)
+HNSW_TOP_K_ARGS(500, 500)->Iterations(100)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

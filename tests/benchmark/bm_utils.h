@@ -46,3 +46,14 @@ void load_HNSW_index(const char *path, VecSimIndex *hnsw_index);
  */
 void load_test_vectors(const char *path, std::vector<std::vector<float>> &queries, size_t n_queries,
                        size_t dim);
+
+#define HNSW_TOP_K_ARGS(ef_runtime, k) ->Args({ef_runtime, k})->ArgNames({"ef_runtime", "k"})
+
+#define FIXED_BATCH_SIZE_ARGS(batch_size, num_batches)                                             \
+    ->Args({batch_size, num_batches})->ArgNames({"batch size", "number of batches"})
+
+#define VARIABLE_BATCH_SIZE_ARGS(initial_batch_size, num_batches)                                  \
+    ->Args({initial_batch_size, num_batches})->ArgNames({"batch initial size", "number of batches"})
+
+#define BATCHES_TO_ADHOC_ARGS(step, num_batches)                                                   \
+    ->Args({step, num_batches})->ArgNames({"step", "number of batches"})

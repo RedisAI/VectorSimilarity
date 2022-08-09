@@ -106,7 +106,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, BF_FixedBatchSize)(benchmark::State &st) {
         VecSimBatchIterator_Free(batchIterator);
         iter++;
     }
-    st.counters["memory delta"] = memory_delta / (double)iter;
+    st.counters["memory"] = memory_delta / (double)iter;
 }
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, BF_VariableBatchSize)(benchmark::State &st) {
@@ -176,7 +176,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_FixedBatchSize)(benchmark::State &st) 
         iter++;
     }
     st.counters["Recall"] = (float)correct / (total_res_num * iter);
-    st.counters["memory delta"] = memory_delta / (double)iter;
+    st.counters["memory"] = memory_delta / (double)iter;
 }
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize)(benchmark::State &st) {
@@ -195,7 +195,7 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize)(benchmark::State &s
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(total_res_num * iter);
-    st.counters["memory delta"] = memory_delta / (double)iter;
+    st.counters["memory"] = memory_delta / (double)iter;
 }
 
 BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)(benchmark::State &st) {
@@ -217,136 +217,86 @@ BENCHMARK_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)(benchmark::State &st
         }
         iter++;
     }
-    st.counters["memory delta"] = memory_delta / (double)iter;
+    st.counters["memory"] = memory_delta / (double)iter;
 }
 
 // Register the functions as a benchmark
 BENCHMARK_REGISTER_F(BM_BatchIterator, BF_FixedBatchSize)
-    ->Args({10, 1})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({10, 3})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({10, 5})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({100, 1})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({100, 3})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({100, 5})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({1000, 1})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({1000, 3})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({1000, 5})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Unit(benchmark::kMillisecond);
+// {batch_size, num_batches}
+FIXED_BATCH_SIZE_ARGS(10, 1)
+FIXED_BATCH_SIZE_ARGS(10, 3)
+FIXED_BATCH_SIZE_ARGS(10, 5)
+FIXED_BATCH_SIZE_ARGS(100, 1)
+FIXED_BATCH_SIZE_ARGS(100, 3)
+FIXED_BATCH_SIZE_ARGS(100, 5)
+FIXED_BATCH_SIZE_ARGS(1000, 1)
+FIXED_BATCH_SIZE_ARGS(1000, 3)
+FIXED_BATCH_SIZE_ARGS(1000, 5)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, BF_VariableBatchSize)
-    // batch size is increased by factor of 2 from iteration to the next one.
-    ->Args({10, 2})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({10, 4})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({100, 2})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({100, 4})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({1000, 2})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({1000, 4})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Unit(benchmark::kMillisecond);
+// {initial_batch_size, num_batches}
+// batch size is increased by factor of 2 from iteration to the next one.
+VARIABLE_BATCH_SIZE_ARGS(10, 2)
+VARIABLE_BATCH_SIZE_ARGS(10, 4)
+VARIABLE_BATCH_SIZE_ARGS(100, 2)
+VARIABLE_BATCH_SIZE_ARGS(100, 4)
+VARIABLE_BATCH_SIZE_ARGS(1000, 2)
+VARIABLE_BATCH_SIZE_ARGS(1000, 4)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, BF_BatchesToAdhocBF)
-    // batch size is increased by factor of 2 from iteration to the next one.
-    ->Args({5, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({5, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({5, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({10, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({10, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({10, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({20, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({20, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({20, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Unit(benchmark::kMillisecond);
+// {step, num_batches} - where step is the ratio between the index size to the number of vectors to
+// go over in ad-hoc BF.
+// batch size is increased by factor of 2 from iteration to the next one, and initial batch size
+// is 10.
+BATCHES_TO_ADHOC_ARGS(5, 0)
+BATCHES_TO_ADHOC_ARGS(5, 2)
+BATCHES_TO_ADHOC_ARGS(5, 5)
+BATCHES_TO_ADHOC_ARGS(10, 0)
+BATCHES_TO_ADHOC_ARGS(10, 2)
+BATCHES_TO_ADHOC_ARGS(10, 5)
+BATCHES_TO_ADHOC_ARGS(20, 0)
+BATCHES_TO_ADHOC_ARGS(20, 2)
+BATCHES_TO_ADHOC_ARGS(20, 5)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_FixedBatchSize)
-    ->Args({10, 1})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({10, 3})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({10, 5})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({100, 1})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({100, 3})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({100, 5})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({1000, 1})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({1000, 3})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Args({1000, 5})
-    ->ArgNames({"batch size", "number of batches"})
-    ->Iterations(50)
-    ->Unit(benchmark::kMillisecond);
+// {batch_size, num_batches}
+FIXED_BATCH_SIZE_ARGS(10, 1)
+FIXED_BATCH_SIZE_ARGS(10, 3)
+FIXED_BATCH_SIZE_ARGS(10, 5)
+FIXED_BATCH_SIZE_ARGS(100, 1)
+FIXED_BATCH_SIZE_ARGS(100, 3)
+FIXED_BATCH_SIZE_ARGS(100, 5)
+FIXED_BATCH_SIZE_ARGS(1000, 1)
+FIXED_BATCH_SIZE_ARGS(1000, 3)
+FIXED_BATCH_SIZE_ARGS(1000, 5)->Iterations(50)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_VariableBatchSize)
-    // batch size is increased by factor of 2 from iteration to the next one.
-    ->Args({10, 2})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({10, 4})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({100, 2})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({100, 4})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({1000, 2})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Args({1000, 4})
-    ->ArgNames({"batch initial size", "number of batches"})
-    ->Iterations(50)
-    ->Unit(benchmark::kMillisecond);
+// {initial_batch_size, num_batches}
+// batch size is increased by factor of 2 from iteration to the next one.
+VARIABLE_BATCH_SIZE_ARGS(10, 2)
+VARIABLE_BATCH_SIZE_ARGS(10, 4)
+VARIABLE_BATCH_SIZE_ARGS(100, 2)
+VARIABLE_BATCH_SIZE_ARGS(100, 4)
+VARIABLE_BATCH_SIZE_ARGS(1000, 2)
+VARIABLE_BATCH_SIZE_ARGS(1000, 4)->Iterations(50)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_BatchIterator, HNSW_BatchesToAdhocBF)
-    // batch size is increased by factor of 2 from iteration to the next one.
-    ->Args({5, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({5, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({5, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({10, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({10, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({10, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({20, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({20, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({20, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({50, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({50, 2})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({50, 5})
-    ->ArgNames({"step", "number of batches"})
-    ->Args({100, 0})
-    ->ArgNames({"step", "number of batches"})
-    ->Unit(benchmark::kMillisecond);
+// {step, num_batches} - where step is the ratio between the index size to the number of vectors to
+// go over in ad-hoc BF.
+// batch size is increased by factor of 2 from iteration to the next one, and initial batch size
+// is 10.
+BATCHES_TO_ADHOC_ARGS(5, 0)
+BATCHES_TO_ADHOC_ARGS(5, 2)
+BATCHES_TO_ADHOC_ARGS(5, 5)
+BATCHES_TO_ADHOC_ARGS(10, 0)
+BATCHES_TO_ADHOC_ARGS(10, 2)
+BATCHES_TO_ADHOC_ARGS(10, 5)
+BATCHES_TO_ADHOC_ARGS(20, 0)
+BATCHES_TO_ADHOC_ARGS(20, 2)
+BATCHES_TO_ADHOC_ARGS(20, 5)
+BATCHES_TO_ADHOC_ARGS(50, 0)
+BATCHES_TO_ADHOC_ARGS(50, 2)
+BATCHES_TO_ADHOC_ARGS(50, 5)
+BATCHES_TO_ADHOC_ARGS(100, 0)->Iterations(50)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
