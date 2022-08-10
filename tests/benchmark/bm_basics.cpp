@@ -5,170 +5,191 @@
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
+#include "bm_utils.h"
 
-static void GetHNSWIndex(VecSimIndex *hnsw_index) {
+// Global benchmark data
+size_t BM_VecSimBasics::n_vectors = 1000000;
+size_t BM_VecSimBasics::n_queries = 10000;
+size_t BM_VecSimBasics::dim = 768;
+VecSimIndex *BM_VecSimBasics::bf_index;
+VecSimIndex *BM_VecSimBasics::hnsw_index;
+std::vector<std::vector<float>> *BM_VecSimBasics::queries;
+size_t BM_VecSimBasics::M = 64;
+size_t BM_VecSimBasics::EF_C = 512;
+size_t BM_VecSimBasics::block_size = 1024;
+const char *BM_VecSimBasics::hnsw_index_file =
+    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+const char *BM_VecSimBasics::test_vectors_file =
+    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
-    // Load the index file, if it exists in the expected path.
-    auto location = std::string(std::string(getenv("ROOT")));
-    auto file_name = location + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
-    auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
-    std::ifstream input(file_name, std::ios::binary);
-    if (input.is_open()) {
-        serializer.loadIndex(file_name,
-                             reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
-        if (!serializer.checkIntegrity().valid_state) {
-            std::cerr << "The loaded HNSW index is corrupted. Exiting..." << std::endl;
-            exit(1);
-        }
-    } else {
-        std::cerr << "HNSW index file was not found in path. Exiting..." << std::endl;
-        exit(1);
+size_t BM_VecSimBasics::ref_count = 0;
+
+BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
+    // Add a new vector from the test vectors in every iteration.
+    size_t iter = 0;
+    size_t new_id = VecSimIndex_IndexSize(hnsw_index);
+    size_t memory_delta = 0;
+    for (auto _ : st) {
+        memory_delta +=
+            VecSimIndex_AddVector(hnsw_index, (*queries)[(iter % n_queries)].data(), new_id++);
+        iter++;
+    }
+    st.counters["memory"] = (double)memory_delta / (double)iter;
+
+    // Clean-up.
+    size_t new_index_size = VecSimIndex_IndexSize(hnsw_index);
+    for (size_t id = n_vectors; id < new_index_size; id++) {
+        VecSimIndex_DeleteVector(hnsw_index, id);
     }
 }
 
-class BM_VecSimBasics : public benchmark::Fixture {
-protected:
-    std::mt19937 rng;
-    VecSimIndex *bf_index;
-    VecSimIndex *hnsw_index;
-    size_t dim;
-    size_t n_vectors;
-    std::vector<float> query;
-
-    BM_VecSimBasics() {
-        dim = 768;
-        n_vectors = 1000000;
-        query.reserve(dim);
-        rng.seed(47);
-    }
-
-public:
-    void SetUp(const ::benchmark::State &state) {
-
-        // Initialize and load HNSW index for DBPedia data set.
-        size_t M = 64;
-        size_t ef_c = 512;
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                               .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                        .dim = dim,
-                                                        .metric = VecSimMetric_Cosine,
-                                                        .initialCapacity = n_vectors + 1,
-                                                        .M = M,
-                                                        .efConstruction = ef_c}};
-        hnsw_index = VecSimIndex_New(&params);
-
-        // Load pre-generated HNSW index.
-        GetHNSWIndex(hnsw_index);
-        size_t ef_r = 500;
-        reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
-
-        VecSimParams bf_params = {.algo = VecSimAlgo_BF,
-                                  .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                                       .dim = dim,
-                                                       .metric = VecSimMetric_Cosine,
-                                                       .initialCapacity = n_vectors}};
-        bf_index = VecSimIndex_New(&bf_params);
-
-        // Add the same vectors to Flat index.
-        for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob =
-                reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
-            VecSimIndex_AddVector(bf_index, blob, i);
-        }
-    }
-
-    void TearDown(const ::benchmark::State &state) {
-        VecSimIndex_Free(hnsw_index);
-        VecSimIndex_Free(bf_index);
-    }
-
-    ~BM_VecSimBasics() {}
-};
-
-BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
-    // Save the first 500 vectors, remove then from the index, and add a different vector in every
-    // execution.
-    size_t n_vectors_to_add = 500;
-    float *blobs[n_vectors_to_add];
-    for (size_t i = 0; i < n_vectors_to_add; i++) {
-        blobs[i] = new float[dim];
-        memcpy(blobs[i],
-               reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i),
-               dim * sizeof(float));
-        VecSimIndex_DeleteVector(hnsw_index, i);
-    }
+BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorBF)(benchmark::State &st) {
+    // Add a new vector from the test vectors in every iteration.
+    size_t iter = 0;
+    size_t new_id = VecSimIndex_IndexSize(bf_index);
+    size_t memory_delta = 0;
     for (auto _ : st) {
-        size_t id = n_vectors - VecSimIndex_IndexSize(hnsw_index) - 1;
-        VecSimIndex_AddVector(hnsw_index, query.data(), id);
+        memory_delta +=
+            VecSimIndex_AddVector(bf_index, (*queries)[(iter % n_queries)].data(), new_id++);
+        iter++;
+    }
+    st.counters["memory"] = (double)memory_delta / (double)iter;
+
+    // Clean-up.
+    size_t new_index_size = VecSimIndex_IndexSize(bf_index);
+    for (size_t id = n_vectors; id < new_index_size; id++) {
+        VecSimIndex_DeleteVector(bf_index, id);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     // Remove a different vector in every execution.
+    std::vector<std::vector<float>> blobs;
+    size_t id_to_remove = 0;
+    double memory_delta = 0;
+    size_t iter = 0;
     for (auto _ : st) {
-        size_t id = n_vectors - VecSimIndex_IndexSize(hnsw_index);
-        VecSimIndex_DeleteVector(hnsw_index, id);
+        st.PauseTiming();
+        auto removed_vec = std::vector<float>(dim);
+        memcpy(removed_vec.data(),
+               reinterpret_cast<HNSWIndex *>(hnsw_index)
+                   ->getHNSWIndex()
+                   ->getDataByInternalId(id_to_remove),
+               dim * sizeof(float));
+        blobs.push_back(removed_vec);
+        st.ResumeTiming();
+
+        iter++;
+        auto delta = (double)VecSimIndex_DeleteVector(hnsw_index, id_to_remove++);
+        memory_delta += delta;
+    }
+    st.counters["memory"] = memory_delta / (double)iter;
+
+    // Restore index state.
+    for (size_t i = 0; i < blobs.size(); i++) {
+        VecSimIndex_AddVector(hnsw_index, blobs[i].data(), i);
+    }
+}
+
+BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorBF)(benchmark::State &st) {
+    // Remove a different vector in every execution.
+    std::vector<std::vector<float>> blobs;
+    size_t id_to_remove = 0;
+    double memory_delta = 0;
+    size_t iter = 0;
+    for (auto _ : st) {
+        st.PauseTiming();
+        auto removed_vec = std::vector<float>(dim);
+        auto *vector_block_member = reinterpret_cast<BruteForceIndex *>(bf_index)
+                                        ->idToVectorBlockMemberMapping[id_to_remove];
+        size_t index = vector_block_member->index;
+        float *destination = vector_block_member->block->getVector(index);
+        memcpy(removed_vec.data(), destination, dim * sizeof(float));
+        blobs.push_back(removed_vec);
+        iter++;
+        st.ResumeTiming();
+
+        memory_delta += (double)VecSimIndex_DeleteVector(bf_index, id_to_remove++);
+    }
+    st.counters["memory"] = memory_delta / (double)iter;
+
+    // Restore index state.
+    for (size_t i = 0; i < blobs.size(); i++) {
+        VecSimIndex_AddVector(bf_index, blobs[i].data(), i);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
+    size_t iter = 0;
     for (auto _ : st) {
-        st.PauseTiming();
-        // Generate random query vector before test.
-        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-        for (size_t i = 0; i < dim; ++i) {
-            query[i] = (float)distrib(rng);
-        }
-        st.ResumeTiming();
-        VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
+        iter++;
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_HNSW)(benchmark::State &st) {
-    size_t k = st.range(0);
-    size_t correct = 0.0f;
+    size_t ef = st.range(0);
+    size_t k = st.range(1);
+    size_t correct = 0;
     size_t iter = 0;
     for (auto _ : st) {
-        st.PauseTiming();
-        // Generate random query vector before test.
-        std::uniform_real_distribution<double> distrib(-1.0, 1.0);
-        for (size_t i = 0; i < dim; ++i) {
-            query[i] = (float)distrib(rng);
-        }
-        st.ResumeTiming();
-        auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, query.data(), k, nullptr, BY_SCORE);
-        st.PauseTiming();
-
-        // Measure recall:
-        auto bf_results = VecSimIndex_TopKQuery(bf_index, query.data(), k, nullptr, BY_SCORE);
-        auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-        while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-            auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-            auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-            while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-                auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-                if (VecSimQueryResult_GetId(hnsw_res_item) ==
-                    VecSimQueryResult_GetId(bf_res_item)) {
-                    correct++;
-                    break;
-                }
-            }
-            VecSimQueryResult_IteratorFree(bf_it);
-        }
-        VecSimQueryResult_IteratorFree(hnsw_it);
-
-        VecSimQueryResult_Free(bf_results);
-        VecSimQueryResult_Free(hnsw_results);
+        RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index, bf_index);
         iter++;
-        st.ResumeTiming();
     }
-    st.counters["Recall"] = (float)correct / (k * iter);
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
 
-// Register the function as a benchmark
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)->Unit(benchmark::kMillisecond);
+BENCHMARK_DEFINE_F(BM_VecSimBasics, Memory_FLAT)(benchmark::State &st) {
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_Info(bf_index).bfInfo.memory;
+}
+
+BENCHMARK_DEFINE_F(BM_VecSimBasics, Memory_HNSW)(benchmark::State &st) {
+    for (auto _ : st) {
+        // Do nothing...
+    }
+    st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index).hnswInfo.memory;
+}
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_FLAT)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_HNSW)->Iterations(1);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations((long)BM_VecSimBasics::block_size);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
+    ->Arg(10)
+    ->ArgName("k")
+    ->Arg(100)
+    ->ArgName("k")
+    ->Arg(500)
+    ->ArgName("k")
+    ->Unit(benchmark::kMillisecond);
+
+BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
+// {ef_runtime, k} (recall that always ef_runtime >= k)
+HNSW_TOP_K_ARGS(10, 10)
+HNSW_TOP_K_ARGS(200, 10)
+HNSW_TOP_K_ARGS(100, 100)
+HNSW_TOP_K_ARGS(200, 100)
+HNSW_TOP_K_ARGS(500, 500)->Iterations(100)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)->Unit(benchmark::kMillisecond);
 
@@ -179,9 +200,13 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
-    ->Arg(10)
-    ->Arg(100)
-    ->Arg(500)
+    // {ef_runtime, k} (recall that always ef_runtime >= k)
+    ->Args({10, 10})
+    ->Args({200, 10})
+    ->Args({100, 100})
+    ->Args({200, 100})
+    ->Args({500, 500})
+    ->Iterations(100)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
