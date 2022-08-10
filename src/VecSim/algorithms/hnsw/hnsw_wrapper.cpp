@@ -16,8 +16,7 @@ using namespace hnswlib;
 /******************** Ctor / Dtor **************/
 
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
-      blockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE),
+    : VecSimIndex(allocator, params->dim, params->type, params->metric, params->blockSize),
       hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)),
       last_mode(EMPTY_MODE) {}
 
@@ -38,19 +37,19 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
            sizeof(size_t); // Labels lookup hash table buckets.
 
     size_t size_links_level0 =
-        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
+        sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
-        size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+        size_links_level0 + params->dim * sizeof(float) + sizeof(labelType);
     est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
 
     return est;
 }
 
 size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
-    size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) +
-                               sizeof(void *) + sizeof(vecsim_stl::vector<tableint>);
-    size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(tableint) +
-                                     sizeof(void *) + sizeof(vecsim_stl::vector<tableint>);
+    size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) +
+                               sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
+    size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(idType) +
+                                     sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
     // of levels is lower (intuitively, we "loose" a level every time the random generated number
@@ -60,7 +59,7 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
         ceil((1 / (2 * log(params->M))) * (float)size_links_higher_level);
 
     size_t size_total_data_per_element = size_links_level0 + expected_size_links_higher_levels +
-                                         params->dim * sizeof(float) + sizeof(labeltype);
+                                         params->dim * sizeof(float) + sizeof(labelType);
 
     // For every new vector, a new node of size 24 is allocated in a bucket of the hash table.
     size_t size_label_lookup_node =
@@ -109,7 +108,7 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) {
 
-    // If id doesnt exist.
+    // If id doesn't exist.
     if (!this->hnsw->isLabelExist(id)) {
         return false;
     }
@@ -138,6 +137,8 @@ double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
 }
 
 size_t HNSWIndex::indexSize() const { return this->hnsw->getIndexSize(); }
+
+size_t HNSWIndex::indexLabelCount() const { return this->hnsw->getIndexLabelCount(); }
 
 void HNSWIndex::setEf(size_t ef) { this->hnsw->setEf(ef); }
 

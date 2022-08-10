@@ -5,12 +5,6 @@
 #include <memory>
 
 class HNSWIndex : public VecSimIndex {
-protected:
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
-    size_t blockSize;
-
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const HNSWParams *params);
@@ -19,6 +13,7 @@ public:
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
+    virtual size_t indexLabelCount() const override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
@@ -35,5 +30,4 @@ public:
 
 private:
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw;
-    VecSearchMode last_mode;
 };

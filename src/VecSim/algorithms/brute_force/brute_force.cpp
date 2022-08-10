@@ -83,9 +83,9 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     // Get vector block to store the vector in.
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
-    if (id % vectorBlockSize == 0) {
+    if (id % blockSize == 0) {
         VectorBlock *new_vectorBlock =
-            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+            new (this->allocator) VectorBlock(this->blockSize, this->dim, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
@@ -98,13 +98,13 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     vectorBlock->addVector(vector_data);
 
     // if idToLabelMapping is full,
-    // resize and align idToLabelMapping by vectorBlockSize
+    // resize and align idToLabelMapping by blockSize
     size_t idToLabelMapping_size = this->idToLabelMapping.size();
 
     if (id >= idToLabelMapping_size) {
-        size_t last_block_vectors_count = id % vectorBlockSize;
-        this->idToLabelMapping.resize(
-            idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
+        size_t last_block_vectors_count = id % blockSize;
+        this->idToLabelMapping.resize(idToLabelMapping_size + blockSize - last_block_vectors_count,
+                                      0);
     }
 
     // add label to idToLabelMapping
@@ -141,7 +141,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
 
-    // If we are *not* trying to remove the last vector, update mappind and move
+    // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
         // Update id2labelmapping.
@@ -156,7 +156,7 @@ int BruteForceIndex::deleteVector(size_t label) {
         VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
         size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
 
-        // Put data of last vector inpalce of the deleted vector.
+        // Put data of last vector inplace of the deleted vector.
         deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
     }
 
@@ -167,11 +167,11 @@ int BruteForceIndex::deleteVector(size_t label) {
 
         // Resize and align the id2labelmapping.
         size_t id2label_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the id2labemapping
-        // align to be a multlipication of blocksize  and resize by one block.
-        if (count + vectorBlockSize <= id2label_size) {
-            size_t vector_to_align_count = id2label_size % vectorBlockSize;
-            this->idToLabelMapping.resize(id2label_size - vectorBlockSize - vector_to_align_count);
+        // If the new size is smaller by at least one block comparing to the id2labelmapping
+        // align to be a multiplication of blocksize  and resize by one block.
+        if (count + blockSize <= id2label_size) {
+            size_t vector_to_align_count = id2label_size % blockSize;
+            this->idToLabelMapping.resize(id2label_size - blockSize - vector_to_align_count);
         }
     }
 
@@ -193,6 +193,8 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
 }
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
+
+size_t BruteForceIndex::indexLabelCount() const { return this->count; }
 
 // Compute the score for every vector in the block by using the given distance function.
 vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block,
@@ -308,7 +310,7 @@ VecSimIndexInfo BruteForceIndex::info() const {
     info.bfInfo.type = this->vecType;
     info.bfInfo.metric = this->metric;
     info.bfInfo.indexSize = this->count;
-    info.bfInfo.blockSize = this->vectorBlockSize;
+    info.bfInfo.blockSize = this->blockSize;
     info.bfInfo.memory = this->allocator->getAllocationSize();
     info.bfInfo.last_mode = this->last_mode;
     return info;

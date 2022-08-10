@@ -27,6 +27,9 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
+typedef size_t labelType;
+typedef unsigned int idType;
+
 /**
  * @brief Query Runtime raw parameters.
  * Use VecSimIndex_ResolveParams to generate VecSimQueryParams from array of VecSimRawParams.

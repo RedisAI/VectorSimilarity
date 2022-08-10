@@ -3,6 +3,7 @@
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
+#include "VecSim/spaces/space_interface.h"
 #include "info_iterator_struct.h"
 
 /**
@@ -10,12 +11,27 @@
  *
  */
 struct VecSimIndex : public VecsimBaseObject {
+protected:
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
+    size_t blockSize;
+    DISTFUNC<float> dist_func;
+    VecSearchMode last_mode;
+    std::shared_ptr<SpaceInterface<float>> space;
+
 public:
     /**
      * @brief Construct a new Vec Sim Index object
      *
      */
-    VecSimIndex(std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator) {}
+    VecSimIndex(std::shared_ptr<VecSimAllocator> allocator, size_t dim, VecSimType vecType,
+                VecSimMetric metric, size_t blockSize, SpaceInterface<float> *space)
+        : VecsimBaseObject(allocator), dim(dim), vecType(vecType), metric(metric),
+          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
+          space(space) {
+        dist_func = space->get_dist_func();
+    }
 
     /**
      * @brief Destroy the Vec Sim Index object
@@ -54,11 +70,18 @@ public:
     virtual double getDistanceFrom(size_t id, const void *blob) = 0;
 
     /**
-     * @brief Return the number of vectors in the index using irs SizeFn.
+     * @brief Return the number of vectors in the index using its SizeFn.
      *
      * @return index size.
      */
     virtual size_t indexSize() const = 0;
+
+    /**
+     * @brief Return the number of unique labels in the index using its SizeFn.
+     *
+     * @return index size.
+     */
+    virtual size_t indexLabelCount() const = 0;
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.

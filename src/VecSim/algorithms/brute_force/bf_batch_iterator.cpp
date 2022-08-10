@@ -14,7 +14,7 @@ unsigned char BF_BatchIterator::next_id = 0;
 // number of remaining results and the index size.
 VecSimQueryResult_List BF_BatchIterator::searchByHeuristics(size_t n_res,
                                                             VecSimQueryResult_Order order) {
-    if ((this->index->indexSize() - this->getResultsCount()) / 1000 > n_res) {
+    if ((this->index->indexLabelCount() - this->getResultsCount()) / 1000 > n_res) {
         // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
     }
@@ -134,7 +134,7 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     // Only in the first iteration we need to compute all the scores
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
-        this->scores.reserve(this->index->indexSize());
+        this->scores.reserve(this->index->indexLabelCount());
         vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
         VecSimQueryResult_Code rc;
 
@@ -166,8 +166,8 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
 }
 
 bool BF_BatchIterator::isDepleted() {
-    assert(this->getResultsCount() <= this->index->indexSize());
-    bool depleted = this->getResultsCount() == this->index->indexSize();
+    assert(this->getResultsCount() <= this->index->indexLabelCount());
+    bool depleted = this->getResultsCount() == this->index->indexLabelCount();
     return depleted;
 }
 

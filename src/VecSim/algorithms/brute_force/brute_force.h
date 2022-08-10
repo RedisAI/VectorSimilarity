@@ -12,11 +12,6 @@
 using spaces::dist_func_t;
 
 class BruteForceIndex : public VecSimIndex {
-protected:
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
-
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const BFParams *params);
@@ -25,6 +20,7 @@ public:
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
+    virtual size_t indexLabelCount() const override;
     vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                  void *timeoutCtx,
                                                  VecSimQueryResult_Code *rc) const;
@@ -51,10 +47,8 @@ public:
 
 private:
     void updateVector(idType id, const void *vector_data);
-    inline VectorBlock *getVectorVectorBlock(idType id) {
-        return vectorBlocks.at(id / vectorBlockSize);
-    }
-    inline size_t getVectorRelativeIndex(idType id) { return id % vectorBlockSize; }
+    inline VectorBlock *getVectorVectorBlock(idType id) { return vectorBlocks.at(id / blockSize); }
+    inline size_t getVectorRelativeIndex(idType id) { return id % blockSize; }
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
     } // throws out_of_range
@@ -65,7 +59,6 @@ private:
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
     vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
-    size_t vectorBlockSize;
     idType count;
     dist_func_t<float> dist_func;
     VecSearchMode last_mode;
