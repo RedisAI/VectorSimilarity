@@ -294,7 +294,9 @@ jobs:
       - benchmark
       - run:
           name: Redis tests
-          command: python3 -m tox -e modtest
+          command: |
+            python3 -m pip install -r sbin/requirements.txt
+            python3 -m tox -e modtest
 
   codecov:
     resource_class: large
@@ -449,7 +451,7 @@ workflows:
       << pipeline.parameters.run_nightly_flow >>
     triggers:
       - schedule:
-          cron: "10 13 * * *"
+          cron: "40 8 * * *"
           filters:
             branches:
               only:
