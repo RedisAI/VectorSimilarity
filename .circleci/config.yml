@@ -4,16 +4,8 @@ parameters:
     default: true
     type: boolean
 
-  run_benchmark_flow:
-    default: true
-    type: boolean
-
   run_benchmark_flow_label:
     default: false
-    type: boolean
-
-  run_nightly_flow:
-    default: true
     type: boolean
 
 commands:
@@ -111,6 +103,7 @@ commands:
           command: |
             bash -l -c "make benchmark"
             for bm_class in basics updated_index spaces batch_iterator; do
+            echo ${bm_class}_results.json
               redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo $CIRCLE_PROJECT_REPONAME \
@@ -284,15 +277,10 @@ jobs:
 
   nightly_flow:
     resource_class: large
-    # Run on the same machine - for steady benchmarks
-    machine:
-      image: ubuntu-2004:202010-01
+    docker:
+      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
     steps:
-      - setup-ubuntu-sudo
-      - abort_for_docs
-      - abort_for_noci
       - build-steps
-      - benchmark
       - run:
           name: Redis tests
           command: python3 -m tox -e modtest
@@ -428,11 +416,6 @@ workflows:
           <<: *on-any-branch
       - codecov:
           <<: *on-any-branch
-
-  benchmark_flow:
-    when:
-        << pipeline.parameters.run_benchmark_flow >>
-    jobs:
       - run-benchmarks:
           context: common
           <<: *on-perf-and-version-tags
@@ -446,8 +429,6 @@ workflows:
           <<: *on-any-branch
 
   nightly:
-    when:
-      << pipeline.parameters.run_nightly_flow >>
     triggers:
       - schedule:
           cron: "0 0 * * *"
@@ -456,11 +437,12 @@ workflows:
               only:
                 - main
     jobs:
-    - nightly_flow:
+    - nightly_flow
+    - run-benchmarks:
         context: common
     - sanitize:
-          name: sanitize-<< matrix.san-type >>
-          matrix:
-            parameters:
-#               san-type: [address, memory]
-              san-type: [address]
+        name: sanitize-<< matrix.san-type >>
+        matrix:
+          parameters:
+#              san-type: [address, memory]
+            san-type: [address]
