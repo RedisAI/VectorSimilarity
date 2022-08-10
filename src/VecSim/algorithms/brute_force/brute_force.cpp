@@ -59,26 +59,7 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     vectorBlock->updateVector(index, vector_data);
 }
 
-int BruteForceIndex::addVector(const void *vector_data, size_t label) {
-
-    float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(float));
-        float_vector_normalize(normalized_data, this->dim);
-        vector_data = normalized_data;
-    }
-
-    auto optionalID = this->labelToIdLookup.find(label);
-    // Check if label already exists, so it is an update operation.
-    if (optionalID != this->labelToIdLookup.end()) {
-        idType id = optionalID->second;
-        updateVector(id, vector_data);
-        return true;
-    }
-
-    // Give the vector new id and increase count.
-    idType id = count++;
+int BruteForceIndex::insertVector(const void *vector_data, idType id) {
 
     // Get vector block to store the vector in.
 
@@ -107,26 +88,10 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
                                       0);
     }
 
-    // add label to idToLabelMapping
-    setVectorLabel(id, label);
-
-    // add id to label:id map
-    this->labelToIdLookup.emplace(label, id);
-
     return true;
 }
 
-int BruteForceIndex::deleteVector(size_t label) {
-
-    // Find the id to delete.
-    auto deleted_label_id_pair = this->labelToIdLookup.find(label);
-    if (deleted_label_id_pair == this->labelToIdLookup.end()) {
-        // Nothing to delete.
-        return true;
-    }
-
-    // Get deleted vector id.
-    idType id_to_delete = deleted_label_id_pair->second;
+int BruteForceIndex::removeVector(idType id_to_delete) {
 
     // Get last vector id and label
     idType last_idx = --count;
@@ -138,9 +103,6 @@ int BruteForceIndex::deleteVector(size_t label) {
 
     float *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
-    // Remove the pair of the deleted vector.
-    labelToIdLookup.erase(label);
-
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
@@ -150,7 +112,7 @@ int BruteForceIndex::deleteVector(size_t label) {
 
         // Update label2id mapping.
         // Update this id in label:id pair of last index.
-        setLabelToId(last_idx_label, id_to_delete);
+        replaceIdOfLabel(last_idx_label, id_to_delete, last_idx);
 
         // Get the vectorBlock and the relative index of the deleted id.
         VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
@@ -178,23 +140,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     return true;
 }
 
-double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
-    auto optionalId = this->labelToIdLookup.find(label);
-    if (optionalId == this->labelToIdLookup.end()) {
-        return INVALID_SCORE;
-    }
-    idType id = optionalId->second;
-
-    // Get the vectorBlock and the relative index of the required id.
-    VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
-    size_t req_rel_idx = getVectorRelativeIndex(id);
-
-    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
-}
-
 size_t BruteForceIndex::indexSize() const { return this->count; }
-
-size_t BruteForceIndex::indexLabelCount() const { return this->count; }
 
 // Compute the score for every vector in the block by using the given distance function.
 vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block,
