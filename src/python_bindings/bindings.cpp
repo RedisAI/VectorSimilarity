@@ -107,6 +107,12 @@ public:
         return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, query_params));
     }
 
+	double getDistanceFrom(py::object &query_blob, size_t label) {
+		py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
+		float *vector_data = (float *)items.data(0);
+		return VecSimIndex_GetDistanceFrom(index, label, vector_data);
+	}
+
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
 protected:
@@ -215,7 +221,8 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
-             py::arg("query_param") = nullptr);
+             py::arg("query_param") = nullptr)
+	    .def("get_distance_from", &PyVecSimIndex::getDistanceFrom);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),

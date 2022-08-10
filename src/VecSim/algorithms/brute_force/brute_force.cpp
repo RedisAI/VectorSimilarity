@@ -178,6 +178,13 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     if (optionalId == this->labelToIdLookup.end()) {
         return INVALID_SCORE;
     }
+	float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+	if (this->metric == VecSimMetric_Cosine) {
+		// TODO: need more generic
+		memcpy(normalized_blob, vector_data, this->dim * sizeof(float));
+		float_vector_normalize(normalized_blob, this->dim);
+		vector_data = normalized_blob;
+	}
     idType id = optionalId->second;
     VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
 
