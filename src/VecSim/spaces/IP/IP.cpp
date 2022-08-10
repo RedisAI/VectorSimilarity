@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-float InnerProduct_impl(const void *pVect1, const void *pVect2, const void *qty_ptr) {
+float f_InnerProduct_impl(const void *pVect1, const void *pVect2, const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     float res = 0;
     for (unsigned i = 0; i < qty; i++) {
@@ -12,6 +12,6 @@ float InnerProduct_impl(const void *pVect1, const void *pVect2, const void *qty_
     return res;
 }
 
-float InnerProduct(const void *pVect1, const void *pVect2, const void *qty_ptr) {
-    return 1.0f - InnerProduct_impl(pVect1, pVect2, qty_ptr);
+float f_InnerProduct(const void *pVect1, const void *pVect2, const void *qty_ptr) {
+    return 1.0f - f_InnerProduct_impl(pVect1, pVect2, qty_ptr);
 }

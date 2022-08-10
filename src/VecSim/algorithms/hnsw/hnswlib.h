@@ -1,6 +1,7 @@
 #pragma once
 
 #include "visited_nodes_handler.h"
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/space_interface.h"
@@ -92,7 +93,7 @@ private:
 #endif
 
     // callback for computing distance between two points in the underline space.
-    DISTFUNC<dist_t> fstdistfunc_;
+    Spaces::dist_func_ptr_ty<dist_t> fstdistfunc_;
     void *dist_func_param_;
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
@@ -147,9 +148,10 @@ private:
                                       vecsim_stl::vector<bool> &neighbours_bitmap);
     void replaceEntryPoint(tableint element_internal_id);
     void SwapLastIdWithDeletedId(tableint element_internal_id, tableint last_element_internal_id);
+    
 
 public:
-    HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
+    HierarchicalNSW(VecSimType vecType, VecSimMetric metric, size_t dim, size_t max_elements,
                     std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
                     size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
                     size_t initial_pool_size = 1);
@@ -182,7 +184,8 @@ public:
     VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
                                    VecSimQueryResult_Code *rc) const;
     bool isLabelExist(labeltype label);
-};
+    Spaces::dist_func_ptr_ty<float> GetDistFunc() const {return fstdistfunc_;}
+};  
 
 /**
  * getters and setters of index data
@@ -891,18 +894,19 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
 }
 
 template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
+HierarchicalNSW<dist_t>::HierarchicalNSW(VecSimType vecType, VecSimMetric metric, size_t dim, size_t max_elements,
                                          std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
-    : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
+    : VecsimBaseObject(allocator), 
+    data_size_(sizeof(vecType)), element_levels_(max_elements, allocator),
       label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
           link_list_locks_(max_elements),
 #endif
 {
-
+    Spaces::SetDistFunc(metric, dim, &fstdistfunc_);
     max_elements_ = max_elements;
     if (M > SIZE_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
@@ -912,9 +916,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     ef_construction_ = std::max(ef_construction, M_);
     ef_ = ef;
 
-    data_size_ = s->get_data_size();
-    fstdistfunc_ = s->get_dist_func();
-    dist_func_param_ = s->get_data_dim();
+    
 
     cur_element_count = 0;
     max_id = HNSW_INVALID_ID;

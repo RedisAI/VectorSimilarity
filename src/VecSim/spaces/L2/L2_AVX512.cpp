@@ -3,7 +3,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include <stddef.h>
 
-float L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float f_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
     size_t qty = *((size_t *)qty_ptr);
@@ -27,7 +27,7 @@ float L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, const void
     return _mm512_reduce_add_ps(sum);
 }
 
-float L2SqrSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float f_L2SqrSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float PORTABLE_ALIGN16 TmpRes[4];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
@@ -68,27 +68,28 @@ float L2SqrSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v, const void 
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
 }
 
-float L2SqrSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
-                                     const void *qty_ptr) {
+float f_L2SqrSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
+                                       const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     size_t qty16 = qty >> 4 << 4;
-    float res = L2SqrSIMD16Ext_AVX512(pVect1v, pVect2v, &qty16);
+    float res = f_L2SqrSIMD16Ext_AVX512(pVect1v, pVect2v, &qty16);
     float *pVect1 = (float *)pVect1v + qty16;
     float *pVect2 = (float *)pVect2v + qty16;
 
     size_t qty_left = qty - qty16;
-    float res_tail = L2Sqr(pVect1, pVect2, &qty_left);
+    float res_tail = f_L2Sqr(pVect1, pVect2, &qty_left);
     return (res + res_tail);
 }
 
-float L2SqrSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float f_L2SqrSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
+                                      const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     size_t qty4 = qty >> 2 << 2;
-    float res = L2SqrSIMD4Ext_AVX512(pVect1v, pVect2v, &qty4);
+    float res = f_L2SqrSIMD4Ext_AVX512(pVect1v, pVect2v, &qty4);
     float *pVect1 = (float *)pVect1v + qty4;
     float *pVect2 = (float *)pVect2v + qty4;
 
     size_t qty_left = qty - qty4;
-    float res_tail = L2Sqr(pVect1, pVect2, &qty_left);
+    float res_tail = f_L2Sqr(pVect1, pVect2, &qty_left);
     return (res + res_tail);
 }

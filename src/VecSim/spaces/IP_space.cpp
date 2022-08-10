@@ -1,70 +1,117 @@
-#include "IP_space.h"
-#include "space_aux.h"
+
+#include <cstdlib>
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/IP/IP_AVX512.h"
+#include "VecSim/spaces/IP/IP_AVX.h"
+#include "VecSim/spaces/IP/IP_SSE.h"
+namespace Spaces {
 
-InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
-    : SpaceInterface(allocator) {
-    fstdistfunc_ = InnerProduct;
+dist_func_ptr_ty<float> IP_FLOAT_GetDistFunc(size_t dim) {
 
-    // General optimization logic:
-    // SIMD16 perform computations on 16 float at a time in each iteration, while SIMD4 perform
-    // computations on 16 float on most of the vector, and on the residual performing on 4 floats at
-    // a time.
-    // When we have a dimension that is not divisible by 4, we should use SIMD16ExtResiduals only if
-    // the reminder is less than 4, because otherwise we can still perform SIMD4 operations.
 #if defined(M1)
-
 #elif defined(__x86_64__)
-    Arch_Optimization arch_opt = getArchitectureOptimization();
+
+	dist_func_ptr_ty<float> ret_dist_func;
+	OptimizationScore optimization_type = GetDimOptimizationScore(dim);
+
     if (arch_opt == ARCH_OPT_AVX512) {
 #ifdef __AVX512F__
-#include "VecSim/spaces/IP/IP_AVX512.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = InnerProductSIMD16Ext_AVX512;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = InnerProductSIMD4Ext_AVX512;
-        } else if (dim > 16 && dim % 16 < 4) {
-            fstdistfunc_ = InnerProductSIMD16ExtResiduals_AVX512;
-        } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4ExtResiduals_AVX512;
-        }
+
+		static dist_func_ptr_ty<float> dist_funcs[OPTIMIZATIONS_COUNT] = {
+			f_InnerProductSIMD16Ext_AVX512, f_InnerProductSIMD4Ext_AVX512, 
+			f_InnerProductSIMD16ExtResiduals_AVX512,
+			f_InnerProductSIMD4ExtResiduals_AVX512, f_InnerProduct};
+		
+		ret_dist_func = dist_funcs[optimization_type];
 #endif
     } else if (arch_opt == ARCH_OPT_AVX) {
 #ifdef __AVX__
-#include "VecSim/spaces/IP/IP_AVX.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = InnerProductSIMD16Ext_AVX;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = InnerProductSIMD4Ext_AVX;
-        } else if (dim > 16 && dim % 16 < 4) {
-            fstdistfunc_ = InnerProductSIMD16ExtResiduals_AVX;
-        } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4ExtResiduals_AVX;
-        }
+	
+		static dist_func_ptr_ty<float> dist_funcs[OPTIMIZATIONS_COUNT] = {
+			f_InnerProductSIMD16Ext_AVX, f_InnerProductSIMD4Ext_AVX, 
+			f_InnerProductSIMD16ExtResiduals_AVX,
+			f_InnerProductSIMD4ExtResiduals_AVX, f_InnerProduct};
+		
+		ret_dist_func = dist_funcs[optimization_type];
+
 #endif
     } else if (arch_opt == ARCH_OPT_SSE) {
 #ifdef __SSE__
-#include "VecSim/spaces/IP/IP_SSE.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = InnerProductSIMD16Ext_SSE;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = InnerProductSIMD4Ext_SSE;
-        } else if (dim > 16 && dim % 16 < 4) {
-            fstdistfunc_ = InnerProductSIMD16ExtResiduals_SSE;
-        } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4ExtResiduals_SSE;
-        }
+
+		static dist_func_ptr_ty<float> dist_funcs[OPTIMIZATIONS_COUNT] = {
+			f_InnerProductSIMD16Ext_SSE, f_InnerProductSIMD4Ext_SSE, 
+			f_InnerProductSIMD16ExtResiduals_SSE,
+			f_InnerProductSIMD4ExtResiduals_SSE, f_InnerProduct};
+		
+		ret_dist_func = dist_funcs[optimization_type];
+
 #endif
     }
 #endif // __x86_64__
-    dim_ = dim;
-    data_size_ = dim * sizeof(float);
+
+    
+
+    return ret_dist_func;
 }
 
-size_t InnerProductSpace::get_data_size() const { return data_size_; }
 
-DISTFUNC<float> InnerProductSpace::get_dist_func() const { return fstdistfunc_; }
+dist_func_ptr_ty<double> IP_DOUBLE_GetDistFunc(size_t dim) {
 
-void *InnerProductSpace::get_data_dim() { return &dim_; }
+#if defined(M1)
+#elif defined(__x86_64__)
 
-InnerProductSpace::~InnerProductSpace() = default;
+	dist_func_ptr_ty<double> ret_dist_func;
+	OptimizationScore optimization_type = GetDimOptimizationScore(dim);
+
+    if (arch_opt == ARCH_OPT_AVX512) {
+#ifdef __AVX512F__
+
+        
+		static dist_func_ptr_ty<double> dist_funcs[OPTIMIZATIONS_COUNT] = {
+			d_InnerProductSIMD16Ext_AVX512, 
+			d_InnerProductSIMD4Ext_AVX512, 
+			d_InnerProductSIMD16ExtResiduals_AVX512,
+			d_InnerProductSIMD4ExtResiduals_AVX512, 
+			d_InnerProduct};
+		
+		ret_dist_func = dist_funcs[optimization_type];
+#endif
+    } else if (arch_opt == ARCH_OPT_AVX) {
+#ifdef __AVX__
+
+		static dist_func_ptr_ty<double> dist_funcs[OPTIMIZATIONS_COUNT] = {
+			d_InnerProductSIMD16Ext_AVX, 
+			d_InnerProductSIMD4Ext_AVX, 
+			d_InnerProductSIMD16ExtResiduals_AVX,
+			d_InnerProductSIMD4ExtResiduals_AVX, 
+			d_InnerProduct};
+		
+		ret_dist_func = dist_funcs[optimization_type];
+        
+
+#endif
+    } else if (arch_opt == ARCH_OPT_SSE) {
+#ifdef __SSE__
+
+		static dist_func_ptr_ty<double> dist_funcs[OPTIMIZATIONS_COUNT] = {
+			d_InnerProductSIMD16Ext_SSE, 
+			d_InnerProductSIMD4Ext_SSE, 
+			d_InnerProductSIMD16ExtResiduals_SSE,
+			d_InnerProductSIMD4ExtResiduals_SSE,
+			d_InnerProduct};
+		
+		ret_dist_func = dist_funcs[optimization_type];
+        
+
+#endif
+    }
+#endif // __x86_64__
+    
+    return ret_dist_func;
+}
+} // namespace Spaces
+
+

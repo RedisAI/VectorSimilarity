@@ -58,15 +58,15 @@ BENCHMARK_DISTANCE_F(AVX, IP_4_Residuals, InnerProductSIMD4ExtResiduals_AVX)
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
 
-BENCHMARK_DISTANCE_F(SSE, L2_16, L2SqrSIMD16Ext_SSE)
-BENCHMARK_DISTANCE_F(SSE, L2_4, L2SqrSIMD4Ext_SSE)
-BENCHMARK_DISTANCE_F(SSE, L2_16_Residuals, L2SqrSIMD16ExtResiduals_SSE)
-BENCHMARK_DISTANCE_F(SSE, L2_4_Residuals, L2SqrSIMD4ExtResiduals_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_16, f_L2SqrSIMD16Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_4, f_L2SqrSIMD4Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_16_Residuals, f_L2SqrSIMD16ExtResiduals_SSE)
+BENCHMARK_DISTANCE_F(SSE, L2_4_Residuals, f_L2SqrSIMD4ExtResiduals_SSE)
 
-BENCHMARK_DISTANCE_F(SSE, IP_16, InnerProductSIMD16Ext_SSE)
-BENCHMARK_DISTANCE_F(SSE, IP_4, InnerProductSIMD4Ext_SSE)
-BENCHMARK_DISTANCE_F(SSE, IP_16_Residuals, InnerProductSIMD16ExtResiduals_SSE)
-BENCHMARK_DISTANCE_F(SSE, IP_4_Residuals, InnerProductSIMD4ExtResiduals_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_16, f_InnerProductSIMD16Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_4, f_InnerProductSIMD4Ext_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_16_Residuals, f_InnerProductSIMD16ExtResiduals_SSE)
+BENCHMARK_DISTANCE_F(SSE, IP_4_Residuals, f_InnerProductSIMD4ExtResiduals_SSE)
 #endif // SSE
 
 // Naive algorithms
@@ -76,13 +76,13 @@ BENCHMARK_DISTANCE_F(SSE, IP_4_Residuals, InnerProductSIMD4ExtResiduals_SSE)
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_IP)(benchmark::State &st) {
     for (auto _ : st) {
-        InnerProduct(v1, v2, &dim);
+        f_InnerProduct(v1, v2, &dim);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_L2)(benchmark::State &st) {
     for (auto _ : st) {
-        L2Sqr(v1, v2, &dim);
+        f_L2Sqr(v1, v2, &dim);
     }
 }
 

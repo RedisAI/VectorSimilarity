@@ -2,6 +2,7 @@
 
 #include "VecSim/batch_iterator.h"
 #include "hnsw_wrapper.h"
+#include "VecSim/spaces/spaces.h"
 
 typedef size_t labelType;
 typedef unsigned int idType;
@@ -14,8 +15,9 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<float, idType>>;
 class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
     HNSWIndex *index_wrapper;
-    std::shared_ptr<SpaceInterface<float>> space;
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index;
+    Spaces::dist_func_ptr_ty<float> dist_func;
+    size_t dim;
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     unsigned short visited_tag;                 // Used to mark nodes that were scanned.
     idType entry_point;                         // Internal id of the node to begin the scan from.

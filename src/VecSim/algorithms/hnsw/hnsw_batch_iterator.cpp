@@ -46,14 +46,13 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         this->depleted = true;
         return top_candidates;
     }
-    auto dist_func = this->space->get_dist_func();
 
     // In the first iteration, add the entry point to the empty candidates set.
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
         float dist =
             dist_func(this->getQueryBlob(), this->hnsw_index->getDataByInternalId(entry_point),
-                      this->space->get_data_dim());
+                      &dim);
         lower_bound = dist;
         this->visitNode(entry_point);
         candidates.emplace(dist, entry_point);
@@ -124,7 +123,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
             this->visitNode(candidate_id);
             char *candidate_data = this->hnsw_index->getDataByInternalId(candidate_id);
             float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
-                                             this->space->get_data_dim());
+                                             &dim);
             candidates.emplace(candidate_dist, candidate_id);
         }
     }
@@ -143,9 +142,10 @@ HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrap
                           std::move(allocator)),
       index_wrapper(index_wrapper), depleted(false), top_candidates_extras(this->allocator),
       candidates(this->allocator) {
-    this->space = index_wrapper->getSpace();
 
     this->hnsw_index = index_wrapper->getHNSWIndex();
+    this->dist_func = hnsw_index->GetDistFunc();
+    this->dim = index_wrapper->GetDim();
     this->entry_point = hnsw_index->getEntryPointId();
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = hnsw_index->getVisitedList();

@@ -31,11 +31,12 @@ public:
 
     void setEf(size_t ef);
     inline std::shared_ptr<hnswlib::HierarchicalNSW<float>> getHNSWIndex() { return hnsw; }
-    inline std::shared_ptr<SpaceInterface<float>> getSpace() { return space; }
+  //TODO to remove   
+    inline Spaces::dist_func_ptr_ty<float> GetDistFunc() { return hnsw->GetDistFunc(); }
+    inline size_t GetDim() { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
 
 private:
-    std::shared_ptr<SpaceInterface<float>> space;
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw;
     VecSearchMode last_mode;
 };

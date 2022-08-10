@@ -1,21 +1,9 @@
 #pragma once
+#include "VecSim/spaces/spaces.h"
+namespace Spaces {
 
-#include "space_interface.h"
-
-#include <cstdlib>
-#include <stddef.h>
-
-class InnerProductSpace : public SpaceInterface<float> {
-
-    DISTFUNC<float> fstdistfunc_;
-    size_t data_size_;
-    size_t dim_;
-
-public:
-    explicit InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator> allocator);
-    ~InnerProductSpace();
-
-    size_t get_data_size() const;
-    DISTFUNC<float> get_dist_func() const;
-    void *get_data_dim();
-};
+dist_func_ptr_ty<float> IP_FLOAT_GetDistFunc(size_t dim);
+dist_func_ptr_ty<double> IP_DOUBLE_GetDistFunc(size_t dim);
+/* void IP_SetDistFunc(size_t dim, dist_func_ptr_ty<float> *index_dist_func);
+void IP_SetDistFunc(size_t dim, dist_func_ptr_ty<double> *index_dist_func); */
+} // namespace Spaces
