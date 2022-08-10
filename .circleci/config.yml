@@ -12,10 +12,6 @@ parameters:
     default: false
     type: boolean
 
-  run_nightly_flow:
-    default: true
-    type: boolean
-
 commands:
   abort_for_docs:
     steps:
@@ -285,18 +281,13 @@ jobs:
 
   nightly_flow:
     resource_class: large
-    # Run on the same machine - for steady benchmarks
-    machine:
-      image: ubuntu-2004:202010-01
+    docker:
+      - image: redisfab/rmbuilder:6.2.5-x64-bullseye
     steps:
-      - setup-ubuntu-sudo
       - build-steps
-      - benchmark
       - run:
           name: Redis tests
-          command: |
-            python3 -m pip install -r sbin/requirements.txt
-            python3 -m tox -e modtest
+          command: python3 -m tox -e modtest
 
   codecov:
     resource_class: large
@@ -447,22 +438,21 @@ workflows:
           <<: *on-any-branch
 
   nightly:
-    when:
-      << pipeline.parameters.run_nightly_flow >>
     triggers:
       - schedule:
-          cron: "40 8 * * *"
+          cron: "25 12 * * *"
           filters:
             branches:
               only:
                 - main
                 - perf_test_google_benchmark_in_CI #todo: remove before merge
     jobs:
-    - nightly_flow:
+    - nightly_flow
+    - run-benchmarks:
         context: common
     - sanitize:
-          name: sanitize-<< matrix.san-type >>
-          matrix:
-            parameters:
-#               san-type: [address, memory]
-              san-type: [address]
+        name: sanitize-<< matrix.san-type >>
+        matrix:
+          parameters:
+#              san-type: [address, memory]
+            san-type: [address]
