@@ -79,7 +79,7 @@ public:
     /**
      * @brief Return the number of unique labels in the index using its SizeFn.
      *
-     * @return index size.
+     * @return index label count.
      */
     virtual size_t indexLabelCount() const = 0;
 

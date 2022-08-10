@@ -82,6 +82,7 @@ typedef struct {
 
 typedef struct {
     VecSimAlgo algo; // Algorithm to use.
+    bool multi;      // Determines if the index should multi-index or not.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
@@ -120,7 +121,7 @@ typedef struct {
     size_t batchSize;
     VecSearchMode searchMode;
     void *timeoutCtx; // This parameter is not exposed directly to the user, and we shouldn't expect
-                      // to get it from the parameters reslove function.
+                      // to get it from the parameters resolve function.
 } VecSimQueryParams;
 
 /**
