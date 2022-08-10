@@ -2,7 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include <cmath>
 
 class BruteForceTest : public ::testing::Test {
@@ -67,10 +67,10 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
 
     // id2label size should remain the same, although we seemingly tried to exceed
     // initialcapacity.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), n);
 
     // Check update.
-    VectorBlock *block = reinterpret_cast<BruteForceIndex *>(index)->getVectorVectorBlock(0);
+    VectorBlock *block = reinterpret_cast<BruteForceIndex_Single *>(index)->getVectorVectorBlock(0);
     float *vector_data = block->getVector(0);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 2);
@@ -86,13 +86,13 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // VectorBlocks vector is empty.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->vectorBlocks.size(), 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->vectorBlocks.size(), 0);
     // id2label size shouldnt change.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), n);
 
     // Label2id of the last vector doesn't exist.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->labelToIdLookup.find(1),
-              reinterpret_cast<BruteForceIndex *>(index)->labelToIdLookup.end());
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->labelToIdLookup.find(1),
+              reinterpret_cast<BruteForceIndex_Single *>(index)->labelToIdLookup.end());
 
     VecSimIndex_Free(index);
 }
@@ -119,7 +119,7 @@ TEST_F(BruteForceTest, resizeNAlignIndex) {
         }
         VecSimIndex_AddVector(index, (const void *)a, i);
     }
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // remove invalid id
@@ -127,14 +127,15 @@ TEST_F(BruteForceTest, resizeNAlignIndex) {
 
     // This should do nothing
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), n);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
     VecSimIndex_AddVector(index, (const void *)a, n + 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
     // Check new capacity size, should be blockSize * 2.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 2 * blockSize);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(),
+              2 * blockSize);
 
     // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
     // to check that it stays aligned with blocksize.
@@ -151,7 +152,8 @@ TEST_F(BruteForceTest, resizeNAlignIndex) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
 
     // Check new capacity size, should be blockSize * 3.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 3 * blockSize);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(),
+              3 * blockSize);
 
     VecSimIndex_Free(index);
 }
@@ -181,7 +183,7 @@ TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
     }
 
     size_t idToLabelMapping_size =
-        reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+        reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size();
     // The idToLabelMapping size shouldnt change, should remain n.
     ASSERT_EQ(idToLabelMapping_size, n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), bs + 1);
@@ -194,7 +196,8 @@ TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
 
     // New idToLabelMapping size = idToLabelMapping_size - block_size - number_of_vectors_to_align =
     // 10  - 3 - 10 % 3 (1) = 6
-    idToLabelMapping_size = reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+    idToLabelMapping_size =
+        reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size();
     ASSERT_EQ(idToLabelMapping_size, n - bs - n % bs);
 
     // Delete all the vectors to decrease idToLabelMapping size by another bs.
@@ -203,20 +206,20 @@ TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
         VecSimIndex_DeleteVector(index, i);
         ++i;
     }
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), bs);
     // Add and delete a vector to acheive:
     // size % block_size == 0 && size + bs <= idToLabelMapping_size(3).
     // idToLabelMapping_size should be resized to zero.
     VecSimIndex_AddVector(index, (const void *)a, 0);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), 0);
 
     // Do it again. This time after adding a vector idToLabelMapping_size is increased by bs.
     // Upon deletion it will be resized to zero again.
     VecSimIndex_AddVector(index, (const void *)a, 0);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), bs);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), bs);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -249,7 +252,7 @@ TEST_F(BruteForceTest, brute_force_empty_index) {
     VecSimIndex_DeleteVector(index, 1);
     // The idToLabelMapping_size should change to be aligned with the vector size.
     size_t idToLabelMapping_size =
-        reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size();
+        reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size();
 
     ASSERT_EQ(idToLabelMapping_size, n - n % bs - bs);
 
@@ -260,7 +263,7 @@ TEST_F(BruteForceTest, brute_force_empty_index) {
     // The idToLabelMapping_size should remain unchanged, as we are trying to delete a label that
     // doesnt exist.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(),
               idToLabelMapping_size);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -429,10 +432,10 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // The vector block should be removed.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->getVectorBlocks().size(), 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->getVectorBlocks().size(), 0);
 
     // id2label size should remain the same.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(),
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(),
               initial_capacity);
 
     // Reinsert the same vectors under the same ids.
@@ -522,7 +525,7 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
                                              .initialCapacity = initiail_capacity,
                                              .blockSize = 3}};
     VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex *bf_index = reinterpret_cast<BruteForceIndex *>(index);
+    BruteForceIndex_Single *bf_index = reinterpret_cast<BruteForceIndex_Single *>(index);
 
     // idToLabelMapping initial size equals n.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), initiail_capacity);
@@ -737,7 +740,7 @@ TEST_F(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    reinterpret_cast<BruteForceIndex *>(index)->count = 1e4;
+    reinterpret_cast<BruteForceIndex_Single *>(index)->count = 1e4;
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
@@ -976,7 +979,7 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // id2label size should be the same as index size.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), n);
 
     // After deleting the first vector, the second one will be moved to the first block.
     for (size_t i = 0; i < n; i++) {
@@ -984,7 +987,7 @@ TEST_F(BruteForceTest, brute_force_zero_minimal_capacity) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     // id2label size should be the same as index size
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex *>(index)->idToLabelMapping.size(), 0);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single *>(index)->idToLabelMapping.size(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -1367,7 +1370,7 @@ TEST_F(BruteForceTest, preferAdHocOptimization) {
             VecSimIndex *index = VecSimIndex_New(&params);
 
             // Set the index size artificially to be the required one.
-            reinterpret_cast<BruteForceIndex *>(index)->count = index_size;
+            reinterpret_cast<BruteForceIndex_Single *>(index)->count = index_size;
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
                 bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50, true);

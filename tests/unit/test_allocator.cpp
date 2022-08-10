@@ -2,7 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
-#include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
@@ -102,8 +102,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
                        .blockSize = 1};
 
     float vec[128] = {};
-    BruteForceIndex *bfIndex = new (allocator) BruteForceIndex(&params, allocator);
-    expectedAllocationSize += sizeof(BruteForceIndex) + vecsimAllocationOverhead;
+    BruteForceIndex_Single *bfIndex = new (allocator) BruteForceIndex_Single(&params, allocator);
+    expectedAllocationSize += sizeof(BruteForceIndex_Single) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
