@@ -4,10 +4,6 @@ parameters:
     default: true
     type: boolean
 
-  run_benchmark_flow:
-    default: true
-    type: boolean
-
   run_benchmark_flow_label:
     default: false
     type: boolean
@@ -420,11 +416,6 @@ workflows:
           <<: *on-any-branch
       - codecov:
           <<: *on-any-branch
-
-  benchmark_flow:
-    when:
-        << pipeline.parameters.run_benchmark_flow >>
-    jobs:
       - run-benchmarks:
           context: common
           <<: *on-perf-and-version-tags
@@ -440,12 +431,11 @@ workflows:
   nightly:
     triggers:
       - schedule:
-          cron: "25 12 * * *"
+          cron: "0 0 * * *"
           filters:
             branches:
               only:
                 - main
-                - perf_test_google_benchmark_in_CI #todo: remove before merge
     jobs:
     - nightly_flow
     - run-benchmarks:
