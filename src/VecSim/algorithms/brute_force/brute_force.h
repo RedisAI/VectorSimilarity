@@ -3,7 +3,6 @@
 #include "vector_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include <memory>
 #include <queue>

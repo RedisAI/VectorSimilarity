@@ -4,7 +4,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/IP_space.h"
-#include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
@@ -895,7 +894,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(VecSimType vecType, VecSimMetric metric
                                          std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
-    : VecsimBaseObject(allocator), data_size_(sizeof(vecType)), dim(dim),
+    : VecsimBaseObject(allocator), data_size_(sizeof(vecType) * dim), dim(dim),
       element_levels_(max_elements, allocator), label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION

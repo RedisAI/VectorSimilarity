@@ -10,12 +10,12 @@
 #include "VecSim/spaces/L2/L2_SSE.h"
 namespace Spaces {
 
-dist_func_ptr_ty<float> L2_FLOAT_GetDistFunc(size_t dim) {
+dist_func_ptr_ty<float> L2_FLOAT_GetOptDistFunc(size_t dim) {
 
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    dist_func_ptr_ty<float> ret_dist_func;
+    dist_func_ptr_ty<float> ret_dist_func = f_L2Sqr;
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
 
     if (arch_opt == ARCH_OPT_AVX512) {
@@ -53,12 +53,12 @@ dist_func_ptr_ty<float> L2_FLOAT_GetDistFunc(size_t dim) {
     return ret_dist_func;
 }
 
-dist_func_ptr_ty<double> L2_DOUBLE_GetDistFunc(size_t dim) {
+dist_func_ptr_ty<double> L2_DOUBLE_GetOptDistFunc(size_t dim) {
 
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    dist_func_ptr_ty<double> ret_dist_func;
+    dist_func_ptr_ty<double> ret_dist_func = d_L2Sqr;
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
 
     if (arch_opt == ARCH_OPT_AVX512) {

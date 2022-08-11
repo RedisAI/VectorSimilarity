@@ -9,12 +9,12 @@
 #include "VecSim/spaces/IP/IP_SSE.h"
 namespace Spaces {
 
-dist_func_ptr_ty<float> IP_FLOAT_GetDistFunc(size_t dim) {
+dist_func_ptr_ty<float> IP_FLOAT_GetOptDistFunc(size_t dim) {
 
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    dist_func_ptr_ty<float> ret_dist_func;
+    dist_func_ptr_ty<float> ret_dist_func = f_InnerProduct;
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
 
     if (arch_opt == ARCH_OPT_AVX512) {
@@ -55,12 +55,12 @@ dist_func_ptr_ty<float> IP_FLOAT_GetDistFunc(size_t dim) {
     return ret_dist_func;
 }
 
-dist_func_ptr_ty<double> IP_DOUBLE_GetDistFunc(size_t dim) {
+dist_func_ptr_ty<double> IP_DOUBLE_GetOptDistFunc(size_t dim) {
 
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    dist_func_ptr_ty<double> ret_dist_func;
+    dist_func_ptr_ty<double> ret_dist_func = d_InnerProduct;
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
 
     if (arch_opt == ARCH_OPT_AVX512) {

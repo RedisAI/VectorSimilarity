@@ -32,11 +32,11 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<float> *index
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
-        *index_dist_func = IP_FLOAT_GetDistFunc(dim);
+        *index_dist_func = IP_FLOAT_GetOptDistFunc(dim);
 
     } else if (metric == VecSimMetric_L2) {
 
-        *index_dist_func = L2_FLOAT_GetDistFunc(dim);
+        *index_dist_func = L2_FLOAT_GetOptDistFunc(dim);
     }
 }
 
@@ -44,11 +44,11 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<double> *inde
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
-        *index_dist_func = IP_DOUBLE_GetDistFunc(dim);
+        *index_dist_func = IP_DOUBLE_GetOptDistFunc(dim);
 
     } else if (metric == VecSimMetric_L2) {
 
-        *index_dist_func = L2_DOUBLE_GetDistFunc(dim);
+        *index_dist_func = L2_DOUBLE_GetOptDistFunc(dim);
     }
 }
 

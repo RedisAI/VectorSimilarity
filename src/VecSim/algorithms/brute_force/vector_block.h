@@ -3,7 +3,6 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/utils/vecsim_stl.h"
 
-#include "VecSim/spaces/space_interface.h"
 #include "VecSim/utils/vec_utils.h"
 
 typedef size_t labelType;
