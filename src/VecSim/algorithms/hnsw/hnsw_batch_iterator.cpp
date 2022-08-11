@@ -108,9 +108,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         auto *node_links = (unsigned int *)(cur_node_links_header + 1);
 
         __builtin_prefetch(visited_list->getElementsTags() + *node_links);
-        __builtin_prefetch(visited_list->getElementsTags() + *node_links + 64);
         __builtin_prefetch(hnsw_index->getDataByInternalId(*node_links));
-        __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + 1)));
 
         for (size_t j = 0; j < links_num; j++) {
             unsigned int candidate_id = *(node_links + j);
@@ -126,6 +124,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
             float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
                                              this->space->get_data_dim());
             candidates.emplace(candidate_dist, candidate_id);
+            __builtin_prefetch(hnsw_index->get_linklist_at_level(candidates.top().second, 0));
         }
     }
 
