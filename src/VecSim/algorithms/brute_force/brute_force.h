@@ -54,5 +54,6 @@ private:
     friend class BruteForceTest_preferAdHocOptimization_Test;
     friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
     friend class BruteForceTest_resizeIndex_Test;
+    friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
 #endif
 };
