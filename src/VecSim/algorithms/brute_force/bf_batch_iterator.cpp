@@ -130,12 +130,9 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
     // Only in the first iteration we need to compute all the scores
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
-        VecSimQueryResult_Code rc;
-        if (this->index->isMultiValue()) {
-            rc = calculateScores_multi();
-        } else {
-            rc = calculateScores_single();
-        }
+
+        auto rc = calculateScores();
+
         if (VecSim_OK != rc) {
             return {NULL, rc};
         }
@@ -164,7 +161,7 @@ void BF_BatchIterator::reset() {
     this->scores_valid_start_pos = 0;
 }
 
-VecSimQueryResult_Code BF_BatchIterator::calculateScores_single() {
+VecSimQueryResult_Code BF_BatchIterator::calculateScores() {
 
     this->scores.reserve(this->index->indexLabelCount());
     vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
@@ -186,5 +183,3 @@ VecSimQueryResult_Code BF_BatchIterator::calculateScores_single() {
     assert(curr_id == index->indexSize());
     return VecSim_QueryResult_OK;
 }
-
-VecSimQueryResult_Code BF_BatchIterator::calculateScores_multi() { return VecSim_QueryResult_Err; }
