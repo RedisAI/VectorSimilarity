@@ -97,51 +97,9 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     VecSimIndex_Free(index);
 }
 
-<<<<<<< HEAD
 /**** resizing cases ****/
 
 TEST_F(BruteForceTest, resizeNAlignIndex) {
-=======
-TEST_F(BruteForceTest, brute_force_vector_update_test) {
-    size_t dim = 4;
-    size_t n = 1;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                             .dim = dim,
-                                             .metric = VecSimMetric_IP,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-    float a[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = 1.0f;
-    }
-    VecSimIndex_AddVector(index, (const void *)a, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-
-    // Prepare new vector data.
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = 2.0f;
-    }
-    // Add another vector under the same id, different data.
-    VecSimIndex_AddVector(index, (const void *)a, 1);
-
-    // Index size shouldn't change.
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-
-    // Check update of the vector data.
-    VectorBlock *block = reinterpret_cast<BruteForceIndex *>(index)->getVectorBlocks()[0];
-    float *vector_data = block->getVector(0);
-    for (size_t i = 0; i < dim; ++i) {
-        ASSERT_EQ(*vector_data, 2.0f);
-        ++vector_data;
-    }
-    VecSimIndex_Free(index);
-}
-
-TEST_F(BruteForceTest, resizeIndex) {
->>>>>>> main
     size_t dim = 4;
     size_t n = 15;
     size_t blockSize = 10;
