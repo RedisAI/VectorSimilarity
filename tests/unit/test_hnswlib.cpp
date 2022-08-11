@@ -262,7 +262,7 @@ TEST_F(HNSWLibTest, emptyIndex) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Try to remove from an empty index - should faul because label doesnt exist.
+    // Try to remove from an empty index - should fail because label doesnt exist.
     VecSimIndex_DeleteVector(index, 0);
 
     // Add one vector.

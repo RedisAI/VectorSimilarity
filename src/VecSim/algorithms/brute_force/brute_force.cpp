@@ -17,8 +17,7 @@ using namespace std;
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
-      labelToIdLookup(allocator), idToVectorBlockMemberMapping(allocator), deletedIds(allocator),
-      vectorBlocks(allocator),
+      labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       space(params->metric == VecSimMetric_L2
                 ? static_cast<SpaceInterface<float> *>(new (allocator)
@@ -26,7 +25,7 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
                 : static_cast<SpaceInterface<float> *>(
                       new (allocator) InnerProductSpace(params->dim, allocator))),
       last_mode(EMPTY_MODE) {
-    this->idToVectorBlockMemberMapping.resize(params->initialCapacity);
+    this->idToLabelMapping.resize(params->initialCapacity);
     this->dist_func = this->space->get_dist_func();
 }
 
@@ -43,24 +42,27 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
            sizeof(size_t);
     // Parameters related part.
-    est += params->initialCapacity * sizeof(decltype(idToVectorBlockMemberMapping)::value_type) +
-           sizeof(size_t);
+
+    if (params->initialCapacity) {
+        est += params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) +
+               sizeof(size_t);
+    }
 
     return est;
 }
 
 size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
-    return params->dim * sizeof(float) + sizeof(labelType);
+    return params->dim * sizeof(float) + sizeof(idType);
 }
 
 void BruteForceIndex::updateVector(idType id, const void *vector_data) {
+
     // Get the vector block
-    VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
-    VectorBlock *vectorBlock = vectorBlockMember->block;
-    size_t index = vectorBlockMember->index;
+    VectorBlock *vectorBlock = getVectorVectorBlock(id);
+    size_t index = getVectorRelativeIndex(id);
+
     // Update vector data in the block.
-    float *destinaion = vectorBlock->getVector(index);
-    memcpy(destinaion, vector_data, this->dim * sizeof(float));
+    vectorBlock->updateVector(index, vector_data);
 }
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
@@ -73,103 +75,112 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
         vector_data = normalized_data;
     }
 
-    idType id = 0;
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
-        id = optionalID->second;
+        idType id = optionalID->second;
         updateVector(id, vector_data);
         return true;
-    } else {
-        // Try re-use deleted id.
-        if (this->deletedIds.size() != 0) {
-            id = *this->deletedIds.begin();
-            this->deletedIds.erase(this->deletedIds.begin());
-        } else {
-            id = count;
-            // Save current id2vec size.
-            size_t ids_mapping_size = idToVectorBlockMemberMapping.size();
-
-            // If it's full - resize the index to be a multiplication of block size.
-            if (id >= ids_mapping_size) {
-                size_t last_block_vectors_count = count % vectorBlockSize;
-                this->idToVectorBlockMemberMapping.resize(ids_mapping_size + vectorBlockSize -
-                                                          last_block_vectors_count);
-            }
-        }
     }
 
-    // Anyway - increse count.
-    ++count;
+    // Give the vector new id and increase count.
+    idType id = count++;
 
     // Get vector block to store the vector in.
-    VectorBlock *vectorBlock;
-    if (this->vectorBlocks.size() == 0) {
-        // No vector blocks, create new one.
-        vectorBlock =
+
+    // if vectorBlocks vector is empty or last_vector_block is full create a new block
+    if (id % vectorBlockSize == 0) {
+        VectorBlock *new_vectorBlock =
             new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
-        this->vectorBlocks.push_back(vectorBlock);
-    } else {
-        // Get the last vector block.
-        vectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
-        if (vectorBlock->getLength() == this->vectorBlockSize) {
-            // Last vector block is full, create a new one.
-            vectorBlock = new (this->allocator)
-                VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
-            this->vectorBlocks.push_back(vectorBlock);
-        }
+        this->vectorBlocks.push_back(new_vectorBlock);
     }
 
-    // Create vector block membership.
-    VectorBlockMember *vectorBlockMember = new (this->allocator) VectorBlockMember(this->allocator);
-    this->idToVectorBlockMemberMapping[id] = vectorBlockMember;
-    vectorBlockMember->label = label;
-    vectorBlock->addVector(vectorBlockMember, vector_data);
+    // get the last vectors block
+    VectorBlock *vectorBlock = this->vectorBlocks.back();
+
+    assert(vectorBlock == getVectorVectorBlock(id));
+
+    // add vector data to vectorBlock
+    vectorBlock->addVector(vector_data);
+
+    // if idToLabelMapping is full,
+    // resize and align idToLabelMapping by vectorBlockSize
+    size_t idToLabelMapping_size = this->idToLabelMapping.size();
+
+    if (id >= idToLabelMapping_size) {
+        size_t last_block_vectors_count = id % vectorBlockSize;
+        this->idToLabelMapping.resize(
+            idToLabelMapping_size + vectorBlockSize - last_block_vectors_count, 0);
+    }
+
+    // add label to idToLabelMapping
+    setVectorLabel(id, label);
+
+    // add id to label:id map
     this->labelToIdLookup.emplace(label, id);
+
     return true;
 }
 
 int BruteForceIndex::deleteVector(size_t label) {
-    idType id;
-    auto optionalId = this->labelToIdLookup.find(label);
-    if (optionalId == this->labelToIdLookup.end()) {
+
+    // Find the id to delete.
+    auto deleted_label_id_pair = this->labelToIdLookup.find(label);
+    if (deleted_label_id_pair == this->labelToIdLookup.end()) {
         // Nothing to delete.
         return true;
-    } else {
-        id = optionalId->second;
     }
 
-    // Get the vector block, and vector block member of the vector to be deleted.
-    VectorBlockMember *vectorBlockMember = this->idToVectorBlockMemberMapping[id];
-    VectorBlock *vectorBlock = vectorBlockMember->block;
-    size_t vectorIndex = vectorBlockMember->index;
+    // Get deleted vector id.
+    idType id_to_delete = deleted_label_id_pair->second;
 
-    VectorBlock *lastVectorBlock = this->vectorBlocks[this->vectorBlocks.size() - 1];
-    VectorBlockMember *lastVectorBlockMember =
-        lastVectorBlock->getMember(lastVectorBlock->getLength() - 1);
+    // Get last vector id and label
+    idType last_idx = --count;
+    labelType last_idx_label = getVectorLabel(last_idx);
 
-    // Swap the last vector with the deleted vector.
-    vectorBlock->setMember(vectorIndex, lastVectorBlockMember);
+    // Get last vector data.
+    VectorBlock *last_vector_block = vectorBlocks.back();
+    assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    float *destination = vectorBlock->getVector(vectorIndex);
-    float *origin = lastVectorBlock->removeAndFetchVector();
-    memmove(destination, origin, sizeof(float) * this->dim);
+    float *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
-    // Delete the vector block membership.
-    delete vectorBlockMember;
-    this->idToVectorBlockMemberMapping[id] = NULL;
-    // Add deleted id to reusable ids.
-    this->deletedIds.emplace(id);
-    this->labelToIdLookup.erase(label);
+    // Remove the pair of the deleted vector.
+    labelToIdLookup.erase(label);
+
+    // If we are *not* trying to remove the last vector, update mappind and move
+    // the data of the last vector in the index in place of the deleted vector.
+    if (id_to_delete != last_idx) {
+        // Update id2labelmapping.
+        // Put the label of the last_id in the deleted_id.
+        setVectorLabel(id_to_delete, last_idx_label);
+
+        // Update label2id mapping.
+        // Update this id in label:id pair of last index.
+        setLabelToId(last_idx_label, id_to_delete);
+
+        // Get the vectorBlock and the relative index of the deleted id.
+        VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
+        size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
+
+        // Put data of last vector inpalce of the deleted vector.
+        deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
+    }
 
     // If the last vector block is emtpy.
-    if (lastVectorBlock->getLength() == 0) {
-        delete lastVectorBlock;
+    if (last_vector_block->getLength() == 0) {
+        delete last_vector_block;
         this->vectorBlocks.pop_back();
+
+        // Resize and align the id2labelmapping.
+        size_t id2label_size = idToLabelMapping.size();
+        // If the new size is smaller by at least one block comparing to the id2labemapping
+        // align to be a multlipication of blocksize  and resize by one block.
+        if (count + vectorBlockSize <= id2label_size) {
+            size_t vector_to_align_count = id2label_size % vectorBlockSize;
+            this->idToLabelMapping.resize(id2label_size - vectorBlockSize - vector_to_align_count);
+        }
     }
 
-    // Reduce index size.
-    this->count--;
     return true;
 }
 
@@ -179,10 +190,12 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
         return INVALID_SCORE;
     }
     idType id = optionalId->second;
-    VectorBlockMember *vector_index = this->idToVectorBlockMemberMapping[id];
 
-    return this->dist_func(vector_index->block->getVector(vector_index->index), vector_data,
-                           &this->dim);
+    // Get the vectorBlock and the relative index of the required id.
+    VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
+    size_t req_rel_idx = getVectorRelativeIndex(id);
+
+    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
 }
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
@@ -222,7 +235,8 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
 
     float upperBound = std::numeric_limits<float>::lowest();
     vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
-    // For every block, compute its vectors scores and update the Top candidates max heap.
+    // For every block, compute its vectors scores and update the Top candidates max heap
+    idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
@@ -231,21 +245,20 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
         for (size_t i = 0; i < scores.size(); i++) {
             // Always choose the current candidate if we have less than k.
             if (TopCandidates.size() < k) {
-                TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
+                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
                 upperBound = TopCandidates.top().first;
-            } else {
+            } else if (scores[i] < upperBound) {
                 // Otherwise, try greedily to improve the top candidates with a vector that
                 // has a better score than the one that has the worst score until now.
-                if (scores[i] >= upperBound) {
-                    continue;
-                } else {
-                    TopCandidates.emplace(scores[i], vectorBlock->getMember(i)->label);
-                    TopCandidates.pop();
-                    upperBound = TopCandidates.top().first;
-                }
+                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
+                TopCandidates.pop();
+                upperBound = TopCandidates.top().first;
             }
+            ++curr_id;
         }
     }
+    assert(curr_id == count);
+
     rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
         VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
@@ -273,6 +286,8 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
     // Compute scores in every block and save results that are within the range.
     rl.results =
         array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
+
+    idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
@@ -280,11 +295,13 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
         }
         for (size_t i = 0; i < scores.size(); i++) {
             if (scores[i] <= radius) {
-                auto res = VecSimQueryResult{vectorBlock->getMember(i)->label, scores[i]};
+                auto res = VecSimQueryResult{getVectorLabel(curr_id), scores[i]};
                 rl.results = array_append(rl.results, res);
             }
+            ++curr_id;
         }
     }
+    assert(curr_id == count);
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }
