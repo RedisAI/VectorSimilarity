@@ -11,10 +11,10 @@ namespace Spaces {
 
 dist_func_ptr_ty<float> IP_FLOAT_GetOptDistFunc(size_t dim) {
 
+    dist_func_ptr_ty<float> ret_dist_func = f_InnerProduct;
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    dist_func_ptr_ty<float> ret_dist_func = f_InnerProduct;
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
 
     if (arch_opt == ARCH_OPT_AVX512) {
@@ -50,16 +50,16 @@ dist_func_ptr_ty<float> IP_FLOAT_GetOptDistFunc(size_t dim) {
 
 #endif
     }
-    return ret_dist_func;
 #endif // __x86_64__
+    return ret_dist_func;
 }
 
 dist_func_ptr_ty<double> IP_DOUBLE_GetOptDistFunc(size_t dim) {
 
+    dist_func_ptr_ty<double> ret_dist_func = d_InnerProduct;
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    dist_func_ptr_ty<double> ret_dist_func = d_InnerProduct;
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
 
     if (arch_opt == ARCH_OPT_AVX512) {
@@ -95,7 +95,7 @@ dist_func_ptr_ty<double> IP_DOUBLE_GetOptDistFunc(size_t dim) {
 
 #endif
     }
-    return ret_dist_func;
 #endif // __x86_64__
+    return ret_dist_func;
 }
 } // namespace Spaces
