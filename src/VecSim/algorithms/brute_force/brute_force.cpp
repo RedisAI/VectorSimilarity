@@ -4,6 +4,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 
 #include <memory>
 #include <cstring>
@@ -31,10 +32,27 @@ BruteForceIndex::~BruteForceIndex() {
     }
 }
 
+/******************** inheritance factory **************/
+
+BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const BFParams *params, bool multi,
+                                                      std::shared_ptr<VecSimAllocator> allocator) {
+    if (multi) {
+        return NULL;
+    } else {
+        return new (allocator) BruteForceIndex_Single(params, allocator);
+    }
+}
+
 /******************** Implementation **************/
-size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
+size_t BruteForceIndex::estimateInitialSize(const BFParams *params, bool multi) {
     // Constant part (not effected by parameters).
-    size_t est = sizeof(VecSimAllocator) + sizeof(BruteForceIndex) + sizeof(size_t);
+    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
+    if (multi)
+        est += sizeof(BruteForceIndex); // change to BruteForceIndex_Multi
+    else
+        est += sizeof(BruteForceIndex_Single);
+    est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
+           sizeof(size_t);
     // Parameters related part.
 
     if (params->initialCapacity) {

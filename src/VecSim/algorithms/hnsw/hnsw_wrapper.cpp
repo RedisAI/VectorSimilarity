@@ -17,17 +17,28 @@ using namespace hnswlib;
 
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator, params->dim, params->type, params->metric, params->blockSize),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)),
-      last_mode(EMPTY_MODE) {}
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)), {}
+
+/******************** inheritance factory **************/
+
+HNSWIndex *HNSWIndex::HNSWIndex_New(const HNSWParams *params, bool multi,
+                                    std::shared_ptr<VecSimAllocator> allocator) {
+    if (multi) {
+        return NULL;
+    } else {
+        return new (allocator) HNSWIndex(params, allocator);
+    }
+}
 
 /******************** Implementation **************/
 size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     size_t est = sizeof(VecSimAllocator) + sizeof(HNSWIndex) + sizeof(size_t);
     est += sizeof(*hnsw) + sizeof(size_t);
-    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
-    est += sizeof(VisitedNodesHandlerPool);
+    est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);
+#else
+    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
 #endif
     est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes
 

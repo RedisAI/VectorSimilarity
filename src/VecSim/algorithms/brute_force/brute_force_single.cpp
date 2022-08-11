@@ -73,11 +73,6 @@ double BruteForceIndex_Single::getDistanceFrom(size_t label, const void *vector_
     return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
 }
 
-size_t BruteForceIndex_Single::estimateInitialSize(const BFParams *params) {
-    int delta = sizeof(BruteForceIndex_Single) - sizeof(BruteForceIndex);
-    return BruteForceIndex::estimateInitialSize(params) + delta;
-}
-
 // inline definitions
 
 void BruteForceIndex_Single::addIdToLabel(labelType label, idType id) {

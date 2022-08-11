@@ -7,7 +7,9 @@
 class HNSWIndex : public VecSimIndex {
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static size_t estimateInitialSize(const HNSWParams *params);
+    static HNSWIndex *HNSWIndex_New(const HNSWParams *params, bool multi,
+                                    std::shared_ptr<VecSimAllocator> allocator);
+    static size_t estimateInitialSize(const HNSWParams *params, bool multi);
     static size_t estimateElementMemory(const HNSWParams *params);
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;

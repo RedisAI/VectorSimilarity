@@ -20,7 +20,9 @@ protected:
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static size_t estimateInitialSize(const BFParams *params);
+    static BruteForceIndex *BruteForceIndex_New(const BFParams *params, bool multi,
+                                                std::shared_ptr<VecSimAllocator> allocator);
+    static size_t estimateInitialSize(const BFParams *params, bool multi);
     static size_t estimateElementMemory(const BFParams *params);
     virtual int addVector(const void *vector_data, size_t label) = 0;
     virtual int deleteVector(size_t id) = 0;

@@ -9,7 +9,6 @@ private:
 public:
     BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     ~BruteForceIndex_Single();
-    static size_t estimateInitialSize(const BFParams *params);
 
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;

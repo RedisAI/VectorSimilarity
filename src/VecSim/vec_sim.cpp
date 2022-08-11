@@ -1,7 +1,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"
-#include "VecSim/algorithms/brute_force/brute_force_single.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
@@ -70,16 +70,11 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            if (params->multi)
-                index = NULL;
-            else
-                index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
+            index = HNSWIndex::HNSWIndex_New(&params->hnswParams, params->multi, allocator);
             break;
         case VecSimAlgo_BF:
-            if (params->multi)
-                index = NULL;
-            else
-                index = new (allocator) BruteForceIndex_Single(&params->bfParams, allocator);
+            index =
+                BruteForceIndex::BruteForceIndex_New(&params->bfParams, params->multi, allocator);
             break;
         default:
             break;
@@ -93,17 +88,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        if (params->multi) {
-            return -1;
-        } else {
-            return HNSWIndex::estimateInitialSize(&params->hnswParams);
-        }
+        return HNSWIndex::estimateInitialSize(&params->hnswParams, params->multi);
     case VecSimAlgo_BF:
-        if (params->multi) {
-            return -1;
-        } else {
-            return BruteForceIndex_Single::estimateInitialSize(&params->bfParams);
-        }
+        return BruteForceIndex::estimateInitialSize(&params->bfParams, params->multi);
     }
     return -1;
 }
