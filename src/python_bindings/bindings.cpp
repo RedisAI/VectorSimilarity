@@ -190,6 +190,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
         .def_readwrite("algo", &VecSimParams::algo)
+        .def_readwrite("multi", &VecSimParams::multi)
         .def_readwrite("hnswParams", &VecSimParams::hnswParams)
         .def_readwrite("bfParams", &VecSimParams::bfParams);
 
