@@ -404,11 +404,13 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
     __builtin_prefetch(getDataByInternalId(*node_links));
 
     for (size_t j = 0; j < links_num; j++) {
-        tableint candidate_id = *(node_links + j);
+        tableint *candidate_pos = node_links + j;
+        tableint candidate_id = *candidate_pos;
 
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
-        __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
-
+        // Pre-fetch the next candidate data into memory cache, to improve performance.
+        tableint *next_candidate_pos = node_links + j + 1;
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
@@ -417,8 +419,6 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
         dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
-
-            __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
 
             top_candidates.emplace(dist1, candidate_id);
 
@@ -429,6 +429,10 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
                 lowerBound = top_candidates.top().first;
         }
     }
+    // Pre-fetch the neighbours list of the top candidate (the one that is going
+    // to be processed in the next iteration) into memory cache, to improve performance.
+    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+
     return lowerBound;
 }
 
