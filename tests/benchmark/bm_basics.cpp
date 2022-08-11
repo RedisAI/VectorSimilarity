@@ -5,7 +5,7 @@
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
-#include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "bm_utils.h"
 
 // Global benchmark data
