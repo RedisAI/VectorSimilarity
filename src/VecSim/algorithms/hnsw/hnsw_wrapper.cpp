@@ -21,12 +21,12 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
 
 /******************** inheritance factory **************/
 
-HNSWIndex *HNSWIndex::HNSWIndex_New(const HNSWParams *params, bool multi,
+HNSWIndex *HNSWIndex::HNSWIndex_New(const VecSimParams *params,
                                     std::shared_ptr<VecSimAllocator> allocator) {
-    if (multi) {
+    if (params->multi) {
         return NULL;
     } else {
-        return new (allocator) HNSWIndex(params, allocator);
+        return new (allocator) HNSWIndex(&params->hnswParams, allocator);
     }
 }
 

@@ -34,12 +34,12 @@ BruteForceIndex::~BruteForceIndex() {
 
 /******************** inheritance factory **************/
 
-BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const BFParams *params, bool multi,
+BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const VecSimParams *params,
                                                       std::shared_ptr<VecSimAllocator> allocator) {
-    if (multi) {
+    if (params->multi) {
         return NULL;
     } else {
-        return new (allocator) BruteForceIndex_Single(params, allocator);
+        return new (allocator) BruteForceIndex_Single(&params->bfParams, allocator);
     }
 }
 
@@ -168,7 +168,7 @@ vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block
     size_t len = block->getLength();
     vecsim_stl::vector<float> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
-        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }

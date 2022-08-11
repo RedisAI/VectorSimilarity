@@ -9,9 +9,7 @@
 #include <cassert>
 #include <limits>
 
-using spaces::dist_func_t;
-
-class BruteForceIndex : public VecSimIndex {
+class BruteForceIndex : public VecSimIndexAbstract {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
@@ -20,7 +18,7 @@ protected:
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static BruteForceIndex *BruteForceIndex_New(const BFParams *params, bool multi,
+    static BruteForceIndex *BruteForceIndex_New(const VecSimParams *params,
                                                 std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const BFParams *params, bool multi);
     static size_t estimateElementMemory(const BFParams *params);

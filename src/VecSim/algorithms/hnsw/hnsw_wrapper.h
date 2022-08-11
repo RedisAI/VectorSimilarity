@@ -4,10 +4,10 @@
 #include "VecSim/algorithms/hnsw/hnswlib.h"
 #include <memory>
 
-class HNSWIndex : public VecSimIndex {
+class HNSWIndex : public VecSimIndexAbstract {
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static HNSWIndex *HNSWIndex_New(const HNSWParams *params, bool multi,
+    static HNSWIndex *HNSWIndex_New(const VecSimParams *params,
                                     std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const HNSWParams *params, bool multi);
     static size_t estimateElementMemory(const HNSWParams *params);

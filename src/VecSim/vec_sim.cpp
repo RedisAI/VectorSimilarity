@@ -9,7 +9,7 @@
 #include "memory.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
-    VecSimIndex::setTimeoutCallbackFunction(callback);
+    VecSimIndexAbstract::setTimeoutCallbackFunction(callback);
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
@@ -70,11 +70,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = HNSWIndex::HNSWIndex_New(&params->hnswParams, params->multi, allocator);
+            index = HNSWIndex::HNSWIndex_New(params, allocator);
             break;
         case VecSimAlgo_BF:
-            index =
-                BruteForceIndex::BruteForceIndex_New(&params->bfParams, params->multi, allocator);
+            index = BruteForceIndex::BruteForceIndex_New(params, allocator);
             break;
         default:
             break;

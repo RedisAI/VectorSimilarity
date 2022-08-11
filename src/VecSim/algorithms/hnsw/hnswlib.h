@@ -1245,7 +1245,7 @@ idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
-            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+            if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
                 *rc = VecSim_QueryResult_TimedOut;
                 return HNSW_INVALID_ID;
             }
@@ -1300,7 +1300,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void 
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }
@@ -1381,7 +1381,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }

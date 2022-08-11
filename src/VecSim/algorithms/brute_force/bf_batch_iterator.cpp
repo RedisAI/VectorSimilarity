@@ -140,7 +140,7 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
             return {NULL, rc};
         }
     }
-    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(this->getTimeoutCtx()), 0)) {
         return {NULL, VecSim_QueryResult_TimedOut};
     }
     VecSimQueryResult_List rl = searchByHeuristics(n_res, order);
