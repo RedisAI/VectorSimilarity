@@ -81,7 +81,7 @@ float f_InnerProductSIMD4Ext_AVX512(const void *pVect1, const void *pVect2, cons
 }
 
 float f_InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
-                                            const void *qty_ptr) {
+                                              const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     size_t qty16 = qty >> 4 << 4;
     float res = InnerProductSIMD16Ext_AVX512_impl(pVect1v, pVect2v, &qty16);
@@ -94,7 +94,7 @@ float f_InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *p
 }
 
 float f_InnerProductSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
-                                           const void *qty_ptr) {
+                                             const void *qty_ptr) {
     size_t qty = *((size_t *)qty_ptr);
     size_t qty4 = qty >> 2 << 2;
     float res = InnerProductSIMD4Ext_AVX512_impl(pVect1v, pVect2v, &qty4);
@@ -104,4 +104,20 @@ float f_InnerProductSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pV
     size_t qty_left = qty - qty4;
     float res_tail = f_InnerProduct_impl(pVect1, pVect2, &qty_left);
     return 1.0f - (res + res_tail);
+}
+double d_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v,
+                                      const void *qty_ptr) {
+    return 0;
+}
+double d_InnerProductSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v,
+                                     const void *qty_ptr) {
+    return 0;
+}
+double d_InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
+                                               const void *qty_ptr) {
+    return 0;
+}
+double d_InnerProductSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
+                                              const void *qty_ptr) {
+    return 0;
 }

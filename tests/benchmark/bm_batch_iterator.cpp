@@ -46,8 +46,7 @@ protected:
                 location + "/tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
             auto serializer = hnswlib::HNSWIndexSerializer(
                 reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
-            serializer.loadIndex(file_name,
-                                 reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
+            serializer.loadIndex(file_name);
             size_t ef_r = 10;
             reinterpret_cast<HNSWIndex *>(hnsw_index)->setEf(ef_r);
 

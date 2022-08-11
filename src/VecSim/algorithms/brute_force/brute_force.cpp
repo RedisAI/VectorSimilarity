@@ -21,7 +21,7 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
       labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       last_mode(EMPTY_MODE) {
-    
+
     Spaces::SetDistFunc(metric, dim, &dist_func);
     this->idToLabelMapping.resize(params->initialCapacity);
 }

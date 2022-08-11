@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VecSim/vec_sim_common.h" // enum VecSimMetric
+#include "VecSim/vec_sim_common.h"   // enum VecSimMetric
 #include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
 namespace Spaces {
 
@@ -32,4 +32,3 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<float> *index
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<double> *index_dist_func);
 
 } // namespace Spaces
-

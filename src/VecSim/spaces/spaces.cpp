@@ -28,35 +28,28 @@ OptimizationScore GetDimOptimizationScore(size_t dim) {
     return ret_score;
 }
 
-void SetDistFunc(VecSimMetric metric, size_t dim,
-                        dist_func_ptr_ty<float> *index_dist_func) {
-    
+void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<float> *index_dist_func) {
+
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
-         
+
         *index_dist_func = IP_FLOAT_GetDistFunc(dim);
 
-    } else if (metric == VecSimMetric_L2){
+    } else if (metric == VecSimMetric_L2) {
 
         *index_dist_func = L2_FLOAT_GetDistFunc(dim);
-
-    }                                                                     
-
+    }
 }
 
-void SetDistFunc(VecSimMetric metric, size_t dim,
-                        dist_func_ptr_ty<double> *index_dist_func) {
-    
+void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<double> *index_dist_func) {
+
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
-        
+
         *index_dist_func = IP_DOUBLE_GetDistFunc(dim);
 
-    } else if (metric == VecSimMetric_L2){
+    } else if (metric == VecSimMetric_L2) {
 
         *index_dist_func = L2_DOUBLE_GetDistFunc(dim);
-
-    }                                                                     
-
+    }
 }
-          
 
 } // namespace Spaces

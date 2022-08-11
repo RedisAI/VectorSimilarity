@@ -99,3 +99,17 @@ float f_L2SqrSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, con
 
     return (res + res_tail);
 }
+
+double d_L2SqrSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
+double d_L2SqrSIMD16ExtResiduals_SSE(const void *pVect1v, const void *pVect2v,
+                                     const void *qty_ptr) {
+    return 0;
+}
+double d_L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
+double d_L2SqrSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}

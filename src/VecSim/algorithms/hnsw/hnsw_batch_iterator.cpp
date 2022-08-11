@@ -50,9 +50,8 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
     // In the first iteration, add the entry point to the empty candidates set.
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
-        float dist =
-            dist_func(this->getQueryBlob(), this->hnsw_index->getDataByInternalId(entry_point),
-                      &dim);
+        float dist = dist_func(this->getQueryBlob(),
+                               this->hnsw_index->getDataByInternalId(entry_point), &dim);
         lower_bound = dist;
         this->visitNode(entry_point);
         candidates.emplace(dist, entry_point);
@@ -122,8 +121,8 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
             }
             this->visitNode(candidate_id);
             char *candidate_data = this->hnsw_index->getDataByInternalId(candidate_id);
-            float candidate_dist = dist_func(this->getQueryBlob(), (const void *)candidate_data,
-                                             &dim);
+            float candidate_dist =
+                dist_func(this->getQueryBlob(), (const void *)candidate_data, &dim);
             candidates.emplace(candidate_dist, candidate_id);
         }
     }

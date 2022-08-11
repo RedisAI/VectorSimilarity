@@ -1377,7 +1377,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
     // Save and load an empty index.
     serializer.saveIndex(file_name);
-    serializer.loadIndex(file_name, reinterpret_cast<HNSWIndex *>(index)->getSpace().get());
+    serializer.loadIndex(file_name);
     auto res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);
 
@@ -1399,9 +1399,8 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto new_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
 
-    auto space = reinterpret_cast<HNSWIndex *>(new_index)->getSpace().get();
     serializer.reset(reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex());
-    serializer.loadIndex(file_name, space);
+    serializer.loadIndex(file_name);
 
     // Validate that the new loaded index has the same meta-data as the original.
     VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
@@ -1443,9 +1442,8 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto restored_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
 
-    space = reinterpret_cast<HNSWIndex *>(restored_index)->getSpace().get();
     serializer.reset(reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex());
-    serializer.loadIndex(file_name, space);
+    serializer.loadIndex(file_name);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
     res = serializer.checkIntegrity();
     ASSERT_TRUE(res.valid_state);

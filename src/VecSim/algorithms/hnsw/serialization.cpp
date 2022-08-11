@@ -27,6 +27,8 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
     writeBinaryPOD(output, hnsw_index->maxM_);
     writeBinaryPOD(output, hnsw_index->maxM0_);
     writeBinaryPOD(output, hnsw_index->ef_construction_);
+    writeBinaryPOD(output, hnsw_index->fstdistfunc_);
+    writeBinaryPOD(output, hnsw_index->dim);
 
     // Save index search parameter
     writeBinaryPOD(output, hnsw_index->ef_);
@@ -92,18 +94,20 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     }
 }
 
-void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input, SpaceInterface<float> *s) {
-    this->restoreIndexFields(input, s);
+void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
+    this->restoreIndexFields(input);
     this->restoreGraph(input);
 }
 
-void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s) {
+void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
     readBinaryPOD(input, hnsw_index->max_elements_);
     readBinaryPOD(input, hnsw_index->M_);
     readBinaryPOD(input, hnsw_index->maxM_);
     readBinaryPOD(input, hnsw_index->maxM0_);
     readBinaryPOD(input, hnsw_index->ef_construction_);
+    readBinaryPOD(input, hnsw_index->fstdistfunc_);
+    readBinaryPOD(input, hnsw_index->dim);
 
     // Restore index search parameter
     readBinaryPOD(input, hnsw_index->ef_);
@@ -119,12 +123,6 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, SpaceInterfac
     readBinaryPOD(input, hnsw_index->incoming_links_offset0);
     readBinaryPOD(input, hnsw_index->incoming_links_offset);
     readBinaryPOD(input, hnsw_index->mult_);
-
-    if (s->get_data_size() != hnsw_index->data_size_) {
-        throw std::runtime_error("Index data is corrupted or does not match the given space");
-    }
-    hnsw_index->fstdistfunc_ = s->get_dist_func();
-    hnsw_index->dist_func_param_ = s->get_data_dim();
 
     // Restore index level generator of the top level for a new element
     readBinaryPOD(input, hnsw_index->level_generator_);
@@ -220,7 +218,7 @@ void HNSWIndexSerializer::saveIndex(const std::string &location) {
     output.close();
 }
 
-void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<float> *s) {
+void HNSWIndexSerializer::loadIndex(const std::string &location) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -235,7 +233,7 @@ void HNSWIndexSerializer::loadIndex(const std::string &location, SpaceInterface<
     if (version != EncodingVersion_V1) {
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    loadIndex_v1(input, s);
+    loadIndex_v1(input);
     input.close();
 }
 

@@ -105,3 +105,16 @@ float f_L2SqrSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, con
     float res_tail = f_L2Sqr(pVect1, pVect2, &qty_left);
     return (res + res_tail);
 }
+double d_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
+double d_L2SqrSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
+                                     const void *qty_ptr) {
+    return 0;
+}
+double d_L2SqrSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
+double d_L2SqrSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    return 0;
+}
