@@ -28,6 +28,7 @@ HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> 
           params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
       last_mode(EMPTY_MODE) {
     hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
+    hnsw->setEpsilon((params->epsilon > 0.0) ? params->epsilon : HNSW_DEFAULT_EPSILON);
 }
 
 /******************** Implementation **************/
@@ -194,6 +195,42 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
     return rl;
 }
 
+VecSimQueryResult_List HNSWIndex::rangeQuery(const void *queryBlob, float radius,
+                                             VecSimQueryParams *queryParams) {
+    auto rl = (VecSimQueryResult_List){0};
+    void *timeoutCtx = nullptr;
+    this->last_mode = RANGE_QUERY;
+
+    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic when other types will be supported.
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        float_vector_normalize(normalized_blob, this->dim);
+        queryBlob = normalized_blob;
+    }
+
+    double originalEpsilon = this->hnsw->getEpsilon();
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
+            hnsw->setEpsilon(queryParams->hnswRuntimeParams.epsilon);
+        }
+    }
+    // Call searchRange internally in HNSWlib to obtains results. This will return and set the
+    // rl.code to "TimedOut" if timeout occurs.
+    rl.results = hnsw->searchRange(queryBlob, radius, timeoutCtx, &rl.code);
+    if (VecSim_QueryResult_OK != rl.code) {
+        return rl;
+    }
+
+    // Restore the default epsilon.
+    hnsw->setEpsilon(originalEpsilon);
+    assert(hnsw->getEpsilon() == originalEpsilon);
+
+    rl.code = VecSim_QueryResult_OK;
+    return rl;
+}
+
 VecSimIndexInfo HNSWIndex::info() const {
 
     VecSimIndexInfo info;
@@ -205,6 +242,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.M = this->hnsw->getM();
     info.hnswInfo.efConstruction = this->hnsw->getEfConstruction();
     info.hnswInfo.efRuntime = this->hnsw->getEf();
+    info.hnswInfo.epsilon = this->hnsw->getEpsilon();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
@@ -275,6 +313,10 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
         VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+                         .fieldType = INFOFIELD_FLOAT64,
+                         .floatingPointValue = info.hnswInfo.epsilon});
 
     return infoIterator;
 }

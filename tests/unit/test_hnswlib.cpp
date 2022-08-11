@@ -558,6 +558,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
+    ASSERT_DOUBLE_EQ(info.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
     VecSimIndex_Free(index);
 
     d = 1280;
@@ -570,7 +571,8 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
                                        .blockSize = bs,
                                        .M = 200,
                                        .efConstruction = 1000,
-                                       .efRuntime = 500}};
+                                       .efRuntime = 500,
+                                       .epsilon = 0.005}};
     index = VecSimIndex_New(&params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
@@ -580,6 +582,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
+    ASSERT_EQ(info.hnswInfo.epsilon, 0.005);
     VecSimIndex_Free(index);
 }
 
@@ -613,7 +616,8 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
                                                  .initialCapacity = n,
                                                  .M = 100,
                                                  .efConstruction = 250,
-                                                 .efRuntime = 400}};
+                                                 .efRuntime = 400,
+                                                 .epsilon = 0.004}};
     float v[d];
     for (size_t i = 0; i < d; i++) {
         v[i] = (float)i;
@@ -624,6 +628,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(100, info.hnswInfo.M);
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
+    ASSERT_EQ(0.004, info.hnswInfo.epsilon);
     ASSERT_EQ(0, info.hnswInfo.indexSize);
     ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
@@ -648,13 +653,21 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    // Perform (or simulate) Search in 3 modes.
+    // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
+    compareHNSWIndexInfoToIterator(info, infoIter);
+    VecSimInfoIterator_Free(infoIter);
+
+    res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
+    VecSimQueryResult_Free(res);
+    info = VecSimIndex_Info(index);
+    infoIter = VecSimIndex_InfoIterator(index);
+    ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -837,6 +850,10 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
+    res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
         float f[d];
@@ -857,6 +874,10 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
     VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
@@ -1708,6 +1729,17 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
+    // Check timeout again - range query.
+    VecSimIndex_AddVector(index, vec, 1);
+    ASSERT_EQ(VecSimIndex_Info(index).hnswInfo.max_level, 0);
+    // Here, the entry point is inserted to the results set before we test for timeout.
+    // hence, expect a single result to be returned (instead of 2 that would have return without
+    // timeout).
+    rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 1);
+    VecSimQueryResult_Free(rl);
+
     // Fail on searching bottom layer entry point.
     // We need to have at least 1 vector in layer higher than 0 to fail there.
     size_t next = 0;
@@ -1717,6 +1749,12 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
 
     rl = VecSimIndex_TopKQuery(index, vec, 2, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
+
+    // Timeout on searching bottom layer entry point - range query.
+    rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
@@ -1799,4 +1837,109 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     VecSimIndex_Free(index);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // Cleanup.
 }
+
+TEST_F(HNSWLibTest, rangeQuery) {
+    size_t n = 5000;
+    size_t dim = 4;
+
+    VecSimParams params{
+        .algo = VecSimAlgo_HNSWLIB,
+        .hnswParams = HNSWParams{
+            .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .blockSize = n / 2}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    size_t pivot_id = n / 2; // the id to return vectors around it.
+    float query[] = {(float)pivot_id, (float)pivot_id, (float)pivot_id, (float)pivot_id};
+
+    auto verify_res_by_score = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
+        ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
+    };
+    uint expected_num_results = 11;
+    // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2 score
+    // in the boundaries.
+    float radius = dim * powf(expected_num_results / 2, 2);
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
+
+    // Rerun with a given query params. This high epsilon value will cause the range search main
+    // loop to break since we insert a candidate whose distance is within the dynamic range
+    // boundaries at the beginning of the search, but when this candidate is popped out from the
+    // queue, it's no longer within the dynamic range boundaries.
+    auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = 1.0}};
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE,
+                      &query_params);
+
+    // Get results by id.
+    auto verify_res_by_id = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
+        ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
+    };
+    runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWLibTest, rangeQueryCosine) {
+    size_t n = 800;
+    size_t dim = 4;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_Cosine,
+                                                 .blockSize = n / 2}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        f[0] = float(i + 1) / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0f;
+        }
+        // Use as label := n - (internal id)
+        VecSimIndex_AddVector(index, (const void *)f, n - i);
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0f;
+    }
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, index + 1);
+        float first_coordinate = float(n - index) / n;
+        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
+        // and B is the current result vector.
+        float expected_score =
+            1.0f -
+            ((first_coordinate + (float)dim - 1.0f) /
+             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+        // Verify that abs difference between the actual and expected score is at most 1/10^5.
+        ASSERT_NEAR(score, expected_score, 1e-5);
+    };
+    uint expected_num_results = 31;
+    // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
+    // to get the radius.
+    float edge_first_coordinate = (float)(n - expected_num_results + 1) / n;
+    float radius =
+        1.0f - ((edge_first_coordinate + (float)dim - 1.0f) /
+                (sqrtf((float)dim) *
+                 sqrtf((float)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
+    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
+
+    // Return results BY_ID should give the same results.
+    runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
+
+    VecSimIndex_Free(index);
+}
+
 } // namespace hnswlib
