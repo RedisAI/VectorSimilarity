@@ -48,9 +48,8 @@ dist_func_ptr_ty<float> L2_FLOAT_GetOptDistFunc(size_t dim) {
 
 #endif
     }
-#endif // __x86_64__
-
     return ret_dist_func;
+#endif // __x86_64__
 }
 
 dist_func_ptr_ty<double> L2_DOUBLE_GetOptDistFunc(size_t dim) {
@@ -91,8 +90,7 @@ dist_func_ptr_ty<double> L2_DOUBLE_GetOptDistFunc(size_t dim) {
 
 #endif
     }
-#endif // __x86_64__
-
     return ret_dist_func;
+#endif // __x86_64__
 }
 } // namespace Spaces
