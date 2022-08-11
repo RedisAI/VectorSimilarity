@@ -112,8 +112,8 @@ private:
     size_t getRandomLevel(double reverse_size);
     vecsim_stl::vector<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
     void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
-    linklistsizeint *get_linklist0(tableint internal_id) const;
-    linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
+    inline linklistsizeint *get_linklist0(tableint internal_id) const;
+    inline linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
                           size_t Mcurmax, tableint *node_neighbors,
@@ -170,7 +170,7 @@ public:
     labeltype getExternalLabel(tableint internal_id) const;
     VisitedNodesHandler *getVisitedList() const;
     char *getDataByInternalId(tableint internal_id) const;
-    linklistsizeint *get_linklist_at_level(tableint internal_id, size_t level) const;
+    inline linklistsizeint *get_linklist_at_level(tableint internal_id, size_t level) const;
     unsigned short int getListCount(const linklistsizeint *ptr) const;
     void resizeIndex(size_t new_max_elements);
     void removePoint(labeltype label);
@@ -401,17 +401,17 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
     size_t links_num = getListCount(node_ll);
     auto *node_links = (tableint *)(node_ll + 1);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
-    __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
     for (size_t j = 0; j < links_num; j++) {
-        tableint candidate_id = *(node_links + j);
+        tableint *candidate_pos = node_links + j;
+        tableint candidate_id = *candidate_pos;
 
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
-        __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
-
+        // Pre-fetch the next candidate data into memory cache, to improve performance.
+        tableint *next_candidate_pos = node_links + j + 1;
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
@@ -420,8 +420,6 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
         dist_t dist1 = fstdistfunc_(data_point, currObj1, &dim);
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
-
-            __builtin_prefetch(getDataByInternalId(candidate_set.top().second));
 
             top_candidates.emplace(dist1, candidate_id);
 
@@ -432,6 +430,10 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
                 lowerBound = top_candidates.top().first;
         }
     }
+    // Pre-fetch the neighbours list of the top candidate (the one that is going
+    // to be processed in the next iteration) into memory cache, to improve performance.
+    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+
     return lowerBound;
 }
 
