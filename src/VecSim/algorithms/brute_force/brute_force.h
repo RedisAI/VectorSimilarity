@@ -24,9 +24,6 @@ public:
                                                 std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const BFParams *params, bool multi);
     static size_t estimateElementMemory(const BFParams *params);
-    // virtual int addVector(const void *vector_data, size_t label) override = 0;
-    // virtual int deleteVector(size_t id) override = 0;
-    // virtual double getDistanceFrom(size_t label, const void *vector_data) override = 0;
     virtual size_t indexSize() const override;
     vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                  void *timeoutCtx,
