@@ -92,7 +92,8 @@ def main():
 
     data_set, test_set = load_index_and_test_set(data_sets[1])
     glove_50_index, glove_50_index_flat =\
-        create_indexes(hnswparams, data_set, "tests/benchmark/data/glove-50-angular-M=24-ef=150.hnsw")
+        create_indexes(hnswparams, data_set, "tests/benchmark/data/glove-50-angular-M=24-ef=150-trimmed_to_1M.hnsw")
+    # glove_50_index.save_index("tests/benchmark/data/glove-50-angular-M=24-ef=150-trimmed_to_1M.hnsw")
     test_sets[data_sets[1]] = test_set
 
     # Glove-200 #
@@ -107,7 +108,8 @@ def main():
 
     data_set, test_set = load_index_and_test_set(data_sets[2])
     glove_200_index, glove_200_index_flat =\
-        create_indexes(hnswparams, data_set, "tests/benchmark/data/glove-200-angular-M=48-ef=350.hnsw")
+        create_indexes(hnswparams, data_set, "tests/benchmark/data/glove-200-angular-M=48-ef=350-trimmed_to_1M.hnsw")
+    # glove_200_index.save_index("tests/benchmark/data/glove-200-angular-M=48-ef=350-trimmed_to_1M.hnsw")
     test_sets[data_sets[2]] = test_set
 
     print("3 Indexes loaded successfully\n")
@@ -156,7 +158,6 @@ def main():
         res_glove_200_ids, res_glove_200_scores = glove_200_index.range_query(q2, T)
         total_res = reduce(np.union1d, (res_dbpedia_ids[0], res_glove_50_ids[0], res_glove_200_ids[0])).tolist()
         print(f"total res size is {len(total_res)}")
-
 
 
 if __name__ == '__main__':
