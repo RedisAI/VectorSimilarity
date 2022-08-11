@@ -78,5 +78,6 @@ private:
     friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
     friend class BruteForceTest_resizeNAlignIndex_largeInitialCapacity_Test;
     friend class BruteForceTest_brute_force_empty_index_Test;
+    friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
 #endif
 };
