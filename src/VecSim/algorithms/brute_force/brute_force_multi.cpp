@@ -3,7 +3,7 @@
 #include "VecSim/query_result_struct.h"
 
 BruteForceIndex_Multi::BruteForceIndex_Multi(const BFParams *params,
-                                               std::shared_ptr<VecSimAllocator> allocator)
+                                             std::shared_ptr<VecSimAllocator> allocator)
     : BruteForceIndex(params, allocator), labelToIdsLookup(allocator) {}
 
 BruteForceIndex_Multi::~BruteForceIndex_Multi() {}
@@ -20,15 +20,6 @@ int BruteForceIndex_Multi::addVector(const void *vector_data, size_t label) {
 
     // Give the vector new id and increase count.
     idType id = count++;
-
-    auto optionalIDs = this->labelToIdsLookup.find(label);
-
-    if (optionalIDs == this->labelToIdsLookup.end()) {
-        this->labelToIdsLookup.emplace(label, id);
-    } else {
-        optionalIDs->second.push_back(id);
-    }
-
     int res = insertVector(vector_data, id);
 
     // add label to idToLabelMapping
@@ -43,42 +34,60 @@ int BruteForceIndex_Multi::addVector(const void *vector_data, size_t label) {
 int BruteForceIndex_Multi::deleteVector(size_t label) {
 
     // Find the id to delete.
-    auto deleted_label_id_pair = this->labelToIdLookup.find(label);
-    if (deleted_label_id_pair == this->labelToIdLookup.end()) {
+    auto deleted_label_ids_pair = this->labelToIdsLookup.find(label);
+    if (deleted_label_ids_pair == this->labelToIdsLookup.end()) {
         // Nothing to delete.
         return true;
     }
 
-    // Get deleted vector id.
-    idType id_to_delete = deleted_label_id_pair->second;
+    int ret = true;
+
+    // Deletes all vectors under the given label.
+    for (auto id_to_delete : deleted_label_ids_pair->second) {
+        ret = (removeVector(id_to_delete) && ret);
+    }
 
     // Remove the pair of the deleted vector.
-    labelToIdLookup.erase(label);
-
-    return removeVector(id_to_delete);
+    labelToIdsLookup.erase(label);
+    return ret;
 }
 
 double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_data) {
 
-    auto optionalId = this->labelToIdLookup.find(label);
-    if (optionalId == this->labelToIdLookup.end()) {
+    auto IDs = this->labelToIdsLookup.find(label);
+    if (IDs == this->labelToIdsLookup.end()) {
         return INVALID_SCORE;
     }
-    idType id = optionalId->second;
 
-    // Get the vectorBlock and the relative index of the required id.
-    VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
-    size_t req_rel_idx = getVectorRelativeIndex(id);
+    float dist = std::numeric_limits<float>::infinity();
+    for (auto id : IDs->second) {
+        VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
+        size_t req_rel_idx = getVectorRelativeIndex(id);
+        float d = this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
+        dist = (dist < d) ? dist : d;
+    }
 
-    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
+    return dist;
 }
 
 // inline definitions
 
 void BruteForceIndex_Multi::addIdToLabel(labelType label, idType id) {
-    labelToIdLookup.emplace(label, id);
+    auto labelKey = labelToIdsLookup.find(label);
+    if (labelKey != labelToIdsLookup.end()) {
+        labelKey->second.push_back(id);
+    } else {
+        labelToIdsLookup.emplace(
+            label, vecsim_stl::vector<idType>{std::initializer_list<idType>{id}, this->allocator});
+    }
 }
 
 void BruteForceIndex_Multi::replaceIdOfLabel(labelType label, idType new_id, idType old_id) {
-    labelToIdLookup.at(label) = new_id;
+    auto &labelKey = labelToIdsLookup.at(label);
+    for (size_t i = 0; i < labelKey.size(); i++) {
+        if (labelKey[i] == old_id) {
+            labelKey[i] = new_id;
+            return;
+        }
+    }
 }

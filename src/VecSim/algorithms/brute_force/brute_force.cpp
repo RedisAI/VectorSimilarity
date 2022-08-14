@@ -4,6 +4,7 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
+#include "VecSim/algorithms/brute_force/brute_force_multi.h"
 
 #include <memory>
 #include <cstring>
@@ -31,8 +32,10 @@ BruteForceIndex::~BruteForceIndex() {
 
 BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const BFParams *params,
                                                       std::shared_ptr<VecSimAllocator> allocator) {
-    assert(!params->multi);
-    return new (allocator) BruteForceIndex_Single(params, allocator);
+    if (params->multi)
+        return new (allocator) BruteForceIndex_Multi(params, allocator);
+    else
+        return new (allocator) BruteForceIndex_Single(params, allocator);
 }
 
 /******************** Implementation **************/
@@ -40,7 +43,7 @@ size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     if (params->multi)
-        est += sizeof(BruteForceIndex); // change to BruteForceIndex_Multi
+        est += sizeof(BruteForceIndex_Multi);
     else
         est += sizeof(BruteForceIndex_Single);
 
