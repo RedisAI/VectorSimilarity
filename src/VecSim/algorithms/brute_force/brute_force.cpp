@@ -17,8 +17,9 @@ using namespace std;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
-      labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
+    : VecSimIndex(allocator), dim(params->dim), vecTypeNTypeSize(params->type),
+      metric(params->metric), labelToIdLookup(allocator), idToLabelMapping(allocator),
+      vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       last_mode(EMPTY_MODE) {
 
@@ -85,8 +86,9 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
     if (id % vectorBlockSize == 0) {
-        VectorBlock *new_vectorBlock =
-            new (this->allocator) VectorBlock(this->vectorBlockSize, this->dim, this->allocator);
+        size_t vector_bytes_count = this->dim * this->vecTypeNTypeSize;
+        VectorBlock *new_vectorBlock = new (this->allocator)
+            VectorBlock(this->vectorBlockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
@@ -137,7 +139,7 @@ int BruteForceIndex::deleteVector(size_t label) {
     VectorBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    float *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    char *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
     // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
@@ -306,7 +308,7 @@ VecSimIndexInfo BruteForceIndex::info() const {
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
     info.bfInfo.dim = this->dim;
-    info.bfInfo.type = this->vecType;
+    info.bfInfo.type = this->vecTypeNTypeSize;
     info.bfInfo.metric = this->metric;
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
@@ -356,7 +358,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
-    assert(this->vecType == VecSimType_FLOAT32);
+    assert(this->vecTypeNTypeSize == VecSimType_FLOAT32);
     auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
     memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
     if (metric == VecSimMetric_Cosine) {

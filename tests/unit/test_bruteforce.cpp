@@ -71,7 +71,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
 
     // Check update.
     VectorBlock *block = reinterpret_cast<BruteForceIndex *>(index)->getVectorVectorBlock(0);
-    float *vector_data = block->getVector(0);
+    float *vector_data = (float *)block->getVector(0);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 2);
         ++vector_data;
@@ -561,7 +561,7 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
 
     // The vector in index1 should hold id5 data.
     VectorBlock *block = bf_index->getVectorVectorBlock(1);
-    float *vector_data = block->getVector(1);
+    float *vector_data = (float *)block->getVector(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
         ++vector_data;

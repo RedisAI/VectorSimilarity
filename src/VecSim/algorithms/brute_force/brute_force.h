@@ -12,7 +12,7 @@
 class BruteForceIndex : public VecSimIndex {
 protected:
     size_t dim;
-    VecSimType vecType;
+    VecSimType vecTypeNTypeSize;
     VecSimMetric metric;
 
 public:
