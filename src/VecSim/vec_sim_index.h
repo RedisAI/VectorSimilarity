@@ -39,6 +39,8 @@ public:
      */
     virtual ~VecSimIndexAbstract() {}
 
+    inline Spaces::dist_func_ptr_ty<float> GetDistFunc() const { return dist_func; }
+
 public:
     static timeoutCallbackFunction timeoutCallback;
 
