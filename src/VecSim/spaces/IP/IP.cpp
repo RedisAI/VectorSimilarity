@@ -15,4 +15,3 @@ float f_InnerProduct_impl(const void *pVect1, const void *pVect2, const void *qt
 float f_InnerProduct(const void *pVect1, const void *pVect2, const void *qty_ptr) {
     return 1.0f - f_InnerProduct_impl(pVect1, pVect2, qty_ptr);
 }
-

@@ -99,4 +99,3 @@ float f_L2SqrSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, con
 
     return (res + res_tail);
 }
-
