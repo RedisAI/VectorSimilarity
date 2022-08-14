@@ -19,6 +19,7 @@ protected:
     size_t blockSize;
     Spaces::dist_func_t<float> dist_func;
     VecSearchMode last_mode;
+    bool isMulti;
 
 public:
     /**
@@ -26,9 +27,10 @@ public:
      *
      */
     VecSimIndexAbstract(std::shared_ptr<VecSimAllocator> allocator, size_t dim, VecSimType vecType,
-                        VecSimMetric metric, size_t blockSize)
+                        VecSimMetric metric, size_t blockSize, bool multi)
         : VecSimIndexInterface(allocator), dim(dim), vecType(vecType), metric(metric),
-          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE) {
+          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
+          isMulti(multi) {
         assert(VecSim_SizeOfType(vecType));
         Spaces::SetDistFunc(metric, dim, &dist_func);
     }
@@ -42,6 +44,7 @@ public:
     inline Spaces::dist_func_ptr_ty<float> GetDistFunc() const { return dist_func; }
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
+    inline bool isMultiValue() const { return isMulti; }
 
 public:
     static timeoutCallbackFunction timeoutCallback;

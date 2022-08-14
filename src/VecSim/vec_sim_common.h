@@ -64,6 +64,7 @@ typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t initialCapacity;
     size_t blockSize;
     size_t M;
@@ -76,13 +77,13 @@ typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t initialCapacity;
     size_t blockSize;
 } BFParams;
 
 typedef struct {
     VecSimAlgo algo; // Algorithm to use.
-    bool multi;      // Determines if the index should multi-index or not.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;

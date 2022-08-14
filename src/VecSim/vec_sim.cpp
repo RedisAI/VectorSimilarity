@@ -70,10 +70,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = HNSWIndex::HNSWIndex_New(params, allocator);
+            index = HNSWIndex::HNSWIndex_New(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = BruteForceIndex::BruteForceIndex_New(params, allocator);
+            index = BruteForceIndex::BruteForceIndex_New(&params->bfParams, allocator);
             break;
         default:
             break;
@@ -87,9 +87,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWIndex::estimateInitialSize(&params->hnswParams, params->multi);
+        return HNSWIndex::estimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateInitialSize(&params->bfParams, params->multi);
+        return BruteForceIndex::estimateInitialSize(&params->bfParams);
     }
     return -1;
 }

@@ -14,24 +14,22 @@ using namespace hnswlib;
 /******************** Ctor / Dtor **************/
 
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator, params->dim, params->type, params->metric, params->blockSize),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, this->dist_func, allocator)), {}
+    : VecSimIndexAbstract(allocator, params->dim, params->type, params->metric, params->blockSize,
+                          params->multi),
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, this->dist_func, allocator)) {}
 
 /******************** inheritance factory **************/
 
-HNSWIndex *HNSWIndex::HNSWIndex_New(const VecSimParams *params,
+HNSWIndex *HNSWIndex::HNSWIndex_New(const HNSWParams *params,
                                     std::shared_ptr<VecSimAllocator> allocator) {
-    if (params->multi) {
-        return NULL;
-    } else {
-        return new (allocator) HNSWIndex(&params->hnswParams, allocator);
-    }
+    assert(!params->multi);
+    return new (allocator) HNSWIndex(params, allocator);
 }
 
 /******************** Implementation **************/
-size_t HNSWIndex::estimateInitialSize(const HNSWParams *params, bool multi) {
+size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (multi)
+    if (params->multi)
         est += sizeof(HNSWIndex); // change to HNSWIndex_Multi
     else
         est += sizeof(HNSWIndex); // change to HNSWIndex_Single

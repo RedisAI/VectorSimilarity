@@ -16,8 +16,9 @@ using namespace std;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract(allocator, params->dim, params->type, params->metric, params->blockSize),
-      idToLabelMapping(allocator), vectorBlocks(allocator), count(0), multi(false) {
+    : VecSimIndexAbstract(allocator, params->dim, params->type, params->metric, params->blockSize,
+                          params->multi),
+      idToLabelMapping(allocator), vectorBlocks(allocator), count(0) {
     this->idToLabelMapping.resize(params->initialCapacity);
 }
 
@@ -29,20 +30,17 @@ BruteForceIndex::~BruteForceIndex() {
 
 /******************** inheritance factory **************/
 
-BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const VecSimParams *params,
+BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const BFParams *params,
                                                       std::shared_ptr<VecSimAllocator> allocator) {
-    if (params->multi) {
-        return NULL;
-    } else {
-        return new (allocator) BruteForceIndex_Single(&params->bfParams, allocator);
-    }
+    assert(!params->multi);
+    return new (allocator) BruteForceIndex_Single(params, allocator);
 }
 
 /******************** Implementation **************/
-size_t BruteForceIndex::estimateInitialSize(const BFParams *params, bool multi) {
+size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (multi)
+    if (params->multi)
         est += sizeof(BruteForceIndex); // change to BruteForceIndex_Multi
     else
         est += sizeof(BruteForceIndex_Single);

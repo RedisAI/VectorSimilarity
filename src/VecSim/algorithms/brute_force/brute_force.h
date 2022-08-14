@@ -14,13 +14,12 @@ protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
     idType count;
-    bool multi;
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static BruteForceIndex *BruteForceIndex_New(const VecSimParams *params,
+    static BruteForceIndex *BruteForceIndex_New(const BFParams *params,
                                                 std::shared_ptr<VecSimAllocator> allocator);
-    static size_t estimateInitialSize(const BFParams *params, bool multi);
+    static size_t estimateInitialSize(const BFParams *params);
     static size_t estimateElementMemory(const BFParams *params);
     virtual size_t indexSize() const override;
     vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
@@ -37,7 +36,6 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     virtual inline labelType getVectorId(labelType label) const = 0;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
-    virtual inline bool isMultiValue() const { return multi; }
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     virtual ~BruteForceIndex();
