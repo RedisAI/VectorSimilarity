@@ -1,8 +1,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/IP_space.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
@@ -17,7 +15,7 @@ using namespace hnswlib;
 
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator, params->dim, params->type, params->metric, params->blockSize),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)), {}
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, this->dist_func, allocator)), {}
 
 /******************** inheritance factory **************/
 
@@ -31,8 +29,12 @@ HNSWIndex *HNSWIndex::HNSWIndex_New(const VecSimParams *params,
 }
 
 /******************** Implementation **************/
-size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
-    size_t est = sizeof(VecSimAllocator) + sizeof(HNSWIndex) + sizeof(size_t);
+size_t HNSWIndex::estimateInitialSize(const HNSWParams *params, bool multi) {
+    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
+    if (multi)
+        est += sizeof(HNSWIndex); // change to HNSWIndex_Multi
+    else
+        est += sizeof(HNSWIndex); // change to HNSWIndex_Single
     est += sizeof(*hnsw) + sizeof(size_t);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION

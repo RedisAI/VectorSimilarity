@@ -3,7 +3,6 @@
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
-#include "VecSim/spaces/space_interface.h"
 #include "info_iterator_struct.h"
 
 /**

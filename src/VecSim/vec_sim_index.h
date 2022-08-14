@@ -4,7 +4,7 @@
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
-#include "VecSim/spaces/space_interface.h"
+#include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
 
 /**
@@ -17,9 +17,8 @@ protected:
     VecSimType vecType;
     VecSimMetric metric;
     size_t blockSize;
-    DISTFUNC<float> dist_func;
+    Spaces::dist_func_t<float> dist_func;
     VecSearchMode last_mode;
-    std::shared_ptr<SpaceInterface<float>> space;
 
 public:
     /**
@@ -27,11 +26,11 @@ public:
      *
      */
     VecSimIndexAbstract(std::shared_ptr<VecSimAllocator> allocator, size_t dim, VecSimType vecType,
-                        VecSimMetric metric, size_t blockSize, SpaceInterface<float> *space)
+                        VecSimMetric metric, size_t blockSize)
         : VecSimIndexInterface(allocator), dim(dim), vecType(vecType), metric(metric),
-          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
-          space(space) {
-        dist_func = space->get_dist_func();
+          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE) {
+        assert(VecSim_SizeOfType(vecType));
+        Spaces::SetDistFunc(metric, dim, &dist_func);
     }
 
     /**
