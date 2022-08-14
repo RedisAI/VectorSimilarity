@@ -40,8 +40,6 @@ public:
     virtual inline bool isMultiValue() const { return multi; }
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
-    inline dist_func_t<float> distFunc() const { return dist_func; }
-    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
 protected:

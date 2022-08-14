@@ -40,6 +40,8 @@ public:
     virtual ~VecSimIndexAbstract() {}
 
     inline Spaces::dist_func_ptr_ty<float> GetDistFunc() const { return dist_func; }
+    inline size_t GetDim() const { return dim; }
+    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
 
 public:
     static timeoutCallbackFunction timeoutCallback;
