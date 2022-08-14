@@ -105,19 +105,3 @@ float f_InnerProductSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pV
     float res_tail = f_InnerProduct_impl(pVect1, pVect2, &qty_left);
     return 1.0f - (res + res_tail);
 }
-double d_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v,
-                                      const void *qty_ptr) {
-    return 0;
-}
-double d_InnerProductSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v,
-                                     const void *qty_ptr) {
-    return 0;
-}
-double d_InnerProductSIMD16ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
-                                               const void *qty_ptr) {
-    return 0;
-}
-double d_InnerProductSIMD4ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v,
-                                              const void *qty_ptr) {
-    return 0;
-}
