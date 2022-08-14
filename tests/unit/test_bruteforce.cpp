@@ -637,6 +637,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
+    ASSERT_FALSE(info.bfInfo.isMulti);
     // Default args.
     ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
@@ -653,6 +654,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
+    ASSERT_FALSE(info.bfInfo.isMulti);
     // User args.
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
