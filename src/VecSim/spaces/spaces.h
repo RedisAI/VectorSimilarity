@@ -29,6 +29,5 @@ const size_t OPTIMIZATIONS_COUNT = 5;
 OptimizationScore GetDimOptimizationScore(size_t dim);
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<float> *index_dist_func);
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<double> *index_dist_func);
 
 } // namespace Spaces
