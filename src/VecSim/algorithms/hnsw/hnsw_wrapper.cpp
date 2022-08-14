@@ -237,6 +237,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.algo = VecSimAlgo_HNSWLIB;
     info.hnswInfo.dim = this->dim;
     info.hnswInfo.type = this->vecType;
+    info.hnswInfo.isMulti = this->isMulti;
     info.hnswInfo.metric = this->metric;
     info.hnswInfo.blockSize = this->blockSize;
     info.hnswInfo.M = this->hnsw->getM();
@@ -244,6 +245,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.efRuntime = this->hnsw->getEf();
     info.hnswInfo.epsilon = this->hnsw->getEpsilon();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
+    info.hnswInfo.indexLabelCount = this->hnsw->getIndexLabelCount();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();
@@ -286,9 +288,16 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
         VecSim_InfoField{.fieldName = VecSimCommonStrings::METRIC_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .stringValue = VecSimMetric_ToString(info.hnswInfo.metric)});
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .uintegerValue = info.bfInfo.isMulti});
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                                                 .fieldType = INFOFIELD_UINT64,
                                                 .uintegerValue = info.hnswInfo.indexSize});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .uintegerValue = info.hnswInfo.indexLabelCount});
     infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
                                                 .fieldType = INFOFIELD_UINT64,
                                                 .uintegerValue = info.hnswInfo.M});
