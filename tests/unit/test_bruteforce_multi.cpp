@@ -608,10 +608,12 @@ TEST_F(BruteForceMultiTest, test_basic_bf_info_iterator) {
 
 TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     size_t d = 128;
-    VecSimParams params{
-        .algo = VecSimAlgo_BF,
-        .bfParams = BFParams{
-            .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .blockSize = 1}};
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = d,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .blockSize = 1}};
     float v[d];
     for (size_t i = 0; i < d; i++) {
         v[i] = (float)i;
@@ -624,19 +626,24 @@ TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    // Add vector.
+    // Add vectors.
     VecSimIndex_AddVector(index, v, 0);
+    VecSimIndex_AddVector(index, v, 0);
+    VecSimIndex_AddVector(index, v, 1);
+    VecSimIndex_AddVector(index, v, 1);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.bfInfo.indexSize);
+    ASSERT_EQ(4, info.bfInfo.indexSize);
+    ASSERT_EQ(2, info.bfInfo.indexLabelCount);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    // Delete vector.
+    // Delete vectors.
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(0, info.bfInfo.indexSize);
+    ASSERT_EQ(2, info.bfInfo.indexSize);
+    ASSERT_EQ(1, info.bfInfo.indexLabelCount);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -856,73 +863,64 @@ TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
 //     VecSimIndex_Free(index);
 // }
 
-// TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
-//     size_t dim = 4;
-//     size_t n = 2;
+TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
+    size_t dim = 4;
+    size_t bs = 2;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200,
-//                                              .blockSize = 1}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 200,
+                                             .blockSize = bs}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     // Add 2 vectors, into 2 separated blocks.
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    // Add 1 vector with label 1
+    float f[dim];
+    for (size_t j = 0; j < dim; j++) {
+        f[j] = 1.0f;
+    }
+    VecSimIndex_AddVector(index, (const void *)f, 1);
 
-//     // After deleting the first vector, the second one will be moved to the first block.
-//     for (size_t i = 0; i < n; i++) {
-//         VecSimIndex_DeleteVector(index, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Add 3 vectors with label 3
+    for (size_t j = 0; j < dim; j++) {
+        f[j] = 3.0f;
+    }
+    VecSimIndex_AddVector(index, (const void *)f, 3);
+    VecSimIndex_AddVector(index, (const void *)f, 3);
+    VecSimIndex_AddVector(index, (const void *)f, 3);
 
-//     VecSimIndex_Free(index);
-// }
+    // Add 2 vectors with label 2
+    for (size_t j = 0; j < dim; j++) {
+        f[j] = 2.0f;
+    }
+    VecSimIndex_AddVector(index, (const void *)f, 2);
+    VecSimIndex_AddVector(index, (const void *)f, 2);
 
-// TEST_F(BruteForceMultiTest, brute_force_zero_minimal_capacity) {
-//     size_t dim = 4;
-//     size_t n = 2;
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 6);
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 0,
-//                                              .blockSize = 1}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Delete label 3. the following drawing present the expected changes
+    // [[1, 3], [3, 3], [2, 2]] -> [[1, 2], [3, 3], [2]] -> [[1, 2], [2, 3]] -> [[1, 2], [2]]
+    // [[0, 1], [2, 3], [4, 5]] -> [[0, 5], [2, 3], [4]] -> [[0, 5], [4, 3]] -> [[0, 5], [4]]
+    VecSimIndex_DeleteVector(index, 3);
 
-//     float vec[dim];
-//     // Add 2 vectors, into 2 separated blocks.
-//     for (size_t i = 0; i < n; i++) {
-//         VecSimIndex_AddVector(index, vec, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, 2);
+    auto bf_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
+    ASSERT_EQ(bf_index->getVectorLabel(0), 1);
+    ASSERT_EQ(bf_index->getVectorLabel(1), 2);
+    ASSERT_EQ(bf_index->getVectorLabel(2), 2);
 
-//     // id2label size should be the same as index size.
-//     ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(), n);
+    // After deleting the first vector, the second one will be moved to the first block.
+    for (size_t i = 0; i < 4; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     // After deleting the first vector, the second one will be moved to the first block.
-//     for (size_t i = 0; i < n; i++) {
-//         VecSimIndex_DeleteVector(index, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-//     // id2label size should be the same as index size
-//     ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(), 0);
-
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
 // TEST_F(BruteForceMultiTest, brute_force_batch_iterator) {
 //     size_t dim = 4;
@@ -1179,48 +1177,6 @@ TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
 //     VecSimIndex_Free(index);
 // }
 
-// TEST_F(BruteForceMultiTest, brute_force_resolve_params) {
-//     size_t dim = 4;
-
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 0,
-//                                              .blockSize = 5}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-
-//     VecSimQueryParams qparams, zero;
-//     bzero(&zero, sizeof(VecSimQueryParams));
-
-//     auto *rparams = array_new<VecSimRawParam>(2);
-
-//     // EF_RUNTIME is not a valid parameter for BF index.
-//     array_append(rparams, (VecSimRawParam){.name = "ef_runtime",
-//                                            .nameLen = strlen("ef_runtime"),
-//                                            .value = "200",
-//                                            .valLen = strlen("200")});
-//     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
-//               VecSimParamResolverErr_UnknownParam);
-
-//     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
-//     // Sending only "batch_size" param is valid.
-//     array_append(rparams, (VecSimRawParam){.name = "batch_size",
-//                                            .nameLen = strlen("batch_size"),
-//                                            .value = "100",
-//                                            .valLen = strlen("100")});
-//     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, true), VecSim_OK);
-//     ASSERT_EQ(qparams.batchSize, 100);
-
-//     // With EF_RUNTIME, its again invalid (for hybrid queries as well).
-//     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
-//               VecSimParamResolverErr_UnknownParam);
-
-//     VecSimIndex_Free(index);
-//     array_free(rparams);
-// }
-
 TEST_F(BruteForceMultiTest, brute_get_distance) { // TODO: modify to use multi values
     size_t n = 4;
     size_t dim = 2;
@@ -1288,65 +1244,8 @@ TEST_F(BruteForceMultiTest, brute_get_distance) { // TODO: modify to use multi v
     }
 }
 
-// TEST_F(BruteForceMultiTest, preferAdHocOptimization) {
-//     // Save the expected ratio which is the threshold between ad-hoc and batches mode
-//     // for every combination of index size and dim.
-//     std::map<std::pair<size_t, size_t>, float> threshold;
-//     threshold[{1000, 4}] = threshold[{1000, 80}] = threshold[{1000, 350}] = threshold[{1000,
-//     780}] =
-//         1.0;
-//     threshold[{6000, 4}] = 0.2;
-//     threshold[{6000, 80}] = 0.4;
-//     threshold[{6000, 350}] = 0.6;
-//     threshold[{6000, 780}] = 0.8;
-//     threshold[{600000, 4}] = threshold[{600000, 80}] = 0.2;
-//     threshold[{600000, 350}] = 0.6;
-//     threshold[{600000, 780}] = 0.8;
-
-//     for (size_t index_size : {1000, 6000, 600000}) {
-//         for (size_t dim : {4, 80, 350, 780}) {
-//             // Create index and check for the expected output of "prefer ad-hoc".
-//             VecSimParams params{.algo = VecSimAlgo_BF,
-//                                 .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                                      .dim = dim,
-//                                                      .metric = VecSimMetric_IP,
-//                                                      .multi = true,
-//                                              .initialCapacity = index_size}};
-//             VecSimIndex *index = VecSimIndex_New(&params);
-
-//             // Set the index size artificially to be the required one.
-//             reinterpret_cast<BruteForceIndex_Multi *>(index)->count = index_size;
-//             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
-//             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
-//                 bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50,
-//                 true);
-//                 // If r is below the threshold for this specific configuration of (index_size,
-//                 dim),
-//                 // expect that result will be ad-hoc (i.e., true), and otherwise, batches (i.e.,
-//                 // false)
-//                 bool expected_res = r < threshold[{index_size, dim}];
-//                 ASSERT_EQ(res, expected_res);
-//             }
-//             VecSimIndex_Free(index);
-//         }
-//     }
-//     // Corner cases - empty index.
-//     VecSimParams params{
-//         .algo = VecSimAlgo_BF,
-//         .bfParams = BFParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_IP}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-//     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
-
-//     // Corner cases - subset size is greater than index size.
-//     try {
-//         VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
-//         FAIL() << "Expected std::runtime error";
-//     } catch (std::runtime_error const &err) {
-//         EXPECT_EQ(err.what(),
-//                   std::string("internal error: subset size cannot be larger than index size"));
-//     }
-//     VecSimIndex_Free(index);
-// }
+// TODO: check what is the preferred optimization when we have multi values
+// TEST_F(BruteForceMultiTest, preferAdHocOptimization)
 
 // TEST_F(BruteForceMultiTest, batchIteratorSwapIndices) {
 //     size_t dim = 4;
@@ -1482,58 +1381,58 @@ TEST_F(BruteForceMultiTest, brute_get_distance) { // TODO: modify to use multi v
 //     VecSimIndex_Free(index);
 // }
 
-// TEST_F(BruteForceMultiTest, testSizeEstimation) {
-//     size_t dim = 128;
-//     size_t n = 0;
-//     size_t bs = DEFAULT_BLOCK_SIZE;
+TEST_F(BruteForceMultiTest, testSizeEstimation) {
+    size_t dim = 128;
+    size_t n = 0;
+    size_t bs = DEFAULT_BLOCK_SIZE;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_Cosine,
-//                                              .multi = true,
-//                                              .initialCapacity = n,
-//                                              .blockSize = bs}};
-//     float vec[dim];
-//     for (size_t i = 0; i < dim; i++) {
-//         vec[i] = 1.0f;
-//     }
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_Cosine,
+                                             .multi = true,
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
+    float vec[dim];
+    for (size_t i = 0; i < dim; i++) {
+        vec[i] = 1.0f;
+    }
 
-//     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     size_t actual = index->getAllocator()->getAllocationSize();
-//     ASSERT_EQ(estimation, actual);
+    size_t actual = index->getAllocator()->getAllocationSize();
+    ASSERT_EQ(estimation, actual);
 
-//     estimation = VecSimIndex_EstimateElementSize(&params) * bs;
-//     actual = VecSimIndex_AddVector(index, vec, 0);
-//     ASSERT_GE(estimation * 1.01, actual);
-//     ASSERT_LE(estimation * 0.99, actual);
+    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    actual = VecSimIndex_AddVector(index, vec, 0);
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
-// TEST_F(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
-//     size_t dim = 128;
-//     size_t n = 100;
-//     size_t bs = DEFAULT_BLOCK_SIZE;
+TEST_F(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
+    size_t dim = 128;
+    size_t n = 100;
+    size_t bs = DEFAULT_BLOCK_SIZE;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_Cosine,
-//                                              .multi = true,
-//                                              .initialCapacity = n,
-//                                              .blockSize = bs}};
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_Cosine,
+                                             .multi = true,
+                                             .initialCapacity = n,
+                                             .blockSize = bs}};
 
-//     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     size_t actual = index->getAllocator()->getAllocationSize();
-//     ASSERT_EQ(estimation, actual);
+    size_t actual = index->getAllocator()->getAllocationSize();
+    ASSERT_EQ(estimation, actual);
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
 // TEST_F(BruteForceMultiTest, testTimeoutReturn) {
 //     size_t dim = 4;

@@ -25,5 +25,6 @@ private:
     friend class BruteForceMultiTest_resizeNAlignIndex_Test;
     friend class BruteForceMultiTest_brute_force_empty_index_Test;
     friend class BruteForceMultiTest_test_delete_swap_block_Test;
+    friend class BruteForceMultiTest_brute_force_remove_vector_after_replacing_block_Test;
 #endif
 };
