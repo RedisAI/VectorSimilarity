@@ -145,3 +145,18 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
         return NULL;
     }
 }
+
+size_t VecSim_SizeOfType(VecSimType vecsimType) {
+    switch (vecsimType) {
+    case VecSimType_FLOAT32:
+        return sizeof(float);
+    case VecSimType_FLOAT64:
+        return sizeof(double);
+    case VecSimType_INT32:
+        return sizeof(int);
+    case VecSimType_INT64:
+        return sizeof(long int);
+    default:
+        return 0;
+    }
+}

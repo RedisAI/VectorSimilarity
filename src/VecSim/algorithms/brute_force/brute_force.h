@@ -43,7 +43,7 @@ public:
     } // throws out_of_range
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
-    inline Spaces::dist_func_ptr_ty<float> distFunc() const { return dist_func; }
+    inline Spaces::dist_func_t<float> distFunc() const { return dist_func; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
@@ -65,7 +65,7 @@ private:
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
-    Spaces::dist_func_ptr_ty<float> dist_func;
+    Spaces::dist_func_t<float> dist_func;
     VecSearchMode last_mode;
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.

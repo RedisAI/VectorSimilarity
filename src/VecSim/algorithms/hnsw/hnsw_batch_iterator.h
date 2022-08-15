@@ -16,7 +16,7 @@ class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
     HNSWIndex *index_wrapper;
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index;
-    Spaces::dist_func_ptr_ty<float> dist_func;
+    Spaces::dist_func_t<float> dist_func;
     size_t dim;
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     unsigned short visited_tag;                 // Used to mark nodes that were scanned.
