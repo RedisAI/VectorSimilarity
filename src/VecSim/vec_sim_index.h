@@ -4,8 +4,10 @@
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
+#include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
+#include <cassert>
 
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
@@ -31,7 +33,7 @@ public:
         : VecSimIndexInterface(allocator), dim(dim), vecType(vecType), metric(metric),
           blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
           isMulti(multi) {
-        assert(VecSim_SizeOfType(vecType));
+        assert(VecSimType_sizeof(vecType));
         Spaces::SetDistFunc(metric, dim, &dist_func);
     }
 
@@ -41,7 +43,7 @@ public:
      */
     virtual ~VecSimIndexAbstract() {}
 
-    inline Spaces::dist_func_ptr_ty<float> GetDistFunc() const { return dist_func; }
+    inline Spaces::dist_func_t<float> GetDistFunc() const { return dist_func; }
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }

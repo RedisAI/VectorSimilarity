@@ -1,7 +1,6 @@
 
 #include "brute_force.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"

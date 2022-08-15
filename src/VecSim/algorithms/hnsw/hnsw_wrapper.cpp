@@ -1,6 +1,5 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
