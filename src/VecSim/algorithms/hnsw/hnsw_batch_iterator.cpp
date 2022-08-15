@@ -143,7 +143,7 @@ HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrap
 
     this->hnsw_index = index_wrapper->getHNSWIndex();
     this->dist_func = hnsw_index->GetDistFunc();
-    this->dim = index_wrapper->GetDim();
+    this->dim = hnsw_index->GetDim();
     this->entry_point = hnsw_index->getEntryPointId();
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = hnsw_index->getVisitedList();

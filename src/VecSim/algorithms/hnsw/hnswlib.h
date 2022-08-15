@@ -182,6 +182,7 @@ public:
                                    VecSimQueryResult_Code *rc) const;
     bool isLabelExist(labeltype label);
     Spaces::dist_func_t<float> GetDistFunc() const { return fstdistfunc_; }
+    size_t GetDim() const { return dim; }
 };
 
 /**

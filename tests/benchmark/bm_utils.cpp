@@ -1,15 +1,17 @@
 #include "bm_utils.h"
+#include "VecSim/spaces/spaces.h"
 
 void load_HNSW_index(const char *path, VecSimIndex *hnsw_index) {
 
     // Load the index file, if it exists in the expected path.
     auto location = std::string(getenv("ROOT"));
     auto file_name = location + "/" + path;
-    auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
+    std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index_ptr =
+        reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex();
+    auto serializer = hnswlib::HNSWIndexSerializer(hnsw_index_ptr);
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
-        serializer.loadIndex(file_name);
+        serializer.loadIndex(file_name, hnsw_index_ptr->GetDistFunc(), hnsw_index_ptr->GetDim());
         if (!serializer.checkIntegrity().valid_state) {
             throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
