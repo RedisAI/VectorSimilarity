@@ -48,8 +48,7 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
 
-public:
+    // Static class functions
     static timeoutCallbackFunction timeoutCallback;
-
     static void setTimeoutCallbackFunction(timeoutCallbackFunction callback);
 };

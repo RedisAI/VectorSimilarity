@@ -53,7 +53,7 @@ public:
      * @return The distance (according to the index's distance metric) between `blob` and the vector
      * with id `id`.
      */
-    virtual double getDistanceFrom(size_t id, const void *blob) = 0;
+    virtual double getDistanceFrom(size_t id, const void *blob) const = 0;
 
     /**
      * @brief Return the number of vectors in the index using its SizeFn.
@@ -110,7 +110,7 @@ public:
      *
      * @return VecSimInfoIterator Index general and specific meta-data.
      */
-    virtual VecSimInfoIterator *infoIterator() = 0;
+    virtual VecSimInfoIterator *infoIterator() const = 0;
 
     /**
      * @brief Create a new batch iterator for a specific index, for a specific query vector,

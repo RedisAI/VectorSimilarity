@@ -26,18 +26,7 @@ int BruteForceIndex_Single::addVector(const void *vector_data, size_t label) {
         return true;
     }
 
-    // Give the vector new id and increase count.
-    idType id = count++;
-
-    int res = insertVector(vector_data, id);
-
-    // add label to idToLabelMapping
-    setVectorLabel(id, label);
-
-    // add id to label:id map
-    addIdToLabel(label, id);
-
-    return res;
+    return appendVector(vector_data, label);
 }
 
 int BruteForceIndex_Single::deleteVector(size_t label) {
@@ -58,7 +47,7 @@ int BruteForceIndex_Single::deleteVector(size_t label) {
     return removeVector(id_to_delete);
 }
 
-double BruteForceIndex_Single::getDistanceFrom(size_t label, const void *vector_data) {
+double BruteForceIndex_Single::getDistanceFrom(size_t label, const void *vector_data) const {
 
     auto optionalId = this->labelToIdLookup.find(label);
     if (optionalId == this->labelToIdLookup.end()) {
@@ -66,16 +55,12 @@ double BruteForceIndex_Single::getDistanceFrom(size_t label, const void *vector_
     }
     idType id = optionalId->second;
 
-    // Get the vectorBlock and the relative index of the required id.
-    VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
-    size_t req_rel_idx = getVectorRelativeIndex(id);
-
-    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
+    return this->dist_func(getDataByInternalId(id), vector_data, &this->dim);
 }
 
 // inline definitions
 
-void BruteForceIndex_Single::addIdToLabel(labelType label, idType id) {
+void BruteForceIndex_Single::setVectorId(labelType label, idType id) {
     labelToIdLookup.emplace(label, id);
 }
 

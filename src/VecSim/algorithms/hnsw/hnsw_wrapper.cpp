@@ -142,7 +142,7 @@ int HNSWIndex::deleteVector(size_t id) {
     return true;
 }
 
-double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
+double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) const {
     return this->hnsw->getDistanceByLabelFromPoint(label, vector_data);
 }
 
@@ -267,7 +267,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
         HNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
-VecSimInfoIterator *HNSWIndex::infoIterator() {
+VecSimInfoIterator *HNSWIndex::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 12;

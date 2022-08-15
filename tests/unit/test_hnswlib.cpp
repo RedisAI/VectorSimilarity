@@ -1657,7 +1657,7 @@ TEST_F(HNSWLibTest, testCosine) {
 
 TEST_F(HNSWLibTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 1000; // 0;
+    size_t n = 1000;
     size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
 

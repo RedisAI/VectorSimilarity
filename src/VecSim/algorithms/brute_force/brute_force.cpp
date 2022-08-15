@@ -68,7 +68,10 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     vectorBlock->updateVector(index, vector_data);
 }
 
-int BruteForceIndex::insertVector(const void *vector_data, idType id) {
+int BruteForceIndex::appendVector(const void *vector_data, labelType label) {
+
+    // Give the vector new id and increase count.
+    idType id = count++;
 
     // Get vector block to store the vector in.
 
@@ -96,6 +99,12 @@ int BruteForceIndex::insertVector(const void *vector_data, idType id) {
         this->idToLabelMapping.resize(idToLabelMapping_size + blockSize - last_block_vectors_count,
                                       0);
     }
+
+    // add label to idToLabelMapping
+    setVectorLabel(id, label);
+
+    // add id to label:id map
+    setVectorId(label, id);
 
     return true;
 }
@@ -273,7 +282,7 @@ VecSimIndexInfo BruteForceIndex::info() const {
     return info;
 }
 
-VecSimInfoIterator *BruteForceIndex::infoIterator() {
+VecSimInfoIterator *BruteForceIndex::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 8;
