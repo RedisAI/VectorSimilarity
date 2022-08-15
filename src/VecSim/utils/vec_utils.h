@@ -63,4 +63,4 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
 
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 
-size_t VecSim_SizeOfType(VecSimType vecsimType);
+size_t VecSimType_sizeof(VecSimType vecsimType);

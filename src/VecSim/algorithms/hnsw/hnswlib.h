@@ -894,7 +894,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(VecSimType vecType, VecSimMetric metric
                                          std::shared_ptr<VecSimAllocator> allocator, size_t M,
                                          size_t ef_construction, size_t ef, size_t random_seed,
                                          size_t pool_initial_size)
-    : VecsimBaseObject(allocator), data_size_(VecSim_SizeOfType(vecType) * dim), dim(dim),
+    : VecsimBaseObject(allocator), data_size_(VecSimType_sizeof(vecType) * dim), dim(dim),
       element_levels_(max_elements, allocator), label_lookup_(max_elements, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
