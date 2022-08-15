@@ -18,17 +18,7 @@ int BruteForceIndex_Multi::addVector(const void *vector_data, size_t label) {
         vector_data = normalized_data;
     }
 
-    // Give the vector new id and increase count.
-    idType id = count++;
-    int res = insertVector(vector_data, id);
-
-    // add label to idToLabelMapping
-    setVectorLabel(id, label);
-
-    // add id to label:id map
-    addIdToLabel(label, id);
-
-    return res;
+    return appendVector(vector_data, label);
 }
 
 int BruteForceIndex_Multi::deleteVector(size_t label) {
@@ -52,7 +42,7 @@ int BruteForceIndex_Multi::deleteVector(size_t label) {
     return ret;
 }
 
-double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_data) {
+double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_data) const {
 
     auto IDs = this->labelToIdsLookup.find(label);
     if (IDs == this->labelToIdsLookup.end()) {
@@ -72,7 +62,7 @@ double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_d
 
 // inline definitions
 
-void BruteForceIndex_Multi::addIdToLabel(labelType label, idType id) {
+void BruteForceIndex_Multi::setVectorId(labelType label, idType id) {
     auto labelKey = labelToIdsLookup.find(label);
     if (labelKey != labelToIdsLookup.end()) {
         labelKey->second.push_back(id);

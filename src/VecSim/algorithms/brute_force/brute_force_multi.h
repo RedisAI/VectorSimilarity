@@ -12,12 +12,12 @@ public:
 
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
-    virtual double getDistanceFrom(size_t label, const void *vector_data) override;
+    virtual double getDistanceFrom(size_t label, const void *vector_data) const override;
 
     virtual inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
 private:
-    inline void addIdToLabel(labelType label, idType id) override;
+    inline void setVectorId(labelType label, idType id) override;
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
 #ifdef BUILD_TESTS
