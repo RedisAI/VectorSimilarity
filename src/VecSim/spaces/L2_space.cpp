@@ -10,44 +10,52 @@
 #include "VecSim/spaces/L2/L2_SSE.h"
 namespace Spaces {
 
-dist_func_ptr_ty<float> L2_FLOAT_GetOptDistFunc(size_t dim) {
+dist_func_t<float> L2_FLOAT_GetOptDistFunc(size_t dim) {
 
-    dist_func_ptr_ty<float> ret_dist_func = f_L2Sqr;
+    dist_func_t<float> ret_dist_func = F_L2Sqr;
 #if defined(M1)
 #elif defined(__x86_64__)
 
     OptimizationScore optimization_type = GetDimOptimizationScore(dim);
-
-    if (arch_opt == ARCH_OPT_AVX512) {
+    switch (arch_opt) {
+    case ARCH_OPT_NONE:
+        break;
+    case ARCH_OPT_AVX512: 
 #ifdef __AVX512F__
-
-        static dist_func_ptr_ty<float> dist_funcs[OPTIMIZATIONS_COUNT] = {
-            f_L2SqrSIMD16Ext_AVX512, f_L2SqrSIMD4Ext_AVX512, f_L2SqrSIMD16ExtResiduals_AVX512,
-            f_L2SqrSIMD4ExtResiduals_AVX512, f_L2Sqr};
-
-        ret_dist_func = dist_funcs[optimization_type];
-#endif
-    } else if (arch_opt == ARCH_OPT_AVX) {
-#ifdef __AVX__
-
-        static dist_func_ptr_ty<float> dist_funcs[OPTIMIZATIONS_COUNT] = {
-            f_L2SqrSIMD16Ext_AVX, f_L2SqrSIMD4Ext_AVX, f_L2SqrSIMD16ExtResiduals_AVX,
-            f_L2SqrSIMD4ExtResiduals_AVX, f_L2Sqr};
+        {
+        static dist_func_t<float> dist_funcs[] = {
+            F_L2Sqr, F_L2SqrSIMD16Ext_AVX512, F_L2SqrSIMD4Ext_AVX512,
+            F_L2SqrSIMD16ExtResiduals_AVX512, F_L2SqrSIMD4ExtResiduals_AVX512};
 
         ret_dist_func = dist_funcs[optimization_type];
-
-#endif
-    } else if (arch_opt == ARCH_OPT_SSE) {
-#ifdef __SSE__
-
-        static dist_func_ptr_ty<float> dist_funcs[OPTIMIZATIONS_COUNT] = {
-            f_L2SqrSIMD16Ext_SSE, f_L2SqrSIMD4Ext_SSE, f_L2SqrSIMD16ExtResiduals_SSE,
-            f_L2SqrSIMD4ExtResiduals_SSE, f_L2Sqr};
-
-        ret_dist_func = dist_funcs[optimization_type];
-
-#endif
     }
+        break;
+#endif
+    case ARCH_OPT_AVX: 
+#ifdef __AVX__
+        {
+        static dist_func_t<float> dist_funcs[] = {
+            F_L2Sqr, F_L2SqrSIMD16Ext_AVX, F_L2SqrSIMD4Ext_AVX, F_L2SqrSIMD16ExtResiduals_AVX,
+            F_L2SqrSIMD4ExtResiduals_AVX};
+
+        ret_dist_func = dist_funcs[optimization_type];
+        }
+        break;
+
+#endif
+    case ARCH_OPT_SSE: 
+#ifdef __SSE__
+        {
+        static dist_func_t<float> dist_funcs[] = {
+            F_L2Sqr, F_L2SqrSIMD16Ext_SSE, F_L2SqrSIMD4Ext_SSE, F_L2SqrSIMD16ExtResiduals_SSE,
+            F_L2SqrSIMD4ExtResiduals_SSE};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    }
+        break;
+    } // switch
+#endif
+
 #endif // __x86_64__
     return ret_dist_func;
 }

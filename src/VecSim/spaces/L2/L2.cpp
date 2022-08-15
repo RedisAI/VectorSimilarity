@@ -2,7 +2,7 @@
 #include "L2.h"
 #include <stdlib.h>
 
-float f_L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float F_L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
     size_t qty = *((size_t *)qty_ptr);

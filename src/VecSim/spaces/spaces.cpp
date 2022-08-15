@@ -28,7 +28,7 @@ OptimizationScore GetDimOptimizationScore(size_t dim) {
     return ret_score;
 }
 
-void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_ptr_ty<float> *index_dist_func) {
+void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func) {
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
