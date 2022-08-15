@@ -148,10 +148,14 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
 
 size_t VecSimType_sizeof(VecSimType type) {
     switch (type) {
-        case VecSimType_FLOAT32: return sizeof(float);
-        case VecSimType_FLOAT64: return sizeof(double);
-        case VecSimType_INT32: return sizeof(int32_t);
-        case VecSimType_INT64: return sizeof(int64_t);
+    case VecSimType_FLOAT32:
+        return sizeof(float);
+    case VecSimType_FLOAT64:
+        return sizeof(double);
+    case VecSimType_INT32:
+        return sizeof(int32_t);
+    case VecSimType_INT64:
+        return sizeof(int64_t);
     }
     return 0;
 }
