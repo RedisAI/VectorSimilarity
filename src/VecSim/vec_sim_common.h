@@ -15,8 +15,8 @@ extern "C" {
 
 // Datatypes for indexing.
 typedef enum {
-    VecSimType_FLOAT32 = sizeof(float),
-    VecSimType_FLOAT64 = sizeof(double),
+    VecSimType_FLOAT32,
+    VecSimType_FLOAT64,
     VecSimType_INT32,
     VecSimType_INT64
 } VecSimType;

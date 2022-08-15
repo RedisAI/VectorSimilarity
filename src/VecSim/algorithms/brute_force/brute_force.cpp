@@ -15,11 +15,12 @@ using namespace std;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator), dim(params->dim), vecTypeNTypeSize(params->type),
+    : VecSimIndex(allocator), dim(params->dim), vecType(params->type),
       metric(params->metric), labelToIdLookup(allocator), idToLabelMapping(allocator),
       vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       last_mode(EMPTY_MODE) {
+        assert(VecSim_SizeOfType(vecType));
 
     Spaces::SetDistFunc(metric, dim, &dist_func);
     this->idToLabelMapping.resize(params->initialCapacity);
@@ -84,7 +85,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
     if (id % vectorBlockSize == 0) {
-        size_t vector_bytes_count = this->dim * this->vecTypeNTypeSize;
+        size_t vector_bytes_count = this->dim * VecSim_SizeOfType(this->vecType);
         VectorBlock *new_vectorBlock = new (this->allocator)
             VectorBlock(this->vectorBlockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
@@ -306,7 +307,7 @@ VecSimIndexInfo BruteForceIndex::info() const {
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
     info.bfInfo.dim = this->dim;
-    info.bfInfo.type = this->vecTypeNTypeSize;
+    info.bfInfo.type = this->vecType;
     info.bfInfo.metric = this->metric;
     info.bfInfo.indexSize = this->count;
     info.bfInfo.blockSize = this->vectorBlockSize;
@@ -356,7 +357,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
-    assert(this->vecTypeNTypeSize == VecSimType_FLOAT32);
+    assert(this->vecType == VecSimType_FLOAT32);
     auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
     memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
     if (metric == VecSimMetric_Cosine) {
