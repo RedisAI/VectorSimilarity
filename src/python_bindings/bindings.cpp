@@ -131,9 +131,8 @@ public:
     }
     void loadIndex(const std::string &location) {
         std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index =
-        reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex();
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(hnsw_index);
+            reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex();
+        auto serializer = hnswlib::HNSWIndexSerializer(hnsw_index);
         serializer.loadIndex(location, hnsw_index->GetDistFunc(), hnsw_index->GetDim());
     }
 };
