@@ -1401,8 +1401,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto new_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
 
-    auto new_hnsw_index =
-        reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex().get();
+    auto new_hnsw_index = reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex().get();
 
     serializer.reset(reinterpret_cast<HNSWIndex *>(new_index)->getHNSWIndex());
     serializer.loadIndex(file_name, new_hnsw_index->GetDistFunc(), new_hnsw_index->GetDim());
@@ -1447,8 +1446,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto restored_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
 
-    auto restored_hnsw_index =
-        reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex().get();
+    auto restored_hnsw_index = reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex().get();
 
     serializer.reset(reinterpret_cast<HNSWIndex *>(restored_index)->getHNSWIndex());
     serializer.loadIndex(file_name, restored_hnsw_index->GetDistFunc(),
