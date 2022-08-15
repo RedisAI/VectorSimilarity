@@ -1235,8 +1235,8 @@ TEST_F(BruteForceMultiTest, brute_get_distance) { // TODO: modify to use multi v
 
     VecSimParams params{
         .algo = VecSimAlgo_BF,
-        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = dim, .multi = true,
-                                             .initialCapacity = n}};
+        .hnswParams = HNSWParams{
+            .type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = n}};
 
     for (size_t i = 0; i < numIndex; i++) {
         params.bfParams.metric = (VecSimMetric)i;
