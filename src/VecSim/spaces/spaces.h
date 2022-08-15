@@ -19,10 +19,10 @@ using dist_func_t = RET_TYPE (*)(const void *, const void *, const void *dim);
 
 enum OptimizationScore {
     NO_OPT = 0,
-    Ext16 = 1, // dim % 16 == 0
-    Ext4 = 2,             // dim % 4 == 0
-    ExtResiduals16 = 3,   // dim > 16 && dim % 16 < 4
-    ExtResiduals4 = 4,    // dim > 4
+    Ext16 = 1,          // dim % 16 == 0
+    Ext4 = 2,           // dim % 4 == 0
+    ExtResiduals16 = 3, // dim > 16 && dim % 16 < 4
+    ExtResiduals4 = 4,  // dim > 4
 };
 
 OptimizationScore GetDimOptimizationScore(size_t dim);

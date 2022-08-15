@@ -15,12 +15,11 @@ using namespace std;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator), dim(params->dim), vecType(params->type),
-      metric(params->metric), labelToIdLookup(allocator), idToLabelMapping(allocator),
-      vectorBlocks(allocator),
+    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
+      labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       last_mode(EMPTY_MODE) {
-        assert(VecSim_SizeOfType(vecType));
+    assert(VecSim_SizeOfType(vecType));
 
     Spaces::SetDistFunc(metric, dim, &dist_func);
     this->idToLabelMapping.resize(params->initialCapacity);
