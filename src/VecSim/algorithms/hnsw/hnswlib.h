@@ -7,6 +7,7 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/vec_sim_common.h"
 
 #include <deque>
 #include <memory>
@@ -22,6 +23,7 @@
 
 namespace hnswlib {
 using namespace std;
+using spaces::dist_func_t;
 
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
@@ -50,8 +52,8 @@ private:
     double epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
-    size_t data_size_;
     size_t dim;
+    size_t data_size_;
     size_t size_data_per_element_;
     size_t size_links_per_element_;
     size_t size_links_level0_;
@@ -91,7 +93,7 @@ private:
 #endif
 
     // callback for computing distance between two points in the underline space.
-    Spaces::dist_func_t<dist_t> fstdistfunc_;
+    dist_func_t<dist_t> fstdistfunc_;
 
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
@@ -148,10 +150,8 @@ private:
     void SwapLastIdWithDeletedId(tableint element_internal_id, tableint last_element_internal_id);
 
 public:
-    HierarchicalNSW(VecSimType vecType, VecSimMetric metric, size_t dim, size_t max_elements,
-                    std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
-                    size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
-                    size_t initial_pool_size = 1);
+    HierarchicalNSW(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+                    size_t ef = 10, size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -181,7 +181,7 @@ public:
     VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
                                    VecSimQueryResult_Code *rc) const;
     bool isLabelExist(labeltype label);
-    Spaces::dist_func_t<float> GetDistFunc() const { return fstdistfunc_; }
+    dist_func_t<float> GetDistFunc() const { return fstdistfunc_; }
     size_t GetDim() const { return dim; }
 };
 
@@ -888,27 +888,38 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
         this->entrypoint_node_ = element_internal_id;
     }
 }
-
+/* typedef struct {
+    VecSimType type;     // Datatype to index.
+    size_t dim;          // Vector's dimension.
+    VecSimMetric metric; // Distance metric to use in the index.
+    size_t initialCapacity;
+    size_t blockSize;
+    size_t M;
+    size_t efConstruction;
+    size_t efRuntime;
+    double epsilon;
+} HNSWParams; */
 template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(VecSimType vecType, VecSimMetric metric, size_t dim,
-                                         size_t max_elements,
-                                         std::shared_ptr<VecSimAllocator> allocator, size_t M,
-                                         size_t ef_construction, size_t ef, size_t random_seed,
-                                         size_t pool_initial_size)
-    : VecsimBaseObject(allocator), data_size_(VecSimType_sizeof(vecType) * dim), dim(dim),
-      element_levels_(max_elements, allocator), label_lookup_(max_elements, allocator)
+HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
+                                         std::shared_ptr<VecSimAllocator> allocator, size_t ef,
+                                         size_t random_seed, size_t pool_initial_size)
+    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), ef_(ef),
+      dim(params->dim), data_size_(VecSimType_sizeof(params->type) * dim),
+      element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                                    link_list_locks_(max_elements),
+                                                     link_list_locks_(max_elements_),
 #endif
 {
-    Spaces::SetDistFunc(metric, dim, &fstdistfunc_);
-    max_elements_ = max_elements;
+    spaces::SetDistFunc(params->metric, dim, &fstdistfunc_);
+    size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > SIZE_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     M_ = M;
     maxM_ = M_;
     maxM0_ = M_ * 2;
+
+    size_t ef_construction = params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C;
     ef_construction_ = std::max(ef_construction, M_);
     ef_ = ef;
 
@@ -916,11 +927,12 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(VecSimType vecType, VecSimMetric metric
     max_id = HNSW_INVALID_ID;
 #ifdef ENABLE_PARALLELIZATION
     pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
-        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
 #else
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
-        new (this->allocator) VisitedNodesHandler(max_elements, this->allocator));
+        new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
 
     // initializations for special treatment of the first node

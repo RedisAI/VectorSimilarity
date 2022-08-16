@@ -18,10 +18,7 @@ using namespace hnswlib;
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
       blockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(
-          vecType, metric, dim, params->initialCapacity, allocator,
-          params->M ? params->M : HNSW_DEFAULT_M,
-          params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)),
       last_mode(EMPTY_MODE) {
     hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
     hnsw->setEpsilon((params->epsilon > 0.0) ? params->epsilon : HNSW_DEFAULT_EPSILON);

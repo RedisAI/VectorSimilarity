@@ -12,6 +12,7 @@
 #include <cmath>
 
 using namespace std;
+using spaces::dist_func_t;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
@@ -20,7 +21,7 @@ BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimA
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       last_mode(EMPTY_MODE) {
     assert(VecSimType_sizeof(vecType));
-    Spaces::SetDistFunc(metric, dim, &dist_func);
+    spaces::SetDistFunc(metric, dim, &dist_func);
     this->idToLabelMapping.resize(params->initialCapacity);
 }
 
