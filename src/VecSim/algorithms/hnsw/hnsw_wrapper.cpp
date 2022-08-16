@@ -244,7 +244,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.efRuntime = this->hnsw->getEf();
     info.hnswInfo.epsilon = this->hnsw->getEpsilon();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
-    info.hnswInfo.indexLabelCount = this->hnsw->getIndexLabelCount();
+    info.hnswInfo.indexLabelCount = this->indexLabelCount();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();

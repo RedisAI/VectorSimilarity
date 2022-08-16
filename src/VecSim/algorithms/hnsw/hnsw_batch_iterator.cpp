@@ -186,7 +186,7 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
     batch = this->prepareResults(top_candidates, n_res);
 
     this->updateResultsCount(VecSimQueryResult_Len(batch));
-    if (this->getResultsCount() == this->index_wrapper->indexSize()) {
+    if (this->getResultsCount() == this->index_wrapper->indexLabelCount()) {
         this->depleted = true;
     }
     // By default, results are ordered by score.
