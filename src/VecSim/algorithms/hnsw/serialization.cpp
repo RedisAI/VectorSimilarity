@@ -4,8 +4,6 @@
 #include "serialization.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "hnswlib.h"
-#include "VecSim/spaces/spaces.h"
-using spaces::dist_func_t;
 #define HNSW_INVALID_META_DATA SIZE_MAX
 
 namespace hnswlib {
@@ -93,14 +91,12 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     }
 }
 
-void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input, dist_func_t<float> dist_func,
-                                       size_t dim) {
-    this->restoreIndexFields(input, dist_func, dim);
+void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
+    this->restoreIndexFields(input);
     this->restoreGraph(input);
 }
 
-void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, dist_func_t<float> dist_func,
-                                             size_t dim) {
+void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
     readBinaryPOD(input, hnsw_index->max_elements_);
     readBinaryPOD(input, hnsw_index->M_);
@@ -122,9 +118,6 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, dist_func_t<f
     readBinaryPOD(input, hnsw_index->incoming_links_offset0);
     readBinaryPOD(input, hnsw_index->incoming_links_offset);
     readBinaryPOD(input, hnsw_index->mult_);
-
-    hnsw_index->dim = dim;
-    hnsw_index->fstdistfunc_ = dist_func;
 
     // Restore index level generator of the top level for a new element
     readBinaryPOD(input, hnsw_index->level_generator_);
@@ -220,8 +213,7 @@ void HNSWIndexSerializer::saveIndex(const std::string &location) {
     output.close();
 }
 
-void HNSWIndexSerializer::loadIndex(const std::string &location, dist_func_t<float> dist_func,
-                                    size_t dim) {
+void HNSWIndexSerializer::loadIndex(const std::string &location) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -236,7 +228,7 @@ void HNSWIndexSerializer::loadIndex(const std::string &location, dist_func_t<flo
     if (version != EncodingVersion_V1) {
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    loadIndex_v1(input, dist_func, dim);
+    loadIndex_v1(input);
     input.close();
 }
 
