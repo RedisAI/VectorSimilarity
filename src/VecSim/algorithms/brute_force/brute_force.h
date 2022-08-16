@@ -11,6 +11,7 @@
 
 using spaces::dist_func_t;
 
+template<typename DataType, typename DistFuncType>
 class BruteForceIndex : public VecSimIndex {
 protected:
     size_t dim;
@@ -25,12 +26,12 @@ public:
     virtual int deleteVector(size_t id) override;
     virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
-    vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
+    vecsim_stl::vector<DistFuncType> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                  void *timeoutCtx,
                                                  VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, DistFuncType radius,
                                       VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() override;
@@ -45,7 +46,7 @@ public:
     } // throws out_of_range
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
-    inline dist_func_t<float> distFunc() const { return dist_func; }
+    inline dist_func_t<DistFuncType> distFunc() const { return dist_func; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
@@ -67,7 +68,7 @@ private:
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
     size_t vectorBlockSize;
     idType count;
-    dist_func_t<float> dist_func;
+    dist_func_t<DistFuncType> dist_func;
     VecSearchMode last_mode;
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.

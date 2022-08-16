@@ -15,41 +15,46 @@ using namespace std;
 using spaces::dist_func_t;
 
 /******************** Ctor / Dtor **************/
-BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
+template<typename DataType, typename DistFuncType>
+BruteForceIndex<DataType, DistFuncType>::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
       labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
       last_mode(EMPTY_MODE) {
-    assert(VecSimType_sizeof(vecType));
+    assert(VecSimType_sizeof(vecType) == sizeof(DataType));
     spaces::SetDistFunc(metric, dim, &dist_func);
     this->idToLabelMapping.resize(params->initialCapacity);
 }
-
-BruteForceIndex::~BruteForceIndex() {
+template<typename DataType, typename DistFuncType>
+BruteForceIndex<DataType, DistFuncType>::~BruteForceIndex() {
     for (auto &vectorBlock : this->vectorBlocks) {
         delete vectorBlock;
     }
 }
 
 /******************** Implementation **************/
-size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
+template<typename DataType, typename DistFuncType>
+size_t BruteForceIndex<DataType, DistFuncType>::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
-    size_t est = sizeof(VecSimAllocator) + sizeof(BruteForceIndex) + sizeof(size_t);
+    size_t est = sizeof(VecSimAllocator) + sizeof(BruteForceIndex) + allocation_header_size;
     // Parameters related part.
 
+    // calc idTolabelMapping size
     if (params->initialCapacity) {
         est += params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) +
-               sizeof(size_t);
+               allocation_header_size;
     }
 
     return est;
 }
 
-size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
-    return params->dim * sizeof(float) + sizeof(idType);
+template<typename DataType, typename DistFuncType>
+size_t BruteForceIndex<DataType, DistFuncType>::estimateElementMemory(const BFParams *params) {
+    return params->dim * sizeof(DataType) + sizeof(idType);
 }
 
-void BruteForceIndex::updateVector(idType id, const void *vector_data) {
+template<typename DataType, typename DistFuncType>
+void BruteForceIndex<DataType, DistFuncType>::updateVector(idType id, const void *vector_data) {
 
     // Get the vector block
     VectorBlock *vectorBlock = getVectorVectorBlock(id);
@@ -59,12 +64,13 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     vectorBlock->updateVector(index, vector_data);
 }
 
-int BruteForceIndex::addVector(const void *vector_data, size_t label) {
+template<typename DataType, typename DistFuncType>
+int BruteForceIndex<DataType, DistFuncType>::addVector(const void *vector_data, size_t label) {
 
-    float normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(float));
+        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
         float_vector_normalize(normalized_data, this->dim);
         vector_data = normalized_data;
     }
@@ -84,7 +90,7 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
     if (id % vectorBlockSize == 0) {
-        size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
+        size_t vector_bytes_count = this->dim * sizeof(DataType);
         VectorBlock *new_vectorBlock = new (this->allocator)
             VectorBlock(this->vectorBlockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
@@ -117,7 +123,8 @@ int BruteForceIndex::addVector(const void *vector_data, size_t label) {
     return true;
 }
 
-int BruteForceIndex::deleteVector(size_t label) {
+template<typename DataType, typename DistFuncType>
+int BruteForceIndex<DataType, DistFuncType>::deleteVector(size_t label) {
 
     // Find the id to delete.
     auto deleted_label_id_pair = this->labelToIdLookup.find(label);
@@ -179,7 +186,8 @@ int BruteForceIndex::deleteVector(size_t label) {
     return true;
 }
 
-double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
+template<typename DataType, typename DistFuncType>
+double BruteForceIndex<DataType, DistFuncType>::getDistanceFrom(size_t label, const void *vector_data) {
     auto optionalId = this->labelToIdLookup.find(label);
     if (optionalId == this->labelToIdLookup.end()) {
         return INVALID_SCORE;
@@ -193,15 +201,17 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
 }
 
-size_t BruteForceIndex::indexSize() const { return this->count; }
+template<typename DataType, typename DistFuncType>
+size_t BruteForceIndex<DataType, DistFuncType>::indexSize() const { return this->count; }
 
 // Compute the score for every vector in the block by using the given distance function.
-vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block,
+template<typename DataType, typename DistFuncType>
+vecsim_stl::vector<DistFuncType> BruteForceIndex<DataType, DistFuncType>::computeBlockScores(VectorBlock *block,
                                                               const void *queryBlob,
                                                               void *timeoutCtx,
                                                               VecSimQueryResult_Code *rc) const {
     size_t len = block->getLength();
-    vecsim_stl::vector<float> scores(len, this->allocator);
+    vecsim_stl::vector<DistFuncType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
         if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
@@ -213,23 +223,24 @@ vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block
     return scores;
 }
 
-VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t k,
+template<typename DataType, typename DistFuncType>
+VecSimQueryResult_List BruteForceIndex<DataType, DistFuncType>::topKQuery(const void *queryBlob, size_t k,
                                                   VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
 
     this->last_mode = STANDARD_KNN;
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
         float_vector_normalize(normalized_blob, this->dim);
         queryBlob = normalized_blob;
     }
 
-    float upperBound = std::numeric_limits<float>::lowest();
-    vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
+    DistFuncType upperBound = std::numeric_limits<DistFuncType>::lowest();
+    vecsim_stl::max_priority_queue<pair<DistFuncType, labelType>> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
@@ -264,16 +275,17 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     return rl;
 }
 
-VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float radius,
+template<typename DataType, typename DistFuncType>
+VecSimQueryResult_List BruteForceIndex<DataType, DistFuncType>::rangeQuery(const void *queryBlob, DistFuncType radius,
                                                    VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
 
-    float normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic when other types will be supported.
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(float));
+        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
         float_vector_normalize(normalized_blob, this->dim);
         queryBlob = normalized_blob;
     }
@@ -300,8 +312,8 @@ VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float 
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }
-
-VecSimIndexInfo BruteForceIndex::info() const {
+template<typename DataType, typename DistFuncType>
+VecSimIndexInfo BruteForceIndex<DataType, DistFuncType>::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_BF;
@@ -315,7 +327,8 @@ VecSimIndexInfo BruteForceIndex::info() const {
     return info;
 }
 
-VecSimInfoIterator *BruteForceIndex::infoIterator() {
+template<typename DataType, typename DistFuncType>
+VecSimInfoIterator *BruteForceIndex<DataType, DistFuncType>::infoIterator() {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 8;
@@ -352,22 +365,21 @@ VecSimInfoIterator *BruteForceIndex::infoIterator() {
     return infoIterator;
 }
 
-VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
+template<typename DataType, typename DistFuncType>
+VecSimBatchIterator *BruteForceIndex<DataType, DistFuncType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) {
-    // As this is the only supported type, we always allocate 4 bytes for every element in the
-    // vector.
-    assert(this->vecType == VecSimType_FLOAT32);
-    auto *queryBlobCopy = this->allocator->allocate(sizeof(float) * this->dim);
-    memcpy(queryBlobCopy, queryBlob, dim * sizeof(float));
+    auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, dim * sizeof(DataType));
     if (metric == VecSimMetric_Cosine) {
-        float_vector_normalize((float *)queryBlobCopy, dim);
+        float_vector_normalize((DataType *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return new (this->allocator)
         BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
-bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
+template<typename DataType, typename DistFuncType>
+bool BruteForceIndex<DataType, DistFuncType>::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();
