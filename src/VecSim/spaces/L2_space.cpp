@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/L2/L2.h"
