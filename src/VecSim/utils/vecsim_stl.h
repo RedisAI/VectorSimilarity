@@ -24,14 +24,14 @@ public:
 };
 
 // max-heap
-template <typename T, typename Container = vecsim_stl::vector<T>,
-          typename Compare = std::less<typename Container::value_type>>
-using max_priority_queue = std::priority_queue<T, Container, Compare>;
+template <typename K, typename V>
+using max_priority_queue = std::priority_queue<std::pair<V, K>, vecsim_stl::vector<std::pair<V, K>>,
+                                               std::less<std::pair<V, K>>>;
 
 // min-heap
-template <typename T, typename Container = vecsim_stl::vector<T>,
-          typename Compare = std::greater<typename Container::value_type>>
-using min_priority_queue = std::priority_queue<T, Container, Compare>;
+template <typename K, typename V>
+using min_priority_queue = std::priority_queue<std::pair<V, K>, vecsim_stl::vector<std::pair<V, K>>,
+                                               std::greater<std::pair<V, K>>>;
 
 template <typename T>
 class set : public VecsimBaseObject, public std::set<T, std::less<T>, VecsimSTLAllocator<T>> {

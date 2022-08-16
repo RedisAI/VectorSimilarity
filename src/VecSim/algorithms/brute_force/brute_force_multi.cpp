@@ -1,5 +1,6 @@
 #include "brute_force_multi.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/updatable_heap.h"
 #include "VecSim/query_result_struct.h"
 
 BruteForceIndex_Multi::BruteForceIndex_Multi(const BFParams *params,
