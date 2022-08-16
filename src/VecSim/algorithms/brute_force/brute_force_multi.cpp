@@ -67,8 +67,8 @@ void BruteForceIndex_Multi::setVectorId(labelType label, idType id) {
     if (labelKey != labelToIdsLookup.end()) {
         labelKey->second.push_back(id);
     } else {
-        labelToIdsLookup.emplace(
-            label, vecsim_stl::vector<idType>{std::initializer_list<idType>{id}, this->allocator});
+        // Initial capacity is 1. We can consider increasing this value or having it as a parameter.
+        labelToIdsLookup.emplace(label, vecsim_stl::vector<idType>{1, id, this->allocator});
     }
 }
 
