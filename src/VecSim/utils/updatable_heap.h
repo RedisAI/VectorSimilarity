@@ -62,8 +62,7 @@ void updatable_max_heap<K, V>::emplace(V v, K k) {
     if (existing_k == labelToScore.end()) {
         labelToScore.emplace(k, v);
         scoreToLabel.emplace(v, k);
-        // } else if (existing_k->second < v) {
-    } else if (scoreToLabel.value_comp()(*existing_k, std::pair(v, k))) {
+    } else if (existing_k->second > v) {
         scoreToLabel.erase(existing_k->second);
         existing_k->second = v;
         scoreToLabel.emplace(v, k);
