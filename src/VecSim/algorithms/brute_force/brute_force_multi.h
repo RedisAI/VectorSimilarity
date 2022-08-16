@@ -54,5 +54,7 @@ private:
     friend class BruteForceMultiTest_brute_force_empty_index_Test;
     friend class BruteForceMultiTest_test_delete_swap_block_Test;
     friend class BruteForceMultiTest_brute_force_remove_vector_after_replacing_block_Test;
+    friend class BruteForceMultiTest_brute_force_search_more_then_there_is_Test;
+    friend class BruteForceMultiTest_brute_force_indexing_same_vector_Test;
 #endif
 };
