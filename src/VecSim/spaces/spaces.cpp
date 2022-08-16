@@ -1,20 +1,20 @@
-
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
-namespace Spaces {
+namespace spaces {
 
 /*** Defined in vec_sim_common.h
-enum OptimizationScore {Ext16 = 0, //dim % 16 == 0
-                        Ext4 = 1, //dim % 4 == 0
-                        ExtResiduals16 = 2, //dim > 16 && dim % 16 < 4
-                        ExtResiduals4 = 3, //dim > 4
-                        NO_OPT = 4 };
+    NO_OPTIMIZATION = 0,
+    Ext16 = 1,          // dim % 16 == 0
+    Ext4 = 2,           // dim % 4 == 0
+    ExtResiduals16 = 3, // dim > 16 && dim % 16 < 4
+    ExtResiduals4 = 4,  // dim > 4
+};
 ***/
-OptimizationScore GetDimOptimizationScore(size_t dim) {
+CalculationGuideline GetCalculationGuideline(size_t dim) {
 
-    OptimizationScore ret_score = NO_OPT;
+    CalculationGuideline ret_score = NO_OPTIMIZATION;
 
     if (dim % 16 == 0) {
         ret_score = Ext16;
@@ -32,12 +32,12 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist
 
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
-        *index_dist_func = IP_FLOAT_GetOptDistFunc(dim);
+        *index_dist_func = IP_FP32_GetOptDistFunc(dim);
 
     } else if (metric == VecSimMetric_L2) {
 
-        *index_dist_func = L2_FLOAT_GetOptDistFunc(dim);
+        *index_dist_func = L2_FP32_GetOptDistFunc(dim);
     }
 }
 
-} // namespace Spaces
+} // namespace spaces

@@ -5,7 +5,7 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include "hnswlib.h"
 #include "VecSim/spaces/spaces.h"
-
+using spaces::dist_func_t;
 #define HNSW_INVALID_META_DATA SIZE_MAX
 
 namespace hnswlib {
@@ -93,14 +93,14 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     }
 }
 
-void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input, Spaces::dist_func_t<float> dist_func,
+void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input, dist_func_t<float> dist_func,
                                        size_t dim) {
     this->restoreIndexFields(input, dist_func, dim);
     this->restoreGraph(input);
 }
 
-void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input,
-                                             Spaces::dist_func_t<float> dist_func, size_t dim) {
+void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input, dist_func_t<float> dist_func,
+                                             size_t dim) {
     // Restore index build parameters
     readBinaryPOD(input, hnsw_index->max_elements_);
     readBinaryPOD(input, hnsw_index->M_);
@@ -220,8 +220,8 @@ void HNSWIndexSerializer::saveIndex(const std::string &location) {
     output.close();
 }
 
-void HNSWIndexSerializer::loadIndex(const std::string &location,
-                                    Spaces::dist_func_t<float> dist_func, size_t dim) {
+void HNSWIndexSerializer::loadIndex(const std::string &location, dist_func_t<float> dist_func,
+                                    size_t dim) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {

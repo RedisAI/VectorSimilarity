@@ -8,6 +8,7 @@ typedef size_t labelType;
 typedef unsigned int idType;
 
 using namespace std;
+using spaces::dist_func_t;
 
 using candidatesMinHeap = vecsim_stl::min_priority_queue<pair<float, idType>>;
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<float, idType>>;
@@ -16,7 +17,7 @@ class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
     HNSWIndex *index_wrapper;
     std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index;
-    Spaces::dist_func_t<float> dist_func;
+    dist_func_t<float> dist_func;
     size_t dim;
     hnswlib::VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     unsigned short visited_tag;                 // Used to mark nodes that were scanned.

@@ -5,6 +5,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/spaces/spaces.h"
 
+using spaces::dist_func_t;
 namespace hnswlib {
 
 // This struct is the return value of "checkIntegrity" methods (used for debugging).
@@ -25,9 +26,9 @@ private:
 
     void saveIndexFields(std::ofstream &output);
     void saveGraph(std::ofstream &output);
-    void restoreIndexFields(std::ifstream &input, Spaces::dist_func_t<float> dist_func, size_t dim);
+    void restoreIndexFields(std::ifstream &input, dist_func_t<float> dist_func, size_t dim);
     void restoreGraph(std::ifstream &input);
-    void loadIndex_v1(std::ifstream &input, Spaces::dist_func_t<float> dist_func, size_t dim);
+    void loadIndex_v1(std::ifstream &input, dist_func_t<float> dist_func, size_t dim);
 
 public:
     // Wrap hnsw index.
@@ -40,7 +41,7 @@ public:
     HNSWIndexMetaData checkIntegrity();
 
     // Restore the index from the file in the specified location.
-    void loadIndex(const std::string &location, Spaces::dist_func_t<float> dist_func, size_t dim);
+    void loadIndex(const std::string &location, dist_func_t<float> dist_func, size_t dim);
 
     // Safe release the inner hnsw_index pointer, optionally replace it with another.
     void reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index = nullptr);
