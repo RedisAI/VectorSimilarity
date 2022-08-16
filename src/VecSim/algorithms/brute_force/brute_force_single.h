@@ -37,6 +37,11 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
+    inline vecsim_stl::priority_queue_abstract<labelType, float> *getNewPriorityQueue() {
+        return new (this->allocator)
+            vecsim_stl::max_priority_queue<labelType, float>(this->allocator);
+    }
+
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;

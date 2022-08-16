@@ -1,6 +1,5 @@
 #include "brute_force_multi.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/utils/updatable_heap.h"
 #include "VecSim/query_result_struct.h"
 
 BruteForceIndex_Multi::BruteForceIndex_Multi(const BFParams *params,
@@ -58,27 +57,4 @@ double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_d
 
     return dist;
 }
-
-// inline definitions
-
-void BruteForceIndex_Multi::setVectorId(labelType label, idType id) {
-    auto labelKey = labelToIdsLookup.find(label);
-    if (labelKey != labelToIdsLookup.end()) {
-        labelKey->second.push_back(id);
-    } else {
-        // Initial capacity is 1. We can consider increasing this value or having it as a parameter.
-        labelToIdsLookup.emplace(label, vecsim_stl::vector<idType>{1, id, this->allocator});
-    }
-}
-
-void BruteForceIndex_Multi::replaceIdOfLabel(labelType label, idType new_id, idType old_id) {
-    assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
-    auto &ids = labelToIdsLookup.at(label);
-    for (size_t i = 0; i < ids.size(); i++) {
-        if (ids[i] == old_id) {
-            ids[i] = new_id;
-            return;
-        }
-    }
-    assert(false && "should have found the old id");
-}
+<<<<<<< HEAD
