@@ -6,6 +6,7 @@
 /build/
 /dist/
 /venv/
+/vecsim-env/
 /deps/readies/
 /1/
 **/build/

@@ -18,6 +18,14 @@ typedef enum {
     INFOFIELD_FLOAT64
 } VecSim_InfoFieldType;
 
+
+typedef union {
+	double floatingPointValue; // Floating point value. 64 bits float.
+	int64_t integerValue;      // Integer value. Signed 64 bits integer.
+	u_int64_t uintegerValue;   // Unsigned value. Unsigned 64 buts integer.
+	const char *stringValue;   // String value.
+} FieldValue;
+
 /**
  * @brief A struct to hold field information. This struct contains three members:
  *  fieldType - Enum describing the contenet of the value.
@@ -27,12 +35,7 @@ typedef enum {
 typedef struct {
     const char *fieldName;          // Field name.
     VecSim_InfoFieldType fieldType; // Field type (in {STR, INT64, FLOAT64})
-    union {
-        double floatingPointValue; // Floating point value. 64 bits float.
-        int64_t integerValue;      // Integer value. Signed 64 bits integer.
-        u_int64_t uintegerValue;   // Unsigned value. Unsigned 64 buts integer.
-        const char *stringValue;   // String value.
-    };
+    FieldValue fieldValue;
 } VecSim_InfoField;
 
 /**
