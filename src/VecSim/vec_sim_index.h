@@ -9,6 +9,8 @@
 #include "info_iterator_struct.h"
 #include <cassert>
 
+using spaces::dist_func_t;
+
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
@@ -19,7 +21,7 @@ protected:
     VecSimType vecType;
     VecSimMetric metric;
     size_t blockSize;
-    Spaces::dist_func_t<float> dist_func;
+    dist_func_t<float> dist_func;
     VecSearchMode last_mode;
     bool isMulti;
 
@@ -34,7 +36,7 @@ public:
           blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
           isMulti(multi) {
         assert(VecSimType_sizeof(vecType));
-        Spaces::SetDistFunc(metric, dim, &dist_func);
+        spaces::SetDistFunc(metric, dim, &dist_func);
     }
 
     /**
@@ -43,7 +45,7 @@ public:
      */
     virtual ~VecSimIndexAbstract() {}
 
-    inline Spaces::dist_func_t<float> GetDistFunc() const { return dist_func; }
+    inline dist_func_t<float> GetDistFunc() const { return dist_func; }
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }

@@ -147,8 +147,9 @@ private:
     void SwapLastIdWithDeletedId(idType element_internal_id, idType last_element_internal_id);
 
 public:
-    HierarchicalNSW(const HNSWParams *params, dist_func_t<dist_t> func, std::shared_ptr<VecSimAllocator> allocator,
-                    size_t random_seed = 100, size_t initial_pool_size = 1);
+    HierarchicalNSW(const HNSWParams *params, dist_func_t<dist_t> func,
+                    std::shared_ptr<VecSimAllocator> allocator, size_t random_seed = 100,
+                    size_t initial_pool_size = 1);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -903,8 +904,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params, dist_func_t<d
                                          std::shared_ptr<VecSimAllocator> allocator,
                                          size_t random_seed, size_t pool_initial_size)
     : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), dim(params->dim),
-      data_size_(VecSimType_sizeof(params->type) * dim), dist_func_(func), element_levels_(max_elements_, allocator),
-      label_lookup_(max_elements_, allocator)
+      data_size_(VecSimType_sizeof(params->type) * dim), dist_func_(func),
+      element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
       ,
