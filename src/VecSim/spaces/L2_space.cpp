@@ -7,7 +7,7 @@
 #include "VecSim/spaces/L2/L2_SSE.h"
 namespace spaces {
 
-dist_func_t<float> L2_FP32_GetOptDistFunc(size_t dim) {
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
 #if defined(M1)

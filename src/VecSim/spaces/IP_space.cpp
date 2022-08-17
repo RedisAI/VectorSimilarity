@@ -5,8 +5,9 @@
 #include "VecSim/spaces/IP/IP_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
+
 namespace spaces {
-dist_func_t<float> IP_FP32_GetOptDistFunc(size_t dim) {
+dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
 #if defined(M1)
