@@ -104,13 +104,14 @@ commands:
           name: Benchmark
           command: |
             bash -l -c "make benchmark"
-            for bm_class in basics updated_index spaces batch_iterator; do
+            branch=$([[ $CIRCLE_BRANCH ]] && echo $CIRCLE_BRANCH  || echo $CIRCLE_TAG)
+            for bm_class in basics; do
             echo ${bm_class}_results.json
               redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo $CIRCLE_PROJECT_REPONAME \
                           --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $CIRCLE_BRANCH \
+                          --github_branch $brnach \
                           --benchmark-result-file ${bm_class}_results.json
             done
           no_output_timeout: 180m
