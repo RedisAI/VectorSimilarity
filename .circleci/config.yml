@@ -111,7 +111,7 @@ commands:
                           --results-format google.benchmark \
                           --github_repo $CIRCLE_PROJECT_REPONAME \
                           --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $brnach \
+                          --github_branch $branch \
                           --benchmark-result-file ${bm_class}_results.json
             done
           no_output_timeout: 180m
