@@ -1,5 +1,3 @@
-
-#include <cstdlib>
 #include "IP.h"
 
 float FP32_InnerProduct_impl(const void *pVect1, const void *pVect2, size_t qty) {

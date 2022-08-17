@@ -1,5 +1,3 @@
-#include <cstdlib>
-
 #include "L2_AVX512.h"
 #include "L2.h"
 #include "VecSim/spaces/space_includes.h"

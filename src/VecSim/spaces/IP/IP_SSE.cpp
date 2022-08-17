@@ -1,6 +1,3 @@
-
-#include <cstdlib>
-
 #include "IP_SSE.h"
 #include "IP.h"
 #include "VecSim/spaces/space_includes.h"

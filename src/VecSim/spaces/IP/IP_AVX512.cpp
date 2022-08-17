@@ -3,8 +3,6 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP.h"
 
-#include <stdlib.h>
-
 float FP32_InnerProductSIMD16Ext_AVX512_impl(const void *pVect1v, const void *pVect2v, size_t qty) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;

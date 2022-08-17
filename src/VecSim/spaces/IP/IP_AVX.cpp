@@ -1,6 +1,3 @@
-
-#include <cstdlib>
-
 #include "IP_AVX.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP.h"
