@@ -73,7 +73,14 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
             index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = new (allocator) BruteForceIndex(&params->bfParams, allocator);
+            VecSimMetric metric = params->bfParams.metric;
+            //In IP, COSINE and L2 the data_type == dist function type
+            if(params->bfParams.type == VecSimType_FLOAT32) {
+                if(metric == VecSimMetric_L2 || metric == VecSimMetric_IP || metric == VecSimMetric_Cosine) {
+
+                    index = new (allocator) BruteForceIndex<float, float>(&params->bfParams, allocator);
+                }
+            }
             break;
         default:
             break;
@@ -89,7 +96,14 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     case VecSimAlgo_HNSWLIB:
         return HNSWIndex::estimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateInitialSize(&params->bfParams);
+        VecSimMetric metric = params->bfParams.metric;
+        //In IP, COSINE and L2 the data_type == dist function type
+        if(params->bfParams.type == VecSimType_FLOAT32) {
+            if(metric == VecSimMetric_L2 || metric == VecSimMetric_IP || metric == VecSimMetric_Cosine) {
+                return BruteForceIndex<float, float>::estimateInitialSize(&params->bfParams);
+            }
+        }
+        break;
     }
     return -1;
 }
@@ -117,7 +131,14 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     case VecSimAlgo_HNSWLIB:
         return HNSWIndex::estimateElementMemory(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateElementMemory(&params->bfParams);
+        VecSimMetric metric = params->bfParams.metric;
+        //In IP, COSINE and L2 the data_type == dist function type
+        if(params->bfParams.type == VecSimType_FLOAT32) {
+            if(metric == VecSimMetric_L2 || metric == VecSimMetric_IP || metric == VecSimMetric_Cosine) {
+                return BruteForceIndex<float, float>::estimateElementMemory(&params->bfParams);
+            }
+        }
+        break;
     }
     return -1;
 }
