@@ -55,9 +55,6 @@ struct max_priority_queue
                               std::less<std::pair<V, K>>>(alloc) {}
     ~max_priority_queue() {}
 
-    // using std::priority_queue<std::pair<V, K>, vecsim_stl::vector<std::pair<V, K>>,
-    //                              std::less<std::pair<V, K>>>::emplace(V v, K k);
-
     void emplace(V v, K k) override {
         std::priority_queue<std::pair<V, K>, vecsim_stl::vector<std::pair<V, K>>,
                             std::less<std::pair<V, K>>>::emplace(v, k);

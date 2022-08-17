@@ -315,10 +315,16 @@ TEST_F(BruteForceMultiTest, find_better_score) {
                                              .initialCapacity = initial_capacity}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
+    // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
+    // value, so when we search, each vector is better then the previous one. Furthermore, each
+    // label gets at leat one better vector then the previous label, and one with score equals to
+    // the best of the previous label, so the multimap holds at least two labels with the same
+    // score.
     for (size_t i = 0; i < n; i++) {
         float f[dim];
+        size_t el = ((n - i - 1) % n_labels) + ((n - i) / n_labels);
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(n - i);
+            f[j] = (float)el;
         }
         VecSimIndex_AddVector(index, (const void *)f, i / n_labels);
     }
