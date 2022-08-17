@@ -107,7 +107,6 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
                 return BruteForceIndex<float, float>::estimateInitialSize(&params->bfParams);
             }
         }
-        break;
     }
     return -1;
 }
