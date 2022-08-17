@@ -93,6 +93,7 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
     VecSimIndex_AddVector(index, (const void *)a, 0);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.bfInfo.indexSize, n + 1);
+    // Label count doesn't increase because label 0 already exists
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
     // Check new capacity size, should be blockSize * 2.
     ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(),
@@ -110,14 +111,22 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
     }
 
     // Size should be n + 1 + 8 = 24.
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
+    size_t new_n = n + 1 + add_vectors_count;
+    ASSERT_EQ(VecSimIndex_IndexSize(index), new_n);
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n + 1 + add_vectors_count);
+    auto bfm_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
+
+    ASSERT_EQ(info.bfInfo.indexSize, new_n);
+    // Label count doesn't increase because label 0 already exists
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
+    size_t total_vectors = 0;
+    for (auto label_ids : bfm_index->labelToIdsLookup) {
+        total_vectors += label_ids.second.size();
+    }
+    ASSERT_EQ(total_vectors, new_n);
 
     // Check new capacity size, should be blockSize * 3.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(),
-              3 * blockSize);
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), 3 * blockSize);
 
     VecSimIndex_Free(index);
 }
@@ -421,8 +430,8 @@ TEST_F(BruteForceMultiTest, test_delete_swap_block) {
 
     // This test creates 2 vector blocks with size of 3
     // Insert 6 vectors with ascending ids; The vector blocks will look like
-    // 0 [0, 1, 2]
-    // 1 [3, 4, 5]
+    // block 0 [0, 1, 2]
+    // block 1 [3, 4, 5]
     // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move vector
     // data of id 5 to vector block 0 at index 1. id2label[1] should hold the label of the vector
     // that was in id 5.
@@ -434,53 +443,62 @@ TEST_F(BruteForceMultiTest, test_delete_swap_block) {
                                              .initialCapacity = initial_capacity,
                                              .blockSize = bs}};
     VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex_Multi *bf_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
+    BruteForceIndex_Multi *bfm_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
 
     // idToLabelMapping initial size equals n.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), initial_capacity);
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), initial_capacity);
 
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i; // i
+            f[j] = (float)i;
         }
         VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->indexLabelCount(), n_labels);
+    ASSERT_EQ(bfm_index->indexLabelCount(), n_labels);
+    for (auto label_ids : bfm_index->labelToIdsLookup) {
+        ASSERT_EQ(label_ids.second.size(), n / n_labels);
+    }
     // id2label is increased and aligned with bs.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), n);
 
-    labelType id1_prev_label = bf_index->getVectorLabel(1);
-    labelType id5_prev_label = bf_index->getVectorLabel(5);
+    labelType id1_prev_label = bfm_index->getVectorLabel(1);
+    labelType id5_prev_label = bfm_index->getVectorLabel(5);
 
     // Here the shift should happen.
-    // 0 [0, 1, 2] ~~ [0, 1, 2]
-    // 1 [3, 4, 5] ~~ [0, 1, 2]
+    //
+    //         initial ids     labels
+    // block 0 [0, 1, 2] ~~~~~ [0, 1, 2]
+    // block 1 [3, 4, 5] ~~~~~ [0, 1, 2]
+    //
     // We labeled each vector as its relative index in the block, so we delete ids 1 and 4 now.
     // We should get the followed result:
-    // 0 [0, 5, 2] ~~ [0, 2, 2]
-    // 1 [3]       ~~ [0]
+    //
+    //         initial ids     labels
+    // block 0 [0, 5, 2] ~~~~~ [0, 2, 2]
+    // block 1 [3]       ~~~~~ [0]
+
     VecSimIndex_DeleteVector(index, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n - (n / n_labels));
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->indexLabelCount(), n_labels - 1);
-    ASSERT_EQ(bf_index->getVectorLabel(0), 0);
-    ASSERT_EQ(bf_index->getVectorLabel(1), 2);
-    ASSERT_EQ(bf_index->getVectorLabel(2), 2);
-    ASSERT_EQ(bf_index->getVectorLabel(3), 0);
+    ASSERT_EQ(bfm_index->indexLabelCount(), n_labels - 1);
+    ASSERT_EQ(bfm_index->getVectorLabel(0), 0);
+    ASSERT_EQ(bfm_index->getVectorLabel(1), 2);
+    ASSERT_EQ(bfm_index->getVectorLabel(2), 2);
+    ASSERT_EQ(bfm_index->getVectorLabel(3), 0);
     // id2label size should remain unchanged..
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
+    ASSERT_EQ(bfm_index->idToLabelMapping.size(), n);
 
     // id1 gets what was previously id5's label.
-    ASSERT_EQ(bf_index->getVectorLabel(1), id5_prev_label);
+    ASSERT_EQ(bfm_index->getVectorLabel(1), id5_prev_label);
 
     // The label of what initially was in id1 should be removed.
-    auto deleted_label_id_pair = bf_index->labelToIdsLookup.find(id1_prev_label);
-    ASSERT_EQ(deleted_label_id_pair, bf_index->labelToIdsLookup.end());
+    auto deleted_label_id_pair = bfm_index->labelToIdsLookup.find(id1_prev_label);
+    ASSERT_EQ(deleted_label_id_pair, bfm_index->labelToIdsLookup.end());
 
     // The vector in index1 should hold id5 data.
-    VectorBlock *block = bf_index->getVectorVectorBlock(1);
+    VectorBlock *block = bfm_index->getVectorVectorBlock(1);
     float *vector_data = block->getVector(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
@@ -866,6 +884,7 @@ TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
 TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t bs = 2;
+    size_t n = 6;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -877,29 +896,26 @@ TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Add 1 vector with label 1
-    float f[dim];
-    for (size_t j = 0; j < dim; j++) {
-        f[j] = 1.0f;
+    // Setting up vectors
+    float f[n][dim];
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < dim; j++) {
+            f[i][j] = i;
+        }
     }
-    VecSimIndex_AddVector(index, (const void *)f, 1);
+    // Add 1 vector with label 1
+    VecSimIndex_AddVector(index, (const void *)f[0], 1);
 
     // Add 3 vectors with label 3
-    for (size_t j = 0; j < dim; j++) {
-        f[j] = 3.0f;
-    }
-    VecSimIndex_AddVector(index, (const void *)f, 3);
-    VecSimIndex_AddVector(index, (const void *)f, 3);
-    VecSimIndex_AddVector(index, (const void *)f, 3);
+    VecSimIndex_AddVector(index, (const void *)f[1], 3);
+    VecSimIndex_AddVector(index, (const void *)f[2], 3);
+    VecSimIndex_AddVector(index, (const void *)f[3], 3);
 
     // Add 2 vectors with label 2
-    for (size_t j = 0; j < dim; j++) {
-        f[j] = 2.0f;
-    }
-    VecSimIndex_AddVector(index, (const void *)f, 2);
-    VecSimIndex_AddVector(index, (const void *)f, 2);
+    VecSimIndex_AddVector(index, (const void *)f[4], 2);
+    VecSimIndex_AddVector(index, (const void *)f[5], 2);
 
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 6);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Delete label 3. the following drawing present the expected changes
     // [[1, 3], [3, 3], [2, 2]] -> [[1, 2], [3, 3], [2]] -> [[1, 2], [2, 3]] -> [[1, 2], [2]]
@@ -912,11 +928,13 @@ TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
     ASSERT_EQ(bf_index->getVectorLabel(0), 1);
     ASSERT_EQ(bf_index->getVectorLabel(1), 2);
     ASSERT_EQ(bf_index->getVectorLabel(2), 2);
+    // checking the blob swaps.
+    ASSERT_EQ(bf_index->getDataByInternalId(0)[0], 0);
+    ASSERT_EQ(bf_index->getDataByInternalId(1)[0], 5);
+    ASSERT_EQ(bf_index->getDataByInternalId(2)[0], 4);
 
-    // After deleting the first vector, the second one will be moved to the first block.
-    for (size_t i = 0; i < 4; i++) {
-        VecSimIndex_DeleteVector(index, i);
-    }
+    VecSimIndex_DeleteVector(index, 1);
+    VecSimIndex_DeleteVector(index, 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
@@ -1178,62 +1196,68 @@ TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
 // }
 
 TEST_F(BruteForceMultiTest, brute_get_distance) { // TODO: modify to use multi values
-    size_t n = 4;
+    size_t n_labels = 2;
     size_t dim = 2;
     size_t numIndex = 3;
     VecSimIndex *index[numIndex];
     std::vector<double> distances;
 
-    float v1[] = {M_PI, M_PI};
-    float v2[] = {M_E, M_E};
-    float v3[] = {M_PI, M_E};
-    float v4[] = {M_SQRT2, -M_SQRT2};
+    float v1_0[] = {M_PI, M_PI};
+    float v2_0[] = {M_E, M_E};
+    float v3_1[] = {M_PI, M_E};
+    float v4_1[] = {M_SQRT2, -M_SQRT2};
 
     VecSimParams params{
         .algo = VecSimAlgo_BF,
         .hnswParams = HNSWParams{
-            .type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = n}};
+            .type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = 4}};
 
     for (size_t i = 0; i < numIndex; i++) {
         params.bfParams.metric = (VecSimMetric)i;
         index[i] = VecSimIndex_New(&params);
-        VecSimIndex_AddVector(index[i], v1, 1);
-        VecSimIndex_AddVector(index[i], v2, 2);
-        VecSimIndex_AddVector(index[i], v3, 3);
-        VecSimIndex_AddVector(index[i], v4, 4);
+        VecSimIndex_AddVector(index[i], v1_0, 0);
+        VecSimIndex_AddVector(index[i], v2_0, 0);
+        VecSimIndex_AddVector(index[i], v3_1, 1);
+        VecSimIndex_AddVector(index[i], v4_1, 1);
         ASSERT_EQ(VecSimIndex_IndexSize(index[i]), 4);
     }
 
-    void *query = v1;
-    void *norm = v2;                                 // {e, e}
+    void *query = v1_0;
+    void *norm = v2_0;                               // {e, e}
     VecSim_Normalize(norm, dim, VecSimType_FLOAT32); // now {1/sqrt(2), 1/sqrt(2)}
     ASSERT_FLOAT_EQ(((float *)norm)[0], 1.0f / sqrt(2.0f));
     ASSERT_FLOAT_EQ(((float *)norm)[1], 1.0f / sqrt(2.0f));
     double dist;
 
     // VecSimMetric_L2
-    distances = {0, 0.3583844006061554, 0.1791922003030777, 23.739208221435547};
-    for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
+    // distances are [[0.000, 0.358], [0.179, 23.739]]
+    // minimum of each label are:
+    distances = {0, 0.1791922003030777};
+    for (size_t i = 0; i < n_labels; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i, query);
         ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // VecSimMetric_IP
-    distances = {-18.73921012878418, -16.0794677734375, -17.409339904785156, 1};
-    for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
+    // distances are [[-18.739, -16.079], [-17.409, 1.000]]
+    // minimum of each label are:
+    distances = {-18.73921012878418, -17.409339904785156};
+    for (size_t i = 0; i < n_labels; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i, query);
         ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // VecSimMetric_Cosine
-    distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
-    for (size_t i = 0; i < n; i++) {
-        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, norm);
+    // distances are [[5.960e-08, 5.960e-08], [0.0026, 1.000]]
+    // minimum of each label are:
+    distances = {5.9604644775390625e-08, 0.0025991201400756836};
+    for (size_t i = 0; i < n_labels; i++) {
+        dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i, norm);
         ASSERT_DOUBLE_EQ(dist, distances[i]);
     }
 
     // Bad values
-    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], 0, norm);
+    dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], -1, norm);
     ASSERT_TRUE(std::isnan(dist));
     dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], 46, query);
     ASSERT_TRUE(std::isnan(dist));

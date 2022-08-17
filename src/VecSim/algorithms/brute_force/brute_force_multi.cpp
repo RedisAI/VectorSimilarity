@@ -79,4 +79,5 @@ void BruteForceIndex_Multi::replaceIdOfLabel(labelType label, idType new_id, idT
             return;
         }
     }
+    assert(false && "should have find the old id");
 }
