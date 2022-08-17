@@ -51,9 +51,7 @@ double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_d
 
     float dist = std::numeric_limits<float>::infinity();
     for (auto id : IDs->second) {
-        VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
-        size_t req_rel_idx = getVectorRelativeIndex(id);
-        float d = this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
+        float d = this->dist_func(getDataByInternalId(id), vector_data, &this->dim);
         dist = (dist < d) ? dist : d;
     }
 
@@ -73,6 +71,7 @@ void BruteForceIndex_Multi::setVectorId(labelType label, idType id) {
 }
 
 void BruteForceIndex_Multi::replaceIdOfLabel(labelType label, idType new_id, idType old_id) {
+    assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
     auto &labelKey = labelToIdsLookup.at(label);
     for (size_t i = 0; i < labelKey.size(); i++) {
         if (labelKey[i] == old_id) {
