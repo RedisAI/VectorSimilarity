@@ -203,11 +203,12 @@ def main():
     # Compute with HNSW knn/range and compute recall.
     r_knn = 10
     # r_range = 1
-    for r_range in [0.6, 0.75, 0.9]:
+    for r_range in [0.7, 0.8, 0.9, 1]:
         print(f"range is {r_range} out of the initial k-th combined score (in the KNN phase)")
         # print(f"Running knn with k={r_knn}*k for every individual knn query")
         total_recall = 0
         total_time = 0
+        total_knn_time = 0
         total_res = 0
         for i in range(num_queries):
             # print(f"query no. {i}: ")
@@ -221,6 +222,7 @@ def main():
             recall, top_k_time, threshold = get_combined_top_k_results(dbpedia_index, glove_50_index, glove_200_index, normalized_q0,
                                                         normalized_q1, normalized_q2, w0, w1, w2, k, r_knn, BF_res_lookup[i])
 
+            total_knn_time += top_k_time
             # print(f"Threshold is {threshold}")
             recall, range_time, res = get_combined_range_results(dbpedia_index, glove_50_index, glove_200_index, normalized_q0,
                 normalized_q1, normalized_q2, w0, w1, w2, k, r_range, threshold, 0.01, BF_res_lookup[i])
@@ -230,6 +232,7 @@ def main():
             total_res += res
         print(f"Computing with range query took an average time of {total_time/num_queries} per query,"
               f" with avg. res of {total_res/num_queries} and {total_recall/num_queries} recall")
+        print(f"Avg. knn time part only is {total_knn_time/num_queries}")
         # print(f"Computing with only knn took an average time of {total_time/num_queries} per query,"
         #       f" with avg. {total_recall/num_queries} recall")
 
