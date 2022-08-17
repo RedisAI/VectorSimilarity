@@ -60,7 +60,7 @@ void BruteForceIndex::updateVector(idType id, const void *vector_data) {
     size_t index = vectorBlockMember->index;
     // Update vector data in the block.
     float *destinaion = vectorBlock->getVector(index);
-    memcpy(destinaion, vector_data, this->dim);
+    memcpy(destinaion, vector_data, this->dim * sizeof(float));
 }
 
 int BruteForceIndex::addVector(const void *vector_data, size_t label) {
