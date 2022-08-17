@@ -190,7 +190,7 @@ double BruteForceIndex::getDistanceFrom(size_t label, const void *vector_data) {
     VectorBlock *req_vectorBlock = getVectorVectorBlock(id);
     size_t req_rel_idx = getVectorRelativeIndex(id);
 
-    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, &this->dim);
+    return this->dist_func(req_vectorBlock->getVector(req_rel_idx), vector_data, dim);
 }
 
 size_t BruteForceIndex::indexSize() const { return this->count; }
@@ -207,7 +207,7 @@ vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
+        scores[i] = this->dist_func(block->getVector(i), queryBlob, dim);
     }
     *rc = VecSim_QueryResult_OK;
     return scores;
