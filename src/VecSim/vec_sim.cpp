@@ -68,7 +68,6 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     VecSimIndex *index = NULL;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
-        VecSimMetric metric = params->bfParams.metric;
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
             index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
@@ -77,6 +76,7 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
             assert(params->bfParams.type == VecSimType_FLOAT32);
             // In IP, COSINE and L2 the data_type == dist function type
             if (params->bfParams.type == VecSimType_FLOAT32) {
+                VecSimMetric metric = params->bfParams.metric;
                 if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
                     metric == VecSimMetric_Cosine) {
 
