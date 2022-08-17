@@ -30,6 +30,10 @@ categories:
   - title: '🧰 Maintenance'
     label: 'chore'
 change-template: '- $TITLE (#$NUMBER)'
+<<<<<<< Updated upstream
+=======
+commitish: 0.3
+>>>>>>> Stashed changes
 exclude-labels:
   - 'skip-changelog'
 template: |
