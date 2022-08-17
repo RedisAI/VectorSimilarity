@@ -30,6 +30,7 @@ categories:
   - title: '🧰 Maintenance'
     label: 'chore'
 change-template: '- $TITLE (#$NUMBER)'
+commitish: main
 exclude-labels:
   - 'skip-changelog'
 template: |
