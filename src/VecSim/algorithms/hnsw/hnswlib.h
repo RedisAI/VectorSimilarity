@@ -903,12 +903,12 @@ template <typename dist_t>
 HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity),
-      dim(params->dim), data_size_(VecSimType_sizeof(params->type) * dim),
-      element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
+    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), dim(params->dim),
+      data_size_(VecSimType_sizeof(params->type) * dim), element_levels_(max_elements_, allocator),
+      label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                                     link_list_locks_(max_elements_),
+          link_list_locks_(max_elements_),
 #endif
 {
     spaces::SetDistFunc(params->metric, dim, &fstdistfunc_);
