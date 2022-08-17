@@ -197,15 +197,13 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
-            // Always choose the current candidate if we have less than k.
-            if (TopCandidates->size() < k) {
+            // If we have less than k or a better score, insert it.
+            if (scores[i] < upperBound || TopCandidates->size() < k) {
                 TopCandidates->emplace(scores[i], getVectorLabel(curr_id));
-                upperBound = TopCandidates->top().first;
-            } else if (scores[i] < upperBound) {
-                // Otherwise, try greedily to improve the top candidates with a vector that
-                // has a better score than the one that has the worst score until now.
-                TopCandidates->emplace(scores[i], getVectorLabel(curr_id));
-                TopCandidates->pop();
+                if (TopCandidates->size() > k) {
+                    // If we now have more than k results, pop the worst one.
+                    TopCandidates->pop();
+                }
                 upperBound = TopCandidates->top().first;
             }
             ++curr_id;

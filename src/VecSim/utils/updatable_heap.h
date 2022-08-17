@@ -63,7 +63,11 @@ void updatable_max_heap<K, V>::emplace(V v, K k) {
         labelToScore.emplace(k, v);
         scoreToLabel.emplace(v, k);
     } else if (existing_k->second > v) {
-        scoreToLabel.erase(existing_k->second);
+        auto pos = scoreToLabel.lower_bound(existing_k->second);
+        while (pos->second != k) {
+            ++pos;
+        }
+        scoreToLabel.erase(pos);
         existing_k->second = v;
         scoreToLabel.emplace(v, k);
     }
