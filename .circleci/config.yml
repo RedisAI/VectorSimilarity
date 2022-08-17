@@ -89,9 +89,7 @@ commands:
     steps:
       - run:
           name: Download pre-generated indices
-          command: |
-            echo branch is $CIRCLE_BRANCH
-            wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
           no_output_timeout: 30m
       - run:
           name: Install benchmark dependencies
@@ -105,7 +103,7 @@ commands:
           command: |
             bash -l -c "make benchmark"
             branch=$([[ $CIRCLE_BRANCH ]] && echo $CIRCLE_BRANCH  || echo $CIRCLE_TAG)
-            for bm_class in basics; do
+            for bm_class in basics updated_index spaces batch_iterator; do
             echo ${bm_class}_results.json
               redisbench-admin export \
                           --results-format google.benchmark \
@@ -378,7 +376,7 @@ on-integ-and-version-tags: &on-integ-and-version-tags
         - /^\d+\.\d+.*$/
         - /^feature-.*$/
     tags:
-      only: /.*/
+      only: /^v[0-9].*/
 
 on-perf-and-version-tags: &on-perf-and-version-tags
   filters:
@@ -388,7 +386,7 @@ on-perf-and-version-tags: &on-perf-and-version-tags
         - /^\d+\.\d+.*$/
         - /^perf.*$/
     tags:
-      only: /.*/
+      only: /^v[0-9].*/
 #----------------------------------------------------------------------------------------------------------------------------------
 
 workflows:
