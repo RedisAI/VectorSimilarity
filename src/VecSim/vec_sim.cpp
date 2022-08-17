@@ -68,17 +68,20 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     VecSimIndex *index = NULL;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
+        VecSimMetric metric = params->bfParams.metric;
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
             index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            VecSimMetric metric = params->bfParams.metric;
-            //In IP, COSINE and L2 the data_type == dist function type
-            if(params->bfParams.type == VecSimType_FLOAT32) {
-                if(metric == VecSimMetric_L2 || metric == VecSimMetric_IP || metric == VecSimMetric_Cosine) {
+            assert(params->bfParams.type == VecSimType_FLOAT32);
+            // In IP, COSINE and L2 the data_type == dist function type
+            if (params->bfParams.type == VecSimType_FLOAT32) {
+                if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
+                    metric == VecSimMetric_Cosine) {
 
-                    index = new (allocator) BruteForceIndex<float, float>(&params->bfParams, allocator);
+                    index =
+                        new (allocator) BruteForceIndex<float, float>(&params->bfParams, allocator);
                 }
             }
             break;
@@ -97,9 +100,10 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
         return HNSWIndex::estimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
         VecSimMetric metric = params->bfParams.metric;
-        //In IP, COSINE and L2 the data_type == dist function type
-        if(params->bfParams.type == VecSimType_FLOAT32) {
-            if(metric == VecSimMetric_L2 || metric == VecSimMetric_IP || metric == VecSimMetric_Cosine) {
+        // In IP, COSINE and L2 the data_type == dist function type
+        if (params->bfParams.type == VecSimType_FLOAT32) {
+            if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
+                metric == VecSimMetric_Cosine) {
                 return BruteForceIndex<float, float>::estimateInitialSize(&params->bfParams);
             }
         }
@@ -132,9 +136,10 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
         return HNSWIndex::estimateElementMemory(&params->hnswParams);
     case VecSimAlgo_BF:
         VecSimMetric metric = params->bfParams.metric;
-        //In IP, COSINE and L2 the data_type == dist function type
-        if(params->bfParams.type == VecSimType_FLOAT32) {
-            if(metric == VecSimMetric_L2 || metric == VecSimMetric_IP || metric == VecSimMetric_Cosine) {
+        // In IP, COSINE and L2 the data_type == dist function type
+        if (params->bfParams.type == VecSimType_FLOAT32) {
+            if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
+                metric == VecSimMetric_Cosine) {
                 return BruteForceIndex<float, float>::estimateElementMemory(&params->bfParams);
             }
         }

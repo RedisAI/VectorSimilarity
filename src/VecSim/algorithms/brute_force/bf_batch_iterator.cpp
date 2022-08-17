@@ -7,6 +7,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 
 unsigned char BF_BatchIterator::next_id = 0;
 
@@ -119,7 +120,8 @@ VecSimQueryResult_List BF_BatchIterator::selectBasedSearch(size_t n_res) {
     return rl;
 }
 
-BF_BatchIterator::BF_BatchIterator(void *query_vector, const BruteForceIndex *bf_index,
+BF_BatchIterator::BF_BatchIterator(void *query_vector,
+                                   const BruteForceIndex<float, float> *bf_index,
                                    VecSimQueryParams *queryParams,
                                    std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
