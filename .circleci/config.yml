@@ -89,7 +89,9 @@ commands:
     steps:
       - run:
           name: Download pre-generated indices
-          command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+          command: |
+            echo branch is $CIRCLE_BRANCH
+            wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
           no_output_timeout: 30m
       - run:
           name: Install benchmark dependencies
@@ -375,7 +377,7 @@ on-integ-and-version-tags: &on-integ-and-version-tags
         - /^\d+\.\d+.*$/
         - /^feature-.*$/
     tags:
-      only: /^v[0-9].*/
+      only: /.*/
 
 on-perf-and-version-tags: &on-perf-and-version-tags
   filters:
