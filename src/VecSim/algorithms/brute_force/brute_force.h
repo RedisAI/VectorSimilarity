@@ -40,8 +40,12 @@ public:
     virtual ~BruteForceIndex();
 
 protected:
+    // Private internal function that implements generic single vector insertion.
     virtual int appendVector(const void *vector_data, labelType label);
+
+    // Private internal function that implements generic single vector deletion.
     virtual int removeVector(idType id);
+
     inline float *getDataByInternalId(idType id) const {
         return vectorBlocks.at(id / blockSize)->getVector(id % blockSize);
     }
@@ -52,6 +56,8 @@ protected:
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
     }
+
+    // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
 

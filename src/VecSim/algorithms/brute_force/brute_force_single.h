@@ -3,7 +3,7 @@
 #include "brute_force.h"
 
 class BruteForceIndex_Single : public BruteForceIndex {
-private:
+protected:
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
 
 public:
@@ -16,7 +16,7 @@ public:
 
     virtual inline size_t indexLabelCount() const override { return this->count; }
 
-private:
+protected:
     inline void updateVector(idType id, const void *vector_data);
     inline void setVectorId(labelType label, idType id) override;
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
