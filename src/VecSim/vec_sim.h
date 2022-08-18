@@ -9,7 +9,7 @@ extern "C" {
 #include "vec_sim_common.h"
 #include "info_iterator.h"
 
-typedef struct VecSimIndex VecSimIndex;
+typedef struct VecSimIndexInterface VecSimIndex;
 
 /**
  * @brief Create a new VecSim index based on the given params.

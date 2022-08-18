@@ -52,6 +52,7 @@ add_subdirectory(VecSim/spaces)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/brute_force.cpp
+    VecSim/algorithms/brute_force/brute_force_single.cpp
     VecSim/algorithms/brute_force/vector_block.cpp
 	VecSim/algorithms/hnsw/visited_nodes_handler.cpp
 	VecSim/algorithms/hnsw/hnsw_wrapper.cpp
