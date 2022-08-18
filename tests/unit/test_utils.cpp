@@ -52,7 +52,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
 }
 
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(8, VecSimInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(10, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -80,7 +80,15 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.indexSize);
+            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.indexSize);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
+            // Index label count.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.indexLabelCount);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
+            // Is the index multi value.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.isMulti);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
             // Block size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
@@ -96,7 +104,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 }
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(13, VecSimInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(15, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoFiled = VecSimInfoIterator_NextField(infoIter);
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -126,6 +134,14 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.indexSize);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
+            // Index label count.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.indexLabelCount);
+        } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
+            // Is the index multi value.
+            ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.isMulti);
         } else if (!strcmp(infoFiled->fieldName,
                            VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING)) {
             // EF construction.

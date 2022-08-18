@@ -57,7 +57,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         candidates.emplace(dist, entry_point);
     }
     // Checks that we didn't got timeout between iterations.
-    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(this->getTimeoutCtx()), 0)) {
         *rc = VecSim_QueryResult_TimedOut;
         return top_candidates;
     }
@@ -80,7 +80,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         if (curr_node_dist > lower_bound && top_candidates.size() >= this->hnsw_index->getEf()) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(this->getTimeoutCtx()), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }
@@ -142,8 +142,8 @@ HNSW_BatchIterator::HNSW_BatchIterator(void *query_vector, HNSWIndex *index_wrap
       candidates(this->allocator) {
 
     this->hnsw_index = index_wrapper->getHNSWIndex();
-    this->dist_func = hnsw_index->GetDistFunc();
-    this->dim = hnsw_index->GetDim();
+    this->dist_func = index_wrapper->GetDistFunc();
+    this->dim = index_wrapper->GetDim();
     this->entry_point = hnsw_index->getEntryPointId();
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = hnsw_index->getVisitedList();
@@ -186,7 +186,7 @@ VecSimQueryResult_List HNSW_BatchIterator::getNextResults(size_t n_res,
     batch = this->prepareResults(top_candidates, n_res);
 
     this->updateResultsCount(VecSimQueryResult_Len(batch));
-    if (this->getResultsCount() == this->index_wrapper->indexSize()) {
+    if (this->getResultsCount() == this->index_wrapper->indexLabelCount()) {
         this->depleted = true;
     }
     // By default, results are ordered by score.

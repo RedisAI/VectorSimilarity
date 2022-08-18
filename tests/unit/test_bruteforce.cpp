@@ -3,6 +3,7 @@
 #include "test_utils.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include <cmath>
 
 class BruteForceTest : public ::testing::Test {
@@ -65,7 +66,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     // Call addVEctor with the same id, different data.
     VecSimIndex_AddVector(index, (const void *)a, 1);
 
-    // Index size shouldn't cahnge.
+    // Index size shouldn't change.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     // id2label size should remain the same, although we seemingly tried to exceed
@@ -73,8 +74,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
 
     // Check update.
-    VectorBlock *block = bf_index->getVectorVectorBlock(0);
-    float *vector_data = (float *)block->getVector(0);
+    float *vector_data = bf_index->getDataByInternalId(0);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 2);
         ++vector_data;
@@ -561,15 +561,17 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     ASSERT_EQ(bf_index->getVectorLabel(1), id5_prev_label);
 
     // label2id value at label5 should be 1
-    ASSERT_EQ(bf_index->getVectorId(id5_prev_label), 1);
+    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->labelToIdLookup[id5_prev_label],
+              1);
 
-    // The label of what initiailly was in id1 should be removed.
-    auto deleted_label_id_pair = bf_index->labelToIdLookup.find(id1_prev_label);
-    ASSERT_EQ(deleted_label_id_pair, bf_index->labelToIdLookup.end());
+    // The label of what initially was in id1 should be removed.
+    auto deleted_label_id_pair =
+        reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->labelToIdLookup.find(id1_prev_label);
+    ASSERT_EQ(deleted_label_id_pair,
+              reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->labelToIdLookup.end());
 
     // The vector in index1 should hold id5 data.
-    VectorBlock *block = bf_index->getVectorVectorBlock(1);
-    float *vector_data = (float *)block->getVector(1);
+    float *vector_data = bf_index->getDataByInternalId(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
         ++vector_data;

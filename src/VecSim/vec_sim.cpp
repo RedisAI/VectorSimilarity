@@ -9,7 +9,7 @@
 #include "memory.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
-    VecSimIndex::setTimeoutCallbackFunction(callback);
+    VecSimIndexAbstract<float>::setTimeoutCallbackFunction(callback);
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
@@ -70,12 +70,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
+            index = HNSWIndex::HNSWIndex_New(&params->hnswParams, allocator);
             break;
-        case VecSimAlgo_BF: {
-            // In IP, COSINE and L2 the data_type == dist function type
-            index = new (allocator) BruteForceIndex<float, float>(&params->bfParams, allocator);
-        }
+        case VecSimAlgo_BF:
+            index = BruteForceIndex<float, float>::BruteForceIndex_New(&params->bfParams, allocator);
             break;
         default:
             break;
@@ -91,14 +89,7 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     case VecSimAlgo_HNSWLIB:
         return HNSWIndex::estimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        VecSimMetric metric = params->bfParams.metric;
-        // In IP, COSINE and L2 the data_type == dist function type
-        if (params->bfParams.type == VecSimType_FLOAT32) {
-            if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
-                metric == VecSimMetric_Cosine) {
-                return BruteForceIndex<float, float>::estimateInitialSize(&params->bfParams);
-            }
-        }
+        return BruteForceIndex<float, float>::estimateInitialSize(&params->bfParams);
     }
     return -1;
 }
@@ -126,14 +117,7 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     case VecSimAlgo_HNSWLIB:
         return HNSWIndex::estimateElementMemory(&params->hnswParams);
     case VecSimAlgo_BF:
-        VecSimMetric metric = params->bfParams.metric;
-        // In IP, COSINE and L2 the data_type == dist function type
-        if (params->bfParams.type == VecSimType_FLOAT32) {
-            if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
-                metric == VecSimMetric_Cosine) {
-                return BruteForceIndex<float, float>::estimateElementMemory(&params->bfParams);
-            }
-        }
+        return BruteForceIndex<float, float>::estimateElementMemory(&params->bfParams);
     }
     return -1;
 }

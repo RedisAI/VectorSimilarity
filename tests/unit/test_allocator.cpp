@@ -2,7 +2,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
-#include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
@@ -102,9 +102,8 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
                        .blockSize = 1};
 
     float vec[128] = {};
-    BruteForceIndex<float, float> *bfIndex =
-        new (allocator) BruteForceIndex<float, float>(&params, allocator);
-    expectedAllocationSize += sizeof(BruteForceIndex<float, float>) + vecsimAllocationOverhead;
+    BruteForceIndex_Single<float, float> *bfIndex = new (allocator) BruteForceIndex_Single<float, float>(&params, allocator);
+    expectedAllocationSize += sizeof(BruteForceIndex_Single<float, float>) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
@@ -273,7 +272,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     // overhead), and a single node in the labels' lookup hash table.
     size_t expected_allocation_delta =
         (vec_max_level + 1) *
-        (sizeof(vecsim_stl::vector<hnswlib::tableint>) + AllocatorTest::vecsimAllocationOverhead);
+        (sizeof(vecsim_stl::vector<idType>) + AllocatorTest::vecsimAllocationOverhead);
     expected_allocation_delta += AllocatorTest::hashTableNodeSize;
 
     // Account for allocating link lists for levels higher than 0, if exists.
@@ -314,10 +313,9 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
      * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1 due
      * to the insertion, and the fact that vec1 will re-select its neighbours.
      */
-    expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::vector<hnswlib::tableint>) +
-                               AllocatorTest::vecsimAllocationOverhead) +
-        AllocatorTest::hashTableNodeSize;
+    expected_allocation_delta = (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) +
+                                                       AllocatorTest::vecsimAllocationOverhead) +
+                                AllocatorTest::hashTableNodeSize;
     size_t buckets_diff =
         hnswIndex->getHNSWIndex()->label_lookup_.bucket_count() - buckets_num_before;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
@@ -329,9 +327,9 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
 
     // Expect that the first element is pushed to the incoming edges vector of element 1 in level 0.
     // Then, we account for the capacity of the buffer that is allocated for the vector data.
-    expected_allocation_delta += hnswIndex->getHNSWIndex()->getIncomingEdgesPtr(1, 0)->capacity() *
-                                     sizeof(hnswlib::tableint) +
-                                 AllocatorTest::vecsimAllocationOverhead;
+    expected_allocation_delta +=
+        hnswIndex->getHNSWIndex()->getIncomingEdgesPtr(1, 0)->capacity() * sizeof(idType) +
+        AllocatorTest::vecsimAllocationOverhead;
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
     VecSimIndex_Free(hnswIndex);
@@ -387,10 +385,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
 
     // Compute the expected memory allocation due to the last vector insertion.
     size_t vec_max_level = hnswIndex->getHNSWIndex()->element_levels_[block_size];
-    size_t expected_mem_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::vector<hnswlib::tableint>) +
-                               AllocatorTest::vecsimAllocationOverhead) +
-        AllocatorTest::hashTableNodeSize;
+    size_t expected_mem_delta = (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) +
+                                                       AllocatorTest::vecsimAllocationOverhead) +
+                                AllocatorTest::hashTableNodeSize;
     if (vec_max_level > 0) {
         expected_mem_delta += hnswIndex->getHNSWIndex()->size_links_per_element_ * vec_max_level +
                               1 + AllocatorTest::vecsimAllocationOverhead;

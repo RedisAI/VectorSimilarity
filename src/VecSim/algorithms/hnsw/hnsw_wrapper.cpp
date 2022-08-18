@@ -1,8 +1,5 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/utils/vec_utils.h"
-#include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/IP_space.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
@@ -16,22 +13,31 @@ using namespace hnswlib;
 /******************** Ctor / Dtor **************/
 
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
-      blockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)),
-      last_mode(EMPTY_MODE) {
-    hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
-    hnsw->setEpsilon((params->epsilon > 0.0) ? params->epsilon : HNSW_DEFAULT_EPSILON);
+    : VecSimIndexAbstract(allocator, params->dim, params->type, params->metric, params->blockSize,
+                          params->multi),
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, this->dist_func, allocator)) {}
+
+/******************** inheritance factory **************/
+
+HNSWIndex *HNSWIndex::HNSWIndex_New(const HNSWParams *params,
+                                    std::shared_ptr<VecSimAllocator> allocator) {
+    assert(!params->multi);
+    return new (allocator) HNSWIndex(params, allocator);
 }
 
 /******************** Implementation **************/
 size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
-    size_t est = sizeof(VecSimAllocator) + sizeof(HNSWIndex) + sizeof(size_t);
+    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
+    if (params->multi)
+        est += sizeof(HNSWIndex); // change to HNSWIndex_Multi
+    else
+        est += sizeof(HNSWIndex); // change to HNSWIndex_Single
     est += sizeof(*hnsw) + sizeof(size_t);
-    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
-    est += sizeof(VisitedNodesHandlerPool);
+    est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);
+#else
+    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
 #endif
     est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes
 
@@ -41,19 +47,19 @@ size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
            sizeof(size_t); // Labels lookup hash table buckets.
 
     size_t size_links_level0 =
-        sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) + sizeof(void *);
+        sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
-        size_links_level0 + params->dim * sizeof(float) + sizeof(labeltype);
+        size_links_level0 + params->dim * sizeof(float) + sizeof(labelType);
     est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
 
     return est;
 }
 
 size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
-    size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(tableint) +
-                               sizeof(void *) + sizeof(vecsim_stl::vector<tableint>);
-    size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(tableint) +
-                                     sizeof(void *) + sizeof(vecsim_stl::vector<tableint>);
+    size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) +
+                               sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
+    size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(idType) +
+                                     sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
     // of levels is lower (intuitively, we "loose" a level every time the random generated number
@@ -63,7 +69,7 @@ size_t HNSWIndex::estimateElementMemory(const HNSWParams *params) {
         ceil((1 / (2 * log(params->M))) * (float)size_links_higher_level);
 
     size_t size_total_data_per_element = size_links_level0 + expected_size_links_higher_levels +
-                                         params->dim * sizeof(float) + sizeof(labeltype);
+                                         params->dim * sizeof(float) + sizeof(labelType);
 
     // For every new vector, a new node of size 24 is allocated in a bucket of the hash table.
     size_t size_label_lookup_node =
@@ -112,7 +118,7 @@ int HNSWIndex::addVector(const void *vector_data, size_t id) {
 
 int HNSWIndex::deleteVector(size_t id) {
 
-    // If id doesnt exist.
+    // If id doesn't exist.
     if (!this->hnsw->isLabelExist(id)) {
         return false;
     }
@@ -136,11 +142,13 @@ int HNSWIndex::deleteVector(size_t id) {
     return true;
 }
 
-double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) {
+double HNSWIndex::getDistanceFrom(size_t label, const void *vector_data) const {
     return this->hnsw->getDistanceByLabelFromPoint(label, vector_data);
 }
 
 size_t HNSWIndex::indexSize() const { return this->hnsw->getIndexSize(); }
+
+size_t HNSWIndex::indexLabelCount() const { return this->hnsw->getIndexLabelCount(); }
 
 void HNSWIndex::setEf(size_t ef) { this->hnsw->setEf(ef); }
 
@@ -228,6 +236,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.algo = VecSimAlgo_HNSWLIB;
     info.hnswInfo.dim = this->dim;
     info.hnswInfo.type = this->vecType;
+    info.hnswInfo.isMulti = this->isMulti;
     info.hnswInfo.metric = this->metric;
     info.hnswInfo.blockSize = this->blockSize;
     info.hnswInfo.M = this->hnsw->getM();
@@ -235,6 +244,7 @@ VecSimIndexInfo HNSWIndex::info() const {
     info.hnswInfo.efRuntime = this->hnsw->getEf();
     info.hnswInfo.epsilon = this->hnsw->getEpsilon();
     info.hnswInfo.indexSize = this->hnsw->getIndexSize();
+    info.hnswInfo.indexLabelCount = this->indexLabelCount();
     info.hnswInfo.max_level = this->hnsw->getMaxLevel();
     info.hnswInfo.entrypoint = this->hnsw->getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();
@@ -257,7 +267,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
         HNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
-VecSimInfoIterator *HNSWIndex::infoIterator() {
+VecSimInfoIterator *HNSWIndex::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 12;
@@ -279,10 +289,18 @@ VecSimInfoIterator *HNSWIndex::infoIterator() {
         .fieldName = VecSimCommonStrings::METRIC_STRING,
         .fieldType = INFOFIELD_STRING,
         .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.hnswInfo.metric)}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
+                                                .fieldType = INFOFIELD_UINT64,
+                                                .fieldValue = {FieldValue {.uintegerValue = info.bfInfo.isMulti}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexSize}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue {.uintegerValue = info.hnswInfo.indexLabelCount}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
                          .fieldType = INFOFIELD_UINT64,
