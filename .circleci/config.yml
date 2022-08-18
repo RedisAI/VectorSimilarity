@@ -102,7 +102,7 @@ commands:
           name: Benchmark
           command: |
             bash -l -c "make benchmark"
-            branch=$([[ $CIRCLE_BRANCH ]] && echo $CIRCLE_BRANCH  || echo $CIRCLE_TAG)
+            if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
             for bm_class in basics updated_index spaces batch_iterator; do
             echo ${bm_class}_results.json
               redisbench-admin export \
