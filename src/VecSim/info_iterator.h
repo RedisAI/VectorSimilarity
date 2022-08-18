@@ -20,7 +20,7 @@ typedef enum {
 
 /**
  * @brief A struct to hold field information. This struct contains three members:
- *  fieldType - Enum describing the contenet of the value.
+ *  fieldType - Enum describing the content of the value.
  *  fieldName - Field name.
  *  fieldValue - A union of string/integer/float values.
  */

@@ -173,6 +173,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("type", &HNSWParams::type)
         .def_readwrite("dim", &HNSWParams::dim)
         .def_readwrite("metric", &HNSWParams::metric)
+        .def_readwrite("multi", &HNSWParams::multi)
         .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
         .def_readwrite("M", &HNSWParams::M)
         .def_readwrite("efConstruction", &HNSWParams::efConstruction)
@@ -184,6 +185,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("type", &BFParams::type)
         .def_readwrite("dim", &BFParams::dim)
         .def_readwrite("metric", &BFParams::metric)
+        .def_readwrite("multi", &BFParams::multi)
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
