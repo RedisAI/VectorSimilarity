@@ -7,11 +7,12 @@ from functools import reduce
 
 
 class MultiWeightedTopKQuery:
-    def __init__(self, indexes, queries, weights, k):
+    def __init__(self, indexes, queries, weights, k, step=1):
         self.indexes = indexes
         self.queries = queries
         self.weights = weights
         self.k = k
+        self.step = step
         self.bf_results = None
         self.bf_computation_time = None
         self.combined_knn_top_results = None
@@ -25,7 +26,7 @@ class MultiWeightedTopKQuery:
     def compute_bf_results(self):
         start = time.time()
         h = []  # min-heap (priority queue), use -1*score as the priority
-        for i in range(self.indexes[0].index_size()):
+        for i in range(0, self.indexes[0].index_size(), self.step):
             combined_score = 0
             for j in range(len(self.indexes)):
                 combined_score += self.weights[j] * self.indexes[j].get_distance_from(self.queries[j], i)
@@ -126,7 +127,6 @@ def get_combined_range_results(query, r, epsilon=0.01):
 
     start = time.time()
     total_res_ids = [np.array(query.combined_knn_top_results, dtype=np.uint32)]
-    # total_res_ids = []
     for i in range(len(query.indexes)):
         res_index_ids, res_index_scores = query.indexes[i].range_query(query.queries[i], r*query.threshold, query_params)
         total_res_ids.append(res_index_ids[0])
@@ -136,6 +136,42 @@ def get_combined_range_results(query, r, epsilon=0.01):
     query.combined_range_query_top_results = total_res_ids
     query.combined_range_query_computation_time = end-start
     recall, _ = query.compute_recall(total_res_ids, query.combined_range_query_computation_time)
+
+    return recall
+
+
+def get_combined_hybrid_results_in_batches(query, r):
+    start = time.time()
+    total_res_ids = []
+
+    for i in range(len(query.indexes)):
+        batch_size = query.k * r * query.step
+        iterations = 0
+        batch_iterator = query.indexes[i].create_batch_iterator(query.queries[i])
+        res_ids = []
+        while batch_iterator.has_next() and len(res_ids) < r*query.k:
+            iterations += 1
+            labels, distances = batch_iterator.get_next_results(batch_size, BY_ID)
+
+            # Filter out irrelevant ids (that are not a multiplication of <step>)
+            for label in labels[0]:
+                if label % query.step == 0:
+                    res_ids.append(label)
+            res_left = r*query.k - len(res_ids)
+            batch_size = res_left * query.step
+            # batch_size = r*query.k - len(res_ids)
+        # print(f"got {len(res_ids)} results after {iterations} batches")
+        total_res_ids.append(res_ids)
+    total_res_ids = reduce(np.union1d, total_res_ids).tolist()
+    end = time.time()
+
+    query.combined_knn_computation_time = end-start
+
+    recall, combined_scores = query.compute_recall(total_res_ids, query.combined_knn_computation_time)
+
+    query.combined_knn_top_results = total_res_ids
+    query.threshold = sorted(combined_scores)[query.k - 1]  # threshold for the upcoming range query
+    # print(f"threshold is {query.threshold}")
 
     return recall
 
@@ -194,9 +230,8 @@ def setup(data_sets, use_flat=False):
     return [dbpedia_index, glove_50_index, glove_200_index], test_sets
 
 
-def prepare_queries(indexes, weights, test_sets, num_queries, k):
-    print(f"Running {num_queries} queries with k={k}, weights are: {weights}")
-    print("Computing BF results...")
+def prepare_queries(indexes, weights, test_sets, num_queries, k, step=1):
+    print(f"\nComputing BF results with step={step}...")
     queries = []
     total_time = 0
     for i in range(num_queries):
@@ -207,7 +242,7 @@ def prepare_queries(indexes, weights, test_sets, num_queries, k):
         q2 = test_sets[2][i]
         normalized_q2 = q2 / np.sqrt(np.sum(q2**2))
 
-        query = MultiWeightedTopKQuery(indexes, [normalized_q0, normalized_q1, normalized_q2], weights, k)
+        query = MultiWeightedTopKQuery(indexes, [normalized_q0, normalized_q1, normalized_q2], weights, k, step)
         query.compute_bf_results()
         total_time += query.bf_computation_time
         queries.append(query)
@@ -215,7 +250,10 @@ def prepare_queries(indexes, weights, test_sets, num_queries, k):
     return queries
 
 
-def run_standard_knn(queries):
+def run_standard_knn(vector_indexes, weights, test_sets, n_queries, k):
+    print(f"Running {n_queries} queries with k={k}, weights are: {weights}")
+
+    queries = prepare_queries(vector_indexes, weights, test_sets, n_queries, k)
     n_queries = len(queries)
 
     # Compute results for combined knn search only, for several values of r_knn
@@ -248,6 +286,42 @@ def run_standard_knn(queries):
                   f" with avg. res of {total_res/n_queries} and {total_recall/n_queries} recall")
 
 
+def run_hybrid_search_batches(vector_indexes, weights, test_sets, n_queries, k):
+    print(f"Running {n_queries} queries with k={k}, weights are: {weights}")
+
+    for step in [2, 5, 10, 20]:
+        queries = prepare_queries(vector_indexes, weights, test_sets, n_queries, k, step=step)
+
+        # Compute results for combined knn search only, for several values of r_knn
+        for r_knn in [1, 10, 100]:
+            print(f"\n***Running hybrid search - asking for {r_knn}*k results for every individual knn query in batches***")
+            total_recall = 0
+            total_time = 0
+            for query in queries:
+                recall = get_combined_hybrid_results_in_batches(query, r_knn)
+                total_time += query.combined_knn_computation_time
+                total_recall += recall
+
+            print(f"Computing with only knn took an average time of {total_time/n_queries} per query,"
+                  f" with avg. {total_recall/n_queries} recall")
+
+        # # Compute results for combined range query, where the range derive from the previous phase.
+        # for r_range in [0.7, 0.8, 0.9, 1]:
+        #     print(f"\nRunning second phase: range query with radius={r_range}*threshold,"
+        #           f" where the threshold is the combined score of the k-th result (from the previous phase)")
+        #     total_recall = 0
+        #     total_time = 0
+        #     total_res = 0
+        #     for query in queries:
+        #         recall = get_combined_range_results(query, r_range)
+        #         total_recall += recall
+        #         total_time += query.combined_range_query_computation_time + query.combined_knn_computation_time
+        #         total_res += len(query.combined_range_query_top_results)
+        #
+        #     print(f"Computing with range query took an average time of {total_time/n_queries} per query,"
+        #           f" with avg. res of {total_res/n_queries} and {total_recall/n_queries} recall")
+
+
 def main():
     # Create 2 lists of three vector indexes and their corresponding vectors test sets. By default, all three
     # indexes are HNSW, optionally one (glove-50) is flat.
@@ -256,12 +330,12 @@ def main():
 
     # Run multi top k search over queries from the test set
     k = 10
-    num_queries = 1
+    num_queries = 100
     w0 = 1/3
     w1 = 1/3
     w2 = 1/3
-    queries = prepare_queries(vector_indexes, [w0, w1, w2], test_sets, num_queries, k)
-    run_standard_knn(queries)
+    run_standard_knn(vector_indexes, [w0, w1, w2], test_sets, num_queries, k)
+    run_hybrid_search_batches(vector_indexes, [w0, w1, w2], test_sets, num_queries, k)
 
 
 if __name__ == '__main__':
