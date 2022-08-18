@@ -103,6 +103,7 @@ commands:
           command: |
             bash -l -c "make benchmark"
             if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
+            echo $branch
             for bm_class in basics updated_index spaces batch_iterator; do
             echo ${bm_class}_results.json
               redisbench-admin export \
@@ -386,7 +387,7 @@ on-perf-and-version-tags: &on-perf-and-version-tags
         - /^\d+\.\d+.*$/
         - /^perf.*$/
     tags:
-      only: /^v[0-9].*/
+      only: /.*/
 #----------------------------------------------------------------------------------------------------------------------------------
 
 workflows:
