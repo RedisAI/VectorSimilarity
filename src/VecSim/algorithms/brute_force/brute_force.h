@@ -40,7 +40,6 @@ public:
     virtual ~BruteForceIndex();
 
 protected:
-    void updateVector(idType id, const void *vector_data);
     virtual int appendVector(const void *vector_data, labelType label);
     virtual int removeVector(idType id);
     inline float *getDataByInternalId(idType id) const {

@@ -17,13 +17,15 @@ using spaces::dist_func_t;
  */
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
-    size_t blockSize;
-    dist_func_t<float> dist_func;
-    VecSearchMode last_mode;
-    bool isMulti;
+    size_t dim;          // Vector's dimension.
+    VecSimType vecType;  // Datatype to index.
+    VecSimMetric metric; // Distance metric to use in the index.
+    size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
+                         // resizing)
+    dist_func_t<float>
+        dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
+    VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
+    bool isMulti;            // Determines if the index should multi-index or not.
 
 public:
     /**

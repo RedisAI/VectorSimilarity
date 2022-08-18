@@ -57,13 +57,3 @@ double BruteForceIndex_Single::getDistanceFrom(size_t label, const void *vector_
 
     return this->dist_func(getDataByInternalId(id), vector_data, &this->dim);
 }
-
-// inline definitions
-
-void BruteForceIndex_Single::setVectorId(labelType label, idType id) {
-    labelToIdLookup.emplace(label, id);
-}
-
-void BruteForceIndex_Single::replaceIdOfLabel(labelType label, idType new_id, idType old_id) {
-    labelToIdLookup.at(label) = new_id;
-}

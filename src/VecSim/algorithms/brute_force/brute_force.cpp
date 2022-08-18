@@ -58,16 +58,6 @@ size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
     return params->dim * sizeof(float) + sizeof(idType);
 }
 
-void BruteForceIndex::updateVector(idType id, const void *vector_data) {
-
-    // Get the vector block
-    VectorBlock *vectorBlock = getVectorVectorBlock(id);
-    size_t index = getVectorRelativeIndex(id);
-
-    // Update vector data in the block.
-    vectorBlock->updateVector(index, vector_data);
-}
-
 int BruteForceIndex::appendVector(const void *vector_data, labelType label) {
 
     // Give the vector new id and increase count.
