@@ -9,8 +9,7 @@ void load_HNSW_index(const char *path, VecSimIndex *hnsw_index) {
         hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
-        serializer.loadIndex(file_name,
-                             reinterpret_cast<HNSWIndex *>(hnsw_index)->getSpace().get());
+        serializer.loadIndex(file_name);
         if (!serializer.checkIntegrity().valid_state) {
             throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
