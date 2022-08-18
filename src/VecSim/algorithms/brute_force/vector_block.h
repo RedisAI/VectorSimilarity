@@ -5,9 +5,6 @@
 
 #include "VecSim/utils/vec_utils.h"
 
-typedef size_t labelType;
-typedef size_t idType;
-
 struct VectorBlock : public VecsimBaseObject {
 
 public:
