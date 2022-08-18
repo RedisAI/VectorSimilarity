@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <string>
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
-
 namespace hnswlib {
 
 // This struct is the return value of "checkIntegrity" methods (used for debugging).
@@ -24,9 +23,9 @@ private:
 
     void saveIndexFields(std::ofstream &output);
     void saveGraph(std::ofstream &output);
-    void restoreIndexFields(std::ifstream &input, SpaceInterface<float> *s);
+    void restoreIndexFields(std::ifstream &input);
     void restoreGraph(std::ifstream &input);
-    void loadIndex_v1(std::ifstream &input, SpaceInterface<float> *s);
+    void loadIndex_v1(std::ifstream &input);
 
 public:
     // Wrap hnsw index.
@@ -39,7 +38,7 @@ public:
     HNSWIndexMetaData checkIntegrity();
 
     // Restore the index from the file in the specified location.
-    void loadIndex(const std::string &location, SpaceInterface<float> *s);
+    void loadIndex(const std::string &location);
 
     // Safe release the inner hnsw_index pointer, optionally replace it with another.
     void reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index = nullptr);
