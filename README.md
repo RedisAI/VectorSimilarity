@@ -22,9 +22,9 @@ TBD
 
 ## Build
 For building you will need:
-1. Python 3 as `python` (either by creating virtual environment or setting your system pytnon to point to the right python distribution)
+1. Python 3 as `python` (either by creating virtual environment or setting your system python to point to the right python distribution)
 2. gcc >= 10
-3. cmake version >= 3.10 
+3. cmake version >= 3.10
 
 To build the main library, unit tests and python byndings in one command run
 ```
@@ -46,7 +46,7 @@ make VALGRIND=1
 make unit_test VALGRIND=1
 ```
 
-To run unit tests with clang memory and address santizersm, we have provided you a docker image to do so.
+To run unit tests with clang memory and address sanitizers, we have provided you a docker image to do so.
 
 #### VSCode devcontainer
 If you are using VSCode, make sure you have the [Visual Studio Code Remote Development Extension Pack](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack]) installed. You will be prompt about opening the repository in the devcontainer. This will automatically setup a development container with all the dependencies installed and will use [Oh My ZSH](https://ohmyz.sh/) as shell.
@@ -66,8 +66,8 @@ make unit_test SAN=address
 #### Docker build
 Build and run the docker image
 ```
-docker build .devcontainer -t vecsim_sanitizer 
-docker run -it -v "$(pwd)":/project vecsim_sanitizer 
+docker build .devcontainer -t vecsim_sanitizer
+docker run -it -v "$(pwd)":/project vecsim_sanitizer
 ```
 
 When on docker, you will need to install the dependencies in order to build and run tests
@@ -90,7 +90,7 @@ make unit_test SAN=address
 
 ## Python bindings
 
-Examples for using the python bindings to run vector similarity search can be found in `tests/flow`. 
+Examples for using the python bindings to run vector similarity search can be found in `tests/flow`.
 To build the python wheel, first create a dedicated virtualenv using python 3.7 and higher. Then, activate the environment, install the dependencies and build the package. Please note, due to the way poetry generates a setup.py, you may have to erase it prior to re-running *poetry build*.
 
 ```
@@ -118,4 +118,4 @@ tox -e flowenv
 
 # Benchmark
 
-To benchmark the capabilities of this library, follow the instructions in the [benchmark docs section](docs/benchmarks.md). 
+To benchmark the capabilities of this library, follow the instructions in the [benchmark docs section](docs/benchmarks.md).

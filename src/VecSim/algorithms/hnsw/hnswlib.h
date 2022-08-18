@@ -151,7 +151,7 @@ private:
 
 public:
     HierarchicalNSW(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
-                    size_t ef = 10, size_t random_seed = 100, size_t initial_pool_size = 1);
+                    size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -901,14 +901,14 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
 } HNSWParams; */
 template <typename dist_t>
 HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator, size_t ef,
+                                         std::shared_ptr<VecSimAllocator> allocator,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), ef_(ef),
-      dim(params->dim), data_size_(VecSimType_sizeof(params->type) * dim),
-      element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
+    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), dim(params->dim),
+      data_size_(VecSimType_sizeof(params->type) * dim), element_levels_(max_elements_, allocator),
+      label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                                     link_list_locks_(max_elements_),
+          link_list_locks_(max_elements_),
 #endif
 {
     spaces::SetDistFunc(params->metric, dim, &fstdistfunc_);
@@ -921,7 +921,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
 
     size_t ef_construction = params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C;
     ef_construction_ = std::max(ef_construction, M_);
-    ef_ = ef;
+    ef_ = params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT;
+    epsilon_ = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
 
     cur_element_count = 0;
     max_id = HNSW_INVALID_ID;
