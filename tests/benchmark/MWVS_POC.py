@@ -42,13 +42,16 @@ class MultiWeightedTopKQuery:
         self.bf_results = h
         self.bf_computation_time = end-start
 
-    def compute_recall(self, hnsw_res_ids):
+    def compute_recall(self, hnsw_res_ids, time_field):
         combined_scores = []
-        for i, res in enumerate(hnsw_res_ids):
+        start = time.time()
+        for res in hnsw_res_ids:
             combined_score = 0
             for j in range(len(self.indexes)):
-                combined_score += self.weights[j] * self.indexes[j].get_distance_from(self.queries[j], i)
+                combined_score += self.weights[j] * self.indexes[j].get_distance_from(self.queries[j], res)
             combined_scores.append(combined_score)
+        end = time.time()
+        time_field += end-start
 
         # measure recall of the HNSW results comparing to the BF results
         actual_res_ids = [res[1] for res in self.bf_results]
@@ -103,13 +106,13 @@ def get_combined_top_k_results(query, r):
         total_res_ids.append(res_index_ids[0])
     total_res_ids = reduce(np.union1d, total_res_ids).tolist()
     end = time.time()
+    query.combined_knn_computation_time = end-start
 
-    recall, combined_scores = query.compute_recall(total_res_ids)
+    recall, combined_scores = query.compute_recall(total_res_ids, query.combined_knn_computation_time)
 
     query.combined_knn_top_results = total_res_ids
     query.threshold = sorted(combined_scores)[query.k - 1]  # threshold for the upcoming range query
     # print(f"threshold is {query.threshold}")
-    query.combined_knn_computation_time = end-start
 
     return recall
 
@@ -122,8 +125,8 @@ def get_combined_range_results(query, r, epsilon=0.01):
         query_params.hnswRuntimeParams.epsilon = epsilon
 
     start = time.time()
-    # total_res_ids = [query.combined_knn_top_results]
-    total_res_ids = []
+    total_res_ids = [np.array(query.combined_knn_top_results, dtype=np.uint32)]
+    # total_res_ids = []
     for i in range(len(query.indexes)):
         res_index_ids, res_index_scores = query.indexes[i].range_query(query.queries[i], r*query.threshold, query_params)
         total_res_ids.append(res_index_ids[0])
@@ -132,7 +135,7 @@ def get_combined_range_results(query, r, epsilon=0.01):
 
     query.combined_range_query_top_results = total_res_ids
     query.combined_range_query_computation_time = end-start
-    recall, _ = query.compute_recall(total_res_ids)
+    recall, _ = query.compute_recall(total_res_ids, query.combined_range_query_computation_time)
 
     return recall
 
@@ -217,7 +220,7 @@ def run_standard_knn(queries):
 
     # Compute results for combined knn search only, for several values of r_knn
     for r_knn in [1, 10, 100]:
-        print(f"\nRunning knn - asking for {r_knn}*k results for every individual knn query")
+        print(f"\n***Running knn - asking for {r_knn}*k results for every individual knn query***")
         total_recall = 0
         total_time = 0
         for query in queries:
@@ -229,7 +232,7 @@ def run_standard_knn(queries):
               f" with avg. {total_recall/n_queries} recall")
 
         # Compute results for combined range query, where the range derive from the previous phase.
-        for r_range in [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
+        for r_range in [0.7, 0.8, 0.9, 1]:
             print(f"\nRunning second phase: range query with radius={r_range}*threshold,"
                   f" where the threshold is the combined score of the k-th result (from the previous phase)")
             total_recall = 0
@@ -238,7 +241,7 @@ def run_standard_knn(queries):
             for query in queries:
                 recall = get_combined_range_results(query, r_range)
                 total_recall += recall
-                total_time += query.combined_range_query_computation_time
+                total_time += query.combined_range_query_computation_time + query.combined_knn_computation_time
                 total_res += len(query.combined_range_query_top_results)
 
             print(f"Computing with range query took an average time of {total_time/n_queries} per query,"
