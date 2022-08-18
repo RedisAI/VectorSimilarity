@@ -18,24 +18,12 @@ using namespace hnswlib;
 HNSWIndex::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
       blockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE),
-      space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new (allocator)
-                                                           L2Space(params->dim, allocator))
-                : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->dim, allocator))),
-      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(
-          space.get(), params->initialCapacity, allocator, params->M ? params->M : HNSW_DEFAULT_M,
-          params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C)),
-      last_mode(EMPTY_MODE) {
-    hnsw->setEf(params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT);
-    hnsw->setEpsilon((params->epsilon > 0.0) ? params->epsilon : HNSW_DEFAULT_EPSILON);
-}
+      hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, allocator)),
+      last_mode(EMPTY_MODE) {}
 
 /******************** Implementation **************/
 size_t HNSWIndex::estimateInitialSize(const HNSWParams *params) {
     size_t est = sizeof(VecSimAllocator) + sizeof(HNSWIndex) + sizeof(size_t);
-    est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
-           sizeof(size_t);
     est += sizeof(*hnsw) + sizeof(size_t);
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
     // Used for synchronization only when parallel indexing / searching is enabled.

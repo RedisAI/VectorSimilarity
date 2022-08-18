@@ -1,71 +1,57 @@
-#include <cstdlib>
-#include "L2_space.h"
+#include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/L2/L2.h"
-
-L2Space::L2Space(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
-    : SpaceInterface(allocator) {
-    fstdistfunc_ = L2Sqr;
-
-    // General optimization logic:
-    // SIMD16 perform computations on 16 float at a time in each iteration, while SIMD4 perform
-    // computations on 16 float on most of the vector, and on the residual performing on 4 floats at
-    // a time.
-    // When we have a dimension that is not divisible by 4, we should use SIMD16ExtResiduals only if
-    // the reminder is less than 4, because otherwise we can still perform SIMD4 operations.
-#if defined(M1)
-
-#elif defined(__x86_64__)
-    Arch_Optimization arch_opt = getArchitectureOptimization();
-    if (arch_opt == ARCH_OPT_AVX512) {
-#ifdef __AVX512F__
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/L2/L2_AVX512.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = L2SqrSIMD16Ext_AVX512;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = L2SqrSIMD4Ext_AVX512;
-        } else if (dim > 16 && dim % 16 < 4) {
-            fstdistfunc_ = L2SqrSIMD16ExtResiduals_AVX512;
-        } else if (dim > 4) {
-            fstdistfunc_ = L2SqrSIMD4ExtResiduals_AVX512;
-        }
-#endif
-    } else if (arch_opt == ARCH_OPT_AVX) {
-#ifdef __AVX__
 #include "VecSim/spaces/L2/L2_AVX.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = L2SqrSIMD16Ext_AVX;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = L2SqrSIMD4Ext_AVX;
-        } else if (dim > 16 && dim % 16 < 4) {
-            fstdistfunc_ = L2SqrSIMD16ExtResiduals_AVX;
-        } else if (dim > 4) {
-            fstdistfunc_ = L2SqrSIMD4ExtResiduals_AVX;
-        }
-#endif
-    } else if (arch_opt == ARCH_OPT_SSE) {
-#ifdef __SSE__
 #include "VecSim/spaces/L2/L2_SSE.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = L2SqrSIMD16Ext_SSE;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = L2SqrSIMD4Ext_SSE;
-        } else if (dim > 16 && dim % 16 < 4) {
-            fstdistfunc_ = L2SqrSIMD16ExtResiduals_SSE;
-        } else if (dim > 4) {
-            fstdistfunc_ = L2SqrSIMD4ExtResiduals_SSE;
-        }
+namespace spaces {
+
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
+
+    dist_func_t<float> ret_dist_func = FP32_L2Sqr;
+#if defined(M1)
+#elif defined(__x86_64__)
+
+    CalculationGuideline optimization_type = GetCalculationGuideline(dim);
+    switch (arch_opt) {
+    case ARCH_OPT_NONE:
+        break;
+    case ARCH_OPT_AVX512:
+#ifdef __AVX512F__
+    {
+        static dist_func_t<float> dist_funcs[] = {
+            FP32_L2Sqr, FP32_L2SqrSIMD16Ext_AVX512, FP32_L2SqrSIMD4Ext_AVX512,
+            FP32_L2SqrSIMD16ExtResiduals_AVX512, FP32_L2SqrSIMD4ExtResiduals_AVX512};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
 #endif
-    }
+    case ARCH_OPT_AVX:
+#ifdef __AVX__
+    {
+        static dist_func_t<float> dist_funcs[] = {
+            FP32_L2Sqr, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD4Ext_AVX,
+            FP32_L2SqrSIMD16ExtResiduals_AVX, FP32_L2SqrSIMD4ExtResiduals_AVX};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+
+#endif
+    case ARCH_OPT_SSE:
+#ifdef __SSE__
+    {
+        static dist_func_t<float> dist_funcs[] = {
+            FP32_L2Sqr, FP32_L2SqrSIMD16Ext_SSE, FP32_L2SqrSIMD4Ext_SSE,
+            FP32_L2SqrSIMD16ExtResiduals_SSE, FP32_L2SqrSIMD4ExtResiduals_SSE};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+    } // switch
+#endif
+
 #endif // __x86_64__
-    dim_ = dim;
-    data_size_ = dim * sizeof(float);
+    return ret_dist_func;
 }
 
-size_t L2Space::get_data_size() const { return data_size_; }
-
-DISTFUNC<float> L2Space::get_dist_func() const { return fstdistfunc_; }
-
-void *L2Space::get_data_dim() { return &dim_; }
-
-L2Space::~L2Space() = default;
+} // namespace spaces

@@ -132,8 +132,7 @@ public:
     void loadIndex(const std::string &location) {
         auto serializer =
             hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-        auto space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
-        serializer.loadIndex(location, space);
+        serializer.loadIndex(location);
     }
 };
 
