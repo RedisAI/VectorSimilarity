@@ -72,18 +72,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_HNSWLIB:
             index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
             break;
-        case VecSimAlgo_BF:
-            assert(params->bfParams.type == VecSimType_FLOAT32);
+        case VecSimAlgo_BF: {
             // In IP, COSINE and L2 the data_type == dist function type
-            if (params->bfParams.type == VecSimType_FLOAT32) {
-                VecSimMetric metric = params->bfParams.metric;
-                if (metric == VecSimMetric_L2 || metric == VecSimMetric_IP ||
-                    metric == VecSimMetric_Cosine) {
-
-                    index =
-                        new (allocator) BruteForceIndex<float, float>(&params->bfParams, allocator);
-                }
-            }
+            index = new (allocator) BruteForceIndex<float, float>(&params->bfParams, allocator);
+        }
             break;
         default:
             break;

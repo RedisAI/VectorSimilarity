@@ -8,7 +8,7 @@
 
 using namespace std;
 
-template <typename DataType, typename DistFuncType>
+template <typename DataType, typename DistType>
 class BruteForceIndex;
 class BF_BatchIterator : public VecSimBatchIterator {
 private:
