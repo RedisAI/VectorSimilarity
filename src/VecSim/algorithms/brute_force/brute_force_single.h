@@ -37,7 +37,7 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
-    inline vecsim_stl::priority_queue_abstract<labelType, float> *getNewPriorityQueue() {
+    inline vecsim_stl::priority_queue_abstract<labelType, float> *getNewPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::max_priority_queue<labelType, float>(this->allocator);
     }
