@@ -112,7 +112,6 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
 
     // Size should be n + 1 + 8 = 24.
     size_t new_n = n + 1 + add_vectors_count;
-    ASSERT_EQ(VecSimIndex_IndexSize(index), new_n);
     info = VecSimIndex_Info(index);
     auto bfm_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
 
@@ -1195,7 +1194,7 @@ TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
 //     VecSimIndex_Free(index);
 // }
 
-TEST_F(BruteForceMultiTest, brute_get_distance) { // TODO: modify to use multi values
+TEST_F(BruteForceMultiTest, brute_get_distance) {
     size_t n_labels = 2;
     size_t dim = 2;
     size_t numIndex = 3;
