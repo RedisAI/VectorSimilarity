@@ -68,8 +68,8 @@ int BruteForceIndex::appendVector(const void *vector_data, labelType label) {
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
     if (id % blockSize == 0) {
         size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
-        VectorBlock *new_vectorBlock = new (this->allocator)
-            VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
+        VectorBlock *new_vectorBlock =
+            new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
