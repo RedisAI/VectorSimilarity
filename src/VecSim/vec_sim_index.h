@@ -1,143 +1,58 @@
 #pragma once
 #include "vec_sim_common.h"
+#include "vec_sim_interface.h"
 #include "query_results.h"
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
+#include "VecSim/utils/vec_utils.h"
+#include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
+#include <cassert>
+
+using spaces::dist_func_t;
 
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
-struct VecSimIndex : public VecsimBaseObject {
+struct VecSimIndexAbstract : public VecSimIndexInterface {
+protected:
+    size_t dim;          // Vector's dimension.
+    VecSimType vecType;  // Datatype to index.
+    VecSimMetric metric; // Distance metric to use in the index.
+    size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
+                         // resizing)
+    dist_func_t<float>
+        dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
+    VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
+    bool isMulti;            // Determines if the index should multi-index or not.
+
 public:
     /**
      * @brief Construct a new Vec Sim Index object
      *
      */
-    VecSimIndex(std::shared_ptr<VecSimAllocator> allocator) : VecsimBaseObject(allocator) {}
+    VecSimIndexAbstract(std::shared_ptr<VecSimAllocator> allocator, size_t dim, VecSimType vecType,
+                        VecSimMetric metric, size_t blockSize, bool multi)
+        : VecSimIndexInterface(allocator), dim(dim), vecType(vecType), metric(metric),
+          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
+          isMulti(multi) {
+        assert(VecSimType_sizeof(vecType));
+        spaces::SetDistFunc(metric, dim, &dist_func);
+    }
 
     /**
      * @brief Destroy the Vec Sim Index object
      *
      */
-    virtual ~VecSimIndex() {}
+    virtual ~VecSimIndexAbstract() {}
 
-    /**
-     * @brief Add a vector blob and its id to the index.
-     *
-     * @param blob binary representation of the vector. Blob size should match the index data type
-     * and dimension.
-     * @param id the id of the added vector
-     * @return always returns true
-     */
-    virtual int addVector(const void *blob, size_t id) = 0;
+    inline dist_func_t<float> GetDistFunc() const { return dist_func; }
+    inline size_t GetDim() const { return dim; }
+    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
+    inline bool isMultiValue() const { return isMulti; }
 
-    /**
-     * @brief Remove a vector from an index.
-     *
-     * @param id the id of the removed vector
-     * @return always returns true
-     */
-    virtual int deleteVector(size_t id) = 0;
-
-    /**
-     * @brief Calculate the distance of a vector from an index to a vector.
-     * @param index the index from which the first vector is located, and that defines the distance
-     * metric.
-     * @param id the id of the vector in the index.
-     * @param blob binary representation of the second vector. Blob size should match the index data
-     * type and dimension, and pre-normalized if needed.
-     * @return The distance (according to the index's distance metric) between `blob` and the vector
-     * with id `id`.
-     */
-    virtual double getDistanceFrom(size_t id, const void *blob) = 0;
-
-    /**
-     * @brief Return the number of vectors in the index using irs SizeFn.
-     *
-     * @return index size.
-     */
-    virtual size_t indexSize() const = 0;
-
-    /**
-     * @brief Search for the k closest vectors to a given vector in the index.
-     *
-     * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension.
-     * @param k the number of "nearest neighbours" to return (upper bound).
-     * @param queryParams run time params for the search, which are algorithm-specific.
-     * @return An opaque object the represents a list of results. User can access the id and score
-     * (which is the distance according to the index metric) of every result through
-     * VecSimQueryResult_Iterator.
-     */
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) = 0;
-
-    /**
-     * @brief Search for the vectors that are in a given range in the index with respect to a given
-     * vector. The results can be ordered by their score or id.
-     * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension.
-     * @param radius the radius around the query vector to search vectors within it.
-     * @param queryParams run time params for the search, which are algorithm-specific.
-     * @param order the criterion to sort the results list by it. Options are by score, or by id.
-     * @return An opaque object the represents a list of results. User can access the id and score
-     * (which is the distance according to the index metric) of every result through
-     * VecSimQueryResult_Iterator.
-     */
-    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
-                                              VecSimQueryParams *queryParams) = 0;
-
-    /**
-     * @brief Return index information.
-     *
-     * @return Index general and specific meta-data.
-     */
-    virtual VecSimIndexInfo info() const = 0;
-
-    /**
-     * @brief Returns an index information in an iterable structure.
-     *
-     * @return VecSimInfoIterator Index general and specific meta-data.
-     */
-    virtual VecSimInfoIterator *infoIterator() = 0;
-
-    /**
-     * @brief Create a new batch iterator for a specific index, for a specific query vector,
-     * using the Index_BatchIteratorNew method of the index. Should be released with
-     * VecSimBatchIterator_Free call.
-     *
-     * @param queryBlob binary representation of the vector. Blob size should match the index data
-     * type and dimension.
-     * @return Fresh batch iterator
-     */
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                                  VecSimQueryParams *queryParams) = 0;
-
-    /**
-     * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
-     * search over the index instead of using batch iterator.
-     *
-     * @param subsetSize the estimated number of vectors in the index that pass the filter
-     * (that is, query results can be only from a subset of vector of this size).
-     *
-     * @param k the number of required results to return from the query.
-     *
-     * @param initial_check flag to indicate if this check is performed for the first time (upon
-     * creating the hybrid iterator), or after running batches.
-     */
-
-    virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) = 0;
-
-    /**
-     * @brief Set the latest search mode in the index data (for info/debugging).
-     * @param mode The search mode.
-     */
-    virtual inline void setLastSearchMode(VecSearchMode mode) = 0;
-
-public:
+    // Static class functions
     static timeoutCallbackFunction timeoutCallback;
-
     static void setTimeoutCallbackFunction(timeoutCallbackFunction callback);
 };
