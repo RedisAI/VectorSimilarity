@@ -66,10 +66,10 @@ int BruteForceIndex::appendVector(const void *vector_data, labelType label) {
     // Get vector block to store the vector in.
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
-    if (id % vectorBlockSize == 0) {
+    if (id % blockSize == 0) {
         size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
         VectorBlock *new_vectorBlock = new (this->allocator)
-            VectorBlock(this->vectorBlockSize, vector_bytes_count, this->allocator);
+            VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
@@ -110,7 +110,7 @@ int BruteForceIndex::removeVector(idType id_to_delete) {
     VectorBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    float *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    char *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
