@@ -5,6 +5,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/algorithms/brute_force/brute_force_factory.h" //NewIndex
 #include <cassert>
 #include "memory.h"
 
@@ -73,7 +74,7 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
             index = HNSWIndex::HNSWIndex_New(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = BruteForceIndex::BruteForceIndex_New(&params->bfParams, allocator);
+            index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
         default:
             break;

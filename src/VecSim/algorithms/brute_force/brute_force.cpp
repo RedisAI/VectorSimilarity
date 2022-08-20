@@ -27,14 +27,6 @@ BruteForceIndex::~BruteForceIndex() {
     }
 }
 
-/******************** inheritance factory **************/
-
-BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const BFParams *params,
-                                                      std::shared_ptr<VecSimAllocator> allocator) {
-    assert(!params->multi);
-    return new (allocator) BruteForceIndex_Single(params, allocator);
-}
-
 /******************** Implementation **************/
 size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).

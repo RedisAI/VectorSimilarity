@@ -17,8 +17,7 @@ protected:
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static BruteForceIndex *BruteForceIndex_New(const BFParams *params,
-                                                std::shared_ptr<VecSimAllocator> allocator);
+
     static size_t estimateInitialSize(const BFParams *params);
     static size_t estimateElementMemory(const BFParams *params);
     virtual size_t indexSize() const override;
