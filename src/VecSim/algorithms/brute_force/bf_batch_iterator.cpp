@@ -4,6 +4,8 @@
 #include <cmath>
 #include <functional>
 #include "bf_batch_iterator.h"
+#include "bfs_batch_iterator.h"
+#include "bfm_batch_iterator.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
@@ -123,6 +125,17 @@ BF_BatchIterator::BF_BatchIterator(void *query_vector, const BruteForceIndex *bf
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
       index(bf_index), scores_valid_start_pos(0) {}
 
+BF_BatchIterator *BF_BatchIterator::New_BatchIterator(void *query_vector,
+                                                      const BruteForceIndex *index,
+                                                      VecSimQueryParams *queryParams,
+                                                      std::shared_ptr<VecSimAllocator> allocator) {
+    if (index->isMultiValue()) {
+        return new (allocator) BFM_BatchIterator(query_vector, index, queryParams, allocator);
+    } else {
+        return new (allocator) BFS_BatchIterator(query_vector, index, queryParams, allocator);
+    }
+}
+
 VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
                                                         VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
@@ -159,27 +172,4 @@ void BF_BatchIterator::reset() {
     this->scores.clear();
     this->resetResultsCount();
     this->scores_valid_start_pos = 0;
-}
-
-VecSimQueryResult_Code BF_BatchIterator::calculateScores() {
-
-    this->scores.reserve(this->index->indexLabelCount());
-    vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
-    VecSimQueryResult_Code rc;
-
-    idType curr_id = 0;
-    for (auto &block : blocks) {
-        // compute the scores for the vectors in every block and extend the scores array.
-        auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
-                                                            this->getTimeoutCtx(), &rc);
-        if (VecSim_OK != rc) {
-            return rc;
-        }
-        for (size_t i = 0; i < block_scores.size(); i++) {
-            this->scores.emplace_back(block_scores[i], index->getVectorLabel(curr_id));
-            ++curr_id;
-        }
-    }
-    assert(curr_id == index->indexSize());
-    return VecSim_QueryResult_OK;
 }

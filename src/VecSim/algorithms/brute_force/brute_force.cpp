@@ -330,8 +330,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
         float_vector_normalize((float *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator)
-        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    return BF_BatchIterator::New_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
 bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {

@@ -1,3 +1,4 @@
+#pragma once
 #include "VecSim/batch_iterator.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 
@@ -7,7 +8,7 @@
 using namespace std;
 
 class BF_BatchIterator : public VecSimBatchIterator {
-private:
+protected:
     const BruteForceIndex *index;
     vector<pair<float, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
@@ -19,11 +20,14 @@ private:
     void swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices,
                     size_t res_num);
 
-    inline VecSimQueryResult_Code calculateScores();
+    virtual inline VecSimQueryResult_Code calculateScores() = 0;
 
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex *index,
                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
+    static BF_BatchIterator *New_BatchIterator(void *query_vector, const BruteForceIndex *index,
+                                               VecSimQueryParams *queryParams,
+                                               std::shared_ptr<VecSimAllocator> allocator);
 
     inline const BruteForceIndex *getIndex() const { return index; };
 
