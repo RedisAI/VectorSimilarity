@@ -38,12 +38,6 @@ public:
 };
 
 // max-heap
-// template <typename K, typename V>
-// using max_priority_queue = std::priority_queue<std::pair<V, K>, vecsim_stl::vector<std::pair<V,
-// K>>,
-//                                                std::less<std::pair<V, K>>>;
-
-// max-heap
 template <typename K, typename V>
 struct max_priority_queue
     : public priority_queue_abstract<K, V>,
