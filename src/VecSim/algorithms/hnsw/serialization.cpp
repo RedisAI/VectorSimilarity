@@ -141,11 +141,11 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     }
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
         auto *incoming_edges =
-            new (hnsw_index->allocator) vecsim_stl::vector<tableint>(hnsw_index->allocator);
+            new (hnsw_index->allocator) vecsim_stl::vector<idType>(hnsw_index->allocator);
         unsigned int incoming_edges_len;
         readBinaryPOD(input, incoming_edges_len);
         for (size_t j = 0; j < incoming_edges_len; j++) {
-            tableint next_edge;
+            idType next_edge;
             readBinaryPOD(input, next_edge);
             incoming_edges->push_back(next_edge);
         }
@@ -186,11 +186,11 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
             input.read(hnsw_index->linkLists_[i], linkListSize);
             for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
                 auto *incoming_edges =
-                    new (hnsw_index->allocator) vecsim_stl::vector<tableint>(hnsw_index->allocator);
+                    new (hnsw_index->allocator) vecsim_stl::vector<idType>(hnsw_index->allocator);
                 unsigned int vector_len;
                 readBinaryPOD(input, vector_len);
                 for (size_t k = 0; k < vector_len; k++) {
-                    tableint next_edge;
+                    idType next_edge;
                     readBinaryPOD(input, next_edge);
                     incoming_edges->push_back(next_edge);
                 }
@@ -260,8 +260,8 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
             for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
-                auto *data = (tableint *)(ll_cur + 1);
-                std::set<tableint> s;
+                auto *data = (idType *)(ll_cur + 1);
+                std::set<idType> s;
                 for (unsigned int j = 0; j < size; j++) {
                     // Check if we found an invalid neighbor.
                     if (data[j] > hnsw_index->max_id || data[j] == i) {
@@ -275,9 +275,9 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                     // Check if this connection is bidirectional.
                     linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
                     int size_other = hnsw_index->getListCount(ll_other);
-                    auto *data_other = (tableint *)(ll_other + 1);
+                    auto *data_other = (idType *)(ll_other + 1);
                     for (int r = 0; r < size_other; r++) {
-                        if (data_other[r] == (tableint)i) {
+                        if (data_other[r] == (idType)i) {
                             double_connections++;
                             break;
                         }

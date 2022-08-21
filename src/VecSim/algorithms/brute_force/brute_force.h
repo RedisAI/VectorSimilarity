@@ -9,21 +9,18 @@
 #include <cassert>
 #include <limits>
 
-using spaces::dist_func_t;
-
-class BruteForceIndex : public VecSimIndex {
+class BruteForceIndex : public VecSimIndexAbstract {
 protected:
-    size_t dim;
-    VecSimType vecType;
-    VecSimMetric metric;
+    vecsim_stl::vector<labelType> idToLabelMapping;
+    vecsim_stl::vector<VectorBlock *> vectorBlocks;
+    idType count;
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    static BruteForceIndex *BruteForceIndex_New(const BFParams *params,
+                                                std::shared_ptr<VecSimAllocator> allocator);
     static size_t estimateInitialSize(const BFParams *params);
     static size_t estimateElementMemory(const BFParams *params);
-    virtual int addVector(const void *vector_data, size_t label) override;
-    virtual int deleteVector(size_t id) override;
-    virtual double getDistanceFrom(size_t label, const void *vector_data) override;
     virtual size_t indexSize() const override;
     vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                  void *timeoutCtx,
@@ -33,42 +30,37 @@ public:
     VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
                                       VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
-    virtual VecSimInfoIterator *infoIterator() override;
+    virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
-    inline labelType getVectorLabel(idType id) const {
-        return idToLabelMapping.at(id);
-    } // throws out_of_range
-    inline labelType getVectorId(labelType label) const {
-        return labelToIdLookup.at(label);
-    } // throws out_of_range
+    inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
-    inline dist_func_t<float> distFunc() const { return dist_func; }
-    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     virtual ~BruteForceIndex();
 
-private:
-    void updateVector(idType id, const void *vector_data);
-    inline VectorBlock *getVectorVectorBlock(idType id) {
-        return vectorBlocks.at(id / vectorBlockSize);
+protected:
+    // Private internal function that implements generic single vector insertion.
+    virtual int appendVector(const void *vector_data, labelType label);
+
+    // Private internal function that implements generic single vector deletion.
+    virtual int removeVector(idType id);
+
+    inline float *getDataByInternalId(idType id) const {
+        return (float *)vectorBlocks.at(id / blockSize)->getVector(id % blockSize);
     }
-    inline size_t getVectorRelativeIndex(idType id) { return id % vectorBlockSize; }
+    inline VectorBlock *getVectorVectorBlock(idType id) const {
+        return vectorBlocks.at(id / blockSize);
+    }
+    inline size_t getVectorRelativeIndex(idType id) const { return id % blockSize; }
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
-    } // throws out_of_range
-    inline void setLabelToId(labelType label, idType new_id) {
-        labelToIdLookup.at(label) = new_id;
-    } // throws out_of_range
+    }
 
-    vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
-    vecsim_stl::vector<labelType> idToLabelMapping;
-    vecsim_stl::vector<VectorBlock *> vectorBlocks;
-    size_t vectorBlockSize;
-    idType count;
-    dist_func_t<float> dist_func;
-    VecSearchMode last_mode;
+    // inline label to id setters that need to be implemented by derived class
+    virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
+    virtual inline void setVectorId(labelType label, idType id) = 0;
+
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;

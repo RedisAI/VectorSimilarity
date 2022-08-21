@@ -27,6 +27,9 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
+typedef size_t labelType;
+typedef unsigned int idType;
+
 /**
  * @brief Query Runtime raw parameters.
  * Use VecSimIndex_ResolveParams to generate VecSimQueryParams from array of VecSimRawParams.
@@ -61,6 +64,7 @@ typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t initialCapacity;
     size_t blockSize;
     size_t M;
@@ -73,6 +77,7 @@ typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
     VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
     size_t initialCapacity;
     size_t blockSize;
 } BFParams;
@@ -117,7 +122,7 @@ typedef struct {
     size_t batchSize;
     VecSearchMode searchMode;
     void *timeoutCtx; // This parameter is not exposed directly to the user, and we shouldn't expect
-                      // to get it from the parameters reslove function.
+                      // to get it from the parameters resolve function.
 } VecSimQueryParams;
 
 /**
@@ -127,26 +132,30 @@ typedef struct {
 typedef struct {
     union {
         struct {
-            size_t indexSize;      // Current count of vectors.
-            size_t blockSize;      // Sets the amount to grow when resizing
-            size_t M;              // Number of allowed edges per node in graph.
-            size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
+            size_t indexSize;       // Current count of vectors.
+            size_t indexLabelCount; // Current unique count of labels.
+            size_t blockSize;       // Sets the amount to grow when resizing
+            size_t M;               // Number of allowed edges per node in graph.
+            size_t efConstruction;  // EF parameter for HNSW graph accuracy/latency for indexing.
+            size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
             double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
             size_t max_level; // Number of graph levels.
             size_t entrypoint;       // Entrypoint vector label.
             VecSimMetric metric;     // Index distance metric
             uint64_t memory;         // Index memory consumption.
             VecSimType type;         // Datatype the index holds.
+            bool isMulti;            // Determines if the index should multi-index or not.
             size_t dim;              // Vector size (dimension).
             VecSearchMode last_mode; // The mode in which the last query ran.
         } hnswInfo;
         struct {
             size_t indexSize;        // Current count of vectors.
+            size_t indexLabelCount;  // Current unique count of labels.
             size_t blockSize;        // Brute force algorithm vector block (mini matrix) size
             VecSimMetric metric;     // Index distance metric
             uint64_t memory;         // Index memory consumption.
             VecSimType type;         // Datatype the index holds.
+            bool isMulti;            // Determines if the index should multi-index or not.
             size_t dim;              // Vector size (dimension).
             VecSearchMode last_mode; // The mode in which the last query ran.
         } bfInfo;

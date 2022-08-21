@@ -28,14 +28,12 @@ using spaces::dist_func_t;
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
 
-typedef size_t labeltype;
-typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
-using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, idType>>;
 template <typename dist_t>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>;
+using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labelType>>;
 
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
@@ -63,6 +61,9 @@ private:
     size_t incoming_links_offset;
     double mult_;
 
+    // callback for computing distance between two points in the underline space.
+    dist_func_t<dist_t> dist_func_;
+
     // Index level generator of the top level for a new element
     std::default_random_engine level_generator_;
 
@@ -72,15 +73,15 @@ private:
     // internal ids are being kept as a continuous sequence [0, 1, ..,, cur_element_count-1].
     // We can remove this field completely if we change the serialization version, as the decoding
     // relies on this field.
-    tableint max_id;
+    idType max_id;
     size_t maxlevel_;
 
     // Index data structures
-    tableint entrypoint_node_;
+    idType entrypoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
-    vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
+    vecsim_stl::unordered_map<labelType, idType> label_lookup_;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -91,9 +92,6 @@ private:
     std::mutex cur_element_count_guard_;
     std::vector<std::mutex> link_list_locks_;
 #endif
-
-    // callback for computing distance between two points in the underline space.
-    dist_func_t<dist_t> fstdistfunc_;
 
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
@@ -107,51 +105,51 @@ private:
 
     HierarchicalNSW() {}                                // default constructor
     HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
-    void setExternalLabel(tableint internal_id, labeltype label);
-    labeltype *getExternalLabelPtr(tableint internal_id) const;
+    void setExternalLabel(idType internal_id, labelType label);
+    labelType *getExternalLabelPtr(idType internal_id) const;
     size_t getRandomLevel(double reverse_size);
-    vecsim_stl::vector<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
-    void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
-    inline linklistsizeint *get_linklist0(tableint internal_id) const;
-    inline linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
+    vecsim_stl::vector<idType> *getIncomingEdgesPtr(idType internal_id, size_t level) const;
+    void setIncomingEdgesPtr(idType internal_id, size_t level, void *set_ptr);
+    inline linklistsizeint *get_linklist0(idType internal_id) const;
+    inline linklistsizeint *get_linklist(idType internal_id, size_t level) const;
     void setListCount(linklistsizeint *ptr, unsigned short int size);
     void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
-                          size_t Mcurmax, tableint *node_neighbors,
-                          const vecsim_stl::vector<bool> &bitmap, tableint *removed_links,
+                          size_t Mcurmax, idType *node_neighbors,
+                          const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                           size_t *removed_links_num);
-    inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
+    inline dist_t processCandidate(idType curNodeId, const void *data_point, size_t layer,
                                    size_t ef, tag_t visited_tag,
                                    candidatesMaxHeap<dist_t> &top_candidates,
                                    candidatesMaxHeap<dist_t> &candidates_set,
                                    dist_t lowerBound) const;
-    inline void processCandidate_RangeSearch(tableint curNodeId, const void *data_point,
-                                             size_t layer, double epsilon, tag_t visited_tag,
+    inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
+                                             double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
                                              candidatesMaxHeap<dist_t> &candidate_set,
                                              dist_t lowerBound, dist_t radius) const;
-    candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
+    candidatesMaxHeap<dist_t> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                           size_t ef) const;
-    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(tableint ep_id,
+    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(idType ep_id,
                                                                   const void *data_point, size_t ef,
                                                                   size_t k, void *timeoutCtx,
                                                                   VecSimQueryResult_Code *rc) const;
-    VecSimQueryResult *searchRangeBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
+    VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                           double epsilon, dist_t radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
-    tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
-                                       size_t level);
-    void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
-                                      tableint *neighbours_list,
-                                      tableint *neighbour_neighbours_list, size_t level,
-                                      vecsim_stl::vector<bool> &neighbours_bitmap);
-    void replaceEntryPoint(tableint element_internal_id);
-    void SwapLastIdWithDeletedId(tableint element_internal_id, tableint last_element_internal_id);
+    idType mutuallyConnectNewElement(idType cur_c, candidatesMaxHeap<dist_t> &top_candidates,
+                                     size_t level);
+    void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
+                                      idType *neighbours_list, idType *neighbour_neighbours_list,
+                                      size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
+    void replaceEntryPoint(idType element_internal_id);
+    void SwapLastIdWithDeletedId(idType element_internal_id, idType last_element_internal_id);
 
 public:
-    HierarchicalNSW(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
-                    size_t ef = 10, size_t random_seed = 100, size_t initial_pool_size = 1);
+    HierarchicalNSW(const HNSWParams *params, dist_func_t<dist_t> func,
+                    std::shared_ptr<VecSimAllocator> allocator, size_t random_seed = 100,
+                    size_t initial_pool_size = 1);
     virtual ~HierarchicalNSW();
 
     void setEf(size_t ef);
@@ -159,30 +157,29 @@ public:
     inline void setEpsilon(double epsilon);
     inline double getEpsilon() const;
     size_t getIndexSize() const;
+    size_t getIndexLabelCount() const;
     size_t getIndexCapacity() const;
     size_t getEfConstruction() const;
     size_t getM() const;
     size_t getMaxLevel() const;
     size_t getEntryPointLabel() const;
-    tableint getEntryPointId() const;
-    labeltype getExternalLabel(tableint internal_id) const;
+    idType getEntryPointId() const;
+    labelType getExternalLabel(idType internal_id) const;
     VisitedNodesHandler *getVisitedList() const;
-    char *getDataByInternalId(tableint internal_id) const;
-    inline linklistsizeint *get_linklist_at_level(tableint internal_id, size_t level) const;
+    char *getDataByInternalId(idType internal_id) const;
+    inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
     unsigned short int getListCount(const linklistsizeint *ptr) const;
     void resizeIndex(size_t new_max_elements);
-    void removePoint(labeltype label);
-    void addPoint(const void *data_point, labeltype label);
-    dist_t getDistanceByLabelFromPoint(labeltype label, const void *data_point);
-    tableint searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                 VecSimQueryResult_Code *rc) const;
-    vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
+    void removePoint(labelType label);
+    void addPoint(const void *data_point, labelType label);
+    dist_t getDistanceByLabelFromPoint(labelType label, const void *data_point);
+    idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                               VecSimQueryResult_Code *rc) const;
+    vecsim_stl::max_priority_queue<pair<dist_t, labelType>>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
                                    VecSimQueryResult_Code *rc) const;
-    bool isLabelExist(labeltype label);
-    dist_func_t<float> GetDistFunc() const { return fstdistfunc_; }
-    size_t GetDim() const { return dim; }
+    bool isLabelExist(labelType label);
 };
 
 /**
@@ -215,6 +212,11 @@ size_t HierarchicalNSW<dist_t>::getIndexSize() const {
 }
 
 template <typename dist_t>
+size_t HierarchicalNSW<dist_t>::getIndexLabelCount() const {
+    return label_lookup_.size();
+}
+
+template <typename dist_t>
 size_t HierarchicalNSW<dist_t>::getIndexCapacity() const {
     return max_elements_;
 }
@@ -242,28 +244,28 @@ size_t HierarchicalNSW<dist_t>::getEntryPointLabel() const {
 }
 
 template <typename dist_t>
-labeltype HierarchicalNSW<dist_t>::getExternalLabel(tableint internal_id) const {
-    labeltype return_label;
+labelType HierarchicalNSW<dist_t>::getExternalLabel(idType internal_id) const {
+    labelType return_label;
     memcpy(&return_label,
            (data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_),
-           sizeof(labeltype));
+           sizeof(labelType));
     return return_label;
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::setExternalLabel(tableint internal_id, labeltype label) {
+void HierarchicalNSW<dist_t>::setExternalLabel(idType internal_id, labelType label) {
     memcpy((data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), &label,
-           sizeof(labeltype));
+           sizeof(labelType));
 }
 
 template <typename dist_t>
-labeltype *HierarchicalNSW<dist_t>::getExternalLabelPtr(tableint internal_id) const {
-    return (labeltype *)(data_level0_memory_ + internal_id * size_data_per_element_ +
+labelType *HierarchicalNSW<dist_t>::getExternalLabelPtr(idType internal_id) const {
+    return (labelType *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                          label_offset_);
 }
 
 template <typename dist_t>
-char *HierarchicalNSW<dist_t>::getDataByInternalId(tableint internal_id) const {
+char *HierarchicalNSW<dist_t>::getDataByInternalId(idType internal_id) const {
     return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
@@ -275,31 +277,30 @@ size_t HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
 }
 
 template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
+dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labelType label,
                                                             const void *data_point) {
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return INVALID_SCORE;
     }
-    dist_t t = fstdistfunc_(data_point, getDataByInternalId(label_lookup_[label]), dim);
+    dist_t t = dist_func_(data_point, getDataByInternalId(label_lookup_[label]), dim);
     return t;
 }
 
 template <typename dist_t>
-vecsim_stl::vector<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
-                                                                           size_t level) const {
+vecsim_stl::vector<idType> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(idType internal_id,
+                                                                         size_t level) const {
     if (level == 0) {
-        return reinterpret_cast<vecsim_stl::vector<tableint> *>(
+        return reinterpret_cast<vecsim_stl::vector<idType> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
                        incoming_links_offset0));
     }
-    return reinterpret_cast<vecsim_stl::vector<tableint> *>(
+    return reinterpret_cast<vecsim_stl::vector<idType> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset));
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, size_t level,
-                                                  void *set_ptr) {
+void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(idType internal_id, size_t level, void *set_ptr) {
     if (level == 0) {
         memcpy(data_level0_memory_ + internal_id * size_data_per_element_ + incoming_links_offset0,
                &set_ptr, sizeof(void *));
@@ -311,18 +312,18 @@ void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, size_t l
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(tableint internal_id) const {
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(idType internal_id) const {
     return (linklistsizeint *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                                offsetLevel0_);
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(tableint internal_id, size_t level) const {
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(idType internal_id, size_t level) const {
     return (linklistsizeint *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_);
 }
 
 template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(tableint internal_id,
+linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(idType internal_id,
                                                                 size_t level) const {
     return level == 0 ? get_linklist0(internal_id) : get_linklist(internal_id, level);
 }
@@ -338,7 +339,7 @@ void HierarchicalNSW<dist_t>::setListCount(linklistsizeint *ptr, unsigned short 
 }
 
 template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::getEntryPointId() const {
+idType HierarchicalNSW<dist_t>::getEntryPointId() const {
     return entrypoint_node_;
 }
 
@@ -348,7 +349,7 @@ VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
 }
 
 template <typename dist_t>
-bool HierarchicalNSW<dist_t>::isLabelExist(labeltype label) {
+bool HierarchicalNSW<dist_t>::isLabelExist(labelType label) {
     return (label_lookup_.find(label) != label_lookup_.end());
 }
 /**
@@ -357,9 +358,9 @@ bool HierarchicalNSW<dist_t>::isLabelExist(labeltype label) {
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
                                                candidatesMaxHeap<dist_t> candidates, size_t Mcurmax,
-                                               tableint *node_neighbors,
+                                               idType *node_neighbors,
                                                const vecsim_stl::vector<bool> &neighbors_bitmap,
-                                               tableint *removed_links, size_t *removed_links_num) {
+                                               idType *removed_links, size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
@@ -387,7 +388,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 }
 
 template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void *data_point,
+dist_t HierarchicalNSW<dist_t>::processCandidate(idType curNodeId, const void *data_point,
                                                  size_t layer, size_t ef, tag_t visited_tag,
                                                  candidatesMaxHeap<dist_t> &top_candidates,
                                                  candidatesMaxHeap<dist_t> &candidate_set,
@@ -398,17 +399,17 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
 #endif
     linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
     size_t links_num = getListCount(node_ll);
-    auto *node_links = (tableint *)(node_ll + 1);
+    auto *node_links = (idType *)(node_ll + 1);
 
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
 
     for (size_t j = 0; j < links_num; j++) {
-        tableint *candidate_pos = node_links + j;
-        tableint candidate_id = *candidate_pos;
+        idType *candidate_pos = node_links + j;
+        idType candidate_id = *candidate_pos;
 
         // Pre-fetch the next candidate data into memory cache, to improve performance.
-        tableint *next_candidate_pos = node_links + j + 1;
+        idType *next_candidate_pos = node_links + j + 1;
         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
@@ -416,7 +417,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *currObj1 = (getDataByInternalId(candidate_id));
 
-        dist_t dist1 = fstdistfunc_(data_point, currObj1, dim);
+        dist_t dist1 = dist_func_(data_point, currObj1, dim);
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
 
@@ -437,9 +438,9 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
-                                                           const void *query_data, size_t layer,
-                                                           double epsilon, tag_t visited_tag,
+void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(idType curNodeId, const void *query_data,
+                                                           size_t layer, double epsilon,
+                                                           tag_t visited_tag,
                                                            VecSimQueryResult **results,
                                                            candidatesMaxHeap<dist_t> &candidate_set,
                                                            dist_t dyn_range, dist_t radius) const {
@@ -449,17 +450,17 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
 #endif
     linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
     size_t links_num = getListCount(node_ll);
-    auto *node_links = (tableint *)(node_ll + 1);
+    auto *node_links = (idType *)(node_ll + 1);
 
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
     __builtin_prefetch(getDataByInternalId(*node_links));
 
     for (size_t j = 0; j < links_num; j++) {
-        tableint *candidate_pos = node_links + j;
-        tableint candidate_id = *candidate_pos;
+        idType *candidate_pos = node_links + j;
+        idType candidate_id = *candidate_pos;
 
         // Pre-fetch the next candidate data into memory cache, to improve performance.
-        tableint *next_candidate_pos = node_links + j + 1;
+        idType *next_candidate_pos = node_links + j + 1;
         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
@@ -468,7 +469,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *candidate_data = getDataByInternalId(candidate_id);
 
-        dist_t candidate_dist = fstdistfunc_(query_data, candidate_data, dim);
+        dist_t candidate_dist = dist_func_(query_data, candidate_data, dim);
         if (candidate_dist < dyn_range) {
             candidate_set.emplace(-candidate_dist, candidate_id);
 
@@ -487,9 +488,8 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(tableint curNodeId,
 }
 
 template <typename dist_t>
-candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
-                                                               const void *data_point, size_t layer,
-                                                               size_t ef) const {
+candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(idType ep_id, const void *data_point,
+                                                               size_t layer, size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -501,7 +501,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
-    dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dim);
+    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
     dist_t lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
@@ -509,7 +509,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
+        std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
@@ -533,7 +533,7 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
     }
 
     candidatesMaxHeap<dist_t> queue_closest(this->allocator);
-    vecsim_stl::vector<std::pair<dist_t, tableint>> return_list(this->allocator);
+    vecsim_stl::vector<std::pair<dist_t, idType>> return_list(this->allocator);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
         // (higher).
@@ -544,7 +544,7 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
     while (queue_closest.size()) {
         if (return_list.size() >= M)
             break;
-        std::pair<dist_t, tableint> current_pair = queue_closest.top();
+        std::pair<dist_t, idType> current_pair = queue_closest.top();
         dist_t dist_to_query = -current_pair.first;
         queue_closest.pop();
         bool good = true;
@@ -552,9 +552,9 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
-        for (std::pair<dist_t, tableint> second_pair : return_list) {
-            dist_t curdist = fstdistfunc_(getDataByInternalId(second_pair.second),
-                                          getDataByInternalId(current_pair.second), dim);
+        for (std::pair<dist_t, idType> second_pair : return_list) {
+            dist_t curdist = dist_func_(getDataByInternalId(second_pair.second),
+                                        getDataByInternalId(current_pair.second), dim);
             ;
             if (curdist < dist_to_query) {
                 good = false;
@@ -566,35 +566,36 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
         }
     }
 
-    for (std::pair<dist_t, tableint> current_pair : return_list) {
+    for (std::pair<dist_t, idType> current_pair : return_list) {
         top_candidates.emplace(-current_pair.first, current_pair.second);
     }
 }
 
 template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
-    tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates, size_t level) {
+idType HierarchicalNSW<dist_t>::mutuallyConnectNewElement(idType cur_c,
+                                                          candidatesMaxHeap<dist_t> &top_candidates,
+                                                          size_t level) {
     size_t Mcurmax = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
     if (top_candidates.size() > M_)
         throw std::runtime_error(
             "Should be not be more than M_ candidates returned by the heuristic");
 
-    vecsim_stl::vector<tableint> selectedNeighbors(this->allocator);
+    vecsim_stl::vector<idType> selectedNeighbors(this->allocator);
     selectedNeighbors.reserve(M_);
     while (top_candidates.size() > 0) {
         selectedNeighbors.push_back(top_candidates.top().second);
         top_candidates.pop();
     }
 
-    tableint next_closest_entry_point = selectedNeighbors.back();
+    idType next_closest_entry_point = selectedNeighbors.back();
     {
         linklistsizeint *ll_cur = get_linklist_at_level(cur_c, level);
         if (*ll_cur) {
             throw std::runtime_error("The newly inserted element should have blank link list");
         }
         setListCount(ll_cur, selectedNeighbors.size());
-        auto *data = (tableint *)(ll_cur + 1);
+        auto *data = (idType *)(ll_cur + 1);
         for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
             if (data[idx])
                 throw std::runtime_error("Possible memory corruption");
@@ -602,13 +603,13 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<tableint>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
     // go over the selected neighbours - selectedNeighbor is the neighbour id
     vecsim_stl::vector<bool> neighbors_bitmap(allocator);
-    for (tableint selectedNeighbor : selectedNeighbors) {
+    for (idType selectedNeighbor : selectedNeighbors) {
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
 #endif
@@ -623,7 +624,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             throw std::runtime_error("Trying to make a link on a non-existent level");
 
         // get the array of neighbours - for the current neighbour
-        auto *neighbor_neighbors = (tableint *)(ll_other + 1);
+        auto *neighbor_neighbors = (idType *)(ll_other + 1);
 
         // If the selected neighbor can add another link (hasn't reached the max) - add it.
         if (sz_link_list_other < Mcurmax) {
@@ -635,19 +636,19 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             // (re)use the bitmap to represent the set of the original neighbours for the current
             // selected neighbour.
             neighbors_bitmap.assign(max_id + 1, false);
-            dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c),
-                                        getDataByInternalId(selectedNeighbor), dim);
+            dist_t d_max =
+                dist_func_(getDataByInternalId(cur_c), getDataByInternalId(selectedNeighbor), dim);
             candidates.emplace(d_max, cur_c);
             // consider cur_c as if it was a link of the selected neighbor
             neighbors_bitmap[cur_c] = true;
             for (size_t j = 0; j < sz_link_list_other; j++) {
-                candidates.emplace(fstdistfunc_(getDataByInternalId(neighbor_neighbors[j]),
-                                                getDataByInternalId(selectedNeighbor), dim),
+                candidates.emplace(dist_func_(getDataByInternalId(neighbor_neighbors[j]),
+                                              getDataByInternalId(selectedNeighbor), dim),
                                    neighbor_neighbors[j]);
                 neighbors_bitmap[neighbor_neighbors[j]] = true;
             }
 
-            tableint removed_links[sz_link_list_other + 1];
+            idType removed_links[sz_link_list_other + 1];
             size_t removed_links_num;
             removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, neighbors_bitmap,
                              removed_links, &removed_links_num);
@@ -656,7 +657,7 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
             auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
             for (size_t i = 0; i < removed_links_num; i++) {
-                tableint node_id = removed_links[i];
+                idType node_id = removed_links[i];
                 auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
@@ -686,28 +687,27 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
 
 template <typename dist_t>
 void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
-    tableint element_internal_id, tableint neighbour_id, tableint *neighbours_list,
-    tableint *neighbour_neighbours_list, size_t level,
-    vecsim_stl::vector<bool> &neighbours_bitmap) {
+    idType element_internal_id, idType neighbour_id, idType *neighbours_list,
+    idType *neighbour_neighbours_list, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<dist_t> candidates(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
-    auto *neighbours = (tableint *)(neighbours_list + 1);
+    auto *neighbours = (idType *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
         // Don't put the neighbor itself in his own candidates
         if (neighbours[j] == neighbour_id) {
             continue;
         }
-        candidates.emplace(fstdistfunc_(getDataByInternalId(neighbours[j]),
-                                        getDataByInternalId(neighbour_id), dim),
-                           neighbours[j]);
+        candidates.emplace(
+            dist_func_(getDataByInternalId(neighbours[j]), getDataByInternalId(neighbour_id), dim),
+            neighbours[j]);
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<bool> neighbour_orig_neighbours_set(max_id + 1, false, this->allocator);
     unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
-    auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+    auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
     for (size_t j = 0; j < neighbour_neighbours_count; j++) {
         neighbour_orig_neighbours_set[neighbour_neighbours[j]] = true;
         // Don't add the removed element to the candidates, nor nodes that are already in the
@@ -716,14 +716,14 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
             neighbour_neighbours[j] == element_internal_id) {
             continue;
         }
-        candidates.emplace(fstdistfunc_(getDataByInternalId(neighbour_id),
-                                        getDataByInternalId(neighbour_neighbours[j]), dim),
+        candidates.emplace(dist_func_(getDataByInternalId(neighbour_id),
+                                      getDataByInternalId(neighbour_neighbours[j]), dim),
                            neighbour_neighbours[j]);
     }
 
     size_t Mcurmax = level ? maxM_ : maxM0_;
     size_t removed_links_num;
-    tableint removed_links[neighbour_neighbours_count];
+    idType removed_links[neighbour_neighbours_count];
     removeExtraLinks(neighbour_neighbours_list, candidates, Mcurmax, neighbour_neighbours,
                      neighbour_orig_neighbours_set, removed_links, &removed_links_num);
 
@@ -732,7 +732,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
     auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
 
     for (size_t i = 0; i < removed_links_num; i++) {
-        tableint node_id = removed_links[i];
+        idType node_id = removed_links[i];
         auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
 
         // if the node id (the neighbour's neighbour to be removed)
@@ -751,7 +751,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
     // updates for the new edges created
     unsigned short updated_links_num = getListCount(neighbour_neighbours_list);
     for (size_t i = 0; i < updated_links_num; i++) {
-        tableint node_id = neighbour_neighbours[i];
+        idType node_id = neighbour_neighbours[i];
         if (!neighbour_orig_neighbours_set[node_id]) {
             auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
             // if the node has an edge to the neighbour as well, remove it
@@ -759,7 +759,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
             // otherwise, need to update the edge as incoming.
             linklistsizeint *node_links_list = get_linklist_at_level(node_id, level);
             unsigned short node_links_size = getListCount(node_links_list);
-            auto *node_links = (tableint *)(node_links_list + 1);
+            auto *node_links = (idType *)(node_links_list + 1);
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
@@ -778,17 +778,17 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::replaceEntryPoint(tableint element_internal_id) {
+void HierarchicalNSW<dist_t>::replaceEntryPoint(idType element_internal_id) {
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (element_internal_id == entrypoint_node_) {
         linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
         if (getListCount(top_level_list) > 0) {
             // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
-            entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
+            entrypoint_node_ = ((idType *)(top_level_list + 1))[0];
         } else {
             // If there is no neighbors in the current level, check for any vector at
             // this level to be the new entry point.
-            for (tableint cur_id = 0; cur_id < cur_element_count; cur_id++) {
+            for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
                 if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
                     entrypoint_node_ = cur_id;
                     break;
@@ -808,10 +808,10 @@ void HierarchicalNSW<dist_t>::replaceEntryPoint(tableint element_internal_id) {
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_id,
-                                                      tableint last_element_internal_id) {
+void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(idType element_internal_id,
+                                                      idType last_element_internal_id) {
     // swap label
-    labeltype last_element_label = getExternalLabel(last_element_internal_id);
+    labelType last_element_label = getExternalLabel(last_element_internal_id);
     label_lookup_[last_element_label] = element_internal_id;
 
     // swap neighbours
@@ -819,16 +819,16 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
     for (size_t level = 0; level <= last_element_top_level; level++) {
         linklistsizeint *neighbours_list = get_linklist_at_level(last_element_internal_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);
-        auto *neighbours = (tableint *)(neighbours_list + 1);
+        auto *neighbours = (idType *)(neighbours_list + 1);
 
         // go over the neighbours that also points back to the last element whose is going to
         // change, and update the id.
         for (size_t i = 0; i < neighbours_count; i++) {
-            tableint neighbour_id = neighbours[i];
+            idType neighbour_id = neighbours[i];
             linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
             unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
 
-            auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+            auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
             bool bidirectional_edge = false;
             for (size_t j = 0; j < neighbour_neighbours_count; j++) {
                 // if the edge is bidirectional, update for this neighbor
@@ -859,7 +859,7 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
             unsigned short incoming_neighbour_neighbours_count =
                 getListCount(incoming_neighbour_neighbours_list);
             auto *incoming_neighbour_neighbours =
-                (tableint *)(incoming_neighbour_neighbours_list + 1);
+                (idType *)(incoming_neighbour_neighbours_list + 1);
             for (size_t j = 0; j < incoming_neighbour_neighbours_count; j++) {
                 if (incoming_neighbour_neighbours[j] == last_element_internal_id) {
                     incoming_neighbour_neighbours[j] = element_internal_id;
@@ -900,18 +900,18 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(tableint element_internal_
     double epsilon;
 } HNSWParams; */
 template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator, size_t ef,
+HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params, dist_func_t<dist_t> func,
+                                         std::shared_ptr<VecSimAllocator> allocator,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), ef_(ef),
-      dim(params->dim), data_size_(VecSimType_sizeof(params->type) * dim),
+    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), dim(params->dim),
+      data_size_(VecSimType_sizeof(params->type) * dim), dist_func_(func),
       element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                                     link_list_locks_(max_elements_),
+      ,
+      link_list_locks_(max_elements_)
 #endif
 {
-    spaces::SetDistFunc(params->metric, dim, &fstdistfunc_);
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > SIZE_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
@@ -921,7 +921,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
 
     size_t ef_construction = params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C;
     ef_construction_ = std::max(ef_construction, M_);
-    ef_ = ef;
+    ef_ = params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT;
+    epsilon_ = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
 
     cur_element_count = 0;
     max_id = HNSW_INVALID_ID;
@@ -947,17 +948,17 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
     // data_level0_memory will look like this:
     // -----4------ | -----4*M0----------- | ----8------------------| ------32------- | ----8---- |
     // <links_len>  | <link_1> <link_2>... | <incoming_links_set> |   <data>        |  <label>
-    if (maxM0_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(tableint)) + 1)
+    if (maxM0_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(idType)) + 1)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(tableint) + sizeof(void *);
+    size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(idType) + sizeof(void *);
 
-    if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labeltype))
+    if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labelType))
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labeltype);
+    size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labelType);
 
     // No need to test for overflow because we passed the test for size_links_level0_ and this is
     // less.
-    incoming_links_offset0 = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
+    incoming_links_offset0 = maxM0_ * sizeof(idType) + sizeof(linklistsizeint);
     offsetData_ = size_links_level0_;
     label_offset_ = size_links_level0_ + data_size_;
     offsetLevel0_ = 0;
@@ -975,16 +976,16 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params,
     // chunks of memory, each one will look like this:
     // -----4------ | -----4*M-------------- | ----8------------------|
     // <links_len>  | <link_1> <link_2> ...  | <incoming_links_set>
-    size_links_per_element_ = sizeof(linklistsizeint) + maxM_ * sizeof(tableint) + sizeof(void *);
+    size_links_per_element_ = sizeof(linklistsizeint) + maxM_ * sizeof(idType) + sizeof(void *);
     // No need to test for overflow because we passed the test for incoming_links_offset0 and this
     // is less.
-    incoming_links_offset = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
+    incoming_links_offset = maxM_ * sizeof(idType) + sizeof(linklistsizeint);
 }
 
 template <typename dist_t>
 HierarchicalNSW<dist_t>::~HierarchicalNSW() {
     if (max_id != HNSW_INVALID_ID) {
-        for (tableint id = 0; id <= max_id; id++) {
+        for (idType id = 0; id <= max_id; id++) {
             for (size_t level = 0; level <= element_levels_[id]; level++) {
                 delete getIncomingEdgesPtr(id, level);
             }
@@ -1032,9 +1033,9 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
+void HierarchicalNSW<dist_t>::removePoint(const labelType label) {
 
-    tableint element_internal_id = label_lookup_[label];
+    idType element_internal_id = label_lookup_[label];
     vecsim_stl::vector<bool> neighbours_bitmap(allocator);
 
     // go over levels and repair connections
@@ -1042,7 +1043,7 @@ void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     for (size_t level = 0; level <= element_top_level; level++) {
         linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);
-        auto *neighbours = (tableint *)(neighbours_list + 1);
+        auto *neighbours = (idType *)(neighbours_list + 1);
         // reset the neighbours' bitmap for the current level.
         neighbours_bitmap.assign(max_id + 1, false);
         // store the deleted element's neighbours set in a bitmap for fast access.
@@ -1052,11 +1053,11 @@ void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
         // go over the neighbours that also points back to the removed point and make a local
         // repair.
         for (size_t i = 0; i < neighbours_count; i++) {
-            tableint neighbour_id = neighbours[i];
+            idType neighbour_id = neighbours[i];
             linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
             unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
 
-            auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+            auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
             bool bidirectional_edge = false;
             for (size_t j = 0; j < neighbour_neighbours_count; j++) {
                 // if the edge is bidirectional, do repair for this neighbor
@@ -1098,7 +1099,7 @@ void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     }
 
     // Swap the last id with the deleted one, and invalidate the last id data.
-    tableint last_element_internal_id = --cur_element_count;
+    idType last_element_internal_id = --cur_element_count;
     --max_id;
     label_lookup_.erase(label);
     if (element_levels_[element_internal_id] > 0) {
@@ -1116,9 +1117,9 @@ void HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
 }
 
 template <typename dist_t>
-void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype label) {
+void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType label) {
 
-    tableint cur_c;
+    idType cur_c;
 
     {
 #ifdef ENABLE_PARALLELIZATION
@@ -1150,7 +1151,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
            size_data_per_element_);
 
     // Initialisation of the data and label
-    memcpy(getExternalLabelPtr(cur_c), &label, sizeof(labeltype));
+    memcpy(getExternalLabelPtr(cur_c), &label, sizeof(labelType));
     memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 
     if (element_max_level > 0) {
@@ -1164,7 +1165,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
         if (element_max_level < maxlevelcopy) {
-            dist_t cur_dist = fstdistfunc_(data_point, getDataByInternalId(currObj), dim);
+            dist_t cur_dist = dist_func_(data_point, getDataByInternalId(currObj), dim);
             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
@@ -1181,14 +1182,14 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
                     data = get_linklist(currObj, level);
                     int size = getListCount(data);
 
-                    auto *datal = (tableint *)(data + 1);
+                    auto *datal = (idType *)(data + 1);
                     for (int i = 0; i < size; i++) {
-                        tableint cand = datal[i];
+                        idType cand = datal[i];
                         if (cand < 0 || cand > max_elements_)
                             throw std::runtime_error(
                                 "candidate error: candidate id is out of index range");
 
-                        dist_t d = fstdistfunc_(data_point, getDataByInternalId(cand), dim);
+                        dist_t d = dist_func_(data_point, getDataByInternalId(cand), dim);
                         if (d < cur_dist) {
                             cur_dist = d;
                             currObj = cand;
@@ -1215,7 +1216,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
             // create the incoming edges set for the new levels.
             for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
-                    new (this->allocator) vecsim_stl::vector<tableint>(this->allocator);
+                    new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
             }
         }
@@ -1224,7 +1225,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         entrypoint_node_ = 0;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
-                new (this->allocator) vecsim_stl::vector<tableint>(this->allocator);
+                new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;
@@ -1232,31 +1233,31 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
 }
 
 template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                                      VecSimQueryResult_Code *rc) const {
+idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                                    VecSimQueryResult_Code *rc) const {
 
     if (cur_element_count == 0) {
         return entrypoint_node_;
     }
-    tableint currObj = entrypoint_node_;
-    dist_t cur_dist = fstdistfunc_(query_data, getDataByInternalId(entrypoint_node_), dim);
+    idType currObj = entrypoint_node_;
+    dist_t cur_dist = dist_func_(query_data, getDataByInternalId(entrypoint_node_), dim);
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
-            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+            if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
                 *rc = VecSim_QueryResult_TimedOut;
                 return HNSW_INVALID_ID;
             }
             changed = false;
             linklistsizeint *node_ll = get_linklist(currObj, level);
             unsigned short links_count = getListCount(node_ll);
-            auto *node_links = (tableint *)(node_ll + 1);
+            auto *node_links = (idType *)(node_ll + 1);
             for (int i = 0; i < links_count; i++) {
-                tableint candidate = node_links[i];
+                idType candidate = node_links[i];
                 if (candidate > max_elements_)
                     throw std::runtime_error("candidate error: out of index range");
 
-                dist_t d = fstdistfunc_(query_data, getDataByInternalId(candidate), dim);
+                dist_t d = dist_func_(query_data, getDataByInternalId(candidate), dim);
                 if (d < cur_dist) {
                     cur_dist = d;
                     currObj = candidate;
@@ -1271,7 +1272,7 @@ tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, vo
 
 template <typename dist_t>
 candidatesLabelsMaxHeap<dist_t>
-HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const void *data_point,
+HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                        size_t ef, size_t k, void *timeoutCtx,
                                                        VecSimQueryResult_Code *rc) const {
     candidatesLabelsMaxHeap<dist_t> results(this->allocator);
@@ -1286,7 +1287,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
-    dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dim);
+    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
     dist_t lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
@@ -1294,11 +1295,11 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(tableint ep_id, const voi
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
+        std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }
@@ -1332,7 +1333,7 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
         return candidatesLabelsMaxHeap<dist_t>(this->allocator);
     }
 
-    tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
     if (VecSim_OK != *rc) {
         return candidatesLabelsMaxHeap<dist_t>(this->allocator);
     }
@@ -1344,7 +1345,7 @@ HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeo
 
 template <typename dist_t>
 VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
-    tableint ep_id, const void *data_point, double epsilon, dist_t radius, void *timeoutCtx,
+    idType ep_id, const void *data_point, double epsilon, dist_t radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
@@ -1357,7 +1358,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
-    dist_t ep_dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dim);
+    dist_t ep_dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
     dist_t dynamic_range = ep_dist;
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
@@ -1373,13 +1374,13 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
+        std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
         // finish the search.
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }
@@ -1416,7 +1417,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRange(const void *query_data, 
         return array_new<VecSimQueryResult>(0);
     }
 
-    tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
     if (VecSim_OK != *rc) {
         return array_new<VecSimQueryResult>(0);
     }

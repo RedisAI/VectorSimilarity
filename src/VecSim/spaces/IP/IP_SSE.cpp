@@ -2,7 +2,7 @@
 #include "IP.h"
 #include "VecSim/spaces/space_includes.h"
 
-float F_InnerProductSIMD4Ext_SSE_impl(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_InnerProductSIMD4Ext_SSE_impl(const void *pVect1v, const void *pVect2v, size_t qty) {
     float PORTABLE_ALIGN16 TmpRes[4];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
@@ -57,7 +57,7 @@ float F_InnerProductSIMD4Ext_SSE_impl(const void *pVect1v, const void *pVect2v, 
 }
 
 float FP32_InnerProductSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
-    return 1.0f - F_InnerProductSIMD4Ext_SSE_impl(pVect1v, pVect2v, qty);
+    return 1.0f - FP32_InnerProductSIMD4Ext_SSE_impl(pVect1v, pVect2v, qty);
 }
 
 float F_InnerProductSIMD16Ext_SSE_impl(const void *pVect1v, const void *pVect2v, size_t qty) {
@@ -122,7 +122,7 @@ float FP32_InnerProductSIMD16ExtResiduals_SSE(const void *pVect1v, const void *p
 float FP32_InnerProductSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
     size_t qty4 = qty >> 2 << 2;
 
-    float res = F_InnerProductSIMD4Ext_SSE_impl(pVect1v, pVect2v, qty4);
+    float res = FP32_InnerProductSIMD4Ext_SSE_impl(pVect1v, pVect2v, qty4);
     size_t qty_left = qty - qty4;
 
     float *pVect1 = (float *)pVect1v + qty4;
