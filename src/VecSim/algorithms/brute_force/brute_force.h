@@ -4,6 +4,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include <memory>
 #include <queue>
 #include <cassert>
@@ -18,8 +19,6 @@ protected:
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
-    static size_t estimateInitialSize(const BFParams *params);
-    static size_t estimateElementMemory(const BFParams *params);
     virtual size_t indexSize() const override;
     vecsim_stl::vector<float> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                  void *timeoutCtx,

@@ -90,7 +90,7 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     case VecSimAlgo_HNSWLIB:
         return HNSWIndex::estimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateInitialSize(&params->bfParams);
+        return BruteForceFactory::EstimateInitialSize(&params->bfParams);
     }
     return -1;
 }
@@ -118,7 +118,7 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     case VecSimAlgo_HNSWLIB:
         return HNSWIndex::estimateElementMemory(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateElementMemory(&params->bfParams);
+        return BruteForceFactory::EstimateElementSize(&params->bfParams);
     }
     return -1;
 }
