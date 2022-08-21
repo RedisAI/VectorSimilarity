@@ -51,10 +51,10 @@ private:
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
     friend class BruteForceMultiTest_resizeNAlignIndex_Test;
-    friend class BruteForceMultiTest_brute_force_empty_index_Test;
+    friend class BruteForceMultiTest_empty_index_Test;
     friend class BruteForceMultiTest_test_delete_swap_block_Test;
-    friend class BruteForceMultiTest_brute_force_remove_vector_after_replacing_block_Test;
-    friend class BruteForceMultiTest_brute_force_search_more_then_there_is_Test;
-    friend class BruteForceMultiTest_brute_force_indexing_same_vector_Test;
+    friend class BruteForceMultiTest_remove_vector_after_replacing_block_Test;
+    friend class BruteForceMultiTest_search_more_then_there_is_Test;
+    friend class BruteForceMultiTest_indexing_same_vector_Test;
 #endif
 };
