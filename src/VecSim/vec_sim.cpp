@@ -117,7 +117,7 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWFactory::EstimateElementMemory(&params->hnswParams);
+        return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->bfParams);
     }

@@ -13,5 +13,5 @@ public:
     static VecSimIndex *NewIndex(const HNSWParams *params,
                                  std::shared_ptr<VecSimAllocator> allocator);
     static size_t EstimateInitialSize(const HNSWParams *params);
-    static size_t EstimateElementMemory(const HNSWParams *params);
+    static size_t EstimateElementSize(const HNSWParams *params);
 };

@@ -39,7 +39,7 @@ size_t HNSWFactory::EstimateInitialSize(const HNSWParams *params) {
     return est;
 }
 
-size_t HNSWFactory::EstimateElementMemory(const HNSWParams *params) {
+size_t HNSWFactory::EstimateElementSize(const HNSWParams *params) {
     size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) +
                                sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
     size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(idType) +

@@ -27,5 +27,5 @@ size_t BruteForceFactory::EstimateInitialSize(const BFParams *params) {
 }
 
 size_t BruteForceFactory::EstimateElementSize(const BFParams *params) {
-    return params->dim * VecSimType_sizeof(params->type) + sizeof(idType);
+    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
 }
