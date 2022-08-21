@@ -1,7 +1,6 @@
 
 #include "brute_force.h"
-#include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
@@ -13,20 +12,17 @@
 #include <cmath>
 
 using namespace std;
+using spaces::dist_func_t;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndex(allocator), dim(params->dim), vecType(params->type), metric(params->metric),
       labelToIdLookup(allocator), idToLabelMapping(allocator), vectorBlocks(allocator),
       vectorBlockSize(params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE), count(0),
-      space(params->metric == VecSimMetric_L2
-                ? static_cast<SpaceInterface<float> *>(new (allocator)
-                                                           L2Space(params->dim, allocator))
-                : static_cast<SpaceInterface<float> *>(
-                      new (allocator) InnerProductSpace(params->dim, allocator))),
       last_mode(EMPTY_MODE) {
+    assert(VecSimType_sizeof(vecType));
+    spaces::SetDistFunc(metric, dim, &dist_func);
     this->idToLabelMapping.resize(params->initialCapacity);
-    this->dist_func = this->space->get_dist_func();
 }
 
 BruteForceIndex::~BruteForceIndex() {
@@ -39,8 +35,6 @@ BruteForceIndex::~BruteForceIndex() {
 size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(BruteForceIndex) + sizeof(size_t);
-    est += (params->metric == VecSimMetric_L2 ? sizeof(L2Space) : sizeof(InnerProductSpace)) +
-           sizeof(size_t);
     // Parameters related part.
 
     if (params->initialCapacity) {

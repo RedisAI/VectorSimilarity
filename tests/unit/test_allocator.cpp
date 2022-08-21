@@ -103,8 +103,7 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
 
     float vec[128] = {};
     BruteForceIndex *bfIndex = new (allocator) BruteForceIndex(&params, allocator);
-    expectedAllocationSize +=
-        sizeof(BruteForceIndex) + sizeof(InnerProductSpace) + 2 * vecsimAllocationOverhead;
+    expectedAllocationSize += sizeof(BruteForceIndex) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
@@ -214,8 +213,7 @@ TEST_F(AllocatorTest, test_hnsw) {
 
     float vec[128] = {};
     HNSWIndex *hnswIndex = new (allocator) HNSWIndex(&params, allocator);
-    expectedAllocationSize +=
-        sizeof(HNSWIndex) + sizeof(InnerProductSpace) + 2 * vecsimAllocationOverhead;
+    expectedAllocationSize += sizeof(HNSWIndex) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);

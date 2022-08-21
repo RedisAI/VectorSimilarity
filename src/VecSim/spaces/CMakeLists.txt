@@ -46,6 +46,7 @@ add_library(VectorSimilaritySpaces STATIC
 	space_aux.cpp
 	L2_space.cpp
 	IP_space.cpp
+	spaces.cpp
 	)
 
 target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization)
