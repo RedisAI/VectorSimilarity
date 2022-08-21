@@ -47,7 +47,7 @@ protected:
     virtual int removeVector(idType id);
 
     inline float *getDataByInternalId(idType id) const {
-        return vectorBlocks.at(id / blockSize)->getVector(id % blockSize);
+        return (float *)vectorBlocks.at(id / blockSize)->getVector(id % blockSize);
     }
     inline VectorBlock *getVectorVectorBlock(idType id) const {
         return vectorBlocks.at(id / blockSize);
