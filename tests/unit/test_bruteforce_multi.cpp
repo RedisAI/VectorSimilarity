@@ -182,7 +182,7 @@ TEST_F(BruteForceMultiTest, empty_index) {
 TEST_F(BruteForceMultiTest, vector_search_test) {
     size_t dim = 4;
     size_t n = 1000;
-    size_t labels = 100;
+    size_t n_labels = 100;
     size_t k = 11;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
@@ -198,10 +198,10 @@ TEST_F(BruteForceMultiTest, vector_search_test) {
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
         }
-        VecSimIndex_AddVector(index, (const void *)f, (size_t)i % labels);
+        VecSimIndex_AddVector(index, (const void *)f, (size_t)i % n_labels);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, labels);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
     float query[] = {50, 50, 50, 50};
     std::set<size_t> expected_ids;
@@ -221,7 +221,7 @@ TEST_F(BruteForceMultiTest, search_more_then_there_is) {
     size_t dim = 4;
     size_t n = 5;
     size_t perLabel = 3;
-    size_t labels = (n % perLabel) ? n / perLabel + 1 : n / perLabel;
+    size_t n_labels = (n % perLabel) ? n / perLabel + 1 : n / perLabel;
     size_t k = 3;
 
     VecSimParams params{
@@ -238,19 +238,23 @@ TEST_F(BruteForceMultiTest, search_more_then_there_is) {
         VecSimIndex_AddVector(index, (const void *)f, (size_t)(i / perLabel));
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, labels);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
     float query[] = {0, 0, 0, 0};
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), labels);
+    ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
     auto it = VecSimQueryResult_List_GetIterator(res);
-    for (size_t i = 0; i < labels; i++) {
+    for (size_t i = 0; i < n_labels; i++) {
         auto el = VecSimQueryResult_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
-        idType element_id =
-            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label)[0];
-        ASSERT_EQ(element_id, i * perLabel);
+        auto ids =
+            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], i * perLabel + j);
+        }
     }
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
@@ -281,7 +285,6 @@ TEST_F(BruteForceMultiTest, indexing_same_vector) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {0, 0, 0, 0};
     auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, index); };
     runTopKSearchTest(index, query, k, verify_res);
@@ -320,6 +323,7 @@ TEST_F(BruteForceMultiTest, find_better_score) {
     // label gets at leat one better vector then the previous label, and one with score equals to
     // the best of the previous label, so the multimap holds at least two labels with the same
     // score.
+    std::map<size_t, float> scores;
     for (size_t i = 0; i < n; i++) {
         float f[dim];
         size_t el = ((n - i - 1) % n_labels) + ((n - i) / n_labels);
@@ -327,12 +331,21 @@ TEST_F(BruteForceMultiTest, find_better_score) {
             f[j] = (float)el;
         }
         VecSimIndex_AddVector(index, (const void *)f, i / n_labels);
+        // This should be the best score for each label.
+        if (i % n_labels == n_labels - 1) {
+            // `el * el * dim` is the L2-squared value with the 0 vector.
+            scores.emplace(i / n_labels, el * el * dim);
+        }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, k - index - 1);
+        ASSERT_FLOAT_EQ(score, scores[id]);
+    };
+
     float query[] = {0, 0, 0, 0};
-    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, k - index - 1); };
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndex_Free(index);
@@ -368,7 +381,12 @@ TEST_F(BruteForceMultiTest, find_better_score_after_pop) {
     auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_EQ(id, n_labels - index - 1);
     };
+    // Having k = n_labels - 1, the heap will continuously pop the worst label before finding the
+    // next vector, which is of the same label and is the best vector yet.
     runTopKSearchTest(index, query, n_labels - 1, verify_res);
+
+    // Having k = n_labels, the heap will never get to pop the worst label, but we will update the
+    // scores each time.
     runTopKSearchTest(index, query, n_labels, verify_res);
 
     VecSimIndex_Free(index);
@@ -378,6 +396,7 @@ TEST_F(BruteForceMultiTest, reindexing_same_vector_different_id) {
     size_t n = 100;
     size_t k = 10;
     size_t dim = 4;
+    size_t perLabel = 3;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -394,7 +413,17 @@ TEST_F(BruteForceMultiTest, reindexing_same_vector_different_id) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i / 10) + n;
+        }
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
@@ -416,7 +445,17 @@ TEST_F(BruteForceMultiTest, reindexing_same_vector_different_id) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i + 10);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i / 10) + n;
+        }
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i + 10);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
     // Run the same query again.
     auto verify_res_different_id = [&](int id, float score, size_t index) {
@@ -667,6 +706,7 @@ TEST_F(BruteForceMultiTest, vector_search_test_l2_blocksize_1) {
     size_t dim = 4;
     size_t n = 100;
     size_t k = 11;
+    size_t perLabel = 4;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -688,7 +728,17 @@ TEST_F(BruteForceMultiTest, vector_search_test_l2_blocksize_1) {
         }
         VecSimIndex_AddVector(index, (const void *)f, i);
     }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i + n;
+        }
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
     auto verify_res = [&](size_t id, float score, size_t index) {
         size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);

@@ -57,4 +57,3 @@ double BruteForceIndex_Multi::getDistanceFrom(size_t label, const void *vector_d
 
     return dist;
 }
-<<<<<<< HEAD
