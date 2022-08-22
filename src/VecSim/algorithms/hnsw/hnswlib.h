@@ -31,9 +31,9 @@ using spaces::dist_func_t;
 typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
-using candidatesMaxHeap = vecsim_stl::max_priority_queue<idType, dist_t>;
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<dist_t, idType>;
 template <typename dist_t>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<labelType, dist_t>;
+using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<dist_t, labelType>;
 
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
@@ -175,7 +175,7 @@ public:
     dist_t getDistanceByLabelFromPoint(labelType label, const void *data_point);
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryResult_Code *rc) const;
-    vecsim_stl::max_priority_queue<labelType, dist_t>
+    vecsim_stl::max_priority_queue<dist_t, labelType>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
                                    VecSimQueryResult_Code *rc) const;
