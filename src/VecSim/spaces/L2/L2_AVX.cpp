@@ -90,8 +90,7 @@ float FP32_L2SqrSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
     return (res + res_tail);
 }
 
-float FP32_FP32_L2SqrSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
-                                      size_t qty) {
+float FP32_L2SqrSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     size_t qty4 = qty >> 2 << 2;
     float res = FP32_L2SqrSIMD4Ext_AVX(pVect1v, pVect2v, qty4);
     float *pVect1 = (float *)pVect1v + qty4;

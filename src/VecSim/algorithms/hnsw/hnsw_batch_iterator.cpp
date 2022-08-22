@@ -80,7 +80,8 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         if (curr_node_dist > lower_bound && top_candidates.size() >= this->hnsw_index->getEf()) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(this->getTimeoutCtx()),
+                             0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }

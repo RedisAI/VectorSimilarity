@@ -94,9 +94,9 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
 
     // Label2id of the last vector doesn't exist.
-    /* ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single<float, float> *>(index)->labelToIdLookup.find(1),
-              reinterpret_cast<BruteForceIndex_Single<float, float> *>(index)->labelToIdLookup.end()); */
-
+    /* ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single<float, float>
+       *>(index)->labelToIdLookup.find(1), reinterpret_cast<BruteForceIndex_Single<float, float>
+       *>(index)->labelToIdLookup.end()); */
 
     VecSimIndex_Free(index);
 }
@@ -562,15 +562,16 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     // id1 gets what was previously id5's label.
     ASSERT_EQ(bf_index->getVectorLabel(1), id5_prev_label);
 
+    BruteForceIndex_Single<float, float> *bf_single_index =
+        reinterpret_cast<BruteForceIndex_Single<float, float> *>(index);
+
     // label2id value at label5 should be 1
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->labelToIdLookup[id5_prev_label],
-              1);
+    auto last_vector_new_id = bf_single_index->labelToIdLookup[id5_prev_label];
+    ASSERT_EQ(last_vector_new_id, 1);
 
     // The label of what initially was in id1 should be removed.
-    auto deleted_label_id_pair =
-        reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->labelToIdLookup.find(id1_prev_label);
-    ASSERT_EQ(deleted_label_id_pair,
-              reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->labelToIdLookup.end());
+    auto deleted_label_id_pair = bf_single_index->labelToIdLookup.find(id1_prev_label);
+    ASSERT_EQ(deleted_label_id_pair, bf_single_index->labelToIdLookup.end());
 
     // The vector in index1 should hold id5 data.
     float *vector_data = bf_index->getDataByInternalId(1);

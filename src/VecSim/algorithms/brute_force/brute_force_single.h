@@ -54,15 +54,14 @@ protected:
 #endif
 };
 
-
 /******************************* Implementation **********************************/
 
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 
 template <typename DataType, typename DistType>
-BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(const BFParams *params,
-                                               std::shared_ptr<VecSimAllocator> allocator)
+BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(
+    const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdLookup(allocator) {}
 
 template <typename DataType, typename DistType>
@@ -110,7 +109,8 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(size_t label) {
 }
 
 template <typename DataType, typename DistType>
-double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(size_t label, const void *vector_data) const {
+double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(size_t label,
+                                                                   const void *vector_data) const {
 
     auto optionalId = this->labelToIdLookup.find(label);
     if (optionalId == this->labelToIdLookup.end()) {

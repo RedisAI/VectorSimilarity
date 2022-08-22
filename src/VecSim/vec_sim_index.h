@@ -60,9 +60,9 @@ public:
 
 /******************************* Implementation **********************************/
 
-
 template <typename DistType>
-timeoutCallbackFunction VecSimIndexAbstract<DistType>::timeoutCallback = [](void *ctx) { return 0; };
+timeoutCallbackFunction VecSimIndexAbstract<DistType>::timeoutCallback =
+    [](void *ctx) { return 0; };
 
 template <typename DistType>
 void VecSimIndexAbstract<DistType>::setTimeoutCallbackFunction(timeoutCallbackFunction callback) {

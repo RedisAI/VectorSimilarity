@@ -24,8 +24,8 @@ public:
 
     virtual size_t indexSize() const override;
     vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
-                                                        void *timeoutCtx,
-                                                        VecSimQueryResult_Code *rc) const;
+                                                    void *timeoutCtx,
+                                                    VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, DistType radius,
@@ -89,16 +89,17 @@ protected:
 using namespace std;
 
 /******************** Ctor / Dtor **************/
-template <typename DataType, typename  DistType>
-BruteForceIndex<DataType, DistType>::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize,
-                          params->multi),
+template <typename DataType, typename DistType>
+BruteForceIndex<DataType, DistType>::BruteForceIndex(const BFParams *params,
+                                                     std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
+                                    params->blockSize, params->multi),
       idToLabelMapping(allocator), vectorBlocks(allocator), count(0) {
     assert(VecSimType_sizeof(vecType) == sizeof(DataType));
     this->idToLabelMapping.resize(params->initialCapacity);
 }
 
-template <typename DataType, typename  DistType>
+template <typename DataType, typename DistType>
 BruteForceIndex<DataType, DistType>::~BruteForceIndex() {
     for (auto &vectorBlock : this->vectorBlocks) {
         delete vectorBlock;
@@ -107,7 +108,7 @@ BruteForceIndex<DataType, DistType>::~BruteForceIndex() {
 
 /******************** Implementation **************/
 
-template <typename DataType, typename  DistType>
+template <typename DataType, typename DistType>
 int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
 
     // Give the vector new id and increase count.
@@ -137,8 +138,8 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
 
     if (id >= idToLabelMapping_size) {
         size_t last_block_vectors_count = id % this->blockSize;
-        this->idToLabelMapping.resize(idToLabelMapping_size + this->blockSize - last_block_vectors_count,
-                                      0);
+        this->idToLabelMapping.resize(
+            idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
     }
 
     // add label to idToLabelMapping
@@ -150,7 +151,7 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
     return true;
 }
 
-template <typename DataType, typename  DistType>
+template <typename DataType, typename DistType>
 int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 
     // Get last vector id and label
@@ -200,15 +201,15 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     return true;
 }
 
-template <typename DataType, typename  DistType>
-size_t BruteForceIndex<DataType, DistType>::indexSize() const { return this->count; }
+template <typename DataType, typename DistType>
+size_t BruteForceIndex<DataType, DistType>::indexSize() const {
+    return this->count;
+}
 
 // Compute the score for every vector in the block by using the given distance function.
-template <typename DataType, typename  DistType>
-vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockScores(VectorBlock *block,
-                                                              const void *queryBlob,
-                                                              void *timeoutCtx,
-                                                              VecSimQueryResult_Code *rc) const {
+template <typename DataType, typename DistType>
+vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockScores(
+    VectorBlock *block, const void *queryBlob, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
     size_t len = block->getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
@@ -222,9 +223,10 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
     return scores;
 }
 
-template <typename DataType, typename  DistType>
-VecSimQueryResult_List BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                                  VecSimQueryParams *queryParams) {
+template <typename DataType, typename DistType>
+VecSimQueryResult_List
+BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                               VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
@@ -274,9 +276,10 @@ VecSimQueryResult_List BruteForceIndex<DataType, DistType>::topKQuery(const void
     return rl;
 }
 
-template <typename DataType, typename  DistType>
-VecSimQueryResult_List BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType radius,
-                                                   VecSimQueryParams *queryParams) {
+template <typename DataType, typename DistType>
+VecSimQueryResult_List
+BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType radius,
+                                                VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
@@ -312,7 +315,7 @@ VecSimQueryResult_List BruteForceIndex<DataType, DistType>::rangeQuery(const voi
     return rl;
 }
 
-template <typename DataType, typename  DistType>
+template <typename DataType, typename DistType>
 VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
 
     VecSimIndexInfo info;
@@ -329,43 +332,49 @@ VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
     return info;
 }
 
-template <typename DataType, typename  DistType>
+template <typename DataType, typename DistType>
 VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 8;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
-    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-                                                .fieldType = INFOFIELD_STRING,
-                                                .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TYPE_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.bfInfo.type)}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::TYPE_STRING,
-                         .fieldType = INFOFIELD_STRING,
-                         .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.bfInfo.type)}}});
-    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
-                                                .fieldType = INFOFIELD_UINT64,
-                                                .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.dim}}});
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.dim}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::METRIC_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.bfInfo.metric)}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::METRIC_STRING,
-                         .fieldType = INFOFIELD_STRING,
-                         .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.bfInfo.metric)}}});
-    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
-                                                .fieldType = INFOFIELD_UINT64,
-                                                .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
-    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
-                                                .fieldType = INFOFIELD_UINT64,
-                                                .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexSize}}});
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexSize}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexLabelCount}}});
-    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                                                .fieldType = INFOFIELD_UINT64,
-                                                .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.blockSize}}});
-    infoIterator->addInfoField(VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
-                                                .fieldType = INFOFIELD_UINT64,
-                                                .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.memory}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.blockSize}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.memory}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
                          .fieldType = INFOFIELD_STRING,
@@ -375,9 +384,10 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     return infoIterator;
 }
 
-template <typename DataType, typename  DistType>
-VecSimBatchIterator *BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                       VecSimQueryParams *queryParams) {
+template <typename DataType, typename DistType>
+VecSimBatchIterator *
+BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
+                                                      VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);
@@ -391,8 +401,9 @@ VecSimBatchIterator *BruteForceIndex<DataType, DistType>::newBatchIterator(const
         BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
 }
 
-template <typename DataType, typename  DistType>
-bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
+template <typename DataType, typename DistType>
+bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
+                                                            bool initial_check) {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();

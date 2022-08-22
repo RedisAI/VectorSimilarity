@@ -90,8 +90,8 @@ float FP32_InnerProductSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, si
     return 1.0f - FP32_InnerProductSIMD4Ext_AVX_impl(pVect1v, pVect2v, qty);
 }
 
-float FP32_FP32_InnerProductSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
-                                                   size_t qty) {
+float FP32_InnerProductSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
+                                              size_t qty) {
     size_t qty16 = qty >> 4 << 4;
     float res = FP32_InnerProductSIMD16Ext_AVX_impl(pVect1v, pVect2v, qty16);
     float *pVect1 = (float *)pVect1v + qty16;

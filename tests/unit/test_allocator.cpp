@@ -103,8 +103,10 @@ TEST_F(AllocatorTest, test_bf_index_block_size_1) {
                        .blockSize = 1};
 
     float vec[128] = {};
-    BruteForceIndex_Single<float, float> *bfIndex = new (allocator) BruteForceIndex_Single<float, float>(&params, allocator);
-    expectedAllocationSize += sizeof(BruteForceIndex_Single<float, float>) + vecsimAllocationOverhead;
+    BruteForceIndex_Single<float, float> *bfIndex =
+        new (allocator) BruteForceIndex_Single<float, float>(&params, allocator);
+    expectedAllocationSize +=
+        sizeof(BruteForceIndex_Single<float, float>) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
