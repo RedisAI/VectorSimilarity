@@ -221,7 +221,7 @@ TEST_F(BruteForceMultiTest, search_more_then_there_is) {
     size_t dim = 4;
     size_t n = 5;
     size_t perLabel = 3;
-    size_t n_labels = (n % perLabel) ? n / perLabel + 1 : n / perLabel;
+    size_t n_labels = ceil((float)n / perLabel);
     size_t k = 3;
 
     VecSimParams params{
