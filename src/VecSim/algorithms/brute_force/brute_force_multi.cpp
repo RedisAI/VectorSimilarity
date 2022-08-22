@@ -72,12 +72,12 @@ void BruteForceIndex_Multi::setVectorId(labelType label, idType id) {
 
 void BruteForceIndex_Multi::replaceIdOfLabel(labelType label, idType new_id, idType old_id) {
     assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
-    auto &labelKey = labelToIdsLookup.at(label);
-    for (size_t i = 0; i < labelKey.size(); i++) {
-        if (labelKey[i] == old_id) {
-            labelKey[i] = new_id;
+    auto &ids = labelToIdsLookup.at(label);
+    for (size_t i = 0; i < ids.size(); i++) {
+        if (ids[i] == old_id) {
+            ids[i] = new_id;
             return;
         }
     }
-    assert(false && "should have find the old id");
+    assert(false && "should have found the old id");
 }

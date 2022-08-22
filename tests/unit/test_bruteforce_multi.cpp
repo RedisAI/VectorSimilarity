@@ -65,6 +65,7 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
                                              .initialCapacity = n,
                                              .blockSize = blockSize}};
     VecSimIndex *index = VecSimIndex_New(&params);
+    auto bf_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     float a[dim];
@@ -77,7 +78,8 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.bfInfo.indexSize, n);
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
+    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
     // remove invalid id
     VecSimIndex_DeleteVector(index, 3459);
@@ -86,7 +88,8 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.bfInfo.indexSize, n);
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(), n);
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
+    ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
@@ -96,8 +99,7 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
     // Label count doesn't increase because label 0 already exists
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
     // Check new capacity size, should be blockSize * 2.
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(),
-              2 * blockSize);
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
 
     // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
     // to check that it stays aligned with blocksize.
@@ -113,19 +115,18 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
     // Size should be n + 1 + 8 = 24.
     size_t new_n = n + 1 + add_vectors_count;
     info = VecSimIndex_Info(index);
-    auto bfm_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
 
     ASSERT_EQ(info.bfInfo.indexSize, new_n);
     // Label count doesn't increase because label 0 already exists
     ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
     size_t total_vectors = 0;
-    for (auto label_ids : bfm_index->labelToIdsLookup) {
+    for (auto label_ids : bf_index->labelToIdsLookup) {
         total_vectors += label_ids.second.size();
     }
     ASSERT_EQ(total_vectors, new_n);
 
     // Check new capacity size, should be blockSize * 3.
-    ASSERT_EQ(bfm_index->idToLabelMapping.size(), 3 * blockSize);
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), 3 * blockSize);
 
     VecSimIndex_Free(index);
 }
@@ -1208,8 +1209,8 @@ TEST_F(BruteForceMultiTest, brute_get_distance) {
 
     VecSimParams params{
         .algo = VecSimAlgo_BF,
-        .hnswParams = HNSWParams{
-            .type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = 4}};
+        .bfParams =
+            BFParams{.type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = 4}};
 
     for (size_t i = 0; i < numIndex; i++) {
         params.bfParams.metric = (VecSimMetric)i;
