@@ -6,6 +6,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "test_utils.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 class AllocatorTest : public ::testing::Test {
 protected:
@@ -350,9 +351,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
     // single bucket. This, we get the following range in which we expect the initial memory to be
     // in.
-    ASSERT_LE(initial_memory_size, HNSWIndex::estimateInitialSize(&params) + sizeof(size_t));
+    ASSERT_LE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params) + sizeof(size_t));
     ASSERT_GE(initial_memory_size,
-              HNSWIndex::estimateInitialSize(&params) - 2 * vecsimAllocationOverhead);
+              HNSWFactory::EstimateInitialSize(&params) - 2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
     size_t block_size = hnswIndex->info().hnswInfo.blockSize;
@@ -428,9 +429,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // zero, while in others the entire capacity reduced to zero (including the header).
     // Also, the element_levels vector capacity should become zero, so we should reduce its header
     // that always counted in the initial size estimation.
-    ASSERT_LE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
+    ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
                                                   hash_table_memory - vecsimAllocationOverhead);
-    ASSERT_GE(allocator->getAllocationSize(), HNSWIndex::estimateInitialSize(&params) +
+    ASSERT_GE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
                                                   hash_table_memory - 2 * vecsimAllocationOverhead);
     VecSimIndex_Free(hnswIndex);
 }
