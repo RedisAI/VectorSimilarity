@@ -55,5 +55,5 @@ double BruteForceIndex_Single::getDistanceFrom(size_t label, const void *vector_
     }
     idType id = optionalId->second;
 
-    return this->dist_func(getDataByInternalId(id), vector_data, &this->dim);
+    return this->dist_func(getDataByInternalId(id), vector_data, this->dim);
 }

@@ -6,9 +6,8 @@ namespace spaces {
 
 static const Arch_Optimization arch_opt = getArchitectureOptimization();
 
-// TODO change last arg to size_t
 template <typename RET_TYPE>
-using dist_func_t = RET_TYPE (*)(const void *, const void *, const void *dim);
+using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
 // General optimization logic:
 // SIMD16 perform computations on 16 float at a time in each iteration, while SIMD4 perform

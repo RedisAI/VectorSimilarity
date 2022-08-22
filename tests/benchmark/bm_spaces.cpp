@@ -16,7 +16,7 @@
             return;                                                                                \
         }                                                                                          \
         for (auto _ : st) {                                                                        \
-            func(v1, v2, &dim);                                                                    \
+            func(v1, v2, dim);                                                                     \
         }                                                                                          \
     }
 
@@ -75,13 +75,13 @@ BENCHMARK_DISTANCE_F(SSE, IP_4_Residuals, FP32_InnerProductSIMD4ExtResiduals_SSE
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_IP)(benchmark::State &st) {
     for (auto _ : st) {
-        FP32_InnerProduct(v1, v2, &dim);
+        FP32_InnerProduct(v1, v2, dim);
     }
 }
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces, NAIVE_L2)(benchmark::State &st) {
     for (auto _ : st) {
-        FP32_L2Sqr(v1, v2, &dim);
+        FP32_L2Sqr(v1, v2, dim);
     }
 }
 
