@@ -95,8 +95,8 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
 
     // Label2id of the last vector doesn't exist.
     /* ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single<float, float>
-       *>(index)->labelToIdLookup.find(1), reinterpret_cast<BruteForceIndex_Single<float, float>
-       *>(index)->labelToIdLookup.end()); */
+     *>(index)->labelToIdLookup.find(1), reinterpret_cast<BruteForceIndex_Single<float, float>
+     *>(index)->labelToIdLookup.end()); */
 
     VecSimIndex_Free(index);
 }
