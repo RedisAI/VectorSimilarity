@@ -25,9 +25,6 @@ protected:
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex *index,
                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
-    static BF_BatchIterator *New_BatchIterator(void *query_vector, const BruteForceIndex *index,
-                                               VecSimQueryParams *queryParams,
-                                               std::shared_ptr<VecSimAllocator> allocator);
 
     inline const BruteForceIndex *getIndex() const { return index; };
 

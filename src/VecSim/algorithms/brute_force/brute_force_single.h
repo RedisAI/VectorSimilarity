@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brute_force.h"
+#include "bfs_batch_iterator.h"
 
 class BruteForceIndex_Single : public BruteForceIndex {
 protected:
@@ -40,6 +41,11 @@ protected:
     inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::max_priority_queue<float, labelType>(this->allocator);
+    }
+
+    inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
+                                                       VecSimQueryParams *queryParams) override {
+        return new (allocator) BFS_BatchIterator(queryBlob, this, queryParams, allocator);
     }
 
 #ifdef BUILD_TESTS

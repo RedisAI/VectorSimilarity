@@ -4,8 +4,6 @@
 #include <cmath>
 #include <functional>
 #include "bf_batch_iterator.h"
-#include "bfs_batch_iterator.h"
-#include "bfm_batch_iterator.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
@@ -124,17 +122,6 @@ BF_BatchIterator::BF_BatchIterator(void *query_vector, const BruteForceIndex *bf
                                    std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
       index(bf_index), scores_valid_start_pos(0) {}
-
-BF_BatchIterator *BF_BatchIterator::New_BatchIterator(void *query_vector,
-                                                      const BruteForceIndex *index,
-                                                      VecSimQueryParams *queryParams,
-                                                      std::shared_ptr<VecSimAllocator> allocator) {
-    if (index->isMultiValue()) {
-        return new (allocator) BFM_BatchIterator(query_vector, index, queryParams, allocator);
-    } else {
-        return new (allocator) BFS_BatchIterator(query_vector, index, queryParams, allocator);
-    }
-}
 
 VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
                                                         VecSimQueryResult_Order order) {

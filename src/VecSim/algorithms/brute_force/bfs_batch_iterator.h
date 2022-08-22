@@ -4,8 +4,6 @@
 #include <vector>
 #include <limits>
 
-// using namespace std;
-
 class BFS_BatchIterator : public BF_BatchIterator {
 public:
     BFS_BatchIterator(void *query_vector, const BruteForceIndex *index,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brute_force.h"
+#include "bfm_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
 
 class BruteForceIndex_Multi : public BruteForceIndex {
@@ -46,6 +47,11 @@ private:
     inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<float, labelType>(this->allocator);
+    }
+
+    inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
+                                                       VecSimQueryParams *queryParams) override {
+        return new (allocator) BFM_BatchIterator(queryBlob, this, queryParams, allocator);
     }
 
 #ifdef BUILD_TESTS

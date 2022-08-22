@@ -2,7 +2,6 @@
 #include "brute_force.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
 
@@ -330,7 +329,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
         float_vector_normalize((float *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return BF_BatchIterator::New_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }
 
 bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
