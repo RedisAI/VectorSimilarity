@@ -28,36 +28,7 @@ BruteForceIndex::~BruteForceIndex() {
     }
 }
 
-/******************** inheritance factory **************/
-
-BruteForceIndex *BruteForceIndex::BruteForceIndex_New(const BFParams *params,
-                                                      std::shared_ptr<VecSimAllocator> allocator) {
-    assert(!params->multi);
-    return new (allocator) BruteForceIndex_Single(params, allocator);
-}
-
 /******************** Implementation **************/
-size_t BruteForceIndex::estimateInitialSize(const BFParams *params) {
-    // Constant part (not effected by parameters).
-    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (params->multi)
-        est += sizeof(BruteForceIndex); // change to BruteForceIndex_Multi
-    else
-        est += sizeof(BruteForceIndex_Single);
-
-    // Parameters related part.
-
-    if (params->initialCapacity) {
-        est += params->initialCapacity * sizeof(decltype(idToLabelMapping)::value_type) +
-               sizeof(size_t);
-    }
-
-    return est;
-}
-
-size_t BruteForceIndex::estimateElementMemory(const BFParams *params) {
-    return params->dim * sizeof(float) + sizeof(idType);
-}
 
 int BruteForceIndex::appendVector(const void *vector_data, labelType label) {
 
