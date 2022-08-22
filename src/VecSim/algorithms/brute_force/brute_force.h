@@ -4,6 +4,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include <memory>
 #include <queue>
 #include <cassert>
@@ -12,7 +13,7 @@
 using spaces::dist_func_t;
 
 template <typename DataType, typename DistType>
-class BruteForceIndex : public VecSimIndexAbstract<DistType> {
+class BruteForceIndex : public VecSimIndexAbstractAbstract<DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
@@ -20,10 +21,7 @@ protected:
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    static BruteForceIndex *BruteForceIndex_New(const BFParams *params,
-                                                std::shared_ptr<VecSimAllocator> allocator);
-    static size_t estimateInitialSize(const BFParams *params);
-    static size_t estimateElementMemory(const BFParams *params);
+
     virtual size_t indexSize() const override;
     vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                         void *timeoutCtx,
@@ -53,9 +51,9 @@ protected:
         return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
     }
     inline VectorBlock *getVectorVectorBlock(idType id) const {
-        return vectorBlocks.at(id / this->blockSize);
+        return vectorBlocks.at(id / blockSize);
     }
-    inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
+    inline size_t getVectorRelativeIndex(idType id) const { return id % blockSize; }
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
     }
@@ -107,42 +105,7 @@ BruteForceIndex<DataType, DistType>::~BruteForceIndex() {
     }
 }
 
-/******************** inheritance factory **************/
-
-template <typename DataType, typename DistType>
-class BruteForceIndex_Single;
-
-template <typename DataType, typename  DistType>
-BruteForceIndex<DataType, DistType> *BruteForceIndex<DataType, DistType>::BruteForceIndex_New(const BFParams *params,
-                                                      std::shared_ptr<VecSimAllocator> allocator) {
-    assert(!params->multi);
-    return new (allocator) BruteForceIndex_Single<DataType, DistType>(params, allocator);
-}
-
 /******************** Implementation **************/
-template <typename DataType, typename  DistType>
-size_t BruteForceIndex<DataType, DistType>::estimateInitialSize(const BFParams *params) {
-    // Constant part (not effected by parameters).
-    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (params->multi)
-        est += sizeof(BruteForceIndex<DataType, DistType>); // change to BruteForceIndex_Multi
-    else
-        est += sizeof(BruteForceIndex_Single<DataType, DistType>);
-
-    // Parameters related part.
-
-    if (params->initialCapacity) {
-        est += params->initialCapacity * sizeof(labelType) +
-               sizeof(size_t);
-    }
-
-    return est;
-}
-
-template <typename DataType, typename  DistType>
-size_t BruteForceIndex<DataType, DistType>::estimateElementMemory(const BFParams *params) {
-    return params->dim * sizeof(DataType) + sizeof(idType);
-}
 
 template <typename DataType, typename  DistType>
 int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
@@ -153,9 +116,10 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
     // Get vector block to store the vector in.
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
-    if (id % this->blockSize == 0) {
+    if (id % blockSize == 0) {
+        size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
         VectorBlock *new_vectorBlock =
-            new (this->allocator) VectorBlock(this->blockSize, this->dim, this->allocator);
+            new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
@@ -197,7 +161,7 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     VectorBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    DataType *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    char *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
@@ -252,7 +216,7 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
+        scores[i] = this->dist_func(block->getVector(i), queryBlob, this->dim);
     }
     *rc = VecSim_QueryResult_OK;
     return scores;

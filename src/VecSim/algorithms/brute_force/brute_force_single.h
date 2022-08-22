@@ -17,9 +17,25 @@ public:
     virtual inline size_t indexLabelCount() const override { return this->count; }
 
 protected:
-    inline void updateVector(idType id, const void *vector_data);
-    inline void setVectorId(labelType label, idType id) override;
-    inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
+    // inline definitions
+
+    inline void updateVector(idType id, const void *vector_data) {
+
+        // Get the vector block
+        VectorBlock *vectorBlock = getVectorVectorBlock(id);
+        size_t index = getVectorRelativeIndex(id);
+
+        // Update vector data in the block.
+        vectorBlock->updateVector(index, vector_data);
+    }
+
+    inline void setVectorId(labelType label, idType id) override {
+        labelToIdLookup.emplace(label, id);
+    }
+
+    inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
+        labelToIdLookup.at(label) = new_id;
+    }
 
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
@@ -36,28 +52,6 @@ protected:
 #endif
 };
 
-// inline definitions
-
-template <typename DataType, typename DistType>
-void BruteForceIndex_Single<DataType, DistType>::updateVector(idType id, const void *vector_data) {
-
-    // Get the vector block
-    VectorBlock *vectorBlock = getVectorVectorBlock(id);
-    size_t index = getVectorRelativeIndex(id);
-
-    // Update vector data in the block.
-    vectorBlock->updateVector(index, vector_data);
-}
-
-template <typename DataType, typename DistType>
-void BruteForceIndex_Single<DataType, DistType>::setVectorId(labelType label, idType id) {
-    labelToIdLookup.emplace(label, id);
-}
-
-template <typename DataType, typename DistType>
-void BruteForceIndex_Single<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id, idType old_id) {
-    labelToIdLookup.at(label) = new_id;
-}
 
 /******************************* Implementation **********************************/
 
@@ -122,5 +116,5 @@ double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(size_t label,
     }
     idType id = optionalId->second;
 
-    return this->dist_func(getDataByInternalId(id), vector_data, &this->dim);
+    return this->dist_func(getDataByInternalId(id), vector_data, this->dim);
 }

@@ -282,7 +282,7 @@ dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labelType label,
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return INVALID_SCORE;
     }
-    dist_t t = dist_func_(data_point, getDataByInternalId(label_lookup_[label]), &dim);
+    dist_t t = dist_func_(data_point, getDataByInternalId(label_lookup_[label]), dim);
     return t;
 }
 
@@ -417,7 +417,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(idType curNodeId, const void *d
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *currObj1 = (getDataByInternalId(candidate_id));
 
-        dist_t dist1 = dist_func_(data_point, currObj1, &dim);
+        dist_t dist1 = dist_func_(data_point, currObj1, dim);
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
 
@@ -469,7 +469,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(idType curNodeId, con
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *candidate_data = getDataByInternalId(candidate_id);
 
-        dist_t candidate_dist = dist_func_(query_data, candidate_data, &dim);
+        dist_t candidate_dist = dist_func_(query_data, candidate_data, dim);
         if (candidate_dist < dyn_range) {
             candidate_set.emplace(-candidate_dist, candidate_id);
 
@@ -501,7 +501,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(idType ep_id, con
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
-    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), &dim);
+    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
     dist_t lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
@@ -554,7 +554,7 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
         // to both q and the candidate than the distance between the candidate and q.
         for (std::pair<dist_t, idType> second_pair : return_list) {
             dist_t curdist = dist_func_(getDataByInternalId(second_pair.second),
-                                        getDataByInternalId(current_pair.second), &dim);
+                                        getDataByInternalId(current_pair.second), dim);
             ;
             if (curdist < dist_to_query) {
                 good = false;
@@ -637,13 +637,13 @@ idType HierarchicalNSW<dist_t>::mutuallyConnectNewElement(idType cur_c,
             // selected neighbour.
             neighbors_bitmap.assign(max_id + 1, false);
             dist_t d_max =
-                dist_func_(getDataByInternalId(cur_c), getDataByInternalId(selectedNeighbor), &dim);
+                dist_func_(getDataByInternalId(cur_c), getDataByInternalId(selectedNeighbor), dim);
             candidates.emplace(d_max, cur_c);
             // consider cur_c as if it was a link of the selected neighbor
             neighbors_bitmap[cur_c] = true;
             for (size_t j = 0; j < sz_link_list_other; j++) {
                 candidates.emplace(dist_func_(getDataByInternalId(neighbor_neighbors[j]),
-                                              getDataByInternalId(selectedNeighbor), &dim),
+                                              getDataByInternalId(selectedNeighbor), dim),
                                    neighbor_neighbors[j]);
                 neighbors_bitmap[neighbor_neighbors[j]] = true;
             }
@@ -700,7 +700,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
             continue;
         }
         candidates.emplace(
-            dist_func_(getDataByInternalId(neighbours[j]), getDataByInternalId(neighbour_id), &dim),
+            dist_func_(getDataByInternalId(neighbours[j]), getDataByInternalId(neighbour_id), dim),
             neighbours[j]);
     }
 
@@ -717,7 +717,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
             continue;
         }
         candidates.emplace(dist_func_(getDataByInternalId(neighbour_id),
-                                      getDataByInternalId(neighbour_neighbours[j]), &dim),
+                                      getDataByInternalId(neighbour_neighbours[j]), dim),
                            neighbour_neighbours[j]);
     }
 
@@ -908,8 +908,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params, dist_func_t<d
       element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-                                                 ,
-      link_list_locks_(max_elements__)
+      ,
+      link_list_locks_(max_elements_)
 #endif
 {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
@@ -1165,7 +1165,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
         if (element_max_level < maxlevelcopy) {
-            dist_t cur_dist = dist_func_(data_point, getDataByInternalId(currObj), &dim);
+            dist_t cur_dist = dist_func_(data_point, getDataByInternalId(currObj), dim);
             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
@@ -1189,7 +1189,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
                             throw std::runtime_error(
                                 "candidate error: candidate id is out of index range");
 
-                        dist_t d = dist_func_(data_point, getDataByInternalId(cand), &dim);
+                        dist_t d = dist_func_(data_point, getDataByInternalId(cand), dim);
                         if (d < cur_dist) {
                             cur_dist = d;
                             currObj = cand;
@@ -1240,11 +1240,11 @@ idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void
         return entrypoint_node_;
     }
     idType currObj = entrypoint_node_;
-    dist_t cur_dist = dist_func_(query_data, getDataByInternalId(entrypoint_node_), &dim);
+    dist_t cur_dist = dist_func_(query_data, getDataByInternalId(entrypoint_node_), dim);
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
-            if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(timeoutCtx), 0)) {
+            if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
                 *rc = VecSim_QueryResult_TimedOut;
                 return HNSW_INVALID_ID;
             }
@@ -1257,7 +1257,7 @@ idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void
                 if (candidate > max_elements_)
                     throw std::runtime_error("candidate error: out of index range");
 
-                dist_t d = dist_func_(query_data, getDataByInternalId(candidate), &dim);
+                dist_t d = dist_func_(query_data, getDataByInternalId(candidate), dim);
                 if (d < cur_dist) {
                     cur_dist = d;
                     currObj = candidate;
@@ -1287,7 +1287,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void 
     candidatesMaxHeap<dist_t> top_candidates(this->allocator);
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
-    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), &dim);
+    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
     dist_t lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
@@ -1299,7 +1299,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void 
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }
@@ -1358,7 +1358,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
     candidatesMaxHeap<dist_t> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
-    dist_t ep_dist = dist_func_(data_point, getDataByInternalId(ep_id), &dim);
+    dist_t ep_dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
     dist_t dynamic_range = ep_dist;
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
@@ -1380,7 +1380,7 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }

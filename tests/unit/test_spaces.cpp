@@ -35,16 +35,16 @@ TEST_F(SpacesTest, l2_17) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, &dim);
+    float baseline = FP32_L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD16ExtResiduals_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -60,16 +60,16 @@ TEST_F(SpacesTest, l2_9) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, &dim);
+    float baseline = FP32_L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD4ExtResiduals_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -85,16 +85,16 @@ TEST_F(SpacesTest, ip_17) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, &dim);
+    float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD16ExtResiduals_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD16ExtResiduals_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -110,16 +110,16 @@ TEST_F(SpacesTest, ip_9) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, &dim);
+    float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD4ExtResiduals_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD4ExtResiduals_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -135,16 +135,16 @@ TEST_F(SpacesTest, ip_16) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, &dim);
+    float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD16Ext_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD16Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -160,16 +160,16 @@ TEST_F(SpacesTest, l2_16) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, &dim);
+    float baseline = FP32_L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD16Ext_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -186,16 +186,16 @@ TEST_F(SpacesTest, ip_20) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, &dim);
+    float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD4Ext_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_InnerProductSIMD4Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -211,16 +211,16 @@ TEST_F(SpacesTest, l2_20) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, &dim);
+    float baseline = FP32_L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX512(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD4Ext_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_FP32_L2SqrSIMD4Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_SSE(v, v, &dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
