@@ -40,7 +40,7 @@ private:
                 return;
             }
         }
-        assert(false && "should have find the old id");
+        assert(false && "should have found the old id");
     }
 
     inline vecsim_stl::priority_queue_abstract<float, labelType> *getNewPriorityQueue() override {
