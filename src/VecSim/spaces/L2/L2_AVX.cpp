@@ -1,12 +1,10 @@
 #include "L2_AVX.h"
 #include "L2.h"
 #include "VecSim/spaces/space_includes.h"
-#include <stddef.h>
 
-float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
-    size_t qty = *((size_t *)qty_ptr);
     float PORTABLE_ALIGN32 TmpRes[8];
     size_t qty16 = qty >> 4 << 4;
 
@@ -36,11 +34,10 @@ float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, const vo
            TmpRes[7];
 }
 
-float FP32_L2SqrSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+float FP32_L2SqrSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     float PORTABLE_ALIGN16 TmpRes[4];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
-    size_t qty = *((size_t *)qty_ptr);
 
     size_t qty16 = qty >> 4 << 4;
     size_t qty4 = qty >> 2 << 2;
@@ -82,28 +79,24 @@ float FP32_L2SqrSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, const voi
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
 }
 
-float FP32_L2SqrSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
-                                       const void *qty_ptr) {
-    size_t qty = *((size_t *)qty_ptr);
+float FP32_L2SqrSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     size_t qty16 = qty >> 4 << 4;
-    float res = FP32_L2SqrSIMD16Ext_AVX(pVect1v, pVect2v, &qty16);
+    float res = FP32_L2SqrSIMD16Ext_AVX(pVect1v, pVect2v, qty16);
     float *pVect1 = (float *)pVect1v + qty16;
     float *pVect2 = (float *)pVect2v + qty16;
 
     size_t qty_left = qty - qty16;
-    float res_tail = FP32_L2Sqr(pVect1, pVect2, &qty_left);
+    float res_tail = FP32_L2Sqr(pVect1, pVect2, qty_left);
     return (res + res_tail);
 }
 
-float FP32_L2SqrSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
-                                      const void *qty_ptr) {
-    size_t qty = *((size_t *)qty_ptr);
+float FP32_L2SqrSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     size_t qty4 = qty >> 2 << 2;
-    float res = FP32_L2SqrSIMD4Ext_AVX(pVect1v, pVect2v, &qty4);
+    float res = FP32_L2SqrSIMD4Ext_AVX(pVect1v, pVect2v, qty4);
     float *pVect1 = (float *)pVect1v + qty4;
     float *pVect2 = (float *)pVect2v + qty4;
 
     size_t qty_left = qty - qty4;
-    float res_tail = FP32_L2Sqr(pVect1, pVect2, &qty_left);
+    float res_tail = FP32_L2Sqr(pVect1, pVect2, qty_left);
     return (res + res_tail);
 }

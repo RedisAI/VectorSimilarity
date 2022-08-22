@@ -12,6 +12,7 @@
 #include <cmath>
 
 using namespace std;
+using spaces::dist_func_t;
 
 /******************** Ctor / Dtor **************/
 BruteForceIndex::BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
@@ -163,7 +164,7 @@ vecsim_stl::vector<float> BruteForceIndex::computeBlockScores(VectorBlock *block
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block->getVector(i), queryBlob, &this->dim);
+        scores[i] = this->dist_func(block->getVector(i), queryBlob, dim);
     }
     *rc = VecSim_QueryResult_OK;
     return scores;
