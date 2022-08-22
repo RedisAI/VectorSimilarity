@@ -95,7 +95,7 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(const BFParams *params,
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       idToLabelMapping(allocator), vectorBlocks(allocator), count(0) {
-    assert(VecSimType_sizeof(vecType) == sizeof(DataType));
+    assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     this->idToLabelMapping.resize(params->initialCapacity);
 }
 
