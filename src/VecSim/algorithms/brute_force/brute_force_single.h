@@ -1,8 +1,10 @@
 #pragma once
 
 #include "brute_force.h"
+
 template <typename DataType, typename DistType>
 class BruteForceIndex_Single : public BruteForceIndex<DataType, DistType> {
+
 protected:
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
 
@@ -22,8 +24,8 @@ protected:
     inline void updateVector(idType id, const void *vector_data) {
 
         // Get the vector block
-        VectorBlock *vectorBlock = getVectorVectorBlock(id);
-        size_t index = getVectorRelativeIndex(id);
+        VectorBlock *vectorBlock = this->getVectorVectorBlock(id);
+        size_t index = BruteForceIndex<DataType, DistType>::getVectorRelativeIndex(id);
 
         // Update vector data in the block.
         vectorBlock->updateVector(index, vector_data);
@@ -61,7 +63,7 @@ protected:
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(const BFParams *params,
                                                std::shared_ptr<VecSimAllocator> allocator)
-    : BruteForceIndex(params, allocator), labelToIdLookup(allocator) {}
+    : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdLookup(allocator) {}
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
@@ -85,7 +87,7 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
         return true;
     }
 
-    return appendVector(vector_data, label);
+    return this->appendVector(vector_data, label);
 }
 
 template <typename DataType, typename DistType>
@@ -104,7 +106,7 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(size_t label) {
     // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
 
-    return removeVector(id_to_delete);
+    return this->removeVector(id_to_delete);
 }
 
 template <typename DataType, typename DistType>
@@ -116,5 +118,5 @@ double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(size_t label,
     }
     idType id = optionalId->second;
 
-    return this->dist_func(getDataByInternalId(id), vector_data, this->dim);
+    return this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
 }

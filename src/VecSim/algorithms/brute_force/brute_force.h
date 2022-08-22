@@ -13,7 +13,7 @@
 using spaces::dist_func_t;
 
 template <typename DataType, typename DistType>
-class BruteForceIndex : public VecSimIndexAbstractAbstract<DistType> {
+class BruteForceIndex : public VecSimIndexAbstract<DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
     vecsim_stl::vector<VectorBlock *> vectorBlocks;
@@ -51,9 +51,9 @@ protected:
         return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
     }
     inline VectorBlock *getVectorVectorBlock(idType id) const {
-        return vectorBlocks.at(id / blockSize);
+        return vectorBlocks.at(id / this->blockSize);
     }
-    inline size_t getVectorRelativeIndex(idType id) const { return id % blockSize; }
+    inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
     }
@@ -116,7 +116,7 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
     // Get vector block to store the vector in.
 
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
-    if (id % blockSize == 0) {
+    if (id % this->blockSize == 0) {
         size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
         VectorBlock *new_vectorBlock =
             new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);

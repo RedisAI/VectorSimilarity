@@ -80,7 +80,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.indexSize);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.indexSize);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
             // Index label count.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);

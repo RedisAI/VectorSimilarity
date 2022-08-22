@@ -7,6 +7,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
