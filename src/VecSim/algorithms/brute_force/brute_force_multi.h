@@ -56,5 +56,6 @@ private:
     friend class BruteForceMultiTest_remove_vector_after_replacing_block_Test;
     friend class BruteForceMultiTest_search_more_then_there_is_Test;
     friend class BruteForceMultiTest_indexing_same_vector_Test;
+    friend class BruteForceMultiTest_test_dynamic_bf_info_iterator_Test;
 #endif
 };

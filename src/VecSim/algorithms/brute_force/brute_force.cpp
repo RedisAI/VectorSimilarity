@@ -336,7 +336,7 @@ VecSimBatchIterator *BruteForceIndex::newBatchIterator(const void *queryBlob,
 bool BruteForceIndex::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
-    size_t index_size = this->indexSize();
+    size_t index_size = this->indexLabelCount(); // Index's unique label size
     if (subsetSize > index_size) {
         throw std::runtime_error("internal error: subset size cannot be larger than index size");
     }
