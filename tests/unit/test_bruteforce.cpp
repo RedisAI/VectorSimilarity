@@ -504,7 +504,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 }
 
 TEST_F(BruteForceTest, test_delete_swap_block) {
-    size_t initiail_capacity = 5; // idToLabelMapping initial size.
+    size_t initial_capacity = 5; // idToLabelMapping initial size.
     size_t k = 5;
     size_t dim = 2;
 
@@ -519,13 +519,13 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_L2,
-                                             .initialCapacity = initiail_capacity,
+                                             .initialCapacity = initial_capacity,
                                              .blockSize = 3}};
     VecSimIndex *index = VecSimIndex_New(&params);
     BruteForceIndex *bf_index = reinterpret_cast<BruteForceIndex *>(index);
 
     // idToLabelMapping initial size equals n.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), initiail_capacity);
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), initial_capacity);
 
     size_t n = 6;
     for (size_t i = 0; i < n; i++) {
@@ -581,7 +581,7 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, sanity_rinsert_1280) {
+TEST_F(BruteForceTest, sanity_reinsert_1280) {
     size_t n = 5;
     size_t d = 1280;
     size_t k = 5;
@@ -637,6 +637,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
+    ASSERT_FALSE(info.bfInfo.isMulti);
     // Default args.
     ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
@@ -653,6 +654,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
+    ASSERT_FALSE(info.bfInfo.isMulti);
     // User args.
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
