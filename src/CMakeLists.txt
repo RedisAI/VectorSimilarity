@@ -57,6 +57,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/visited_nodes_handler.cpp
 	VecSim/algorithms/hnsw/hnsw_wrapper.cpp
     VecSim/vec_sim.cpp
+    VecSim/vec_sim_interface.cpp
     VecSim/query_results.cpp
 	VecSim/info_iterator.cpp
     VecSim/query_result_struct.cpp

@@ -11,7 +11,7 @@
 #include "memory.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
-    VecSimIndexAbstract<float>::setTimeoutCallbackFunction(callback);
+    VecSimIndex::setTimeoutCallbackFunction(callback);
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,

@@ -8,6 +8,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/vec_sim_interface.h" //timeoutCallback
 
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
@@ -139,7 +140,7 @@ VecSimQueryResult_List BF_BatchIterator::getNextResults(size_t n_res,
             return {NULL, rc};
         }
     }
-    if (__builtin_expect(VecSimIndexAbstract<float>::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
         return {NULL, VecSim_QueryResult_TimedOut};
     }
     VecSimQueryResult_List rl = searchByHeuristics(n_res, order);

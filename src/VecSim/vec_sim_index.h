@@ -52,19 +52,4 @@ public:
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
-
-    // Static class functions
-    static timeoutCallbackFunction timeoutCallback;
-    static void setTimeoutCallbackFunction(timeoutCallbackFunction callback);
 };
-
-/******************************* Implementation **********************************/
-
-template <typename DistType>
-timeoutCallbackFunction VecSimIndexAbstract<DistType>::timeoutCallback =
-    [](void *ctx) { return 0; };
-
-template <typename DistType>
-void VecSimIndexAbstract<DistType>::setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
-    VecSimIndexAbstract::timeoutCallback = callback;
-}
