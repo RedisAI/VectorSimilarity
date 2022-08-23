@@ -93,10 +93,11 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     // id2label size shouldnt change.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
 
+    BruteForceIndex_Single<float, float> *bf_single_index =
+        reinterpret_cast<BruteForceIndex_Single<float, float> *>(index);
+
     // Label2id of the last vector doesn't exist.
-    /* ASSERT_EQ(reinterpret_cast<BruteForceIndex_Single<float, float>
-     *>(index)->labelToIdLookup.find(1), reinterpret_cast<BruteForceIndex_Single<float, float>
-     *>(index)->labelToIdLookup.end()); */
+    ASSERT_EQ(bf_single_index->labelToIdLookup.find(1), bf_single_index->labelToIdLookup.end());
 
     VecSimIndex_Free(index);
 }
