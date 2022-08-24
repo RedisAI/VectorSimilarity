@@ -195,6 +195,9 @@ def test_bf_multivalue():
 
     dists = {}
     for key, vec in vectors:
+        # Setting or updating the score for each label. If it's the first time we calculate a score for a label,
+        # dists.get(key, 3) will return 3, which is more than a Cosine score can be,
+        # so we will choose the actual score the first time.
         dists[key] = min(spatial.distance.cosine(query_data, vec), dists.get(key, 3)) # cosine distance is always <= 2
 
     dists = list(dists.items())

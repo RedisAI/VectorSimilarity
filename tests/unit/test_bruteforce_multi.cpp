@@ -971,7 +971,7 @@ TEST_F(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
         for (size_t i = 0; i < n; i++) {
             float f[dim];
             for (size_t j = 0; j < dim; j++) {
-                f[j] = (float)(i / (10 / perLabel));
+                f[j] = (float)(i / (10 * perLabel));
             }
             VecSimIndex_AddVector(index, (const void *)f, i / perLabel);
         }
