@@ -696,7 +696,7 @@ TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     size_t perLabel = 3;
-    for (size_t i = 0; i < 1e4 * perLabel; i++) {
+    for (size_t i = 0; i < 1e4; i++) {
         VecSimIndex_AddVector(index, v, i / perLabel);
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
