@@ -39,36 +39,22 @@ public:
 
 // max-heap
 template <typename P, typename V>
-struct max_priority_queue
-    : public priority_queue_abstract<P, V>,
-      public std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                                 std::less<std::pair<P, V>>> {
+struct max_priority_queue : public priority_queue_abstract<P, V> {
+private:
+    std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
+                        std::less<std::pair<P, V>>>
+        max_pq;
+
+public:
     max_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
-        : priority_queue_abstract<P, V>(alloc),
-          std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                              std::less<std::pair<P, V>>>(alloc) {}
+        : priority_queue_abstract<P, V>(alloc), max_pq(alloc) {}
     ~max_priority_queue() {}
 
-    void emplace(P p, V v) override {
-        std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                            std::less<std::pair<P, V>>>::emplace(p, v);
-    }
-    inline bool empty() const override {
-        return std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                                   std::less<std::pair<P, V>>>::empty();
-    }
-    inline void pop() override {
-        std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                            std::less<std::pair<P, V>>>::pop();
-    }
-    inline const std::pair<P, V> top() const override {
-        return std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                                   std::less<std::pair<P, V>>>::top();
-    }
-    inline size_t size() const override {
-        return std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                                   std::less<std::pair<P, V>>>::size();
-    }
+    void emplace(P p, V v) override { max_pq.emplace(p, v); }
+    inline bool empty() const override { return max_pq.empty(); }
+    inline void pop() override { max_pq.pop(); }
+    inline const std::pair<P, V> top() const override { return max_pq.top(); }
+    inline size_t size() const override { return max_pq.size(); }
 };
 
 // min-heap
