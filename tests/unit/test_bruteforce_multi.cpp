@@ -1021,6 +1021,68 @@ TEST_F(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     VecSimIndex_Free(index);
 }
 
+TEST_F(BruteForceMultiTest, batch_iterator_validate_scores) {
+    size_t dim = 4;
+    size_t perLabel = 10;
+    size_t n_labels = 100;
+
+    size_t init_n = n_labels * (perLabel - 1);
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = init_n,
+                                             .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    // Inserting some big vectors to the index
+    for (size_t i = 0; i < init_n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i + n_labels + 46);
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
+    }
+    // Lastly, inserting small vector for each label
+    for (size_t label = 0; label < n_labels; label++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)label;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, label);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n_labels * perLabel);
+
+    // Query for (0,0,0,...,0) vector.
+    float query[dim];
+    for (size_t j = 0; j < dim; j++) {
+        query[j] = (float)0;
+    }
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    size_t iteration_num = 0;
+
+    size_t n_res = 5;
+    // ids should be in ascending order
+    // scores should match to the score of the last vector for each label.
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, index + iteration_num * n_res);
+        ASSERT_FLOAT_EQ(score, id * id * dim);
+    };
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+        iteration_num++;
+    }
+
+    ASSERT_EQ(iteration_num, n_labels / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n_labels * perLabel);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
+
+    VecSimIndex_Free(index);
+}
+
 TEST_F(BruteForceMultiTest, brute_get_distance) {
     size_t n_labels = 2;
     size_t dim = 2;
