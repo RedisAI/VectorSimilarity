@@ -30,7 +30,7 @@ public:
         : VecsimBaseObject(alloc) {}
     ~priority_queue_abstract() {}
 
-    virtual void emplace(P p, V v) = 0;
+    virtual inline void emplace(P p, V v) = 0;
     virtual inline bool empty() const = 0;
     virtual inline void pop() = 0;
     virtual inline const std::pair<P, V> top() const = 0;
@@ -50,7 +50,7 @@ public:
         : priority_queue_abstract<P, V>(alloc), max_pq(alloc) {}
     ~max_priority_queue() {}
 
-    void emplace(P p, V v) override { max_pq.emplace(p, v); }
+    inline void emplace(P p, V v) override { max_pq.emplace(p, v); }
     inline bool empty() const override { return max_pq.empty(); }
     inline void pop() override { max_pq.pop(); }
     inline const std::pair<P, V> top() const override { return max_pq.top(); }

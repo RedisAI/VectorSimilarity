@@ -23,7 +23,7 @@ public:
     updatable_max_heap(const std::shared_ptr<VecSimAllocator> &alloc);
     ~updatable_max_heap();
 
-    void emplace(P p, V v) override;
+    inline void emplace(P p, V v) override;
     inline bool empty() const override;
     inline void pop() override;
     inline const std::pair<P, V> top() const override;
