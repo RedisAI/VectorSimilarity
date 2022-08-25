@@ -56,6 +56,8 @@ protected:
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
     }
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;

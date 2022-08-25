@@ -56,7 +56,7 @@ void BF_BatchIterator::swapScores(
 VecSimQueryResult_List BF_BatchIterator::heapBasedSearch(size_t n_res) {
     VecSimQueryResult_List rl = {0};
     float upperBound = std::numeric_limits<float>::lowest();
-    vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
+    vecsim_stl::max_priority_queue<float, labelType> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
     vecsim_stl::unordered_map<size_t, size_t> TopCandidatesIndices(n_res, this->allocator);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {

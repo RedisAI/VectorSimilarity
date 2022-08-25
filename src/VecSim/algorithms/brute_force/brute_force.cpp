@@ -117,7 +117,7 @@ int BruteForceIndex::removeVector(idType id_to_delete) {
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
-        // Update id2labelmapping.
+        // Update id2labelMapping.
         // Put the label of the last_id in the deleted_id.
         setVectorLabel(id_to_delete, last_idx_label);
 
@@ -138,9 +138,9 @@ int BruteForceIndex::removeVector(idType id_to_delete) {
         delete last_vector_block;
         this->vectorBlocks.pop_back();
 
-        // Resize and align the id2labelmapping.
+        // Resize and align the id2labelMapping.
         size_t id2label_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the id2labelmapping
+        // If the new size is smaller by at least one block comparing to the id2labelMapping
         // align to be a multiplication of blocksize  and resize by one block.
         if (count + blockSize <= id2label_size) {
             size_t vector_to_align_count = id2label_size % blockSize;
@@ -187,37 +187,37 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     }
 
     float upperBound = std::numeric_limits<float>::lowest();
-    vecsim_stl::max_priority_queue<pair<float, labelType>> TopCandidates(this->allocator);
+    vecsim_stl::abstract_priority_queue<float, labelType> *TopCandidates = getNewPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
+            delete TopCandidates;
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
-            // Always choose the current candidate if we have less than k.
-            if (TopCandidates.size() < k) {
-                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
-                upperBound = TopCandidates.top().first;
-            } else if (scores[i] < upperBound) {
-                // Otherwise, try greedily to improve the top candidates with a vector that
-                // has a better score than the one that has the worst score until now.
-                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
-                TopCandidates.pop();
-                upperBound = TopCandidates.top().first;
+            // If we have less than k or a better score, insert it.
+            if (scores[i] < upperBound || TopCandidates->size() < k) {
+                TopCandidates->emplace(scores[i], getVectorLabel(curr_id));
+                if (TopCandidates->size() > k) {
+                    // If we now have more than k results, pop the worst one.
+                    TopCandidates->pop();
+                }
+                upperBound = TopCandidates->top().first;
             }
             ++curr_id;
         }
     }
     assert(curr_id == count);
 
-    rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
-    for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(rl.results[i], TopCandidates.top().first);
-        TopCandidates.pop();
+    rl.results = array_new_len<VecSimQueryResult>(TopCandidates->size(), TopCandidates->size());
+    for (int i = (int)TopCandidates->size() - 1; i >= 0; --i) {
+        VecSimQueryResult_SetId(rl.results[i], TopCandidates->top().second);
+        VecSimQueryResult_SetScore(rl.results[i], TopCandidates->top().first);
+        TopCandidates->pop();
     }
+    delete TopCandidates;
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }
