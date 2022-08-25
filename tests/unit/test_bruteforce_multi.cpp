@@ -223,6 +223,9 @@ TEST_F(BruteForceMultiTest, search_more_then_there_is) {
     size_t perLabel = 3;
     size_t n_labels = ceil((float)n / perLabel);
     size_t k = 3;
+    // This test add 5 vectors under 2 labels, and then query for 3 results.
+    // We want to make sure we get only 2 results back (because the results should have unique
+    // labels), although the index contains 5 vectors.
 
     VecSimParams params{
         .algo = VecSimAlgo_BF,
@@ -265,7 +268,6 @@ TEST_F(BruteForceMultiTest, indexing_same_vector) {
     size_t n = 100;
     size_t k = 10;
     size_t perLabel = 10;
-    // size_t labels = (n % perLabel) ? n / perLabel + 1 : n / perLabel;
     size_t dim = 4;
 
     VecSimParams params{.algo = VecSimAlgo_BF,
@@ -294,9 +296,13 @@ TEST_F(BruteForceMultiTest, indexing_same_vector) {
         auto el = VecSimQueryResult_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
-        idType element_id =
-            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label)[0];
-        ASSERT_EQ(element_id, i * perLabel);
+        auto ids =
+            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], i * perLabel + j);
+        }
     }
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
@@ -320,13 +326,20 @@ TEST_F(BruteForceMultiTest, find_better_score) {
 
     // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
     // value, so when we search, each vector is better then the previous one. Furthermore, each
-    // label gets at leat one better vector then the previous label, and one with score equals to
+    // label gets at least one better vector than the previous label and one with a score equals to
     // the best of the previous label, so the multimap holds at least two labels with the same
     // score.
     std::map<size_t, float> scores;
     for (size_t i = 0; i < n; i++) {
         float f[dim];
-        size_t el = ((n - i - 1) % n_labels) + ((n - i) / n_labels);
+        // For example, with n_labels == 10 and n == 100,
+        // label 0 will get vector elements 18 -> 9 (aka (9 -> 0) + 9),
+        // label 1 will get vector elements 17 -> 8 (aka (9 -> 0) + 8),
+        // label 2 will get vector elements 16 -> 7 (aka (9 -> 0) + 7),
+        // . . . . .
+        // label 9 will get vector elements 9 -> 0 (aka (9 -> 0) + 0),
+        // and so on, so each label has some common vectors with all the previous labels.
+        size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)el;
         }

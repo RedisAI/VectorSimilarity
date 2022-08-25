@@ -23,44 +23,45 @@ public:
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, val, alloc) {}
 };
 
-template <typename P, typename V>
-struct priority_queue_abstract : public VecsimBaseObject {
+template <typename Priority, typename Value>
+struct abstract_priority_queue : public VecsimBaseObject {
 public:
-    priority_queue_abstract(const std::shared_ptr<VecSimAllocator> &alloc)
+    abstract_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc) {}
-    ~priority_queue_abstract() {}
+    ~abstract_priority_queue() {}
 
-    virtual inline void emplace(P p, V v) = 0;
+    virtual inline void emplace(Priority p, Value v) = 0;
     virtual inline bool empty() const = 0;
     virtual inline void pop() = 0;
-    virtual inline const std::pair<P, V> top() const = 0;
+    virtual inline const std::pair<Priority, Value> top() const = 0;
     virtual inline size_t size() const = 0;
 };
 
 // max-heap
-template <typename P, typename V>
-struct max_priority_queue : public priority_queue_abstract<P, V> {
+template <typename Priority, typename Value>
+struct max_priority_queue : public abstract_priority_queue<Priority, Value> {
 private:
-    std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                        std::less<std::pair<P, V>>>
+    std::priority_queue<std::pair<Priority, Value>, vecsim_stl::vector<std::pair<Priority, Value>>,
+                        std::less<std::pair<Priority, Value>>>
         max_pq;
 
 public:
     max_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
-        : priority_queue_abstract<P, V>(alloc), max_pq(alloc) {}
+        : abstract_priority_queue<Priority, Value>(alloc), max_pq(alloc) {}
     ~max_priority_queue() {}
 
-    inline void emplace(P p, V v) override { max_pq.emplace(p, v); }
+    inline void emplace(Priority p, Value v) override { max_pq.emplace(p, v); }
     inline bool empty() const override { return max_pq.empty(); }
     inline void pop() override { max_pq.pop(); }
-    inline const std::pair<P, V> top() const override { return max_pq.top(); }
+    inline const std::pair<Priority, Value> top() const override { return max_pq.top(); }
     inline size_t size() const override { return max_pq.size(); }
 };
 
 // min-heap
-template <typename P, typename V>
-using min_priority_queue = std::priority_queue<std::pair<P, V>, vecsim_stl::vector<std::pair<P, V>>,
-                                               std::greater<std::pair<P, V>>>;
+template <typename Priority, typename Value>
+using min_priority_queue =
+    std::priority_queue<std::pair<Priority, Value>, vecsim_stl::vector<std::pair<Priority, Value>>,
+                        std::greater<std::pair<Priority, Value>>>;
 
 template <typename T>
 class set : public VecsimBaseObject, public std::set<T, std::less<T>, VecsimSTLAllocator<T>> {

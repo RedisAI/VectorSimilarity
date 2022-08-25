@@ -43,7 +43,7 @@ private:
         assert(false && "should have found the old id");
     }
 
-    inline vecsim_stl::priority_queue_abstract<float, labelType> *getNewPriorityQueue() override {
+    inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<float, labelType>(this->allocator);
     }
