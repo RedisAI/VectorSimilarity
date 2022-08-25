@@ -22,9 +22,9 @@ private:
     // inline definitions
 
     inline void setVectorId(labelType label, idType id) override {
-        auto labelKey = labelToIdsLookup.find(label);
-        if (labelKey != labelToIdsLookup.end()) {
-            labelKey->second.push_back(id);
+        auto ids = labelToIdsLookup.find(label);
+        if (ids != labelToIdsLookup.end()) {
+            ids->second.push_back(id);
         } else {
             // Initial capacity is 1. We can consider increasing this value or having it as a
             // parameter.
@@ -34,10 +34,10 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
         assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
-        auto &labelKey = labelToIdsLookup.at(label);
-        for (size_t i = 0; i < labelKey.size(); i++) {
-            if (labelKey[i] == old_id) {
-                labelKey[i] = new_id;
+        auto &ids = labelToIdsLookup.at(label);
+        for (size_t i = 0; i < ids.size(); i++) {
+            if (ids[i] == old_id) {
+                ids[i] = new_id;
                 return;
             }
         }
