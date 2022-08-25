@@ -49,8 +49,6 @@ public:
     static const char *BATCH_SIZE_STRING;
 };
 
-void float_vector_normalize(float *x, size_t dim);
-
 void sort_results_by_id(VecSimQueryResult_List results);
 
 void sort_results_by_score(VecSimQueryResult_List results);

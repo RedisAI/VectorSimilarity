@@ -81,11 +81,14 @@ template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                           labelType label) {
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
+    bool is_cosine = this->metric == VecSimMetric_Cosine;
+    float normalized_data[this->dim *
+                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
+    if (is_cosine) {
+
         // TODO: need more generic
         memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
+        VecSimIndexAbstract<DistType>::NormalizeVector(vector_data, this->dim, normalized_data);
         vector_data = normalized_data;
     }
 

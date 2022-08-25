@@ -1145,11 +1145,12 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
 
     idType cur_c;
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
+    bool is_cosine = this->metric == VecSimMetric_Cosine;
+    float normalized_data[this->dim *
+                            is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
+    if (is_cosine) {        // TODO: need more generic
         memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
+        VecSimIndexAbstract<DistType>::NormalizeVector(vector_data, this->dim, normalized_data);
         vector_data = normalized_data;
     }
 
@@ -1382,11 +1383,13 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
+    bool is_cosine = this->metric == VecSimMetric_Cosine;
+    float normalized_data[this->dim *
+                            is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (is_cosine) {
         // TODO: need more generic
         memcpy(normalized_data, query_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
+        VecSimIndexAbstract<DistType>::NormalizeVector(query_data, this->dim, normalized_data);
         query_data = normalized_data;
     }
     // Get original efRuntime and store it.
@@ -1507,11 +1510,14 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
+    bool is_cosine = this->metric == VecSimMetric_Cosine;
+    float normalized_blob[this->dim *
+                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
+    if (is_cosine) {
+
         // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_blob, this->dim);
+        VecSimIndexAbstract<DistType>::template NormalizeVector<DataType>(normalized_blob, this->dim);
         query_data = normalized_blob;
     }
 
@@ -1547,10 +1553,10 @@ HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);
-    auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        float_vector_normalize((DataType *)queryBlobCopy, this->dim);
+        VecSimIndexAbstract<DistType>::template NormalizeVector<DataType>(queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
