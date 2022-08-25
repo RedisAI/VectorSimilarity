@@ -16,7 +16,7 @@ protected:
     void TearDown() override {}
 };
 
-TEST_F(BruteForceMultiTest, brute_force_vector_add_multiple_test) {
+TEST_F(BruteForceMultiTest, vector_add_multiple_test) {
     size_t dim = 4;
     int rep = 5;
     VecSimParams params{.algo = VecSimAlgo_BF,
@@ -132,7 +132,7 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
 }
 
 // Test empty index edge cases.
-TEST_F(BruteForceMultiTest, brute_force_empty_index) {
+TEST_F(BruteForceMultiTest, empty_index) {
     size_t dim = 4;
     size_t n = 20;
     size_t bs = 6;
@@ -179,251 +179,309 @@ TEST_F(BruteForceMultiTest, brute_force_empty_index) {
     VecSimIndex_Free(index);
 }
 
-// TEST_F(BruteForceMultiTest, brute_force_vector_search_test_ip) {
-//     size_t dim = 4;
-//     size_t n = 100;
-//     size_t k = 11;
+TEST_F(BruteForceMultiTest, vector_search_test) {
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t n_labels = 100;
+    size_t k = 11;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_IP,
-//                                              .multi = true,
-//                                              .initialCapacity = 200}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, (size_t)i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (size_t)i % n_labels);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
-//     float query[] = {50, 50, 50, 50};
-//     std::set<size_t> expected_ids;
-//     for (size_t i = n - 1; i > n - 1 - k; i--) {
-//         expected_ids.insert(i);
-//     }
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-//         expected_ids.erase(id);
-//     };
-//     runTopKSearchTest(index, query, k, verify_res);
-//     VecSimIndex_Free(index);
-// }
+    float query[] = {50, 50, 50, 50};
+    std::set<size_t> expected_ids;
+    for (size_t i = n - 1; i > n - 1 - k; i--) {
+        expected_ids.insert(i);
+    }
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
 
-// TEST_F(BruteForceMultiTest, brute_force_vector_search_test_l2) {
-//     size_t n = 100;
-//     size_t k = 11;
-//     size_t dim = 4;
+TEST_F(BruteForceMultiTest, search_more_then_there_is) {
+    size_t dim = 4;
+    size_t n = 5;
+    size_t perLabel = 3;
+    size_t n_labels = ceil((float)n / perLabel);
+    size_t k = 3;
+    // This test add 5 vectors under 2 labels, and then query for 3 results.
+    // We want to make sure we get only 2 results back (because the results should have unique
+    // labels), although the index contains 5 vectors.
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimParams params{
+        .algo = VecSimAlgo_BF,
+        .bfParams = BFParams{
+            .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .multi = true}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, (int)i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t x = 0; x < dim; x++) {
+            f[x] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (size_t)(i / perLabel));
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
-//         ASSERT_EQ(diff_id, (index + 1) / 2);
-//         ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
-//     };
-//     float query[] = {50, 50, 50, 50};
-//     runTopKSearchTest(index, query, k, verify_res);
+    float query[] = {0, 0, 0, 0};
+    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
+    auto it = VecSimQueryResult_List_GetIterator(res);
+    for (size_t i = 0; i < n_labels; i++) {
+        auto el = VecSimQueryResult_IteratorNext(it);
+        labelType element_label = VecSimQueryResult_GetId(el);
+        ASSERT_EQ(element_label, i);
+        auto ids =
+            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], i * perLabel + j);
+        }
+    }
+    VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+    VecSimIndex_Free(index);
+}
 
-//     VecSimIndex_Free(index);
-// }
+TEST_F(BruteForceMultiTest, indexing_same_vector) {
+    size_t n = 100;
+    size_t k = 10;
+    size_t perLabel = 10;
+    size_t dim = 4;
 
-// TEST_F(BruteForceMultiTest, brute_force_vector_search_by_id_test) {
-//     size_t n = 100;
-//     size_t k = 11;
-//     size_t dim = 4;
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i);
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (i / perLabel));
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, (int)i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[] = {0, 0, 0, 0};
+    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, index); };
+    runTopKSearchTest(index, query, k, verify_res);
+    auto res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    auto it = VecSimQueryResult_List_GetIterator(res);
+    for (size_t i = 0; i < k; i++) {
+        auto el = VecSimQueryResult_IteratorNext(it);
+        labelType element_label = VecSimQueryResult_GetId(el);
+        ASSERT_EQ(element_label, i);
+        auto ids =
+            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], i * perLabel + j);
+        }
+    }
+    VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+    VecSimIndex_Free(index);
+}
 
-//     float query[] = {50, 50, 50, 50};
-//     auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
-//     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+TEST_F(BruteForceMultiTest, find_better_score) {
+    size_t n = 100;
+    size_t k = 10;
+    size_t n_labels = 10;
+    size_t dim = 4;
+    size_t initial_capacity = 200;
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = initial_capacity}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-// TEST_F(BruteForceMultiTest, brute_force_indexing_same_vector) {
-//     size_t n = 100;
-//     size_t k = 10;
-//     size_t dim = 4;
+    // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
+    // value, so when we search, each vector is better then the previous one. Furthermore, each
+    // label gets at least one better vector than the previous label and one with a score equals to
+    // the best of the previous label, so the multimap holds at least two labels with the same
+    // score.
+    std::map<size_t, float> scores;
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        // For example, with n_labels == 10 and n == 100,
+        // label 0 will get vector elements 18 -> 9 (aka (9 -> 0) + 9),
+        // label 1 will get vector elements 17 -> 8 (aka (9 -> 0) + 8),
+        // label 2 will get vector elements 16 -> 7 (aka (9 -> 0) + 7),
+        // . . . . .
+        // label 9 will get vector elements 9 -> 0 (aka (9 -> 0) + 0),
+        // and so on, so each label has some common vectors with all the previous labels.
+        size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)el;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i / n_labels);
+        // This should be the best score for each label.
+        if (i % n_labels == n_labels - 1) {
+            // `el * el * dim` is the L2-squared value with the 0 vector.
+            scores.emplace(i / n_labels, el * el * dim);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, k - index - 1);
+        ASSERT_FLOAT_EQ(score, scores[id]);
+    };
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value).
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[] = {0, 0, 0, 0};
+    runTopKSearchTest(index, query, k, verify_res);
 
-//     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-//     float query[] = {4.9, 4.95, 5.05, 5.1};
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
-//     };
-//     runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
 
-//     VecSimIndex_Free(index);
-// }
+TEST_F(BruteForceMultiTest, find_better_score_after_pop) {
+    size_t n = 12;
+    size_t n_labels = 3;
+    size_t dim = 4;
+    size_t initial_capacity = 200;
 
-// TEST_F(BruteForceMultiTest, brute_force_reindexing_same_vector) {
-//     size_t n = 100;
-//     size_t k = 10;
-//     size_t dim = 4;
-//     size_t initial_capacity = 200;
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = initial_capacity}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = initial_capacity}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    // Building the index. Each is better than the previous one.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        size_t el = n - i;
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)el;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[] = {0, 0, 0, 0};
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, n_labels - index - 1);
+    };
+    // Having k = n_labels - 1, the heap will continuously pop the worst label before finding the
+    // next vector, which is of the same label and is the best vector yet.
+    runTopKSearchTest(index, query, n_labels - 1, verify_res);
 
-//     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-//     float query[] = {4.9, 4.95, 5.05, 5.1};
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
-//     };
-//     runTopKSearchTest(index, query, k, verify_res);
+    // Having k = n_labels, the heap will never get to pop the worst label, but we will update the
+    // scores each time.
+    runTopKSearchTest(index, query, n_labels, verify_res);
 
-//     // Delete all vectors.
-//     for (size_t i = 0; i < n; i++) {
-//         VecSimIndex_DeleteVector(index, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    VecSimIndex_Free(index);
+}
 
-//     // The vector block should be removed.
-//     ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->getVectorBlocks().size(), 0);
+TEST_F(BruteForceMultiTest, reindexing_same_vector_different_id) {
+    size_t n = 100;
+    size_t k = 10;
+    size_t dim = 4;
+    size_t perLabel = 3;
 
-//     // id2label size should remain the same.
-//     ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(),
-//               initial_capacity);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     // Reinsert the same vectors under the same ids.
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i / 10) + n;
+        }
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
-//     // Run the same query again.
-//     runTopKSearchTest(index, query, k, verify_res);
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    float query[] = {4.9, 4.95, 5.05, 5.1};
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
 
-//     VecSimIndex_Free(index);
-// }
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-// TEST_F(BruteForceMultiTest, brute_force_reindexing_same_vector_different_id) {
-//     size_t n = 100;
-//     size_t k = 10;
-//     size_t dim = 4;
+    // Reinsert the same vectors under different ids than before.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i + 10);
+    }
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)(i / 10) + n;
+        }
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i + 10);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    // Run the same query again.
+    auto verify_res_different_id = [&](int id, float score, size_t index) {
+        ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res_different_id);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-//     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-//     float query[] = {4.9, 4.95, 5.05, 5.1};
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
-//     };
-//     runTopKSearchTest(index, query, k, verify_res);
-
-//     for (size_t i = 0; i < n; i++) {
-//         VecSimIndex_DeleteVector(index, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-//     // Reinsert the same vectors under different ids than before.
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i + 10);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-//     // Run the same query again.
-//     auto verify_res_different_id = [&](int id, float score, size_t index) {
-//         ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
-//     };
-//     runTopKSearchTest(index, query, k, verify_res_different_id);
-
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
 TEST_F(BruteForceMultiTest, test_delete_swap_block) {
     size_t initial_capacity = 5; // idToLabelMapping initial size.
     size_t n = 6;
-    size_t k = 5;
     size_t dim = 2;
     size_t n_labels = 3;
     size_t bs = 3;
@@ -505,62 +563,8 @@ TEST_F(BruteForceMultiTest, test_delete_swap_block) {
         ++vector_data;
     }
 
-    // float query[] = {0.0, 0.0};
-    // auto verify_res = [&](size_t id, float score, size_t index) {
-    //     if (index == 0) {
-    //         ASSERT_EQ(id, index);
-    //     } else {
-    //         ASSERT_EQ(id, index + 1);
-    //     }
-    // };
-    // runTopKSearchTest(index, query, k, verify_res);
-    ASSERT_TRUE(k);
     VecSimIndex_Free(index);
 }
-
-// TEST_F(BruteForceMultiTest, sanity_reinsert_1280) {
-//     size_t n = 5;
-//     size_t d = 1280;
-//     size_t k = 5;
-
-//     VecSimParams params{
-//         .algo = VecSimAlgo_BF,
-//         .bfParams = BFParams{
-//             .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .multi = true,
-//                                              .initialCapacity = n}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-
-//     auto *vectors = (float *)malloc(n * d * sizeof(float));
-
-//     // Generate random vectors in every iteration and inert them under different ids.
-//     for (size_t iter = 1; iter <= 3; iter++) {
-//         for (size_t i = 0; i < n; i++) {
-//             for (size_t j = 0; j < d; j++) {
-//                 (vectors + i * d)[j] = (float)rand() / (float)(RAND_MAX) / 100;
-//             }
-//         }
-//         auto expected_ids = std::set<size_t>();
-//         for (size_t i = 0; i < n; i++) {
-//             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
-//             expected_ids.insert(i * iter);
-//         }
-//         auto verify_res = [&](size_t id, float score, size_t index) {
-//             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-//             expected_ids.erase(id);
-//         };
-
-//         // Send arbitrary vector (the first) and search for top k. This should return all the
-//         // vectors that were inserted in this iteration - verify their ids.
-//         runTopKSearchTest(index, (const void *)vectors, k, verify_res);
-
-//         // Remove vectors form current iteration.
-//         for (size_t i = 0; i < n; i++) {
-//             VecSimIndex_DeleteVector(index, i * iter);
-//         }
-//     }
-//     free(vectors);
-//     VecSimIndex_Free(index);
-// }
 
 TEST_F(BruteForceMultiTest, test_bf_info) {
     size_t n = 100;
@@ -711,177 +715,116 @@ TEST_F(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_Free(index);
 }
 
-// TEST_F(BruteForceMultiTest, brute_force_vector_search_test_ip_blocksize_1) {
-//     size_t dim = 4;
-//     size_t n = 100;
-//     size_t k = 11;
+TEST_F(BruteForceMultiTest, vector_search_test_l2_blocksize_1) {
+    size_t dim = 4;
+    size_t n = 100;
+    size_t k = 11;
+    size_t perLabel = 4;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_IP,
-//                                              .multi = true,
-//                                              .initialCapacity = 200,
-//                                              .blockSize = 1}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 200,
+                                             .blockSize = 1}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     VecSimIndexInfo info = VecSimIndex_Info(index);
-//     ASSERT_EQ(info.algo, VecSimAlgo_BF);
-//     ASSERT_EQ(info.bfInfo.blockSize, 1);
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    // Add more vectors under the same labels. their scores should be worst.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i + n;
+        }
+        for (size_t j = 0; j < perLabel - 1; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
-//     float query[] = {50, 50, 50, 50};
-//     std::set<size_t> expected_ids;
-//     for (size_t i = n - 1; i > n - 1 - k; i--) {
-//         expected_ids.insert(i);
-//     }
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-//         expected_ids.erase(id);
-//     };
-//     runTopKSearchTest(index, query, k, verify_res);
-//     VecSimIndex_Free(index);
-// }
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
+    };
+    float query[] = {50, 50, 50, 50};
+    runTopKSearchTest(index, query, k, verify_res);
 
-// TEST_F(BruteForceMultiTest, brute_force_vector_search_test_l2_blocksize_1) {
-//     size_t dim = 4;
-//     size_t n = 100;
-//     size_t k = 11;
+    VecSimIndex_Free(index);
+}
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200,
-//                                              .blockSize = 1}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+TEST_F(BruteForceMultiTest, search_empty_index) {
+    size_t dim = 4;
+    size_t n = 100;
+    size_t k = 11;
 
-//     VecSimIndexInfo info = VecSimIndex_Info(index);
-//     ASSERT_EQ(info.algo, VecSimAlgo_BF);
-//     ASSERT_EQ(info.bfInfo.blockSize, 1);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[] = {50, 50, 50, 50};
 
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
-//         ASSERT_EQ(diff_id, (index + 1) / 2);
-//         ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
-//     };
-//     float query[] = {50, 50, 50, 50};
-//     runTopKSearchTest(index, query, k, verify_res);
+    // We do not expect any results.
+    VecSimQueryResult_List res =
+        VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
 
-//     VecSimIndex_Free(index);
-// }
+    // TODO: uncomment when support for BFM range is enabled
+    // res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    // ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    // VecSimQueryResult_Free(res);
 
-// TEST_F(BruteForceMultiTest, brute_force_search_empty_index) {
-//     size_t dim = 4;
-//     size_t n = 100;
-//     size_t k = 11;
+    // Add some vectors and remove them all from index, so it will be empty again.
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 200}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    // Again - we do not expect any results.
+    res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    it = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
 
-//     float query[] = {50, 50, 50, 50};
+    // TODO: uncomment when support for BFM range is enabled
+    // res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    // ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    // VecSimQueryResult_Free(res);
 
-//     // We do not expect any results.
-//     VecSimQueryResult_List res =
-//         VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-//     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
-//     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-//     VecSimQueryResult_IteratorFree(it);
-//     VecSimQueryResult_Free(res);
+    VecSimIndex_Free(index);
+}
 
-//     res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-//     VecSimQueryResult_Free(res);
-
-//     // Add some vectors and remove them all from index, so it will be empty again.
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-//     for (size_t i = 0; i < n; i++) {
-//         VecSimIndex_DeleteVector(index, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-
-//     // Again - we do not expect any results.
-//     res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-//     it = VecSimQueryResult_List_GetIterator(res);
-//     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-//     VecSimQueryResult_IteratorFree(it);
-//     VecSimQueryResult_Free(res);
-
-//     res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
-//     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-//     VecSimQueryResult_Free(res);
-
-//     VecSimIndex_Free(index);
-// }
-
-// TEST_F(BruteForceMultiTest, brute_force_test_inf_score) {
-//     size_t n = 4;
-//     size_t k = 4;
-//     size_t dim = 2;
-
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = n}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-
-//     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
-//     // yield "inf" result when we calculate distance between the vectors.
-//     VecSimIndex_AddVector(index, "abcdefgh", 1);
-//     VecSimIndex_AddVector(index, "abcdefgg", 2);
-//     VecSimIndex_AddVector(index, "aacdefgh", 3);
-//     VecSimIndex_AddVector(index, "abbdefgh", 4);
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
-
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         if (index == 0) {
-//             ASSERT_EQ(1, id);
-//         } else if (index == 1) {
-//             ASSERT_EQ(3, id);
-//         } else {
-//             ASSERT_TRUE(id == 2 || id == 4);
-//         }
-//     };
-//     runTopKSearchTest(index, "abcdefgh", k, verify_res);
-//     VecSimIndex_Free(index);
-// }
-
-TEST_F(BruteForceMultiTest, brute_force_remove_vector_after_replacing_block) {
+TEST_F(BruteForceMultiTest, remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t bs = 2;
     size_t n = 6;
@@ -1458,37 +1401,38 @@ TEST_F(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
     VecSimIndex_Free(index);
 }
 
-// TEST_F(BruteForceMultiTest, testTimeoutReturn) {
-//     size_t dim = 4;
-//     float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
-//     VecSimQueryResult_List rl;
+TEST_F(BruteForceMultiTest, testTimeoutReturn) {
+    size_t dim = 4;
+    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    VecSimQueryResult_List rl;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_L2,
-//                                              .multi = true,
-//                                              .initialCapacity = 1,
-//                                              .blockSize = 5}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-//     VecSimIndex_AddVector(index, vec, 0);
-//     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .multi = true,
+                                             .initialCapacity = 1,
+                                             .blockSize = 5}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex_AddVector(index, vec, 0);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
-//     // Checks return code on timeout - knn
-//     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
-//     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-//     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-//     VecSimQueryResult_Free(rl);
+    // Checks return code on timeout - knn
+    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
 
-//     // Check timeout again - range query
-//     rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
-//     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-//     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-//     VecSimQueryResult_Free(rl);
+    // Check timeout again - range query
+    // TODO: uncomment when support for BFM range is enabled
+    // rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
+    // ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    // ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    // VecSimQueryResult_Free(rl);
 
-//     VecSimIndex_Free(index);
-//     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
-// }
+    VecSimIndex_Free(index);
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
+}
 
 // TEST_F(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
 //     size_t dim = 4;
