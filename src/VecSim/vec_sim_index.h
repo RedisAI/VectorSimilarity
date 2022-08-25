@@ -8,8 +8,8 @@
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
 #include <cassert>
-#include <cmath>  //sqrt
-#include <limits> //numerid_limits
+#include <cmath>  
+#include <limits> 
 
 using spaces::dist_func_t;
 
@@ -55,31 +55,4 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
 
-    template <typename DataType>
-    static void NormalizeVector(DataType *input_vector, size_t dim);
 };
-
-static const double MAX_FP64 = std::numeric_limits<double>::max();
-
-template <typename DistType>
-template <typename DataType>
-void VecSimIndexAbstract<DistType>::NormalizeVector(DataType *input_vector, size_t dim) {
-
-    double sum = 0;
-    for (size_t i = 0; i < dim; i++) {
-        double to_add = (double)input_vector[i] * (double)input_vector[i];
-        // Protect from overflow.
-        assert(MAX_FP64 - sum >= to_add);
-        sum += to_add;
-    }
-
-    // Protect fp32 overflow.
-    //(if sum is not greater than FP64, then sqrt(sum) is guaranteed to be safe)
-    assert(sqrt(sum) <= double(std::numeric_limits<DataType>::max()));
-
-    DataType norm = sqrt(sum);
-
-    for (size_t i = 0; i < dim; i++) {
-        input_vector[i] = input_vector[i] / norm;
-    }
-}
