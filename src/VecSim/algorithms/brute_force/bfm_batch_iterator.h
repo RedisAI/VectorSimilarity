@@ -16,6 +16,7 @@ private:
     inline VecSimQueryResult_Code calculateScores() override {
 
         this->scores.reserve(this->index->indexLabelCount());
+        // TODO: template temporary map
         vecsim_stl::unordered_map<labelType, float> tmp_scores(this->index->indexLabelCount(),
                                                                this->allocator);
         vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
