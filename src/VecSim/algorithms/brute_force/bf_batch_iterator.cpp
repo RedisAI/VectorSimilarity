@@ -163,26 +163,3 @@ void BF_BatchIterator::reset() {
     this->resetResultsCount();
     this->scores_valid_start_pos = 0;
 }
-
-VecSimQueryResult_Code BF_BatchIterator::calculateScores() {
-
-    this->scores.reserve(this->index->indexLabelCount());
-    vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
-    VecSimQueryResult_Code rc;
-
-    idType curr_id = 0;
-    for (auto &block : blocks) {
-        // compute the scores for the vectors in every block and extend the scores array.
-        auto block_scores = this->index->computeBlockScores(block, this->getQueryBlob(),
-                                                            this->getTimeoutCtx(), &rc);
-        if (VecSim_OK != rc) {
-            return rc;
-        }
-        for (size_t i = 0; i < block_scores.size(); i++) {
-            this->scores.emplace_back(block_scores[i], index->getVectorLabel(curr_id));
-            ++curr_id;
-        }
-    }
-    assert(curr_id == index->indexSize());
-    return VecSim_QueryResult_OK;
-}

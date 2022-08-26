@@ -5,7 +5,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 
@@ -69,6 +68,9 @@ protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
+
+    virtual inline VecSimBatchIterator *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) = 0;
 
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
@@ -393,8 +395,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
         float_vector_normalize((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator)
-        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }
 
 template <typename DataType, typename DistType>

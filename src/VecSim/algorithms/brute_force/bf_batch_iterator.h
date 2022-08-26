@@ -11,7 +11,7 @@ using namespace std;
 template <typename DataType, typename DistType>
 class BruteForceIndex;
 class BF_BatchIterator : public VecSimBatchIterator {
-private:
+protected:
     const BruteForceIndex<float, float> *index;
     vector<pair<float, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
@@ -23,7 +23,7 @@ private:
     void swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices,
                     size_t res_num);
 
-    VecSimQueryResult_Code calculateScores();
+    virtual inline VecSimQueryResult_Code calculateScores() = 0;
 
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,

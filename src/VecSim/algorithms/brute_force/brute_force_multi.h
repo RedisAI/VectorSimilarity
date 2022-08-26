@@ -1,6 +1,7 @@
 #pragma once
 
 #include "brute_force.h"
+#include "bfm_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
 
 class BruteForceIndex_Multi : public BruteForceIndex {
@@ -21,9 +22,9 @@ private:
     // inline definitions
 
     inline void setVectorId(labelType label, idType id) override {
-        auto labelKey = labelToIdsLookup.find(label);
-        if (labelKey != labelToIdsLookup.end()) {
-            labelKey->second.push_back(id);
+        auto ids = labelToIdsLookup.find(label);
+        if (ids != labelToIdsLookup.end()) {
+            ids->second.push_back(id);
         } else {
             // Initial capacity is 1. We can consider increasing this value or having it as a
             // parameter.
@@ -33,19 +34,24 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
         assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
-        auto &labelKey = labelToIdsLookup.at(label);
-        for (size_t i = 0; i < labelKey.size(); i++) {
-            if (labelKey[i] == old_id) {
-                labelKey[i] = new_id;
+        auto &ids = labelToIdsLookup.at(label);
+        for (size_t i = 0; i < ids.size(); i++) {
+            if (ids[i] == old_id) {
+                ids[i] = new_id;
                 return;
             }
         }
-        assert(false && "should have found the old id");
+        assert(!"should have found the old id");
     }
 
     inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<float, labelType>(this->allocator);
+    }
+
+    inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
+                                                       VecSimQueryParams *queryParams) override {
+        return new (allocator) BFM_BatchIterator(queryBlob, this, queryParams, allocator);
     }
 
 #ifdef BUILD_TESTS
@@ -56,5 +62,6 @@ private:
     friend class BruteForceMultiTest_remove_vector_after_replacing_block_Test;
     friend class BruteForceMultiTest_search_more_then_there_is_Test;
     friend class BruteForceMultiTest_indexing_same_vector_Test;
+    friend class BruteForceMultiTest_test_dynamic_bf_info_iterator_Test;
 #endif
 };
