@@ -63,6 +63,9 @@ protected:
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
 
+    virtual inline VecSimBatchIterator *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) = 0;
+
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;
