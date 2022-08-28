@@ -5,7 +5,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 
@@ -238,7 +237,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::max_priority_queue<pair<DistType, labelType>> TopCandidates(this->allocator);
+    vecsim_stl::max_priority_queue<std::pair<DistType, labelType>> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
@@ -392,8 +391,8 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
         float_vector_normalize((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator)
-        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    return BruteForceFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator,
+    this);
 }
 
 template <typename DataType, typename DistType>
