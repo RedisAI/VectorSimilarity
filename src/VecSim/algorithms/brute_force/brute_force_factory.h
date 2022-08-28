@@ -16,8 +16,7 @@ public:
                                  std::shared_ptr<VecSimAllocator> allocator);
     static size_t EstimateInitialSize(const BFParams *params);
     static size_t EstimateElementSize(const BFParams *params);
-    static VecSimBatchIterator *newBatchIterator(void *queryBlob,
-                                                      VecSimQueryParams *queryParams, 
-                                                      std::shared_ptr<VecSimAllocator> allocator,
-                                                      const BruteForceIndex<float, float>* index); 
+    static VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
+                                                 std::shared_ptr<VecSimAllocator> allocator,
+                                                 const BruteForceIndex<float, float> *index);
 };

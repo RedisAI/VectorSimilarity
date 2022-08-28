@@ -2,7 +2,7 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_common.h" // labelType
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h" 
+#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 
 VecSimIndex *BruteForceFactory::NewIndex(const BFParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator) {
@@ -31,16 +31,13 @@ size_t BruteForceFactory::EstimateElementSize(const BFParams *params) {
     return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
 }
 
-
-//TODO overload for doubles
-//TODO query const?
-VecSimBatchIterator *BruteForceFactory::newBatchIterator(void *queryBlob,
-                                                      VecSimQueryParams *queryParams, 
-                                                      std::shared_ptr<VecSimAllocator> allocator,
-                                                      const BruteForceIndex<float, float>* index) {
+// TODO overload for doubles
+// TODO query const?
+VecSimBatchIterator *
+BruteForceFactory::newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
+                                    std::shared_ptr<VecSimAllocator> allocator,
+                                    const BruteForceIndex<float, float> *index) {
 
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (allocator)
-        BF_BatchIterator<float, float>(queryBlob, index, queryParams, allocator);
-
+    return new (allocator) BF_BatchIterator<float, float>(queryBlob, index, queryParams, allocator);
 }

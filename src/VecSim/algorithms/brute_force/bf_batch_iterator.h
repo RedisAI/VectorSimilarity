@@ -16,8 +16,6 @@
 #include <cmath>
 #include <functional>
 
-
-
 template <typename DataType, typename DistType>
 class BF_BatchIterator : public VecSimBatchIterator {
 private:
@@ -35,10 +33,8 @@ private:
     inline VecSimQueryResult_Code calculateScores();
 
 public:
-    BF_BatchIterator(void *query_vector,
-                                   const BruteForceIndex<DataType, DistType> *bf_index,
-                                   VecSimQueryParams *queryParams,
-                                   std::shared_ptr<VecSimAllocator> allocator);
+    BF_BatchIterator(void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
+                     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
     inline const BruteForceIndex<DataType, DistType> *getIndex() const { return index; };
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
@@ -55,8 +51,9 @@ public:
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
 template <typename DataType, typename DistType>
-VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
-                                                            VecSimQueryResult_Order order) {
+VecSimQueryResult_List
+BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
+                                                         VecSimQueryResult_Order order) {
     if ((this->index->indexLabelCount() - this->getResultsCount()) / 1000 > n_res) {
         // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
@@ -166,16 +163,15 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::selectBasedSearch(s
 }
 
 template <typename DataType, typename DistType>
-BF_BatchIterator<DataType, DistType>::BF_BatchIterator(void *query_vector,
-                                   const BruteForceIndex<DataType, DistType> *bf_index,
-                                   VecSimQueryParams *queryParams,
-                                   std::shared_ptr<VecSimAllocator> allocator)
+BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
+    void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
+    VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
       index(bf_index), scores_valid_start_pos(0) {}
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
-                                                        VecSimQueryResult_Order order) {
+VecSimQueryResult_List
+BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     // Only in the first iteration we need to compute all the scores
