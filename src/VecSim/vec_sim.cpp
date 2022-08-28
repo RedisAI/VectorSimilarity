@@ -126,7 +126,7 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
 
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     assert(type == VecSimType_FLOAT32);
-    VecSimIndexAbstract<float>::NormalizeVector<float>(blob, dim);
+    VecSimIndexAbstract<float>::NormalizeVector((float *)blob, dim);
 }
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }

@@ -241,7 +241,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     if (is_cosine) {
         // TODO: need more generic
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(queryBlob, this->dim, normalized_blob);
+        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
 
         queryBlob = normalized_blob;
     }
@@ -296,7 +296,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     if (is_cosine) {
         // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(queryBlob, this->dim, normalized_blob);
+        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
         queryBlob = normalized_blob;
     }
 
@@ -401,7 +401,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        VecSimIndexAbstract<DistType>::template NormalizeVector<DataType>((const void*)queryBlobCopy, this->dim);
+        VecSimIndexAbstract<DistType>::NormalizeVector((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);

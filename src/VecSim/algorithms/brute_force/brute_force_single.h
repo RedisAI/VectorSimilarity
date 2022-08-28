@@ -85,10 +85,9 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
     float normalized_data[this->dim *
                           is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
     if (is_cosine) {
-
         // TODO: need more generic
         memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(vector_data, this->dim, normalized_data);
+        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_data, this->dim);
         vector_data = normalized_data;
     }
 
