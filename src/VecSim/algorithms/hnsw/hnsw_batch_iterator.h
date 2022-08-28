@@ -62,8 +62,6 @@ public:
 
 /******************** Implementation **************/
 
-#include "hnsw_batch_iterator.h"
-
 #include <utility>
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"

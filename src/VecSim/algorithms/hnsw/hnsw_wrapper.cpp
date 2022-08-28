@@ -2,6 +2,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h" //newBatchIterator
 
 #include <deque>
 #include <memory>
@@ -193,8 +194,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
         float_vector_normalize((float *)queryBlobCopy, dim);
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
-    return new (this->allocator)
-        HNSW_BatchIterator<float, float>(queryBlobCopy, this, queryParams, this->allocator);
+    return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
 }
 
 VecSimInfoIterator *HNSWIndex::infoIterator() const {
