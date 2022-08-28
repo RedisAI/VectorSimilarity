@@ -32,7 +32,6 @@ size_t BruteForceFactory::EstimateElementSize(const BFParams *params) {
 }
 
 // TODO overload for doubles
-// TODO query const?
 VecSimBatchIterator *
 BruteForceFactory::newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
                                     std::shared_ptr<VecSimAllocator> allocator,
