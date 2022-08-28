@@ -5,21 +5,21 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/vec_sim_common.h"    //labelType, idType
 #include "VecSim/vec_sim_interface.h" // timeoutCallback
+#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+#include "VecSim/query_result_struct.h"
+#include "VecSim/utils/vec_utils.h"
+#include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 #include <utility>                    //pair
+#include <limits>
 
 using hnswlib::linklistsizeint;
 using spaces::dist_func_t;
 
-template <typename DistType>
-using candidatesMinHeap = vecsim_stl::min_priority_queue<std::pair<DistType, idType>>;
-
-template <typename DistType>
-using candidatesMaxHeap = vecsim_stl::max_priority_queue<std::pair<DistType, idType>>;
 
 template <typename DataType, typename DistType>
 class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
-    HNSWIndex *index_wrapper;
+    HNSWIndex<DataType, DistType> *index_wrapper;
     std::shared_ptr<hnswlib::HierarchicalNSW<DistType>> hnsw_index;
     dist_func_t<DistType> dist_func;
     size_t dim;
@@ -30,15 +30,17 @@ private:
     size_t orig_ef_runtime; // Original default parameter to reproduce.
 
     // Data structure that holds the search state between iterations.
+    using candidatesMinHeap = vecsim_stl::min_priority_queue<std::pair<DistType, idType>>;
+    using candidatesMaxHeap = vecsim_stl::max_priority_queue<std::pair<DistType, idType>>;
     DistType lower_bound;
-    candidatesMinHeap<DistType> top_candidates_extras;
-    candidatesMinHeap<DistType> candidates;
+    candidatesMinHeap top_candidates_extras;
+    candidatesMinHeap candidates;
 
-    candidatesMaxHeap<DistType> scanGraph(candidatesMinHeap<DistType> &candidates,
-                                          candidatesMinHeap<DistType> &spare_top_candidates,
+    candidatesMaxHeap scanGraph(candidatesMinHeap &candidates,
+                                          candidatesMinHeap&spare_top_candidates,
                                           DistType &lower_bound, idType entry_point,
                                           VecSimQueryResult_Code *rc);
-    VecSimQueryResult_List prepareResults(candidatesMaxHeap<DistType> top_candidates, size_t n_res);
+    VecSimQueryResult_List prepareResults(candidatesMaxHeap top_candidates, size_t n_res);
     inline void visitNode(idType node_id) {
         this->visited_list->tagNode(node_id, this->visited_tag);
     }
@@ -47,8 +49,7 @@ private:
     }
 
 public:
-    // TODO add <> to index*
-    HNSW_BatchIterator(void *query_vector, HNSWIndex *index, VecSimQueryParams *queryParams,
+    HNSW_BatchIterator(void *query_vector, HNSWIndex<DataType, DistType> *index, VecSimQueryParams *queryParams,
                        std::shared_ptr<VecSimAllocator> allocator);
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
@@ -62,15 +63,10 @@ public:
 
 /******************** Implementation **************/
 
-#include <utility>
-#include "VecSim/query_result_struct.h"
-#include "VecSim/utils/vec_utils.h"
-#include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
-#include <limits>
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-HNSW_BatchIterator<DataType, DistType>::prepareResults(candidatesMaxHeap<DistType> top_candidates,
+HNSW_BatchIterator<DataType, DistType>::prepareResults(candidatesMaxHeap top_candidates,
                                                        size_t n_res) {
     VecSimQueryResult_List rl = {0};
     // size_t initial_results_num = array_len(batch_results);
@@ -93,11 +89,11 @@ HNSW_BatchIterator<DataType, DistType>::prepareResults(candidatesMaxHeap<DistTyp
 }
 
 template <typename DataType, typename DistType>
-candidatesMaxHeap<DistType> HNSW_BatchIterator<DataType, DistType>::scanGraph(
-    candidatesMinHeap<DistType> &candidates, candidatesMinHeap<DistType> &top_candidates_extras,
+HNSW_BatchIterator<DataType, DistType>::candidatesMaxHeap HNSW_BatchIterator<DataType, DistType>::scanGraph(
+    candidatesMinHeap &candidates, candidatesMinHeap &top_candidates_extras,
     DistType &lower_bound, idType entry_point, VecSimQueryResult_Code *rc) {
 
-    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesMaxHeap top_candidates(this->allocator);
     if (entry_point == HNSW_INVALID_ID) {
         this->depleted = true;
         return top_candidates;
@@ -191,7 +187,7 @@ candidatesMaxHeap<DistType> HNSW_BatchIterator<DataType, DistType>::scanGraph(
 
 template <typename DataType, typename DistType>
 HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
-    void *query_vector, HNSWIndex *index_wrapper, VecSimQueryParams *queryParams,
+    void *query_vector, HNSWIndex<DataType, DistType> *index_wrapper, VecSimQueryParams *queryParams,
     std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
@@ -267,8 +263,8 @@ void HNSW_BatchIterator<DataType, DistType>::reset() {
     this->depleted = false;
     this->visited_tag = this->visited_list->getFreshTag();
     // Clear the queues.
-    this->candidates = candidatesMinHeap<DistType>(this->allocator);
-    this->top_candidates_extras = candidatesMinHeap<DistType>(this->allocator);
+    this->candidates = candidatesMinHeap(this->allocator);
+    this->top_candidates_extras = candidatesMinHeap(this->allocator);
 }
 
 template <typename DataType, typename DistType>

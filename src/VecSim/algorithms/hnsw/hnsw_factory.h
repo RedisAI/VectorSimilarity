@@ -6,7 +6,10 @@
 #include "VecSim/vec_sim.h"              //typedef VecSimIndex
 #include "VecSim/vec_sim_common.h"       // HNSWParams
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+
+template <typename DataType, typename DistType>
+class HNSWIndex;
+
 class HNSWFactory {
 
 public:
@@ -16,5 +19,5 @@ public:
     static size_t EstimateElementSize(const HNSWParams *params);
     static VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
                                                  std::shared_ptr<VecSimAllocator> allocator,
-                                                 HNSWIndex *index);
+                                                 HNSWIndex<float, float> *index);
 };
