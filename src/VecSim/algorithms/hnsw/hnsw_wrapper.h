@@ -9,7 +9,7 @@
 #include <memory>
 #include <cassert>
 
-//using namespace hnswlib;
+// using namespace hnswlib;
 
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<float> {
@@ -37,11 +37,11 @@ private:
     std::shared_ptr<hnswlib::HierarchicalNSW<DistType>> hnsw;
 };
 
-
 /******************** Ctor / Dtor **************/
 
 template <typename DataType, typename DistType>
-HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator)
+HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
+                                         std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndexAbstract(allocator, params->dim, params->type, params->metric, params->blockSize,
                           params->multi),
       hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, this->dist_func, allocator)) {}
@@ -57,7 +57,8 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, size_t id)
     }
 
     try {
-        DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+        DataType
+            normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
@@ -110,12 +111,13 @@ double HNSWIndex<DataType, DistType>::getDistanceFrom(size_t label, const void *
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
-                                            VecSimQueryParams *queryParams) {
+                                                                VecSimQueryParams *queryParams) {
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = nullptr;
     try {
         this->last_mode = STANDARD_KNN;
-        DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+        DataType
+            normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
         if (this->metric == VecSimMetric_Cosine) {
             // TODO: need more generic
             memcpy(normalized_data, query_data, this->dim * sizeof(DataType));
@@ -152,8 +154,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType radius,
-                                      VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *queryBlob,
+                                                                 DistType radius,
+                                                                 VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = nullptr;
     this->last_mode = RANGE_QUERY;
@@ -212,8 +215,9 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimBatchIterator *HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                 VecSimQueryParams *queryParams) {
+VecSimBatchIterator *
+HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
+                                                VecSimQueryParams *queryParams) {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);
@@ -300,7 +304,8 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
 }
 
 template <typename DataType, typename DistType>
-bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) {
+bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
+                                                      bool initial_check) {
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();

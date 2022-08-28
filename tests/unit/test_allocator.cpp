@@ -215,7 +215,8 @@ TEST_F(AllocatorTest, test_hnsw) {
         .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
 
     float vec[128] = {};
-    HNSWIndex<float, float> *hnswIndex = new (allocator) HNSWIndex<float, float>(&params, allocator);
+    HNSWIndex<float, float> *hnswIndex =
+        new (allocator) HNSWIndex<float, float>(&params, allocator);
     expectedAllocationSize += sizeof(HNSWIndex<float, float>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = hnswIndex->info();

@@ -5,8 +5,8 @@ void load_HNSW_index(const char *path, VecSimIndex *hnsw_index) {
     // Load the index file, if it exists in the expected path.
     auto location = std::string(getenv("ROOT"));
     auto file_name = location + "/" + path;
-    auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getHNSWIndex());
+    auto serializer = hnswlib::HNSWIndexSerializer(
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
         serializer.loadIndex(file_name);
@@ -74,8 +74,9 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob =
-            reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getHNSWIndex()->getDataByInternalId(i);
+        char *blob = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)
+                         ->getHNSWIndex()
+                         ->getDataByInternalId(i);
         VecSimIndex_AddVector(bf_index, blob, i);
     }
 
