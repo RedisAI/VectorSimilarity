@@ -86,7 +86,7 @@ HNSW_BatchIterator<DataType, DistType>::prepareResults(candidatesMaxHeap top_can
 }
 
 template <typename DataType, typename DistType>
-HNSW_BatchIterator<DataType, DistType>::candidatesMaxHeap
+typename HNSW_BatchIterator<DataType, DistType>::candidatesMaxHeap
 HNSW_BatchIterator<DataType, DistType>::scanGraph(candidatesMinHeap &candidates,
                                                   candidatesMinHeap &top_candidates_extras,
                                                   DistType &lower_bound, idType entry_point,
