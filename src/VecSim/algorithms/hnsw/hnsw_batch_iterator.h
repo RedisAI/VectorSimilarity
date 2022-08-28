@@ -4,7 +4,7 @@
 #include "hnsw_wrapper.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/vec_sim_common.h" //labelType, idType
-
+#include "VecSim/vec_sim_interface.h" // timeoutCallback
 #include <utility> //pair
 
 using hnswlib::linklistsizeint;
@@ -113,7 +113,7 @@ candidatesMaxHeap<DistType> HNSW_BatchIterator<DataType, DistType>::scanGraph(
         candidates.emplace(dist, entry_point);
     }
     // Checks that we didn't got timeout between iterations.
-    if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
         *rc = VecSim_QueryResult_TimedOut;
         return top_candidates;
     }
@@ -136,7 +136,7 @@ candidatesMaxHeap<DistType> HNSW_BatchIterator<DataType, DistType>::scanGraph(
         if (curr_node_dist > lower_bound && top_candidates.size() >= this->hnsw_index->getEf()) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }
