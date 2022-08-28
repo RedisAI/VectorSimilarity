@@ -1,6 +1,8 @@
 #pragma once
 
 #include "brute_force.h"
+#include "VecSim/utils/vec_utils.h"
+#include "VecSim/query_result_struct.h"
 
 template <typename DataType, typename DistType>
 class BruteForceIndex_Single : public BruteForceIndex<DataType, DistType> {
@@ -55,9 +57,6 @@ protected:
 };
 
 /******************************* Implementation **********************************/
-
-#include "VecSim/utils/vec_utils.h"
-#include "VecSim/query_result_struct.h"
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(

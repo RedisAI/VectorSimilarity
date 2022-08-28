@@ -70,7 +70,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     // id2label size should remain the same, although we seemingly tried to exceed
-    // initialcapacity.
+    // initial capacity.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
 
     // Check update.

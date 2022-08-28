@@ -5,6 +5,12 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
+#include "VecSim/spaces/spaces.h"
+#include "VecSim/query_result_struct.h"
+
+#include <cstring>
+#include <cmath>
 #include <memory>
 #include <queue>
 #include <cassert>
@@ -78,15 +84,6 @@ protected:
 };
 
 /******************************* Implementation **********************************/
-
-#include "VecSim/spaces/spaces.h"
-#include "VecSim/query_result_struct.h"
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
-
-#include <cstring>
-#include <cmath>
-
-using namespace std;
 
 /******************** Ctor / Dtor **************/
 template <typename DataType, typename DistType>
@@ -388,8 +385,6 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) {
-    // As this is the only supported type, we always allocate 4 bytes for every element in the
-    // vector.
     assert(this->vecType == VecSimType_FLOAT32);
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
