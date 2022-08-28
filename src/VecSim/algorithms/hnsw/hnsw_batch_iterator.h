@@ -3,9 +3,9 @@
 #include "VecSim/batch_iterator.h"
 #include "hnsw_wrapper.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/vec_sim_common.h" //labelType, idType
+#include "VecSim/vec_sim_common.h"    //labelType, idType
 #include "VecSim/vec_sim_interface.h" // timeoutCallback
-#include <utility> //pair
+#include <utility>                    //pair
 
 using hnswlib::linklistsizeint;
 using spaces::dist_func_t;
