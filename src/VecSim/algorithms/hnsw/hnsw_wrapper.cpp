@@ -194,7 +194,7 @@ VecSimBatchIterator *HNSWIndex::newBatchIterator(const void *queryBlob,
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator)
-        HNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+        HNSW_BatchIterator<float, float>(queryBlobCopy, this, queryParams, this->allocator);
 }
 
 VecSimInfoIterator *HNSWIndex::infoIterator() const {
