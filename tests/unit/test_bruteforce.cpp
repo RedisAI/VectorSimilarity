@@ -1706,7 +1706,7 @@ TEST_F(BruteForceTest, rangeQuery) {
         EXPECT_EQ(err.what(), std::string("Possible order values are only 'BY_ID' or 'BY_SCORE'"));
     }
 
-    auto verify_res_by_score = [&](size_t id, float score, size_t index) {
+    auto verify_res_by_score = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
         ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
     };
@@ -1717,7 +1717,7 @@ TEST_F(BruteForceTest, rangeQuery) {
     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
 
     // Get results by id.
-    auto verify_res_by_id = [&](size_t id, float score, size_t index) {
+    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
         ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
     };
@@ -1751,15 +1751,15 @@ TEST_F(BruteForceTest, rangeQueryCosine) {
     for (size_t i = 0; i < dim; i++) {
         query[i] = 1.0f;
     }
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, index + 1);
-        float first_coordinate = float(n - index) / n;
+        double first_coordinate = double(n - index) / n;
         // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
         // and B is the current result vector.
-        float expected_score =
+        double expected_score =
             1.0f -
-            ((first_coordinate + (float)dim - 1.0f) /
-             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+            ((first_coordinate + (double)dim - 1.0f) /
+             (sqrtf((double)dim) * sqrtf((double)(dim - 1) + first_coordinate * first_coordinate)));
         // Verify that abs difference between the actual and expected score is at most 1/10^5.
         ASSERT_NEAR(score, expected_score, 1e-5);
     };

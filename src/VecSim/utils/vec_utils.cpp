@@ -50,7 +50,7 @@ int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryRes
 int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
            !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare floats
+    // Compare doubles
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
 }
 
