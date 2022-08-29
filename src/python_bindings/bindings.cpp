@@ -15,13 +15,13 @@ namespace py = pybind11;
 // a tuple of two lists: (ids, scores)
 py::object wrap_results(VecSimQueryResult_List res, size_t len) {
     size_t *data_numpy_l = new size_t[len];
-    float *data_numpy_d = new float[len];
+    double *data_numpy_d = new double[len];
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
         VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
         int id = VecSimQueryResult_GetId(item);
-        float score = VecSimQueryResult_GetScore(item);
+        double score = VecSimQueryResult_GetScore(item);
         data_numpy_d[res_ind] = score;
         data_numpy_l[res_ind++] = id;
     }
@@ -36,10 +36,10 @@ py::object wrap_results(VecSimQueryResult_List res, size_t len) {
             {len * sizeof(size_t), sizeof(size_t)}, // C-style contiguous strides for double
             data_numpy_l,                           // the data pointer
             free_when_done_l),
-        py::array_t<float>(
-            {(size_t)1, len},                     // shape
-            {len * sizeof(float), sizeof(float)}, // C-style contiguous strides for double
-            data_numpy_d,                         // the data pointer
+        py::array_t<double>(
+            {(size_t)1, len},                       // shape
+            {len * sizeof(double), sizeof(double)}, // C-style contiguous strides for double
+            data_numpy_d,                           // the data pointer
             free_when_done_d));
 }
 

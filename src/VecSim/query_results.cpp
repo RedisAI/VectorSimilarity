@@ -48,11 +48,11 @@ extern "C" int64_t VecSimQueryResult_GetId(const VecSimQueryResult *res) {
     return (int64_t)res->id;
 }
 
-extern "C" float VecSimQueryResult_GetScore(const VecSimQueryResult *res) {
+extern "C" double VecSimQueryResult_GetScore(const VecSimQueryResult *res) {
     if (res == nullptr) {
         return INVALID_SCORE; // "NaN"
     }
-    return (float)res->score;
+    return (double)res->score;
 }
 
 extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator) {

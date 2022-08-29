@@ -28,7 +28,7 @@ int64_t VecSimQueryResult_GetId(const VecSimQueryResult *item);
  * @brief Get the score of the result vector. If item is nullptr, return INVALID_SCORE (defined as
  * the special value of NaN).
  */
-float VecSimQueryResult_GetScore(const VecSimQueryResult *item);
+double VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 
 /**
  * @brief An opaque object from which results can be obtained via iterator.

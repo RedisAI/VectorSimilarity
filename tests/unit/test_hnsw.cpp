@@ -317,7 +317,7 @@ TEST_F(HNSWTest, hnsw_vector_search_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
         ASSERT_EQ(diff_id, (index + 1) / 2);
         ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
@@ -350,7 +350,7 @@ TEST_F(HNSWTest, hnsw_vector_search_by_id_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
+    auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, (index + 45)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
@@ -381,7 +381,7 @@ TEST_F(HNSWTest, hnsw_indexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -414,7 +414,7 @@ TEST_F(HNSWTest, hnsw_reindexing_same_vector) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -463,7 +463,7 @@ TEST_F(HNSWTest, hnsw_reindexing_same_vector_different_id) {
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
     float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -484,7 +484,7 @@ TEST_F(HNSWTest, hnsw_reindexing_same_vector_different_id) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Run the same query again
-    auto verify_res_different_id = [&](int id, float score, size_t index) {
+    auto verify_res_different_id = [&](int id, double score, size_t index) {
         ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res_different_id);
@@ -520,7 +520,7 @@ TEST_F(HNSWTest, sanity_reinsert_1280) {
             VecSimIndex_AddVector(index, (const void *)(vectors + i * d), i * iter);
             expected_ids.insert(i * iter);
         }
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
             expected_ids.erase(id);
         };
@@ -724,7 +724,7 @@ TEST_F(HNSWTest, test_query_runtime_params_default_build_args) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
         ASSERT_EQ(diff_id, (index + 1) / 2);
         ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
@@ -790,7 +790,7 @@ TEST_F(HNSWTest, test_query_runtime_params_user_build_args) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
         ASSERT_EQ(diff_id, (index + 1) / 2);
         ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
@@ -903,7 +903,7 @@ TEST_F(HNSWTest, hnsw_inf_score) {
     VecSimIndex_AddVector(index, "abbdefgh", 4);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         if (index == 0) {
             ASSERT_EQ(1, id);
         } else if (index == 1) {
@@ -1020,7 +1020,7 @@ TEST_F(HNSWTest, hnsw_override) {
     // This is testing a bug fix - before we had the seconder sorting by id in CompareByFirst,
     // the graph got disconnected due to the deletion of some node followed by a bad repairing of
     // one of its neighbours. Here, we ensure that we get all the nodes in the graph as results.
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_TRUE(id == n - 1 - index);
     };
     runTopKSearchTest(index, query, 300, verify_res);
@@ -1071,7 +1071,7 @@ TEST_F(HNSWTest, hnsw_batch_iterator_basic) {
         for (size_t i = 0; i < n_res; i++) {
             expected_ids[i] = (n - iteration_num * n_res - i - 1);
         }
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_TRUE(expected_ids[index] == id);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
@@ -1127,7 +1127,7 @@ TEST_F(HNSWTest, hnsw_batch_iterator_reset) {
             for (size_t i = 0; i < n_res; i++) {
                 expected_ids[i] = (n - iteration_num * n_res - i - 1);
             }
-            auto verify_res = [&](size_t id, float score, size_t index) {
+            auto verify_res = [&](size_t id, double score, size_t index) {
                 ASSERT_TRUE(expected_ids[index] == id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
@@ -1175,7 +1175,7 @@ TEST_F(HNSWTest, hnsw_batch_iterator_batch_size_1) {
         iteration_num++;
         // Expect to get results in the reverse order of labels - which is the order of the distance
         // from the query vector. Get one result in every iteration.
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_TRUE(id == iteration_num);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
@@ -1249,7 +1249,7 @@ TEST_F(HNSWTest, hnsw_batch_iterator_advanced) {
         for (size_t i = 1; i <= n_res; i++) {
             expected_ids.push_back(n - iteration_num * n_res + i);
         }
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_TRUE(expected_ids[index] == id);
         };
         if (iteration_num <= n / n_res) {
@@ -1615,15 +1615,15 @@ TEST_F(HNSWTest, testCosine) {
     for (size_t i = 0; i < dim; i++) {
         query[i] = 1.0f;
     }
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, (n - index));
-        float first_coordinate = (float)id / n;
+        double first_coordinate = (double)id / n;
         // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
         // and B is the current result vector.
-        float expected_score =
+        double expected_score =
             1.0f -
-            ((first_coordinate + (float)dim - 1.0f) /
-             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+            ((first_coordinate + (double)dim - 1.0f) /
+             (sqrtf((double)dim) * sqrtf((double)(dim - 1) + first_coordinate * first_coordinate)));
         // Verify that abs difference between the actual and expected score is at most 1/10^6.
         ASSERT_NEAR(score, expected_score, 1e-5);
     };
@@ -1638,15 +1638,15 @@ TEST_F(HNSWTest, testCosine) {
     size_t n_res = 10;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         std::vector<size_t> expected_ids(n_res);
-        auto verify_res_batch = [&](size_t id, float score, size_t index) {
+        auto verify_res_batch = [&](size_t id, double score, size_t index) {
             ASSERT_EQ(id, (n - n_res * iteration_num - index));
-            float first_coordinate = (float)id / n;
+            double first_coordinate = (double)id / n;
             // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
             // vector and B is the current result vector.
-            float expected_score =
-                1.0f - ((first_coordinate + (float)dim - 1.0f) /
-                        (sqrtf((float)dim) *
-                         sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+            double expected_score =
+                1.0f - ((first_coordinate + (double)dim - 1.0f) /
+                        (sqrtf((double)dim) *
+                         sqrtf((double)(dim - 1) + first_coordinate * first_coordinate)));
             // Verify that abs difference between the actual and expected score is at most 1/10^6.
             ASSERT_NEAR(score, expected_score, 1e-5);
         };
@@ -1863,7 +1863,7 @@ TEST_F(HNSWTest, rangeQuery) {
     size_t pivot_id = n / 2; // the id to return vectors around it.
     float query[] = {(float)pivot_id, (float)pivot_id, (float)pivot_id, (float)pivot_id};
 
-    auto verify_res_by_score = [&](size_t id, float score, size_t index) {
+    auto verify_res_by_score = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
         ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
     };
@@ -1882,7 +1882,7 @@ TEST_F(HNSWTest, rangeQuery) {
                       &query_params);
 
     // Get results by id.
-    auto verify_res_by_id = [&](size_t id, float score, size_t index) {
+    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
         ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
     };
@@ -1917,15 +1917,15 @@ TEST_F(HNSWTest, rangeQueryCosine) {
     for (size_t i = 0; i < dim; i++) {
         query[i] = 1.0f;
     }
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, index + 1);
-        float first_coordinate = float(n - index) / n;
+        double first_coordinate = float(n - index) / n;
         // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
         // and B is the current result vector.
-        float expected_score =
+        double expected_score =
             1.0f -
-            ((first_coordinate + (float)dim - 1.0f) /
-             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+            ((first_coordinate + (double)dim - 1.0f) /
+             (sqrtf((double)dim) * sqrtf((double)(dim - 1) + first_coordinate * first_coordinate)));
         // Verify that abs difference between the actual and expected score is at most 1/10^5.
         ASSERT_NEAR(score, expected_score, 1e-5);
     };

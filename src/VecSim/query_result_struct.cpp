@@ -5,4 +5,4 @@
 
 void VecSimQueryResult_SetId(VecSimQueryResult &result, size_t id) { result.id = id; }
 
-void VecSimQueryResult_SetScore(VecSimQueryResult &result, float score) { result.score = score; }
+void VecSimQueryResult_SetScore(VecSimQueryResult &result, double score) { result.score = score; }
