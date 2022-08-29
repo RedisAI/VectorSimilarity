@@ -20,9 +20,10 @@
 #include <unordered_map>
 #include <sys/resource.h>
 #include <fstream>
+#include <utility> //pair
 
 namespace hnswlib {
-using namespace std;
+// using namespace std;
 using spaces::dist_func_t;
 
 #define HNSW_INVALID_ID    UINT_MAX
@@ -31,9 +32,9 @@ using spaces::dist_func_t;
 typedef unsigned int linklistsizeint;
 
 template <typename dist_t>
-using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, idType>>;
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<std::pair<dist_t, idType>>;
 template <typename dist_t>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labelType>>;
+using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<std::pair<dist_t, labelType>>;
 
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
@@ -175,7 +176,7 @@ public:
     dist_t getDistanceByLabelFromPoint(labelType label, const void *data_point);
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryResult_Code *rc) const;
-    vecsim_stl::max_priority_queue<pair<dist_t, labelType>>
+    vecsim_stl::max_priority_queue<std::pair<dist_t, labelType>>
     searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
                                    VecSimQueryResult_Code *rc) const;
