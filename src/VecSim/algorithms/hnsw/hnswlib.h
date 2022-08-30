@@ -35,10 +35,6 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, idType>>;
 template <typename dist_t>
 using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labelType>>;
 
-#ifdef BUILD_TESTS
-template <typename dist_t>
-class HNSWIndexSerializer;
-#endif
 template <typename dist_t>
 class HierarchicalNSW : public VecsimBaseObject {
 private:
@@ -98,7 +94,8 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer<dist_t>;
+    template <typename DistType>
+    friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
     friend class HNSWLibTest_preferAdHocOptimization_Test;
     friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
