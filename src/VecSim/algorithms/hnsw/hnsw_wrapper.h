@@ -187,7 +187,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     hnsw->setEpsilon(originalEpsilon);
     assert(hnsw->getEpsilon() == originalEpsilon);
 
-    rl.code = VecSim_QueryResult_OK;
     return rl;
 }
 
