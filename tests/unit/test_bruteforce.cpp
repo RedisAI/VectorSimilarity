@@ -1781,7 +1781,7 @@ TEST_F(BruteForceTest, rangeQueryCosine) {
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    float edge_first_coordinate = (float)(n - expected_num_results + 1) / n;
+    double edge_first_coordinate = (double)(n - expected_num_results + 1) / n;
     double radius =
         1.0 - ((edge_first_coordinate + (double)dim - 1.0) /
                (sqrt((double)dim) *
