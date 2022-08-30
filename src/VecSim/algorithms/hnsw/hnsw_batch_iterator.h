@@ -160,7 +160,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(candidatesMinHeap &candidates,
         __builtin_prefetch(hnsw_index->getDataByInternalId(*node_links));
 
         for (size_t j = 0; j < links_num; j++) {
-            linklistsizeint candidate_id = *(node_links + j);
+            idType candidate_id = *(node_links + j);
 
             __builtin_prefetch(visited_list->getElementsTags() + *(node_links + j + 1));
             __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + j + 1)));
