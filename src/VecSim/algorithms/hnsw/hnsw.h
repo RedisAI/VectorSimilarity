@@ -89,7 +89,6 @@ private:
     std::mutex cur_element_count_guard_;
     std::vector<std::mutex> link_list_locks_;
 #endif
-
 #ifdef BUILD_TESTS
     // Allow the following test to access the index size private member.
     template <typename DataType, typename DistType>
