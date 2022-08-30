@@ -42,8 +42,8 @@ private:
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract(allocator, params->dim, params->type, params->metric, params->blockSize,
-                          params->multi),
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
+                                    params->blockSize, params->multi),
       hnsw(new (allocator) hnswlib::HierarchicalNSW<float>(params, this->dist_func, allocator)) {}
 
 /******************** Implementation **************/
@@ -67,7 +67,7 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, size_t id)
         }
         size_t index_capacity = this->hnsw->getIndexCapacity();
         if (hnsw->getIndexSize() == index_capacity) {
-            size_t vectors_to_add = blockSize - index_capacity % blockSize;
+            size_t vectors_to_add = this->blockSize - index_capacity % this->blockSize;
             this->hnsw->resizeIndex(index_capacity + vectors_to_add);
         }
         this->hnsw->addPoint(vector_data, id);
@@ -93,13 +93,13 @@ int HNSWIndex<DataType, DistType>::deleteVector(size_t id) {
 
     // If we need to free a complete block & there is a least one block between the
     // capacity and the size.
-    if (index_size % blockSize == 0 && index_size + blockSize <= curr_capacity) {
+    if (index_size % this->blockSize == 0 && index_size + this->blockSize <= curr_capacity) {
 
         // Check if the capacity is aligned to block size.
-        size_t extra_space_to_free = curr_capacity % blockSize;
+        size_t extra_space_to_free = curr_capacity % this->blockSize;
 
         // Remove one block from the capacity.
-        this->hnsw->resizeIndex(curr_capacity - blockSize - extra_space_to_free);
+        this->hnsw->resizeIndex(curr_capacity - this->blockSize - extra_space_to_free);
     }
     return true;
 }
@@ -222,9 +222,9 @@ HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
-    memcpy(queryBlobCopy, queryBlob, dim * sizeof(DataType));
-    if (metric == VecSimMetric_Cosine) {
-        float_vector_normalize((DataType *)queryBlobCopy, dim);
+    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    if (this->metric == VecSimMetric_Cosine) {
+        float_vector_normalize((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
