@@ -12,7 +12,7 @@
 // using namespace hnswlib;
 
 template <typename DataType, typename DistType>
-class HNSWIndex : public VecSimIndexAbstract<float> {
+class HNSWIndex : public VecSimIndexAbstract<DistType> {
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;
@@ -135,6 +135,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         }
         auto knn_res = hnsw->searchKnn(query_data, k, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
+            // Restore efRuntime.
+            hnsw->setEf(originalEF);
+            assert(hnsw->getEf() == originalEF);
             return rl;
         }
         rl.results = array_new_len<VecSimQueryResult>(knn_res.size(), knn_res.size());
@@ -179,9 +182,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     // Call searchRange internally in HNSWlib to obtains results. This will return and set the
     // rl.code to "TimedOut" if timeout occurs.
     rl.results = hnsw->searchRange(queryBlob, radius, timeoutCtx, &rl.code);
-    if (VecSim_QueryResult_OK != rl.code) {
-        return rl;
-    }
 
     // Restore the default epsilon.
     hnsw->setEpsilon(originalEpsilon);
