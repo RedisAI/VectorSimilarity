@@ -12,14 +12,12 @@ class HNSWIndex;
 
 namespace HNSWFactory {
 
-VecSimIndex *NewIndex(const HNSWParams *params,
-                                 std::shared_ptr<VecSimAllocator> allocator);
- size_t EstimateInitialSize(const HNSWParams *params);
+VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
+size_t EstimateInitialSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params);
 
-
 VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
-                                                 std::shared_ptr<VecSimAllocator> allocator,
-                                                 HNSWIndex<float, float> *index);    
+                                      std::shared_ptr<VecSimAllocator> allocator,
+                                      HNSWIndex<float, float> *index);
 
-}; //namespace HNSWFactory
+}; // namespace HNSWFactory

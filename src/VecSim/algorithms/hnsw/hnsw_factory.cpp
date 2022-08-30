@@ -6,8 +6,7 @@
 
 using namespace hnswlib;
 namespace HNSWFactory {
-VecSimIndex *NewIndex(const HNSWParams *params,
-                                   std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
     return new (allocator) HNSWIndex<float, float>(params, allocator);
@@ -77,10 +76,10 @@ size_t EstimateElementSize(const HNSWParams *params) {
 
 // TODO overload for doubles
 VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
-                                                   std::shared_ptr<VecSimAllocator> allocator,
-                                                   HNSWIndex<float, float> *index) {
+                                      std::shared_ptr<VecSimAllocator> allocator,
+                                      HNSWIndex<float, float> *index) {
 
     return new (allocator)
         HNSW_BatchIterator<float, float>(queryBlob, index, queryParams, allocator);
 }
-}; //namespace HNSWFactory
+}; // namespace HNSWFactory

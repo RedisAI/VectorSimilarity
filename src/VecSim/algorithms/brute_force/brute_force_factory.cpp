@@ -4,8 +4,7 @@
 #include "VecSim/vec_sim_common.h" // labelType
 
 namespace BruteForceFactory {
-VecSimIndex *NewIndex(const BFParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
     return new (allocator) BruteForceIndex_Single<float, float>(params, allocator);
@@ -30,4 +29,4 @@ size_t EstimateInitialSize(const BFParams *params) {
 size_t EstimateElementSize(const BFParams *params) {
     return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
 }
-}; //namespace BruteForceFactory
+}; // namespace BruteForceFactory
