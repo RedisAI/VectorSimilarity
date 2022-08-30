@@ -181,7 +181,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
  */
-void runRangeQueryTest(VecSimIndex *index, const void *query, float radius,
+void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryResult_Order order,
                        VecSimQueryParams *params) {

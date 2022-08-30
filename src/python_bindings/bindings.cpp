@@ -73,17 +73,15 @@ public:
 
     void addVector(py::object input, size_t id) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        float *vector_data = (float *)items.data(0);
-        VecSimIndex_AddVector(index, (void *)vector_data, id);
+        VecSimIndex_AddVector(index, (void *)items.data(0), id);
     }
 
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        float *vector_data = (float *)items.data(0);
         VecSimQueryResult_List res =
-            VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params, BY_SCORE);
+            VecSimIndex_TopKQuery(index, (void *)items.data(0), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
@@ -91,11 +89,10 @@ public:
         return wrap_results(res, k);
     }
 
-    py::object range(py::object input, float radius, VecSimQueryParams *query_params) {
+    py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        float *vector_data = (float *)items.data(0);
         VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index, (void *)vector_data, radius, query_params, BY_SCORE);
+            VecSimIndex_RangeQuery(index, (void *)items.data(0), radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
@@ -115,7 +112,8 @@ protected:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
+    PyHNSWLibIndex(const HNSWParams &hnsw_params)
+        : vecType(hnsw_params.type), metric(hnsw_params.metric) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
     }

@@ -132,7 +132,7 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
  * VecSimQueryResult_Iterator.
  */
 VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                              float radius, VecSimQueryParams *queryParams,
+                                              double radius, VecSimQueryParams *queryParams,
                                               VecSimQueryResult_Order);
 /**
  * @brief Return index information.

@@ -193,7 +193,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
 }
 
 extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                                         float radius,
+                                                         double radius,
                                                          VecSimQueryParams *queryParams,
                                                          VecSimQueryResult_Order order) {
     if (order != BY_ID && order != BY_SCORE) {
