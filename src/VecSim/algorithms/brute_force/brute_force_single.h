@@ -2,7 +2,6 @@
 
 #include "brute_force.h"
 #include "bfs_batch_iterator.h"
-#include "VecSim/utils/vec_utils.h"
 
 template <typename DataType, typename DistType>
 class BruteForceIndex_Single : public BruteForceIndex<DataType, DistType> {

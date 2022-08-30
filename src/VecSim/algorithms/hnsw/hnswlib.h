@@ -20,9 +20,9 @@
 #include <unordered_map>
 #include <sys/resource.h>
 #include <fstream>
+#include <utility> //pair
 
 namespace hnswlib {
-using namespace std;
 using spaces::dist_func_t;
 
 #define HNSW_INVALID_ID    UINT_MAX

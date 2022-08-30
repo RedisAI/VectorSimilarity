@@ -121,17 +121,17 @@ public:
     }
 
     void setDefaultEf(size_t ef) {
-        auto *hnsw = reinterpret_cast<HNSWIndex *>(index);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        auto serializer = hnswlib::HNSWIndexSerializer(
+            reinterpret_cast<HNSWIndex<float, float> *>(index)->getHNSWIndex());
         serializer.saveIndex(location);
     }
     void loadIndex(const std::string &location) {
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        auto serializer = hnswlib::HNSWIndexSerializer(
+            reinterpret_cast<HNSWIndex<float, float> *>(index)->getHNSWIndex());
         serializer.loadIndex(location);
     }
 };
