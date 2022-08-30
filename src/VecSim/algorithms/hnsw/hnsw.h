@@ -36,10 +36,6 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<DistType, labelType>;
 
-#ifdef BUILD_TESTS
-template <typename DataType, typename DistType>
-class HNSWIndexSerializer;
-#endif
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType> {
 private:
@@ -95,10 +91,9 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
+    // Allow the following test to access the index size private member.
     template <typename DataType, typename DistType>
     friend class HNSWIndexSerializer;
-    // Allow the following test to access the index size private member.
-    friend class HNSWIndexSerializer<DataType, DistType>;
     friend class HNSWTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
