@@ -5,15 +5,15 @@
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
 using namespace hnswlib;
-
-VecSimIndex *HNSWFactory::NewIndex(const HNSWParams *params,
+namespace HNSWFactory {
+VecSimIndex *NewIndex(const HNSWParams *params,
                                    std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
     return new (allocator) HNSWIndex<float, float>(params, allocator);
 }
 
-size_t HNSWFactory::EstimateInitialSize(const HNSWParams *params) {
+size_t EstimateInitialSize(const HNSWParams *params) {
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     est += sizeof(HNSWIndex<float, float>);
@@ -40,7 +40,7 @@ size_t HNSWFactory::EstimateInitialSize(const HNSWParams *params) {
     return est;
 }
 
-size_t HNSWFactory::EstimateElementSize(const HNSWParams *params) {
+size_t EstimateElementSize(const HNSWParams *params) {
     size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) +
                                sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
     size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(idType) +
@@ -76,10 +76,11 @@ size_t HNSWFactory::EstimateElementSize(const HNSWParams *params) {
 }
 
 // TODO overload for doubles
-VecSimBatchIterator *HNSWFactory::newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
+VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
                                                    std::shared_ptr<VecSimAllocator> allocator,
                                                    HNSWIndex<float, float> *index) {
 
     return new (allocator)
         HNSW_BatchIterator<float, float>(queryBlob, index, queryParams, allocator);
 }
+}; //namespace HNSWFactory

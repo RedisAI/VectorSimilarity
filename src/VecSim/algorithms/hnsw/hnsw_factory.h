@@ -10,14 +10,16 @@
 template <typename DataType, typename DistType>
 class HNSWIndex;
 
-class HNSWFactory {
+namespace HNSWFactory {
 
-public:
-    static VecSimIndex *NewIndex(const HNSWParams *params,
+VecSimIndex *NewIndex(const HNSWParams *params,
                                  std::shared_ptr<VecSimAllocator> allocator);
-    static size_t EstimateInitialSize(const HNSWParams *params);
-    static size_t EstimateElementSize(const HNSWParams *params);
-    static VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
+ size_t EstimateInitialSize(const HNSWParams *params);
+size_t EstimateElementSize(const HNSWParams *params);
+
+
+VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
                                                  std::shared_ptr<VecSimAllocator> allocator,
-                                                 HNSWIndex<float, float> *index);
-};
+                                                 HNSWIndex<float, float> *index);    
+
+}; //namespace HNSWFactory
