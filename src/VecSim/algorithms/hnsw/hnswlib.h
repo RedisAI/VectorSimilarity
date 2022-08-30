@@ -94,9 +94,9 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
-    template <typename DistType>
-    friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
+    template <typename>
+    friend class HNSWIndexSerializer;
     friend class HNSWLibTest_preferAdHocOptimization_Test;
     friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
