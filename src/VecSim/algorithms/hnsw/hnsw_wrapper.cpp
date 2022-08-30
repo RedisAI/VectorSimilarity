@@ -124,7 +124,7 @@ VecSimQueryResult_List HNSWIndex::topKQuery(const void *query_data, size_t k,
     return rl;
 }
 
-VecSimQueryResult_List HNSWIndex::rangeQuery(const void *queryBlob, float radius,
+VecSimQueryResult_List HNSWIndex::rangeQuery(const void *queryBlob, double radius,
                                              VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = nullptr;

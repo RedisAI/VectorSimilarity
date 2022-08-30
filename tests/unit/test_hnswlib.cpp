@@ -1861,12 +1861,12 @@ TEST_F(HNSWLibTest, rangeQuery) {
 
     auto verify_res_by_score = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
-        ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
+        ASSERT_EQ(score, dim * pow((index + 1) / 2, 2));
     };
     uint expected_num_results = 11;
     // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2 score
     // in the boundaries.
-    float radius = dim * powf(expected_num_results / 2, 2);
+    double radius = dim * pow(expected_num_results / 2, 2);
     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
 
     // Rerun with a given query params. This high epsilon value will cause the range search main
@@ -1928,11 +1928,11 @@ TEST_F(HNSWLibTest, rangeQueryCosine) {
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    float edge_first_coordinate = (float)(n - expected_num_results + 1) / n;
-    float radius =
-        1.0f - ((edge_first_coordinate + (float)dim - 1.0f) /
-                (sqrtf((float)dim) *
-                 sqrtf((float)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
+    double edge_first_coordinate = (double)(n - expected_num_results + 1) / n;
+    double radius =
+        1.0f - ((edge_first_coordinate + (double)dim - 1.0) /
+                (sqrt((double)dim) *
+                 sqrt((double)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
 
     // Return results BY_ID should give the same results.

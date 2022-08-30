@@ -192,7 +192,7 @@ VecSimQueryResult_List BruteForceIndex::topKQuery(const void *queryBlob, size_t 
     return rl;
 }
 
-VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, float radius,
+VecSimQueryResult_List BruteForceIndex::rangeQuery(const void *queryBlob, double radius,
                                                    VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;

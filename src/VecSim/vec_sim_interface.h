@@ -95,7 +95,7 @@ public:
      * (which is the distance according to the index metric) of every result through
      * VecSimQueryResult_Iterator.
      */
-    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
+    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                               VecSimQueryParams *queryParams) = 0;
 
     /**

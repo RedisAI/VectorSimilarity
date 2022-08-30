@@ -14,7 +14,7 @@ public:
     virtual size_t indexLabelCount() const override;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, float radius,
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
