@@ -7,7 +7,9 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "hnswlib.h"
+
 #define HNSW_INVALID_META_DATA SIZE_MAX
+
 namespace hnswlib {
 
 // This struct is the return value of "checkIntegrity" methods (used for debugging).
