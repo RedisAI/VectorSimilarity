@@ -125,13 +125,13 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        auto serializer = hnswlib::HNSWIndexSerializer<float>(
+            reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
         serializer.saveIndex(location);
     }
     void loadIndex(const std::string &location) {
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        auto serializer = hnswlib::HNSWIndexSerializer<float>(
+            reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
         serializer.loadIndex(location);
     }
 };

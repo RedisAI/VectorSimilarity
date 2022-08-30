@@ -5,8 +5,8 @@ void load_HNSW_index(const char *path, VecSimIndex *hnsw_index) {
     // Load the index file, if it exists in the expected path.
     auto location = std::string(getenv("ROOT"));
     auto file_name = location + "/" + path;
-    auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
+    auto serializer = hnswlib::HNSWIndexSerializer<float>(
+        reinterpret_cast<HNSWIndex *>(hnsw_index)->getHNSWIndex());
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
         serializer.loadIndex(file_name);
