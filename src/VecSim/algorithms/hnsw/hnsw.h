@@ -95,6 +95,8 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
+    template <typename DataType, typename DistType>
+    friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
     friend class HNSWIndexSerializer<DataType, DistType>;
     friend class HNSWTest_preferAdHocOptimization_Test;
@@ -1513,6 +1515,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
             epsilon_ = queryParams->hnswRuntimeParams.epsilon;
         }
     }
+    void *timeoutCtx = nullptr;
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
