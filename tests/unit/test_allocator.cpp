@@ -368,7 +368,7 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
     // Also validate that there are no unidirectional connections (these add memory to the incoming
     // edges sets).
-    auto serializer = HNSWIndexSerializer(hnswIndex);
+    auto serializer = HNSWIndexSerializer<float, float>(hnswIndex);
     ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
 
     // Add another vector, expect resizing of the index to contain two blocks.

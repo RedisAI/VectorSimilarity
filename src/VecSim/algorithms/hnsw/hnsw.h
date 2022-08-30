@@ -36,6 +36,10 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<DistType, labelType>;
 
+#ifdef BUILD_TESTS
+template <typename DataType, typename DistType>
+class HNSWIndexSerializer;
+#endif
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType> {
 private:
@@ -91,8 +95,8 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
+    friend class HNSWIndexSerializer<DataType, DistType>;
     friend class HNSWTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
@@ -123,14 +127,14 @@ private:
                                              double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
                                              candidatesMaxHeap<DistType> &candidate_set,
-                                             DistType lowerBound, DistType radius) const;
+                                             DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
     candidatesLabelsMaxHeap<DistType>
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
                                   void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                          double epsilon, DistType radius,
+                                                          double epsilon, double radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
@@ -179,7 +183,7 @@ public:
                                       VecSimQueryResult_Code *rc) const;
     VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
                                      VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *query_data, DistType radius,
+    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
                                       VecSimQueryParams *queryParams) override;
 };
 
@@ -438,7 +442,7 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
     VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
-    DistType radius) const {
+    double radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -1417,7 +1421,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
 template <typename DataType, typename DistType>
 VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
-    idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
+    idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
@@ -1481,7 +1485,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
-                                                                 DistType radius,
+                                                                 double radius,
                                                                  VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};

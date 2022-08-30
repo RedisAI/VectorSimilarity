@@ -66,10 +66,6 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/algorithms/brute_force/bf_batch_iterator.cpp
   )
 
-if(VECSIM_BUILD_TESTS)
-	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
-	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
-endif()
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
