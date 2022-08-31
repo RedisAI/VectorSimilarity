@@ -276,6 +276,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
     delete TopCandidates;
     rl.code = VecSim_QueryResult_OK;
+    delete TopCandidates;
     return rl;
 }
 
