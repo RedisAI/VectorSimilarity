@@ -27,8 +27,8 @@ private:
     size_t orig_ef_runtime; // Original default parameter to reproduce.
 
     // Data structure that holds the search state between iterations.
-    using candidatesMinHeap = vecsim_stl::min_priority_queue<std::pair<DistType, idType>>;
-    using candidatesMaxHeap = vecsim_stl::max_priority_queue<std::pair<DistType, idType>>;
+    using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, idType>;
+    using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
     DistType lower_bound;
     candidatesMinHeap top_candidates_extras;
     candidatesMinHeap candidates;

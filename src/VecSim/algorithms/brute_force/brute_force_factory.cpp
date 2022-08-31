@@ -5,8 +5,7 @@
 #include "VecSim/vec_sim_common.h" // labelType
 
 namespace BruteForceFactory {
-VecSimIndex *NewIndex(const BFParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     if (params->multi)
         return new (allocator) BruteForceIndex_Multi<float, float>(params, allocator);
