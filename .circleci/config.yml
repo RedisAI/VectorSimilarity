@@ -256,7 +256,7 @@ jobs:
           command: |
             source ~/.zshrc
             conda activate vecsim
-            pip install poetry
+            pip install --upgrade pip poetry setuptools
             poetry build
             poetry install
             tox -e flowenv
