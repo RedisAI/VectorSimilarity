@@ -112,8 +112,7 @@ protected:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params)
-        : vecType(hnsw_params.type), metric(hnsw_params.metric) {
+    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
     }
@@ -123,12 +122,19 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.saveIndex(location);
+        VecSimIndexInfo info = this->index->info();
+        if (info.hnswInfo.type == VecSimType_FLOAT32) {
+            auto serializer = HNSWIndexSerializer<float, float>(index);
+            serializer.saveIndex(location);
+        }
     }
+
     void loadIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.loadIndex(location);
+        VecSimIndexInfo info = this->index->info();
+        if (info.hnswInfo.type == VecSimType_FLOAT32) {
+            auto serializer = HNSWIndexSerializer<float, float>(index);
+            serializer.loadIndex(location);
+        }
     }
 };
 
