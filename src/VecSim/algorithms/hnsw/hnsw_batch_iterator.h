@@ -27,9 +27,9 @@ private:
     size_t orig_ef_runtime; // Original default parameter to reproduce.
 
     // Data structure that holds the search state between iterations.
+    using candidatesMinHeap = vecsim_stl::min_priority_queue<std::pair<DistType, idType>>;
+    using candidatesMaxHeap = vecsim_stl::max_priority_queue<std::pair<DistType, idType>>;
     DistType lower_bound;
-    using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, idType>;
-    using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
     candidatesMinHeap top_candidates_extras;
     candidatesMinHeap candidates;
 
@@ -158,7 +158,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(candidatesMinHeap &candidates,
         __builtin_prefetch(hnsw_index->getDataByInternalId(*node_links));
 
         for (size_t j = 0; j < links_num; j++) {
-            linklistsizeint candidate_id = *(node_links + j);
+            idType candidate_id = *(node_links + j);
 
             __builtin_prefetch(visited_list->getElementsTags() + *(node_links + j + 1));
             __builtin_prefetch(hnsw_index->getDataByInternalId(*(node_links + j + 1)));
