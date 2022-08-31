@@ -112,8 +112,7 @@ protected:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params)
-        : vecType(hnsw_params.type), metric(hnsw_params.metric) {
+    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
     }
@@ -123,30 +122,22 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        if (vecType == VecSimType_FLOAT32) {
-            if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP ||
-                metric == VecSimMetric_L2) {
-                auto serializer = hnswlib::HNSWIndexSerializer<float>(
-                    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-                serializer.saveIndex(location);
-            }
+        VecSimIndexInfo info = this->index->info();
+        if (info.hnswInfo.type == VecSimType_FLOAT32) {
+            auto serializer = hnswlib::HNSWIndexSerializer<float>(
+                reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+            serializer.saveIndex(location);
         }
     }
 
     void loadIndex(const std::string &location) {
-        if (vecType == VecSimType_FLOAT32) {
-            if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP ||
-                metric == VecSimMetric_L2) {
-                auto serializer = hnswlib::HNSWIndexSerializer<float>(
-                    reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-                serializer.loadIndex(location);
-            }
+        VecSimIndexInfo info = this->index->info();
+        if (info.hnswInfo.type == VecSimType_FLOAT32) {
+            auto serializer = hnswlib::HNSWIndexSerializer<float>(
+                reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+            serializer.loadIndex(location);
         }
     }
-
-private:
-    VecSimType vecType;
-    VecSimMetric metric;
 };
 
 class PyBFIndex : public PyVecSimIndex {

@@ -93,7 +93,7 @@ private:
     std::vector<std::mutex> link_list_locks_;
 #endif
 #ifdef BUILD_TESTS
-    // Allow the following test to access the index size private member.f
+    // Allow the following test to access the index size private member.
     template <typename>
     friend class HNSWIndexSerializer;
     friend class HNSWLibTest_preferAdHocOptimization_Test;
