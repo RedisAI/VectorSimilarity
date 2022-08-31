@@ -10,8 +10,9 @@ private:
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> labelToIdsLookup;
 
 public:
-    BruteForceIndex_Multi(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
-    ~BruteForceIndex_Multi();
+    BruteForceIndex_Multi(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
+        : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdsLookup(allocator) {}
+    ~BruteForceIndex_Multi() {}
 
     virtual int addVector(const void *vector_data, size_t label) override;
     virtual int deleteVector(size_t id) override;
@@ -22,28 +23,9 @@ public:
 private:
     // inline definitions
 
-    inline void setVectorId(labelType label, idType id) override {
-        auto ids = labelToIdsLookup.find(label);
-        if (ids != labelToIdsLookup.end()) {
-            ids->second.push_back(id);
-        } else {
-            // Initial capacity is 1. We can consider increasing this value or having it as a
-            // parameter.
-            labelToIdsLookup.emplace(label, vecsim_stl::vector<idType>{1, id, this->allocator});
-        }
-    }
+    inline void setVectorId(labelType label, idType id) override;
 
-    inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
-        assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
-        auto &ids = labelToIdsLookup.at(label);
-        for (size_t i = 0; i < ids.size(); i++) {
-            if (ids[i] == old_id) {
-                ids[i] = new_id;
-                return;
-            }
-        }
-        assert(!"should have found the old id");
-    }
+    inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewPriorityQueue() override {
@@ -70,14 +52,6 @@ private:
 };
 
 /******************************* Implementation **********************************/
-
-template <typename DataType, typename DistType>
-BruteForceIndex_Multi<DataType, DistType>::BruteForceIndex_Multi(
-    const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdsLookup(allocator) {}
-
-template <typename DataType, typename DistType>
-BruteForceIndex_Multi<DataType, DistType>::~BruteForceIndex_Multi() {}
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, size_t label) {
@@ -131,4 +105,30 @@ double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(size_t label,
     }
 
     return dist;
+}
+
+template <typename DataType, typename DistType>
+void BruteForceIndex_Multi<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
+                                                                 idType old_id) {
+    assert(labelToIdsLookup.find(label) != labelToIdsLookup.end());
+    auto &ids = labelToIdsLookup.at(label);
+    for (size_t i = 0; i < ids.size(); i++) {
+        if (ids[i] == old_id) {
+            ids[i] = new_id;
+            return;
+        }
+    }
+    assert(!"should have found the old id");
+}
+
+template <typename DataType, typename DistType>
+void BruteForceIndex_Multi<DataType, DistType>::setVectorId(labelType label, idType id) {
+    auto ids = labelToIdsLookup.find(label);
+    if (ids != labelToIdsLookup.end()) {
+        ids->second.push_back(id);
+    } else {
+        // Initial capacity is 1. We can consider increasing this value or having it as a
+        // parameter.
+        labelToIdsLookup.emplace(label, vecsim_stl::vector<idType>{1, id, this->allocator});
+    }
 }

@@ -1,7 +1,6 @@
 #pragma once
 #include "bf_batch_iterator.h"
 
-#include <vector>
 #include <limits>
 
 class BFS_BatchIterator : public BF_BatchIterator {
