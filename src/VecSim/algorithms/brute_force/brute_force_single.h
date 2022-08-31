@@ -13,9 +13,9 @@ public:
     BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     ~BruteForceIndex_Single();
 
-    virtual int addVector(const void *vector_data, size_t label) override;
-    virtual int deleteVector(size_t id) override;
-    virtual double getDistanceFrom(size_t label, const void *vector_data) const override;
+    virtual int addVector(const void *vector_data, labelType label) override;
+    virtual int deleteVector(labelType label) override;
+    virtual double getDistanceFrom(labelType label, const void *vector_data) const override;
 
     virtual inline size_t indexLabelCount() const override { return this->count; }
 
@@ -78,7 +78,8 @@ template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, size_t label) {
+int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
+                                                          labelType label) {
 
     DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -100,7 +101,7 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
 }
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::deleteVector(size_t label) {
+int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 
     // Find the id to delete.
     auto deleted_label_id_pair = this->labelToIdLookup.find(label);
@@ -119,7 +120,7 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(size_t label) {
 }
 
 template <typename DataType, typename DistType>
-double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(size_t label,
+double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
                                                                    const void *vector_data) const {
 
     auto optionalId = this->labelToIdLookup.find(label);
