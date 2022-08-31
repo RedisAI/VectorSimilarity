@@ -4,7 +4,8 @@
 #include "bfm_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
 
-class BruteForceIndex_Multi : public BruteForceIndex {
+template <typename DataType, typename DistType>
+class BruteForceIndex_Multi : public BruteForceIndex<DataType, DistType> {
 private:
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> labelToIdsLookup;
 
@@ -44,14 +45,16 @@ private:
         assert(!"should have found the old id");
     }
 
-    inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() override {
+    inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewPriorityQueue() override {
         return new (this->allocator)
-            vecsim_stl::updatable_max_heap<float, labelType>(this->allocator);
+            vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
 
     inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
                                                        VecSimQueryParams *queryParams) override {
-        return new (allocator) BFM_BatchIterator(queryBlob, this, queryParams, allocator);
+        return new (this->allocator)
+            BFM_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
@@ -65,3 +68,67 @@ private:
     friend class BruteForceMultiTest_test_dynamic_bf_info_iterator_Test;
 #endif
 };
+
+/******************************* Implementation **********************************/
+
+template <typename DataType, typename DistType>
+BruteForceIndex_Multi<DataType, DistType>::BruteForceIndex_Multi(
+    const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
+    : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdsLookup(allocator) {}
+
+template <typename DataType, typename DistType>
+BruteForceIndex_Multi<DataType, DistType>::~BruteForceIndex_Multi() {}
+
+template <typename DataType, typename DistType>
+int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, size_t label) {
+
+    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
+        float_vector_normalize(normalized_data, this->dim);
+        vector_data = normalized_data;
+    }
+
+    return this->appendVector(vector_data, label);
+}
+
+template <typename DataType, typename DistType>
+int BruteForceIndex_Multi<DataType, DistType>::deleteVector(size_t label) {
+
+    // Find the id to delete.
+    auto deleted_label_ids_pair = this->labelToIdsLookup.find(label);
+    if (deleted_label_ids_pair == this->labelToIdsLookup.end()) {
+        // Nothing to delete.
+        return true;
+    }
+
+    int ret = true;
+
+    // Deletes all vectors under the given label.
+    for (auto id_to_delete : deleted_label_ids_pair->second) {
+        ret = (this->removeVector(id_to_delete) && ret);
+    }
+
+    // Remove the pair of the deleted vector.
+    labelToIdsLookup.erase(label);
+    return ret;
+}
+
+template <typename DataType, typename DistType>
+double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(size_t label,
+                                                                  const void *vector_data) const {
+
+    auto IDs = this->labelToIdsLookup.find(label);
+    if (IDs == this->labelToIdsLookup.end()) {
+        return INVALID_SCORE;
+    }
+
+    DistType dist = std::numeric_limits<DistType>::infinity();
+    for (auto id : IDs->second) {
+        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+        dist = (dist < d) ? dist : d;
+    }
+
+    return dist;
+}

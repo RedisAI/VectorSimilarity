@@ -14,10 +14,6 @@ using hnswlib::linklistsizeint;
 using spaces::dist_func_t;
 
 template <typename DataType, typename DistType>
-using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, idType>;
-using hnswlib::candidatesMaxHeap;
-
-template <typename DataType, typename DistType>
 class HNSW_BatchIterator : public VecSimBatchIterator {
 private:
     HNSWIndex<DataType, DistType> *index_wrapper;
@@ -32,6 +28,8 @@ private:
 
     // Data structure that holds the search state between iterations.
     DistType lower_bound;
+    using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, idType>;
+    using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
     candidatesMinHeap top_candidates_extras;
     candidatesMinHeap candidates;
 

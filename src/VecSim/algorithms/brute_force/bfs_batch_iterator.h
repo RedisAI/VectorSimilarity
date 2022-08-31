@@ -6,7 +6,7 @@
 
 class BFS_BatchIterator : public BF_BatchIterator {
 public:
-    BFS_BatchIterator(void *query_vector, const BruteForceIndex *index,
+    BFS_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,
                       VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
         : BF_BatchIterator(query_vector, index, queryParams, allocator) {}
 

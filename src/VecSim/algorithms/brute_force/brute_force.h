@@ -64,7 +64,8 @@ protected:
         idToLabelMapping.at(id) = new_label;
     }
     // inline priority queue getter that need to be implemented by derived class
-    virtual inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() = 0;
+    virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewPriorityQueue() = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
@@ -114,7 +115,7 @@ template <typename DataType, typename DistType>
 int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
 
     // Give the vector new id and increase count.
-    idType id = count++;
+    idType id = this->count++;
 
     // Get vector block to store the vector in.
 
@@ -157,14 +158,14 @@ template <typename DataType, typename DistType>
 int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 
     // Get last vector id and label
-    idType last_idx = --count;
+    idType last_idx = --this->count;
     labelType last_idx_label = getVectorLabel(last_idx);
 
     // Get last vector data.
     VectorBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    char *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    void *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
@@ -194,7 +195,7 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         size_t id2label_size = idToLabelMapping.size();
         // If the new size is smaller by at least one block comparing to the id2labelMapping
         // align to be a multiplication of blocksize  and resize by one block.
-        if (count + this->blockSize <= id2label_size) {
+        if (this->count + this->blockSize <= id2label_size) {
             size_t vector_to_align_count = id2label_size % this->blockSize;
             this->idToLabelMapping.resize(id2label_size - this->blockSize - vector_to_align_count);
         }
@@ -243,7 +244,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::abstract_priority_queue<float, labelType> *TopCandidates = getNewPriorityQueue();
+    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates = getNewPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
@@ -265,7 +266,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
             ++curr_id;
         }
     }
-    assert(curr_id == count);
+    assert(curr_id == this->count);
 
     rl.results = array_new_len<VecSimQueryResult>(TopCandidates->size(), TopCandidates->size());
     for (int i = (int)TopCandidates->size() - 1; i >= 0; --i) {
@@ -312,7 +313,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType 
             ++curr_id;
         }
     }
-    assert(curr_id == count);
+    assert(curr_id == this->count);
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }
