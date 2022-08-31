@@ -13,9 +13,6 @@ public:
     BruteForceIndex_Multi(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
         : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdsLookup(allocator) {}
 
-template <typename DataType, typename DistType>
-BruteForceIndex_Multi<DataType, DistType>::~BruteForceIndex_Multi() {}
-{}
     ~BruteForceIndex_Multi() {}
 
     virtual int addVector(const void *vector_data, labelType label) override;
