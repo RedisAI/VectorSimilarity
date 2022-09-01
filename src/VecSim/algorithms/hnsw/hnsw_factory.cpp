@@ -7,13 +7,14 @@ namespace HNSWFactory {
 VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
-    return new (allocator) HNSWIndex<float, float>(params, allocator);
+    return new (allocator) HNSWIndex_Single<float, float>(params, allocator);
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    est += sizeof(HNSWIndex<float, float>);
+    assert(!params->multi);
+    est += sizeof(HNSWIndex_Single<float, float>);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);

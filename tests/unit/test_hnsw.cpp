@@ -1679,7 +1679,7 @@ TEST_F(HNSWTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    estimation += (reinterpret_cast<HNSWIndex<float, float> *>(index)
+    estimation += (reinterpret_cast<HNSWIndex_Single<float, float> *>(index)
 
                        ->label_lookup_.bucket_count() -
                    n) *
