@@ -213,9 +213,9 @@ TEST_F(AllocatorTest, test_hnsw) {
         .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
 
     float vec[128] = {};
-    HNSWIndex<float, float> *hnswIndex =
-        new (allocator) HNSWIndex<float, float>(&params, allocator);
-    expectedAllocationSize += sizeof(HNSWIndex<float, float>) + vecsimAllocationOverhead;
+    HNSWIndex_Single<float, float> *hnswIndex =
+        new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
+    expectedAllocationSize += sizeof(HNSWIndex_Single<float, float>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
@@ -259,7 +259,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
                          .metric = VecSimMetric_L2,
                          .initialCapacity = 10,
                          .M = 2};
-    auto *hnswIndex = new (allocator) HNSWIndex<float, float>(&params, allocator);
+    auto *hnswIndex = new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
     float vec0[] = {0.0f, 0.0f};
@@ -340,7 +340,7 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // Build HNSW index with default args and initial capacity of zero.
     HNSWParams params = {
         .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
-    auto *hnswIndex = new (allocator) HNSWIndex<float, float>(&params, allocator);
+    auto *hnswIndex = new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
     size_t initial_memory_size = allocator->getAllocationSize();
