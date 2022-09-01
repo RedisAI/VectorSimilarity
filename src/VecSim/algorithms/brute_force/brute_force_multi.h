@@ -15,11 +15,11 @@ public:
 
     ~BruteForceIndex_Multi() {}
 
-    virtual int addVector(const void *vector_data, labelType label) override;
-    virtual int deleteVector(labelType labelType) override;
-    virtual double getDistanceFrom(labelType label, const void *vector_data) const override;
+    int addVector(const void *vector_data, labelType label) override;
+    int deleteVector(labelType labelType) override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override;
 
-    virtual inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
+    inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
 private:
     // inline definitions
