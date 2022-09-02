@@ -1,14 +1,18 @@
-#include "VecSim/batch_iterator.h"
-#include "VecSim/algorithms/brute_force/brute_force.h"
+#pragma once
 
+#include "VecSim/batch_iterator.h"
+#include "VecSim/utils/vecsim_stl.h"
+#include "vector_block.h"
 #include <vector>
 #include <limits>
 
 using namespace std;
 
+template <typename DataType, typename DistType>
+class BruteForceIndex;
 class BF_BatchIterator : public VecSimBatchIterator {
 private:
-    const BruteForceIndex *index;
+    const BruteForceIndex<float, float> *index;
     vector<pair<float, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.
@@ -22,10 +26,10 @@ private:
     inline VecSimQueryResult_Code calculateScores();
 
 public:
-    BF_BatchIterator(void *query_vector, const BruteForceIndex *index,
+    BF_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,
                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
 
-    inline const BruteForceIndex *getIndex() const { return index; };
+    inline const BruteForceIndex<float, float> *getIndex() const { return index; };
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
 
