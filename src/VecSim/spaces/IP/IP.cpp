@@ -2,7 +2,7 @@
 
 float FP32_InnerProduct_impl(const void *pVect1, const void *pVect2, size_t qty) {
     float *vec1_ptr = (float *)pVect1;
-    float *vec2_ptr = (float *)pVect2;  
+    float *vec2_ptr = (float *)pVect2;
 
     float res = 0;
     for (size_t i = 0; i < qty; i++) {
@@ -17,8 +17,8 @@ float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t qty) {
 
 double FP64_InnerProduct_impl(const void *pVect1, const void *pVect2, size_t qty) {
     double *vec1_ptr = (double *)pVect1;
-    double *vec2_ptr = (double *)pVect2;    
-    
+    double *vec2_ptr = (double *)pVect2;
+
     double res = 0;
     for (size_t i = 0; i < qty; i++) {
         res += vec1_ptr[i] * vec2_ptr[i];
