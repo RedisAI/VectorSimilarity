@@ -40,4 +40,16 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist
     }
 }
 
+void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func) {
+
+    if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
+
+        *index_dist_func = IP_FP64_GetDistFunc(dim);
+
+    } else if (metric == VecSimMetric_L2) {
+
+        *index_dist_func = L2_FP64_GetDistFunc(dim);
+    }
+}
+
 } // namespace spaces
