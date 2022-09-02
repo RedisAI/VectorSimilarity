@@ -78,7 +78,7 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
 #endif
     } // switch
 
-#endif // __x86_64__ */
+    #endif // __x86_64__ */
     return ret_dist_func;
 }
 
