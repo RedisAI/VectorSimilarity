@@ -9,8 +9,6 @@
 #include <memory>
 #include <cassert>
 
-// using namespace hnswlib;
-
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType> {
 public:
