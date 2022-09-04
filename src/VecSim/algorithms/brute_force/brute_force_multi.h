@@ -30,7 +30,7 @@ private:
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewPriorityQueue() override {
+    getNewMaxPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
