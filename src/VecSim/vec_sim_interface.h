@@ -33,7 +33,7 @@ public:
      * @param id the id of the added vector
      * @return always returns true
      */
-    virtual int addVector(const void *blob, size_t id) = 0;
+    virtual int addVector(const void *blob, labelType id) = 0;
 
     /**
      * @brief Remove a vector from an index.
@@ -41,7 +41,7 @@ public:
      * @param id the id of the removed vector
      * @return always returns true
      */
-    virtual int deleteVector(size_t id) = 0;
+    virtual int deleteVector(labelType id) = 0;
 
     /**
      * @brief Calculate the distance of a vector from an index to a vector.
@@ -53,7 +53,7 @@ public:
      * @return The distance (according to the index's distance metric) between `blob` and the vector
      * with id `id`.
      */
-    virtual double getDistanceFrom(size_t id, const void *blob) const = 0;
+    virtual double getDistanceFrom(labelType id, const void *blob) const = 0;
 
     /**
      * @brief Return the number of vectors in the index using its SizeFn.

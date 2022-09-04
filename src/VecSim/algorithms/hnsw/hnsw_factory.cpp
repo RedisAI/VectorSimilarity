@@ -1,11 +1,10 @@
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
-#include "VecSim/algorithms/hnsw/hnswlib.h" //linklistsizeint
-#include "VecSim/vec_sim_common.h"          // labelType
+#include "VecSim/algorithms/hnsw/hnsw.h" //linklistsizeint
+#include "VecSim/vec_sim_common.h"       // labelType
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
-using namespace hnswlib;
 namespace HNSWFactory {
+
 VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
@@ -16,7 +15,6 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     est += sizeof(HNSWIndex<float, float>);
-    est += sizeof(hnswlib::HierarchicalNSW<float>) + sizeof(size_t);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);

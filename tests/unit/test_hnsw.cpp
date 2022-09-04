@@ -6,20 +6,18 @@
 #include <climits>
 #include <unistd.h>
 
-namespace hnswlib {
-
-class HNSWLibTest : public ::testing::Test {
+class HNSWTest : public ::testing::Test {
 protected:
-    HNSWLibTest() {}
+    HNSWTest() {}
 
-    ~HNSWLibTest() override {}
+    ~HNSWTest() override {}
 
     void SetUp() override {}
 
     void TearDown() override {}
 };
 
-TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
+TEST_F(HNSWTest, hnsw_vector_add_test) {
     size_t dim = 4;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
@@ -40,16 +38,16 @@ TEST_F(HNSWLibTest, hnswlib_vector_add_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
+TEST_F(HNSWTest, hnsw_blob_sanity_test) {
     size_t dim = 4;
     size_t bs = 1;
 #define ASSERT_HNSW_BLOB_EQ(id, blob)                                                              \
     do {                                                                                           \
-        void *v = hnsw_index->getHNSWIndex()->getDataByInternalId(id);                             \
+        void *v = hnsw_index->getDataByInternalId(id);                                             \
         ASSERT_FALSE(memcmp(v, blob, sizeof(blob)));                                               \
     } while (0)
 
-#define GET_LABEL(id) hnsw_index->getHNSWIndex()->getExternalLabel(id)
+#define GET_LABEL(id) hnsw_index->getExternalLabel(id)
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{
@@ -103,7 +101,7 @@ TEST_F(HNSWLibTest, hnswlib_blob_sanity_test) {
 /**** resizing cases ****/
 
 // Add up to capacity.
-TEST_F(HNSWLibTest, resizeNAlignIndex) {
+TEST_F(HNSWTest, resizeNAlignIndex) {
     size_t dim = 4;
     size_t n = 10;
     size_t bs = 3;
@@ -127,9 +125,9 @@ TEST_F(HNSWLibTest, resizeNAlignIndex) {
     }
     // The size and the capacity should be equal.
     HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), VecSimIndex_IndexSize(index));
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), VecSimIndex_IndexSize(index));
     // The capacity shouldn't be changed.
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), n);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
     // Add another vector to exceed the initial capacity.
     VecSimIndex_AddVector(index, (const void *)a, n);
@@ -137,12 +135,12 @@ TEST_F(HNSWLibTest, resizeNAlignIndex) {
     // The capacity should be now aligned with the block size.
     // bs = 3, size = 11 -> capacity = 12
     // New capacity = initial capacity + blockSize - initial capacity % blockSize.
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), n + bs - n % bs);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), n + bs - n % bs);
     VecSimIndex_Free(index);
 }
 
 // Case 1: initial capacity is larger than block size, and it is not aligned.
-TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
+TEST_F(HNSWTest, resizeNAlignIndex_largeInitialCapacity) {
     size_t dim = 4;
     size_t n = 10;
     size_t bs = 3;
@@ -167,7 +165,7 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
 
     // The capacity shouldn't change, should remain n.
     HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), n);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
     // Delete last vector, to get size % block_size == 0. size = 3
     VecSimIndex_DeleteVector(index, bs);
@@ -177,7 +175,7 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
 
     // New capacity = initial capacity - block_size - number_of_vectors_to_align =
     // 10  - 3 - 10 % 3 (1) = 6
-    size_t curr_capacity = hnswIndex->getHNSWIndex()->getIndexCapacity();
+    size_t curr_capacity = hnswIndex->getIndexCapacity();
     ASSERT_EQ(curr_capacity, n - bs - n % bs);
 
     // Delete all the vectors to decrease capacity by another bs.
@@ -186,26 +184,26 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largeInitialCapacity) {
         VecSimIndex_DeleteVector(index, i);
         ++i;
     }
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
     // Add and delete a vector to achieve:
     // size % block_size == 0 && size + bs <= capacity(3).
     // the capacity should be resized to zero
     VecSimIndex_AddVector(index, (const void *)a, 0);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 0);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
 
     // Do it again. This time after adding a vector the capacity is increased by bs.
     // Upon deletion it will be resized to zero again.
     VecSimIndex_AddVector(index, (const void *)a, 0);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), 0);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
 
     VecSimIndex_Free(index);
 }
 
 // Case 2: initial capacity is smaller than block_size.
-TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
+TEST_F(HNSWTest, resizeNAlignIndex_largerBlockSize) {
     size_t dim = 4;
     size_t n = 4;
     size_t bs = 6;
@@ -230,14 +228,14 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
 
     HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
     // The capacity shouldn't change.
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), n);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
     // Size equals capacity.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Add another vector - > the capacity is increased to a multiplication of block_size.
     VecSimIndex_AddVector(index, (const void *)a, n);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
 
     // Size increased by 1.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
@@ -246,13 +244,13 @@ TEST_F(HNSWLibTest, resizeNAlignIndex_largerBlockSize) {
     VecSimIndex_DeleteVector(index, 1);
 
     // The capacity should remain the same.
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
 
     VecSimIndex_Free(index);
 }
 
 // Test empty index edge cases.
-TEST_F(HNSWLibTest, emptyIndex) {
+TEST_F(HNSWTest, emptyIndex) {
     size_t dim = 4;
     size_t n = 20;
     size_t bs = 6;
@@ -280,7 +278,7 @@ TEST_F(HNSWLibTest, emptyIndex) {
     // The capacity should change to be aligned with the vector size.
 
     HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
-    size_t new_capacity = hnswIndex->getHNSWIndex()->getIndexCapacity();
+    size_t new_capacity = hnswIndex->getIndexCapacity();
     ASSERT_EQ(new_capacity, n - n % bs - bs);
 
     // Size equals 0.
@@ -289,14 +287,14 @@ TEST_F(HNSWLibTest, emptyIndex) {
     // Try to remove it again.
     // The capacity should remain unchanged, as we are trying to delete a label that doesn't exist.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(hnswIndex->getHNSWIndex()->getIndexCapacity(), new_capacity);
+    ASSERT_EQ(hnswIndex->getIndexCapacity(), new_capacity);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
+TEST_F(HNSWTest, hnsw_vector_search_test) {
     size_t n = 100;
     size_t k = 11;
     size_t dim = 4;
@@ -328,7 +326,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
+TEST_F(HNSWTest, hnsw_vector_search_by_id_test) {
     size_t n = 100;
     size_t dim = 4;
     size_t k = 11;
@@ -358,7 +356,7 @@ TEST_F(HNSWLibTest, hnswlib_vector_search_by_id_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
+TEST_F(HNSWTest, hnsw_indexing_same_vector) {
     size_t n = 100;
     size_t dim = 4;
     size_t k = 10;
@@ -391,7 +389,7 @@ TEST_F(HNSWLibTest, hnswlib_indexing_same_vector) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
+TEST_F(HNSWTest, hnsw_reindexing_same_vector) {
     size_t n = 100;
     size_t dim = 4;
     size_t k = 10;
@@ -440,7 +438,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
+TEST_F(HNSWTest, hnsw_reindexing_same_vector_different_id) {
     size_t n = 100;
     size_t dim = 4;
     size_t k = 10;
@@ -494,7 +492,7 @@ TEST_F(HNSWLibTest, hnswlib_reindexing_same_vector_different_id) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, sanity_reinsert_1280) {
+TEST_F(HNSWTest, sanity_reinsert_1280) {
     size_t n = 5;
     size_t d = 1280;
     size_t k = 5;
@@ -540,7 +538,7 @@ TEST_F(HNSWLibTest, sanity_reinsert_1280) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, test_hnsw_info) {
+TEST_F(HNSWTest, test_hnsw_info) {
     size_t n = 100;
     size_t d = 128;
 
@@ -589,7 +587,7 @@ TEST_F(HNSWLibTest, test_hnsw_info) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, test_basic_hnsw_info_iterator) {
+TEST_F(HNSWTest, test_basic_hnsw_info_iterator) {
     size_t n = 100;
     size_t d = 128;
 
@@ -609,7 +607,7 @@ TEST_F(HNSWLibTest, test_basic_hnsw_info_iterator) {
     }
 }
 
-TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
+TEST_F(HNSWTest, test_dynamic_hnsw_info_iterator) {
     size_t n = 100;
     size_t d = 128;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -682,7 +680,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    reinterpret_cast<HNSWIndex<float, float> *>(index)->getHNSWIndex()->cur_element_count = 1e6;
+    reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = 1e6;
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
@@ -702,7 +700,7 @@ TEST_F(HNSWLibTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
+TEST_F(HNSWTest, test_query_runtime_params_default_build_args) {
     size_t n = 100;
     size_t d = 4;
     size_t k = 11;
@@ -764,7 +762,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_default_build_args) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
+TEST_F(HNSWTest, test_query_runtime_params_user_build_args) {
     size_t n = 100;
     size_t d = 4;
     size_t M = 100;
@@ -830,7 +828,7 @@ TEST_F(HNSWLibTest, test_query_runtime_params_user_build_args) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_search_empty_index) {
+TEST_F(HNSWTest, hnsw_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
     size_t d = 4;
@@ -886,7 +884,7 @@ TEST_F(HNSWLibTest, hnsw_search_empty_index) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_inf_score) {
+TEST_F(HNSWTest, hnsw_inf_score) {
     size_t n = 4;
     size_t k = 4;
     size_t dim = 2;
@@ -919,7 +917,7 @@ TEST_F(HNSWLibTest, hnsw_inf_score) {
 }
 
 // Tests VecSimIndex_New failure on bad M parameter. Should return null.
-TEST_F(HNSWLibTest, hnsw_bad_params) {
+TEST_F(HNSWTest, hnsw_bad_params) {
     size_t n = 1000000;
     size_t dim = 2;
     size_t bad_M[] = {
@@ -945,7 +943,7 @@ TEST_F(HNSWLibTest, hnsw_bad_params) {
     }
 }
 
-TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
+TEST_F(HNSWTest, hnsw_delete_entry_point) {
     size_t n = 10000;
     size_t dim = 2;
     size_t M = 2;
@@ -977,7 +975,7 @@ TEST_F(HNSWLibTest, hnsw_delete_entry_point) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_override) {
+TEST_F(HNSWTest, hnsw_override) {
     size_t n = 100;
     size_t dim = 4;
     size_t M = 8;
@@ -1030,7 +1028,7 @@ TEST_F(HNSWLibTest, hnsw_override) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
+TEST_F(HNSWTest, hnsw_batch_iterator_basic) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 20;
@@ -1085,7 +1083,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_basic) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
+TEST_F(HNSWTest, hnsw_batch_iterator_reset) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1142,7 +1140,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_reset) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
+TEST_F(HNSWTest, hnsw_batch_iterator_batch_size_1) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1188,7 +1186,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_batch_size_1) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
+TEST_F(HNSWTest, hnsw_batch_iterator_advanced) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1271,7 +1269,7 @@ TEST_F(HNSWLibTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
-TEST_F(HNSWLibTest, hnsw_resolve_params) {
+TEST_F(HNSWTest, hnsw_resolve_params) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 2;
@@ -1358,7 +1356,7 @@ TEST_F(HNSWLibTest, hnsw_resolve_params) {
     array_free(rparams);
 }
 
-TEST_F(HNSWLibTest, hnsw_serialization_v1) {
+TEST_F(HNSWTest, hnsw_serialization_v1) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1375,8 +1373,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
                                                  .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    auto serializer =
-        HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index)->getHNSWIndex());
+    auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
 
     auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
     // Save and load an empty index.
@@ -1403,7 +1400,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto new_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
 
-    serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(new_index)->getHNSWIndex());
+    serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(new_index));
     serializer.loadIndex(file_name);
 
     // Validate that the new loaded index has the same meta-data as the original.
@@ -1438,7 +1435,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * (n + 1)));
 
     HNSWIndex<float, float> *hnswNewIndex = reinterpret_cast<HNSWIndex<float, float> *>(new_index);
-    ASSERT_EQ(hnswNewIndex->getHNSWIndex()->getIndexCapacity(), n);
+    ASSERT_EQ(hnswNewIndex->getIndexCapacity(), n);
 
     // Persist index, delete it from memory and restore.
     serializer.saveIndex(file_name);
@@ -1448,7 +1445,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     auto restored_index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
 
-    serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(restored_index)->getHNSWIndex());
+    serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(restored_index));
     serializer.loadIndex(file_name);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
     res = serializer.checkIntegrity();
@@ -1460,7 +1457,7 @@ TEST_F(HNSWLibTest, hnsw_serialization_v1) {
     serializer.reset();
 }
 
-TEST_F(HNSWLibTest, hnsw_get_distance) {
+TEST_F(HNSWTest, hnsw_get_distance) {
     size_t n = 4;
     size_t dim = 2;
     size_t numIndex = 3;
@@ -1526,7 +1523,7 @@ TEST_F(HNSWLibTest, hnsw_get_distance) {
     }
 }
 
-TEST_F(HNSWLibTest, preferAdHocOptimization) {
+TEST_F(HNSWTest, preferAdHocOptimization) {
     // Save the expected result for every combination that represent a different leaf in the tree.
     // map: [k, index_size, dim, M, r] -> res
     std::map<std::vector<float>, bool> combinations;
@@ -1570,8 +1567,7 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
         VecSimIndex *index = VecSimIndex_New(&params);
 
         // Set the index size artificially to be the required one.
-        reinterpret_cast<HNSWIndex<float, float> *>(index)->getHNSWIndex()->cur_element_count =
-            index_size;
+        reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = index_size;
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
@@ -1595,7 +1591,7 @@ TEST_F(HNSWLibTest, preferAdHocOptimization) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, testCosine) {
+TEST_F(HNSWTest, testCosine) {
     size_t dim = 4;
     size_t n = 100;
 
@@ -1662,7 +1658,7 @@ TEST_F(HNSWLibTest, testCosine) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, testSizeEstimation) {
+TEST_F(HNSWTest, testSizeEstimation) {
     size_t dim = 128;
     size_t n = 1000;
     size_t bs = DEFAULT_BLOCK_SIZE;
@@ -1684,7 +1680,7 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
     estimation += (reinterpret_cast<HNSWIndex<float, float> *>(index)
-                       ->getHNSWIndex()
+
                        ->label_lookup_.bucket_count() -
                    n) *
                   sizeof(size_t);
@@ -1715,7 +1711,7 @@ TEST_F(HNSWLibTest, testSizeEstimation) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, testTimeoutReturn) {
+TEST_F(HNSWTest, testTimeoutReturn) {
     size_t dim = 4;
     float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
     VecSimQueryResult_List rl;
@@ -1770,7 +1766,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // Cleanup.
 }
 
-TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
+TEST_F(HNSWTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
     size_t n = 2;
     float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -1845,7 +1841,7 @@ TEST_F(HNSWLibTest, testTimeoutReturn_batch_iterator) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // Cleanup.
 }
 
-TEST_F(HNSWLibTest, rangeQuery) {
+TEST_F(HNSWTest, rangeQuery) {
     size_t n = 5000;
     size_t dim = 4;
 
@@ -1895,7 +1891,7 @@ TEST_F(HNSWLibTest, rangeQuery) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWLibTest, rangeQueryCosine) {
+TEST_F(HNSWTest, rangeQueryCosine) {
     size_t n = 800;
     size_t dim = 4;
 
@@ -1948,5 +1944,3 @@ TEST_F(HNSWLibTest, rangeQueryCosine) {
 
     VecSimIndex_Free(index);
 }
-
-} // namespace hnswlib

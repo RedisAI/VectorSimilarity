@@ -1,7 +1,5 @@
 #include "visited_nodes_handler.h"
 
-namespace hnswlib {
-
 VisitedNodesHandler::VisitedNodesHandler(unsigned int cap,
                                          const std::shared_ptr<VecSimAllocator> &allocator)
     : VecsimBaseObject(allocator) {
@@ -60,5 +58,3 @@ VisitedNodesHandlerPool::~VisitedNodesHandlerPool() {
         delete handler;
     }
 }
-
-} // namespace hnswlib
