@@ -41,7 +41,7 @@ typedef idType linklistsizeint;
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<DistType, labelType>;
+using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType> {
@@ -120,12 +120,12 @@ protected:
                                  size_t Mcurmax, idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                                  size_t *removed_links_num);
-    template<typename Value>
-    inline DistType processCandidate(idType curNodeId, const void *data_point, size_t layer,
-                                     size_t ef, tag_t visited_tag,
-                                     vecsim_stl::max_priority_queue<DistType, Value> &top_candidates,
-                                     candidatesMaxHeap<DistType> &candidates_set,
-                                     DistType lowerBound) const;
+    template <typename Value>
+    inline DistType
+    processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
+                     tag_t visited_tag,
+                     vecsim_stl::abstract_priority_queue<DistType, Value> &top_candidates,
+                     candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
     inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
                                              double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
@@ -133,7 +133,7 @@ protected:
                                              DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
-    candidatesLabelsMaxHeap<DistType>
+    candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
                                   void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
@@ -156,14 +156,20 @@ protected:
     virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
 
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewMaxPriorityQueue() const = 0;
+
     // Private internal function that implements generic single vector insertion.
     int appendVector(const void *vector_data, labelType label);
 
     // Private internal function that implements generic single vector deletion.
     int removeVector(idType id);
 
-    inline void emplaceToHeap(candidatesMaxHeap<DistType> &heap, DistType dist, idType id) const;
-    inline void emplaceToHeap(candidatesLabelsMaxHeap<DistType> &heap, DistType dist, idType id) const;
+    inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
+                              DistType dist, idType id) const;
+    inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
+                              DistType dist, idType id) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -387,12 +393,15 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::emplaceToHeap(candidatesMaxHeap<DistType> &heap, DistType dist, idType id) const {
+void HNSWIndex<DataType, DistType>::emplaceToHeap(
+    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
     heap.emplace(dist, id);
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::emplaceToHeap(candidatesLabelsMaxHeap<DistType> &heap, DistType dist, idType id) const {
+void HNSWIndex<DataType, DistType>::emplaceToHeap(
+    vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
+    idType id) const {
     heap.emplace(dist, getExternalLabel(id));
 }
 
@@ -400,8 +409,8 @@ template <typename DataType, typename DistType>
 template <typename Value>
 DistType HNSWIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
-    vecsim_stl::max_priority_queue<DistType, Value> &top_candidates, candidatesMaxHeap<DistType> &candidate_set,
-    DistType lowerBound) const {
+    vecsim_stl::abstract_priority_queue<DistType, Value> &top_candidates,
+    candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -430,7 +439,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
 
-            emplaceToHeap(top_candidates , dist1, candidate_id);
+            emplaceToHeap(top_candidates, dist1, candidate_id);
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
@@ -1308,7 +1317,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
 }
 
 template <typename DataType, typename DistType>
-candidatesLabelsMaxHeap<DistType>
+candidatesLabelsMaxHeap<DistType> *
 HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                              size_t ef, size_t k, void *timeoutCtx,
                                                              VecSimQueryResult_Code *rc) const {
@@ -1320,12 +1329,12 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    candidatesLabelsMaxHeap<DistType> top_candidates(this->allocator); // change to get heap
+    candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType lowerBound = dist;
-    top_candidates.emplace(dist, getExternalLabel(ep_id));
+    top_candidates->emplace(dist, getExternalLabel(ep_id));
     candidate_set.emplace(-dist, ep_id);
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
@@ -1342,13 +1351,13 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         candidate_set.pop();
 
         lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
-                                      top_candidates, candidate_set, lowerBound);
+                                      *top_candidates, candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
 #endif
-    while (top_candidates.size() > k) {
-        top_candidates.pop();
+    while (top_candidates->size() > k) {
+        top_candidates->pop();
     }
     *rc = VecSim_QueryResult_OK;
     return top_candidates;
@@ -1391,20 +1400,21 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         return rl;
     }
 
-    candidatesLabelsMaxHeap<DistType> results = searchBottomLayer_WithTimeout(
+    candidatesLabelsMaxHeap<DistType> *results = searchBottomLayer_WithTimeout(
         bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, &rl.code);
 
     // Restore efRuntime.
     ef_ = originalEF;
 
     if (VecSim_OK == rl.code) {
-        rl.results = array_new_len<VecSimQueryResult>(results.size(), results.size());
-        for (int i = (int)results.size() - 1; i >= 0; --i) {
-            VecSimQueryResult_SetId(rl.results[i], results.top().second);
-            VecSimQueryResult_SetScore(rl.results[i], results.top().first);
-            results.pop();
+        rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
+        for (int i = (int)results->size() - 1; i >= 0; --i) {
+            VecSimQueryResult_SetId(rl.results[i], results->top().second);
+            VecSimQueryResult_SetScore(rl.results[i], results->top().first);
+            results->pop();
         }
     }
+    delete results;
     return rl;
 }
 
