@@ -102,7 +102,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorBF)(benchmark::State &st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
         float *destination =
-            reinterpret_cast<BruteForceIndex_Single *>(bf_index)->getDataByInternalId(id_to_remove);
+            reinterpret_cast<BruteForceIndex_Single<float, float> *>(bf_index)->getDataByInternalId(
+                id_to_remove);
         memcpy(removed_vec.data(), destination, dim * sizeof(float));
         blobs.push_back(removed_vec);
         iter++;

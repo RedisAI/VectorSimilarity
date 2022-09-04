@@ -4,7 +4,7 @@
 #include "VecSim/algorithms/hnsw/hnswlib.h"
 #include <memory>
 
-class HNSWIndex : public VecSimIndexAbstract {
+class HNSWIndex : public VecSimIndexAbstract<float> {
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
     virtual int addVector(const void *vector_data, size_t label) override;

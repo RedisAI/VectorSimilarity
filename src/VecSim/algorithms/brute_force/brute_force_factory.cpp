@@ -7,7 +7,7 @@ VecSimIndex *BruteForceFactory::NewIndex(const BFParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
-    return new (allocator) BruteForceIndex_Single(params, allocator);
+    return new (allocator) BruteForceIndex_Single<float, float>(params, allocator);
 }
 
 size_t BruteForceFactory::EstimateInitialSize(const BFParams *params) {
@@ -15,7 +15,7 @@ size_t BruteForceFactory::EstimateInitialSize(const BFParams *params) {
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     if (!params->multi)
-        est += sizeof(BruteForceIndex_Single);
+        est += sizeof(BruteForceIndex_Single<float, float>);
 
     // Parameters related part.
 

@@ -15,6 +15,7 @@ using spaces::dist_func_t;
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
+template <typename DistType>
 struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
@@ -22,7 +23,7 @@ protected:
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
-    dist_func_t<float>
+    dist_func_t<DistType>
         dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
     VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;            // Determines if the index should multi-index or not.
@@ -47,12 +48,8 @@ public:
      */
     virtual ~VecSimIndexAbstract() {}
 
-    inline dist_func_t<float> GetDistFunc() const { return dist_func; }
+    inline dist_func_t<DistType> GetDistFunc() const { return dist_func; }
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
-
-    // Static class functions
-    static timeoutCallbackFunction timeoutCallback;
-    static void setTimeoutCallbackFunction(timeoutCallbackFunction callback);
 };
