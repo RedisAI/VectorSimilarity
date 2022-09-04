@@ -10,7 +10,6 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h" //newBatchIterator
-#include "VecSim/algorithms/hnsw/hnsw_single.h"
 
 #include <deque>
 #include <memory>
@@ -103,7 +102,6 @@ protected:
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
     friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
-    friend class HNSWTest_testSizeEstimation_Test;
 #endif
 
     HNSWIndex() = delete;                  // default constructor is disabled.
@@ -199,6 +197,7 @@ public:
     inline unsigned short int getListCount(const linklistsizeint *ptr) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
+
     VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
                                      VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
@@ -1599,7 +1598,7 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.isMulti}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                          .fieldType = INFOFIELD_UINT64,

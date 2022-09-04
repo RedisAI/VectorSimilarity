@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <string>
-#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 
 // This struct is the return value of "checkIntegrity" methods (used for debugging).

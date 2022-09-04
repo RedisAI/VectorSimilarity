@@ -1,7 +1,7 @@
 #pragma once
 
 #include "hnsw.h"
-#include "utils/updatable_heap.h"
+#include "VecSim/utils/updatable_heap.h"
 
 template <typename DataType, typename DistType>
 class HNSWIndex_Multi : public HNSWIndex<DataType, DistType> {
@@ -11,11 +11,10 @@ private:
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
-    friend class HNSWTest_preferAdHocOptimization_Test;
-    friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
-    friend class AllocatorTest_testIncomingEdgesSet_Test;
-    friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
-    friend class HNSWTest_testSizeEstimation_Test;
+    friend class HNSWMultiTest_testSizeEstimation_Test;
+    friend class HNSWMultiTest_empty_index_Test;
+    friend class HNSWMultiTest_indexing_same_vector_Test;
+    friend class HNSWMultiTest_search_more_then_there_is_Test;
 #endif
 
     // VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
@@ -25,7 +24,7 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override {
-        label_lookup_[label].push_back(id);
+        label_lookup_.at(label).push_back(id);
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
@@ -108,13 +107,14 @@ void HNSWIndex_Multi<DataType, DistType>::resizeLabelLookup(size_t new_max_eleme
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
     // check that the label actually exists in the graph, and update the number of elements.
-    if (label_lookup_.find(label) == label_lookup_.end()) {
+    auto ids = label_lookup_.find(label);
+    if (ids == label_lookup_.end()) {
         return false;
     }
-    for (idType id : label_lookup_[label]) {
+    for (idType id : ids->second) {
         this->removeVector(id);
     }
-    label_lookup_.erase(label);
+    label_lookup_.erase(ids);
     return true;
 }
 
@@ -124,7 +124,7 @@ int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, cons
     // Checking if an element with the given label already exists.
     // if not, add an empty vector under the new label.
     if (label_lookup_.find(label) == label_lookup_.end()) {
-        label_lookup_.emplace(label, vecsim_stl::vector{1, this->allocator});
+        label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
     }
 
     return this->appendVector(vector_data, label);
