@@ -1,3 +1,5 @@
+#include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
@@ -6,15 +8,19 @@ namespace HNSWFactory {
 
 VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
-    assert(!params->multi);
-    return new (allocator) HNSWIndex_Single<float, float>(params, allocator);
+    if (params->multi)
+        return new (allocator) HNSWIndex_Multi<float, float>(params, allocator);
+    else
+        return new (allocator) HNSWIndex_Single<float, float>(params, allocator);
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    assert(!params->multi);
-    est += sizeof(HNSWIndex_Single<float, float>);
+    if (params->multi)
+        est += sizeof(HNSWIndex_Multi<float, float>);
+    else
+        est += sizeof(HNSWIndex_Single<float, float>);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);

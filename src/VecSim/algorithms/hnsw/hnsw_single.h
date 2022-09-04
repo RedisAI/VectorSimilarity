@@ -10,8 +10,6 @@ private:
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
-    friend class HNSWTest_preferAdHocOptimization_Test;
-    friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
     friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
     friend class HNSWTest_testSizeEstimation_Test;

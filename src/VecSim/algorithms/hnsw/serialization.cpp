@@ -3,7 +3,7 @@
 #include <utility>
 #include "serialization.h"
 #include "VecSim/utils/vecsim_stl.h"
-#include "hnsw.h"
+#include "hnsw_single.h"
 #define HNSW_INVALID_META_DATA SIZE_MAX
 
 // Helper functions for serializing the index.
