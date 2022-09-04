@@ -120,9 +120,10 @@ protected:
                                  size_t Mcurmax, idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                                  size_t *removed_links_num);
+    template<typename Value>
     inline DistType processCandidate(idType curNodeId, const void *data_point, size_t layer,
                                      size_t ef, tag_t visited_tag,
-                                     candidatesMaxHeap<DistType> &top_candidates,
+                                     vecsim_stl::max_priority_queue<DistType, Value> &top_candidates,
                                      candidatesMaxHeap<DistType> &candidates_set,
                                      DistType lowerBound) const;
     inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
@@ -160,6 +161,9 @@ protected:
 
     // Private internal function that implements generic single vector deletion.
     int removeVector(idType id);
+
+    inline void emplaceToHeap(candidatesMaxHeap<DistType> &heap, DistType dist, idType id) const;
+    inline void emplaceToHeap(candidatesLabelsMaxHeap<DistType> &heap, DistType dist, idType id) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -383,9 +387,20 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 }
 
 template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::emplaceToHeap(candidatesMaxHeap<DistType> &heap, DistType dist, idType id) const {
+    heap.emplace(dist, id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::emplaceToHeap(candidatesLabelsMaxHeap<DistType> &heap, DistType dist, idType id) const {
+    heap.emplace(dist, getExternalLabel(id));
+}
+
+template <typename DataType, typename DistType>
+template <typename Value>
 DistType HNSWIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
-    candidatesMaxHeap<DistType> &top_candidates, candidatesMaxHeap<DistType> &candidate_set,
+    vecsim_stl::max_priority_queue<DistType, Value> &top_candidates, candidatesMaxHeap<DistType> &candidate_set,
     DistType lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
@@ -415,7 +430,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
 
-            top_candidates.emplace(dist1, candidate_id);
+            emplaceToHeap(top_candidates , dist1, candidate_id);
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
@@ -1296,7 +1311,6 @@ candidatesLabelsMaxHeap<DistType>
 HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                              size_t ef, size_t k, void *timeoutCtx,
                                                              VecSimQueryResult_Code *rc) const {
-    candidatesLabelsMaxHeap<DistType> results(this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -1305,12 +1319,12 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesLabelsMaxHeap<DistType> top_candidates(this->allocator); // change to get heap
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType lowerBound = dist;
-    top_candidates.emplace(dist, ep_id);
+    top_candidates.emplace(dist, getExternalLabel(ep_id));
     candidate_set.emplace(-dist, ep_id);
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
@@ -1322,7 +1336,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
-            return results;
+            return top_candidates;
         }
         candidate_set.pop();
 
@@ -1335,13 +1349,8 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     while (top_candidates.size() > k) {
         top_candidates.pop();
     }
-    while (top_candidates.size() > 0) {
-        auto &res = top_candidates.top();
-        results.emplace(res.first, getExternalLabel(res.second));
-        top_candidates.pop();
-    }
     *rc = VecSim_QueryResult_OK;
-    return results;
+    return top_candidates;
 }
 
 template <typename DataType, typename DistType>
@@ -1388,15 +1397,13 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
     // Restore efRuntime.
     ef_ = originalEF;
 
-    if (VecSim_OK != rl.code) {
-        return rl;
-    }
-
-    rl.results = array_new_len<VecSimQueryResult>(results.size(), results.size());
-    for (int i = (int)results.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], results.top().second);
-        VecSimQueryResult_SetScore(rl.results[i], results.top().first);
-        results.pop();
+    if (VecSim_OK == rl.code) {
+        rl.results = array_new_len<VecSimQueryResult>(results.size(), results.size());
+        for (int i = (int)results.size() - 1; i >= 0; --i) {
+            VecSimQueryResult_SetId(rl.results[i], results.top().second);
+            VecSimQueryResult_SetScore(rl.results[i], results.top().first);
+            results.pop();
+        }
     }
     return rl;
 }
