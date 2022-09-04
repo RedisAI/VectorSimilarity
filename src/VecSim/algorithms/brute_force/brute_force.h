@@ -34,7 +34,7 @@ public:
                                                     VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, DistType radius,
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
@@ -275,7 +275,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType radius,
+BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
@@ -293,6 +293,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType 
     rl.results =
         array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
 
+    DistType radius_ = DistType(radius);
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
@@ -300,7 +301,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType 
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
-            if (scores[i] <= radius) {
+            if (scores[i] <= radius_) {
                 auto res = VecSimQueryResult{getVectorLabel(curr_id), scores[i]};
                 rl.results = array_append(rl.results, res);
             }
