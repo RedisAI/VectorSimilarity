@@ -510,7 +510,7 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(idType ep_id, con
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
@@ -1296,7 +1296,7 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void 
 
     while (!candidate_set.empty()) {
         std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
