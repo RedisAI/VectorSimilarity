@@ -232,8 +232,13 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
-
     this->last_mode = STANDARD_KNN;
+
+    if (0 == k) {
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
+    }
+
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         // TODO: need more generic
