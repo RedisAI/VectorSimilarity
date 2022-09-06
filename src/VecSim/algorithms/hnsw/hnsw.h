@@ -99,7 +99,9 @@ protected:
     // Allow the following test to access the index size private member.
     friend class HNSWIndexSerializer;
     friend class HNSWTest_preferAdHocOptimization_Test;
+    friend class HNSWMultiTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
+    friend class HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
     friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
 #endif
@@ -435,7 +437,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         char *currObj1 = (getDataByInternalId(candidate_id));
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
-        if (top_candidates.size() < ef || lowerBound > dist1) {
+        if (lowerBound > dist1 || top_candidates.size() < ef) {
             candidate_set.emplace(-dist1, candidate_id);
 
             emplaceToHeap(top_candidates, dist1, candidate_id);
@@ -443,8 +445,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             if (top_candidates.size() > ef)
                 top_candidates.pop();
 
-            if (!top_candidates.empty())
-                lowerBound = top_candidates.top().first;
+            lowerBound = std::max(top_candidates.top().first, dist1);
+            // lowerBound = top_candidates.top().first;
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
@@ -528,7 +530,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
@@ -1340,7 +1342,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
         if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
@@ -1369,7 +1371,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
 
-    if (cur_element_count == 0) {
+    if (cur_element_count == 0 || k == 0) {
         rl.code = VecSim_QueryResult_OK;
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;

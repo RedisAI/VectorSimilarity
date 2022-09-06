@@ -384,3 +384,67 @@ def test_range_query():
     # Expect zero results for radius==0
     hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
     assert len(hnsw_labels[0]) == 0
+
+
+def test_recall_for_hnsw_multi_value():
+    dim = 16
+    num_labels = 1000
+    num_per_label = 16
+    M = 16
+    efConstruction = 100
+
+    num_queries = 10
+    k=10
+    efRuntime = 0
+
+    num_elements = num_labels * num_per_label
+
+    hnswparams = HNSWParams()
+    hnswparams.M = M
+    hnswparams.efConstruction = efConstruction
+    hnswparams.initialCapacity = num_elements
+    hnswparams.efRuntime = efRuntime
+    hnswparams.dim = dim
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.metric = VecSimMetric_Cosine
+    hnswparams.multi = True
+
+    hnsw_index = HNSWIndex(hnswparams)
+
+    data = np.float32(np.random.random((num_labels, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        for _ in range(num_per_label):
+            hnsw_index.add_vector(vector, i)
+            vectors.append((i, vector))
+
+    # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
+    hnsw_index.set_ef(50)
+    query_data = np.float32(np.random.random((num_queries, dim)))
+    correct = 0
+    for target_vector in query_data:
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+        assert(len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = {}
+        for key, vec in vectors:
+            # Setting or updating the score for each label. If it's the first time we calculate a score for a label,
+            # dists.get(key, 3) will return 3, which is more than a Cosine score can be,
+            # so we will choose the actual score the first time.
+            dists[key] = min(spatial.distance.cosine(target_vector, vec), dists.get(key, 3)) # cosine distance is always <= 2
+
+        dists = list(dists.items())
+        dists = sorted(dists, key=lambda pair: pair[1])[:k]
+        keys = [key for key, _ in dists]
+
+        for label in hnswlib_labels[0]:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct+=1
+                    break
+
+    # Measure recall
+    recall = float(correct)/(k*num_queries)
+    print("\nrecall is: \n", recall)
+    assert(recall > 0.9)

@@ -4,6 +4,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include <cmath>
+#include <map>
 
 class HNSWMultiTest : public ::testing::Test {
 protected:
@@ -495,13 +496,18 @@ TEST_F(HNSWMultiTest, test_basic_hnsw_info_iterator) {
 }
 
 TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
+    size_t n = 100;
     size_t d = 128;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = d,
                                                  .metric = VecSimMetric_L2,
                                                  .multi = true,
-                                                 .blockSize = 1}};
+                                                 .initialCapacity = n,
+                                                 .M = 100,
+                                                 .efConstruction = 250,
+                                                 .efRuntime = 400,
+                                                 .epsilon = 0.004}};
     float v[d];
     for (size_t i = 0; i < d; i++) {
         v[i] = (float)i;
@@ -509,8 +515,13 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex *index = VecSimIndex_New(&params);
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.hnswInfo.blockSize);
+    ASSERT_EQ(100, info.hnswInfo.M);
+    ASSERT_EQ(250, info.hnswInfo.efConstruction);
+    ASSERT_EQ(400, info.hnswInfo.efRuntime);
+    ASSERT_EQ(0.004, info.hnswInfo.epsilon);
     ASSERT_EQ(0, info.hnswInfo.indexSize);
+    ASSERT_EQ(-1, info.hnswInfo.max_level);
+    ASSERT_EQ(-1, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -523,6 +534,8 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(4, info.hnswInfo.indexSize);
     ASSERT_EQ(2, info.hnswInfo.indexLabelCount);
+    ASSERT_GE(1, info.hnswInfo.max_level);
+    ASSERT_EQ(0, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -561,11 +574,8 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    size_t perLabel = 3;
-    for (size_t i = 0; i < 1e4; i++) {
-        VecSimIndex_AddVector(index, v, i / perLabel);
-    }
-    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
+    reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = 1e6;
+    ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
@@ -574,13 +584,82 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
 
     // Simulate the case where another call to the heuristics is done after realizing that
     // the subset size is smaller, and change the policy as a result.
-    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWMultiTest, preferAdHocOptimization) {
+    // Save the expected result for every combination that represent a different leaf in the tree.
+    // map: [k, index_size, dim, M, r] -> res
+    std::map<std::vector<float>, bool> combinations;
+    combinations[{5, 1000, 5, 5, 0.5}] = true;
+    combinations[{5, 6000, 5, 5, 0.1}] = true;
+    combinations[{5, 6000, 5, 5, 0.2}] = false;
+    combinations[{5, 6000, 60, 5, 0.5}] = false;
+    combinations[{5, 6000, 60, 15, 0.5}] = true;
+    combinations[{15, 6000, 50, 5, 0.5}] = true;
+    combinations[{5, 700000, 60, 5, 0.05}] = true;
+    combinations[{5, 800000, 60, 5, 0.05}] = false;
+    combinations[{10, 800000, 60, 5, 0.01}] = true;
+    combinations[{10, 800000, 60, 5, 0.05}] = false;
+    combinations[{10, 800000, 60, 5, 0.1}] = false;
+    combinations[{10, 60000, 100, 5, 0.1}] = true;
+    combinations[{10, 80000, 100, 5, 0.1}] = false;
+    combinations[{10, 60000, 100, 60, 0.1}] = true;
+    combinations[{10, 60000, 100, 5, 0.3}] = false;
+    combinations[{20, 60000, 100, 5, 0.1}] = true;
+    combinations[{20, 60000, 100, 5, 0.2}] = false;
+    combinations[{20, 60000, 100, 20, 0.1}] = true;
+    combinations[{20, 350000, 100, 20, 0.1}] = true;
+    combinations[{20, 350000, 100, 20, 0.2}] = false;
+
+    for (auto &comb : combinations) {
+        auto k = (size_t)comb.first[0];
+        auto index_size = (size_t)comb.first[1];
+        auto dim = (size_t)comb.first[2];
+        auto M = (size_t)comb.first[3];
+        auto r = comb.first[4];
+
+        // Create index and check for the expected output of "prefer ad-hoc" heuristics.
+        VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                            .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                     .dim = dim,
+                                                     .metric = VecSimMetric_L2,
+                                                     .multi = true,
+                                                     .initialCapacity = index_size,
+                                                     .M = M,
+                                                     .efConstruction = 1,
+                                                     .efRuntime = 1}};
+        VecSimIndex *index = VecSimIndex_New(&params);
+
+        // Set the index size artificially to be the required one.
+        reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = index_size;
+        ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
+        bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
+        ASSERT_EQ(res, comb.second);
+        VecSimIndex_Free(index);
+    }
+    // Corner cases - empty index.
+    VecSimParams params{
+        .algo = VecSimAlgo_HNSWLIB,
+        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
+
+    // Corner cases - subset size is greater than index size.
+    try {
+        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
+        FAIL() << "Expected std::runtime error";
+    } catch (std::runtime_error const &err) {
+        EXPECT_EQ(err.what(),
+                  std::string("internal error: subset size cannot be larger than index size"));
+    }
     VecSimIndex_Free(index);
 }
 
@@ -815,141 +894,7 @@ TEST_F(HNSWMultiTest, batch_iterator) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, brute_force_batch_iterator_non_unique_scores) {
-    size_t dim = 4;
-    size_t perLabel = 5;
-
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200,
-                                                 .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-
-    // Run the test twice - for index of size 100, every iteration will run select-based search,
-    // as the number of results is 5, which is more than 0.1% of the index size. for index of size
-    // 10000, we will run the heap-based search until we return 5000 results, and then switch to
-    // select-based search.
-    for (size_t m : {100, 10000}) {
-        size_t n = m * perLabel;
-        for (size_t i = 0; i < n; i++) {
-            float f[dim];
-            for (size_t j = 0; j < dim; j++) {
-                f[j] = (float)(i / (10 * perLabel));
-            }
-            VecSimIndex_AddVector(index, (const void *)f, i / perLabel);
-        }
-        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-        // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
-        float query[dim];
-        for (size_t j = 0; j < dim; j++) {
-            query[j] = (float)n;
-        }
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-        size_t iteration_num = 0;
-
-        // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet,
-        // in every iteration. there are n/10 groups of 10 different vectors with the same score.
-        size_t n_res = 5;
-        bool even_iteration = false;
-        std::set<size_t> expected_ids;
-        while (VecSimBatchIterator_HasNext(batchIterator)) {
-            // Insert the maximal 10 ids in every odd iteration.
-            if (!even_iteration) {
-                for (size_t i = 1; i <= 2 * n_res; i++) {
-                    expected_ids.insert(m - iteration_num * n_res - i);
-                }
-            }
-            auto verify_res = [&](size_t id, float score, size_t index) {
-                ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
-                expected_ids.erase(id);
-            };
-            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
-            // Make sure that the expected ids set is empty after two iterations.
-            if (even_iteration) {
-                ASSERT_TRUE(expected_ids.empty());
-            }
-            iteration_num++;
-            even_iteration = !even_iteration;
-        }
-        ASSERT_EQ(iteration_num, m / n_res);
-        VecSimBatchIterator_Free(batchIterator);
-        ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-        ASSERT_EQ(VecSimIndex_Info(index).hnswInfo.indexLabelCount, m);
-        // Cleanup before next round.
-        for (size_t i = 0; i < m; i++) {
-            VecSimIndex_DeleteVector(index, i);
-        }
-    }
-    VecSimIndex_Free(index);
-}
-
-TEST_F(HNSWMultiTest, batch_iterator_validate_scores) {
-    size_t dim = 4;
-    size_t perLabel = 10;
-    size_t n_labels = 100;
-
-    size_t init_n = n_labels * (perLabel - 1);
-
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = init_n,
-                                                 .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-
-    // Inserting some big vectors to the index
-    for (size_t i = 0; i < init_n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i + n_labels + 46);
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
-    }
-    // Lastly, inserting small vector for each label
-    for (size_t label = 0; label < n_labels; label++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)label;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, label);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n_labels * perLabel);
-
-    // Query for (0,0,0,...,0) vector.
-    float query[dim];
-    for (size_t j = 0; j < dim; j++) {
-        query[j] = (float)0;
-    }
-    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-    size_t iteration_num = 0;
-
-    size_t n_res = 5;
-    // ids should be in ascending order
-    // scores should match to the score of the last vector for each label.
-    auto verify_res = [&](size_t id, float score, size_t index) {
-        ASSERT_EQ(id, index + iteration_num * n_res);
-        ASSERT_FLOAT_EQ(score, id * id * dim);
-    };
-    while (VecSimBatchIterator_HasNext(batchIterator)) {
-        runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
-        iteration_num++;
-    }
-
-    ASSERT_EQ(iteration_num, n_labels / n_res);
-    VecSimBatchIterator_Free(batchIterator);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n_labels * perLabel);
-    ASSERT_EQ(VecSimIndex_Info(index).hnswInfo.indexLabelCount, n_labels);
-
-    VecSimIndex_Free(index);
-}
-
-TEST_F(HNSWMultiTest, brute_get_distance) {
+TEST_F(HNSWMultiTest, hnsw_get_distance) {
     size_t n_labels = 2;
     size_t dim = 2;
     size_t numIndex = 3;
@@ -1022,75 +967,73 @@ TEST_F(HNSWMultiTest, brute_get_distance) {
     }
 }
 
-// TEST_F(HNSWMultiTest, testCosine) {
-//     size_t dim = 128;
-//     size_t n = 100;
+TEST_F(HNSWMultiTest, testCosine) {
+    size_t dim = 128;
+    size_t n = 100;
 
-//     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-//                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_Cosine,
-//                                              .multi = true,
-//                                              .initialCapacity = n}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_Cosine,
+                                                 .multi = true,
+                                                 .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     for (size_t i = 1; i <= n; i++) {
-//         float f[dim];
-//         f[0] = (float)i / n;
-//         for (size_t j = 1; j < dim; j++) {
-//             f[j] = 1.0f;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-//     float query[dim];
-//     for (size_t i = 0; i < dim; i++) {
-//         query[i] = 1.0f;
-//     }
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_EQ(id, (n - index));
-//         float first_coordinate = (float)id / n;
-//         // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-//         vector
-//         // and B is the current result vector.
-//         float expected_score =
-//             1.0f -
-//             ((first_coordinate + (float)dim - 1.0f) /
-//              (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate *
-//              first_coordinate)));
-//         // Verify that abs difference between the actual and expected score is at most 1/10^6.
-//         ASSERT_NEAR(score, expected_score, 1e-5);
-//     };
-//     runTopKSearchTest(index, query, 10, verify_res);
+    for (size_t i = 1; i <= n; i++) {
+        float f[dim];
+        f[0] = (float)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0f;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    float query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0f;
+    }
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, (n - index));
+        float first_coordinate = (float)id / n;
+        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
+        // and B is the current result vector.
+        float expected_score =
+            1.0f -
+            ((first_coordinate + (float)dim - 1.0f) /
+             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+        // Verify that abs difference between the actual and expected score is at most 1/10^6.
+        ASSERT_NEAR(score, expected_score, 1e-5);
+    };
+    runTopKSearchTest(index, query, 10, verify_res);
 
-//     // Test with batch iterator.
-//     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-//     size_t iteration_num = 0;
+    // Test with batch iterator.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    size_t iteration_num = 0;
 
-//     // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
-//     // in every iteration. The order should be from the largest to the lowest id.
-//     size_t n_res = 10;
-//     while (VecSimBatchIterator_HasNext(batchIterator)) {
-//         std::vector<size_t> expected_ids(n_res);
-//         auto verify_res_batch = [&](size_t id, float score, size_t index) {
-//             ASSERT_EQ(id, (n - n_res * iteration_num - index));
-//             float first_coordinate = (float)id / n;
-//             // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-//             // vector and B is the current result vector.
-//             float expected_score =
-//                 1.0f - ((first_coordinate + (float)dim - 1.0f) /
-//                         (sqrtf((float)dim) *
-//                          sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
-//             // Verify that abs difference between the actual and expected score is at most
-//             1/10^6. ASSERT_NEAR(score, expected_score, 1e-5);
-//         };
-//         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
-//         iteration_num++;
-//     }
-//     ASSERT_EQ(iteration_num, n / n_res);
-//     VecSimBatchIterator_Free(batchIterator);
-//     VecSimIndex_Free(index);
-// }
+    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+    // in every iteration. The order should be from the largest to the lowest id.
+    size_t n_res = 10;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::vector<size_t> expected_ids(n_res);
+        auto verify_res_batch = [&](size_t id, float score, size_t index) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - index));
+            float first_coordinate = (float)id / n;
+            // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
+            // vector and B is the current result vector.
+            float expected_score =
+                1.0f - ((first_coordinate + (float)dim - 1.0f) /
+                        (sqrtf((float)dim) *
+                         sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+            // Verify that abs difference between the actual and expected score is at most 1/10^6.
+            ASSERT_NEAR(score, expected_score, 1e-5);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, n / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
 
 TEST_F(HNSWMultiTest, testSizeEstimation) {
     size_t dim = 128;

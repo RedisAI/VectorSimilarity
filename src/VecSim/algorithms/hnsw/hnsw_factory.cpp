@@ -17,10 +17,11 @@ VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator>
 size_t EstimateInitialSize(const HNSWParams *params) {
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (params->multi)
+    if (params->multi) {
         est += sizeof(HNSWIndex_Multi<float, float>);
-    else
+    } else {
         est += sizeof(HNSWIndex_Single<float, float>);
+    }
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);
