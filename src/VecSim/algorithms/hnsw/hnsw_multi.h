@@ -12,6 +12,7 @@ private:
     friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
     friend class HNSWMultiTest_testSizeEstimation_Test;
+    friend class HNSWMultiTest_testInitialSizeEstimation_No_InitialCapacity_Test;
     friend class HNSWMultiTest_empty_index_Test;
     friend class HNSWMultiTest_indexing_same_vector_Test;
     friend class HNSWMultiTest_search_more_then_there_is_Test;

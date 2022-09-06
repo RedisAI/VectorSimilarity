@@ -1269,6 +1269,7 @@ TEST_F(HNSWTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
 TEST_F(HNSWTest, hnsw_resolve_params) {
     size_t dim = 4;
     size_t M = 8;
