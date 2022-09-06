@@ -16,11 +16,13 @@
 #include <cmath>
 #include <functional>
 
+using std::pair;
+
 template <typename DataType, typename DistType>
 class BF_BatchIterator : public VecSimBatchIterator {
 private:
     const BruteForceIndex<DataType, DistType> *index;
-    std::vector<std::pair<DistType, labelType>> scores; // vector of scores for every label.
+    vecsim_stl::vector<pair<DistType, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.
 
@@ -35,7 +37,6 @@ private:
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
-    inline const BruteForceIndex<DataType, DistType> *getIndex() const { return index; };
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
 
@@ -69,7 +70,7 @@ template <typename DataType, typename DistType>
 void BF_BatchIterator<DataType, DistType>::swapScores(
     const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num) {
     // Create a set of the indices in the scores array for every results that we return.
-    std::set<size_t> indices;
+    vecsim_stl::set<size_t> indices(this->allocator);
     for (auto pos : TopCandidatesIndices) {
         indices.insert(pos.second);
     }
@@ -100,7 +101,7 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n_res) {
     VecSimQueryResult_List rl = {0};
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::max_priority_queue<std::pair<DistType, labelType>> TopCandidates(this->allocator);
+    vecsim_stl::max_priority_queue<pair<DistType, labelType>> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
     vecsim_stl::unordered_map<size_t, size_t> TopCandidatesIndices(n_res, this->allocator);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {
@@ -167,7 +168,7 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
     void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
-      index(bf_index), scores_valid_start_pos(0) {}
+      index(bf_index), scores(allocator), scores_valid_start_pos(0) {}
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
