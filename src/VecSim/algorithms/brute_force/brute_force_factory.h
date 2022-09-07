@@ -6,8 +6,6 @@
 #include "VecSim/vec_sim.h"              //typedef VecSimIndex
 #include "VecSim/vec_sim_common.h"       // BFParams
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
-template <typename DataType, typename DistType>
-class BruteForceIndex;
 
 class BruteForceFactory {
 
@@ -16,7 +14,4 @@ public:
                                  std::shared_ptr<VecSimAllocator> allocator);
     static size_t EstimateInitialSize(const BFParams *params);
     static size_t EstimateElementSize(const BFParams *params);
-    static VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
-                                                 std::shared_ptr<VecSimAllocator> allocator,
-                                                 const BruteForceIndex<float, float> *index);
 };

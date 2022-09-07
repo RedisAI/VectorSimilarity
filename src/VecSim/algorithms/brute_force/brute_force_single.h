@@ -1,6 +1,6 @@
 #pragma once
 
-#include "brute_force.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 
