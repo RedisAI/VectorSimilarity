@@ -3,8 +3,6 @@
 #include "VecSim/batch_iterator.h"
 #include "hnsw.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/vec_sim_common.h"    //labelType, idType
-#include "VecSim/vec_sim_interface.h" // timeoutCallback
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
