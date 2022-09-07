@@ -320,7 +320,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return new (this->allocator)
-        BF_BatchIterator<float, float>(queryBlobCopy, this, queryParams, this->allocator);
+        BF_BatchIterator<DataType, DistType>(queryBlobCopy, this, queryParams, this->allocator);
 }
 
 template <typename DataType, typename DistType>
