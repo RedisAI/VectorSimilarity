@@ -1,7 +1,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/vec_sim_common.h" // labelType
-#include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
 namespace HNSWFactory {
 
@@ -72,12 +71,4 @@ size_t EstimateElementSize(const HNSWParams *params) {
     return size_meta_data + size_total_data_per_element;
 }
 
-// TODO overload for doubles
-VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
-                                      std::shared_ptr<VecSimAllocator> allocator,
-                                      HNSWIndex<float, float> *index) {
-
-    return new (allocator)
-        HNSW_BatchIterator<float, float>(queryBlob, index, queryParams, allocator);
-}
 }; // namespace HNSWFactory
