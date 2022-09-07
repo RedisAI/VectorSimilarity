@@ -4,6 +4,7 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
+#include "VecSim/vec_sim_interface.h" // timeoutCallback
 #include <limits>
 
 inline void HNSW_BatchIterator::visitNode(idType node_id) {
@@ -51,13 +52,13 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
         float dist = dist_func(this->getQueryBlob(),
-                               this->hnsw_index->getDataByInternalId(entry_point), &dim);
+                               this->hnsw_index->getDataByInternalId(entry_point), dim);
         lower_bound = dist;
         this->visitNode(entry_point);
         candidates.emplace(dist, entry_point);
     }
     // Checks that we didn't got timeout between iterations.
-    if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
         *rc = VecSim_QueryResult_TimedOut;
         return top_candidates;
     }
@@ -80,7 +81,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
         if (curr_node_dist > lower_bound && top_candidates.size() >= this->hnsw_index->getEf()) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }
@@ -120,7 +121,7 @@ candidatesMaxHeap HNSW_BatchIterator::scanGraph(candidatesMinHeap &candidates,
             this->visitNode(candidate_id);
             char *candidate_data = this->hnsw_index->getDataByInternalId(candidate_id);
             float candidate_dist =
-                dist_func(this->getQueryBlob(), (const void *)candidate_data, &dim);
+                dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
             __builtin_prefetch(hnsw_index->get_linklist_at_level(candidates.top().second, 0));
         }

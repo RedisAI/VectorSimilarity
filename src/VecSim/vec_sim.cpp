@@ -5,11 +5,13 @@
 #include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include <cassert>
 #include "memory.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
-    VecSimIndexAbstract::setTimeoutCallbackFunction(callback);
+    VecSimIndex::setTimeoutCallbackFunction(callback);
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
@@ -70,10 +72,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = HNSWIndex::HNSWIndex_New(&params->hnswParams, allocator);
+            index = HNSWFactory::NewIndex(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = BruteForceIndex::BruteForceIndex_New(&params->bfParams, allocator);
+            index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
         default:
             break;
@@ -87,9 +89,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWIndex::estimateInitialSize(&params->hnswParams);
+        return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateInitialSize(&params->bfParams);
+        return BruteForceFactory::EstimateInitialSize(&params->bfParams);
     }
     return -1;
 }
@@ -115,9 +117,9 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWIndex::estimateElementMemory(&params->hnswParams);
+        return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateElementMemory(&params->bfParams);
+        return BruteForceFactory::EstimateElementSize(&params->bfParams);
     }
     return -1;
 }

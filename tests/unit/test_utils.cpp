@@ -79,43 +79,45 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
             // Algorithm type.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimAlgo_ToString(info.algo));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue, VecSimAlgo_ToString(info.algo));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::TYPE_STRING)) {
             // Vector type.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimType_ToString(info.bfInfo.type));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue, VecSimType_ToString(info.bfInfo.type));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
             // Vector dimension.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.dim);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.dim);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::METRIC_STRING)) {
             // Metric.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimMetric_ToString(info.bfInfo.metric));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue,
+                         VecSimMetric_ToString(info.bfInfo.metric));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
             // Search mode.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimSearchMode_ToString(info.bfInfo.last_mode));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue,
+                         VecSimSearchMode_ToString(info.bfInfo.last_mode));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.indexSize);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.indexSize);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
             // Index label count.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.indexLabelCount);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.indexLabelCount);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
             // Is the index multi value.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.isMulti);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.isMulti);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
             // Block size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.blockSize);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.blockSize);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
             // Memory.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.bfInfo.memory);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.bfInfo.memory);
         } else {
             ASSERT_TRUE(false);
         }
@@ -129,65 +131,67 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
         if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
             // Algorithm type.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimAlgo_ToString(info.algo));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue, VecSimAlgo_ToString(info.algo));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::TYPE_STRING)) {
             // Vector type.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimType_ToString(info.hnswInfo.type));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue,
+                         VecSimType_ToString(info.hnswInfo.type));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
             // Vector dimension.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.dim);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.dim);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::METRIC_STRING)) {
             // Metric.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue, VecSimMetric_ToString(info.hnswInfo.metric));
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue,
+                         VecSimMetric_ToString(info.hnswInfo.metric));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
             // Search mode.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoFiled->stringValue,
+            ASSERT_STREQ(infoFiled->fieldValue.stringValue,
                          VecSimSearchMode_ToString(info.hnswInfo.last_mode));
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.indexSize);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.indexSize);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
             // Index label count.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.indexLabelCount);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.indexLabelCount);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
             // Is the index multi value.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.isMulti);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.isMulti);
         } else if (!strcmp(infoFiled->fieldName,
                            VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING)) {
             // EF construction.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.efConstruction);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.efConstruction);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
             // EF runtime.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.efRuntime);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.efRuntime);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
             // Epsilon.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_FLOAT64);
-            ASSERT_EQ(infoFiled->floatingPointValue, info.hnswInfo.epsilon);
+            ASSERT_EQ(infoFiled->fieldValue.floatingPointValue, info.hnswInfo.epsilon);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_M_STRING)) {
             // M.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.M);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.M);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_MAX_LEVEL)) {
             // Levels.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.max_level);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.max_level);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::HNSW_ENTRYPOINT)) {
             // Entrypoint.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.entrypoint);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.entrypoint);
         } else if (!strcmp(infoFiled->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
             // Memory.
             ASSERT_EQ(infoFiled->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoFiled->uintegerValue, info.hnswInfo.memory);
+            ASSERT_EQ(infoFiled->fieldValue.uintegerValue, info.hnswInfo.memory);
         } else {
             ASSERT_TRUE(false);
         }
