@@ -1,8 +1,8 @@
 #pragma once
 
 #include "VecSim/batch_iterator.h"
-#include "VecSim/utils/vecsim_stl.h"
-#include "vector_block.h"
+#include "VecSim/algorithms/brute_force/brute_force.h"
+
 #include <vector>
 #include <limits>
 

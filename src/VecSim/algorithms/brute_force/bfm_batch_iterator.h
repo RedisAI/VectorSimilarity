@@ -1,12 +1,11 @@
 #pragma once
 #include "bf_batch_iterator.h"
 
-#include <vector>
 #include <limits>
 
 class BFM_BatchIterator : public BF_BatchIterator {
 public:
-    BFM_BatchIterator(void *query_vector, const BruteForceIndex *index,
+    BFM_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,
                       VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
         : BF_BatchIterator(query_vector, index, queryParams, allocator) {}
 

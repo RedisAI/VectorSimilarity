@@ -40,14 +40,16 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
-    inline vecsim_stl::abstract_priority_queue<float, labelType> *getNewPriorityQueue() override {
+    inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewPriorityQueue() override {
         return new (this->allocator)
-            vecsim_stl::max_priority_queue<float, labelType>(this->allocator);
+            vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
 
     inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
                                                        VecSimQueryParams *queryParams) override {
-        return new (allocator) BFS_BatchIterator(queryBlob, this, queryParams, allocator);
+        return new (this->allocator)
+            BFS_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
