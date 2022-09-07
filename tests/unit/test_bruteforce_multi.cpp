@@ -38,13 +38,15 @@ TEST_F(BruteForceMultiTest, vector_add_multiple_test) {
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->indexLabelCount(), 1);
+    ASSERT_EQ((reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index))->indexLabelCount(),
+              1);
 
     // Deleting the label. All the vectors should be deleted.
     VecSimIndex_DeleteVector(index, 46);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->indexLabelCount(), 0);
+    ASSERT_EQ((reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index))->indexLabelCount(),
+              0);
 
     VecSimIndex_Free(index);
 }
@@ -65,7 +67,7 @@ TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
                                              .initialCapacity = n,
                                              .blockSize = blockSize}};
     VecSimIndex *index = VecSimIndex_New(&params);
-    auto bf_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
+    auto bf_index = reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     float a[dim];
@@ -160,7 +162,7 @@ TEST_F(BruteForceMultiTest, empty_index) {
     VecSimIndex_DeleteVector(index, 1);
     // The idToLabelMapping_size should change to be aligned with the vector size.
     size_t idToLabelMapping_size =
-        reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size();
+        reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index)->idToLabelMapping.size();
 
     ASSERT_EQ(idToLabelMapping_size, n - n % bs - bs);
 
@@ -171,8 +173,9 @@ TEST_F(BruteForceMultiTest, empty_index) {
     // The idToLabelMapping_size should remain unchanged, as we are trying to delete a label that
     // doesn't exist.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(reinterpret_cast<BruteForceIndex_Multi *>(index)->idToLabelMapping.size(),
-              idToLabelMapping_size);
+    ASSERT_EQ(
+        (reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index))->idToLabelMapping.size(),
+        idToLabelMapping_size);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -252,7 +255,8 @@ TEST_F(BruteForceMultiTest, search_more_then_there_is) {
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
         auto ids =
-            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label);
+            reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index)->labelToIdsLookup.at(
+                element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -297,7 +301,8 @@ TEST_F(BruteForceMultiTest, indexing_same_vector) {
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
         auto ids =
-            reinterpret_cast<BruteForceIndex_Multi *>(index)->labelToIdsLookup.at(element_label);
+            reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index)->labelToIdsLookup.at(
+                element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -501,7 +506,8 @@ TEST_F(BruteForceMultiTest, test_delete_swap_block) {
                                              .initialCapacity = initial_capacity,
                                              .blockSize = bs}};
     VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex_Multi *bfm_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
+    BruteForceIndex_Multi<float, float> *bfm_index =
+        reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index);
 
     // idToLabelMapping initial size equals n.
     ASSERT_EQ(bfm_index->idToLabelMapping.size(), initial_capacity);
@@ -557,7 +563,7 @@ TEST_F(BruteForceMultiTest, test_delete_swap_block) {
 
     // The vector in index1 should hold id5 data.
     VectorBlock *block = bfm_index->getVectorVectorBlock(1);
-    float *vector_data = block->getVector(1);
+    float *vector_data = (float *)block->getVector(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
         ++vector_data;
@@ -870,7 +876,7 @@ TEST_F(BruteForceMultiTest, remove_vector_after_replacing_block) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
     ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, 2);
-    auto bf_index = reinterpret_cast<BruteForceIndex_Multi *>(index);
+    auto bf_index = reinterpret_cast<BruteForceIndex_Multi<float, float> *>(index);
     ASSERT_EQ(bf_index->getVectorLabel(0), 1);
     ASSERT_EQ(bf_index->getVectorLabel(1), 2);
     ASSERT_EQ(bf_index->getVectorLabel(2), 2);
