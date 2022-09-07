@@ -1,6 +1,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
-#include "VecSim/algorithms/hnsw/hnsw.h" //linklistsizeint
-#include "VecSim/vec_sim_common.h"       // labelType
+#include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/vec_sim_common.h" // labelType
 #include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
 namespace HNSWFactory {

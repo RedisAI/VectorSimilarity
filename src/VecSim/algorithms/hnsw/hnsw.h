@@ -22,9 +22,9 @@
 #include <unordered_map>
 #include <sys/resource.h>
 #include <fstream>
-#include <utility> //pair
 
 using spaces::dist_func_t;
+using std::pair;
 
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
@@ -100,8 +100,8 @@ private:
     friend class HNSWTest_testSizeEstimation_Test;
 #endif
 
-    HNSWIndex() = delete;                  // default constructor
-    HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor
+    HNSWIndex() = delete;                  // default constructor is disabled.
+    HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline void setExternalLabel(idType internal_id, labelType label);
     inline labelType *getExternalLabelPtr(idType internal_id) const;
     inline size_t getRandomLevel(double reverse_size);
@@ -505,7 +505,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<DistType, idType> curr_el_pair = candidate_set.top();
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
@@ -529,7 +529,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
     }
 
     candidatesMaxHeap<DistType> queue_closest(this->allocator);
-    vecsim_stl::vector<std::pair<DistType, idType>> return_list(this->allocator);
+    vecsim_stl::vector<pair<DistType, idType>> return_list(this->allocator);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
         // (higher).
@@ -540,19 +540,19 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
     while (queue_closest.size()) {
         if (return_list.size() >= M)
             break;
-        std::pair<DistType, idType> current_pair = queue_closest.top();
-        DistType DistTypeo_query = -current_pair.first;
+        pair<DistType, idType> current_pair = queue_closest.top();
+        DistType candidate2query_dist = -current_pair.first;
         queue_closest.pop();
         bool good = true;
 
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
-        for (std::pair<DistType, idType> second_pair : return_list) {
-            DistType curdist = this->dist_func(getDataByInternalId(second_pair.second),
-                                               getDataByInternalId(current_pair.second), this->dim);
-            ;
-            if (curdist < DistTypeo_query) {
+        for (pair<DistType, idType> second_pair : return_list) {
+            DistType candidate2selected_dist =
+                this->dist_func(getDataByInternalId(second_pair.second),
+                                getDataByInternalId(current_pair.second), this->dim);
+            if (candidate2selected_dist < candidate2query_dist) {
                 good = false;
                 break;
             }
@@ -562,7 +562,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
         }
     }
 
-    for (std::pair<DistType, idType> current_pair : return_list) {
+    for (pair<DistType, idType> current_pair : return_list) {
         top_candidates.emplace(-current_pair.first, current_pair.second);
     }
 }
@@ -1330,7 +1330,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<DistType, idType> curr_el_pair = candidate_set.top();
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
@@ -1446,7 +1446,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<DistType, idType> curr_el_pair = candidate_set.top();
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
         // finish the search.
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
