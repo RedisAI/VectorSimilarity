@@ -1944,3 +1944,109 @@ TEST_F(HNSWTest, rangeQueryCosine) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWLibTest, multithreaded) {
+	size_t n = 100000;
+	size_t dim = 32;
+
+	VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+			.hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+					.dim = dim,
+					.metric = VecSimMetric_Cosine,
+					.initialCapacity = n,
+					.blockSize = n,
+					.efRuntime = 200
+	}};
+	VecSimIndex *index = VecSimIndex_New(&params);
+
+	VecSimParams bf_params{.algo = VecSimAlgo_BF,
+			.bfParams = BFParams{.type = VecSimType_FLOAT32,
+					.dim = dim,
+					.metric = VecSimMetric_Cosine,
+					.initialCapacity = n,
+					.blockSize = n}};
+	VecSimIndex *bf_index = VecSimIndex_New(&bf_params);
+
+	std::mt19937 rng;
+	rng.seed(47);
+	std::uniform_real_distribution<float> distrib(-1, 1);
+
+	// generate random queries
+	size_t num_queries = 100;
+	size_t k = 10;
+	float queries[num_queries][dim];
+
+	for (size_t i=0; i < num_queries; i++) {
+		for (size_t j=0; j<dim; j++) {
+			queries[i][j] = distrib(rng);
+		}
+	}
+	VecSimQueryResult_List total_res[num_queries];
+
+	auto started = std::chrono::high_resolution_clock::now();
+#pragma omp parallel num_threads(8) shared(n, index, dim, distrib, rng, num_queries, queries, total_res, k, cout) default(none)
+		{
+#pragma omp for schedule(static) nowait
+			for (size_t i = 0; i < n; i++) {
+				float f[dim];
+				for (size_t j = 0; j < dim; j++) {
+					f[j] = distrib(rng);
+				}
+				VecSimIndex_AddVector(index, (const void *) f, i);
+			}
+			std::cout << "index size is " << VecSimIndex_IndexSize(index) << std::endl;
+#pragma omp for schedule(dynamic) nowait
+			for (size_t q = 0; q < num_queries; q++) {
+				auto hnsw_results = VecSimIndex_TopKQuery(index, queries[q],
+				                                          k, nullptr, BY_SCORE);
+				total_res[q] = hnsw_results;
+			}
+		}
+	ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+	auto done = std::chrono::high_resolution_clock::now();
+	std::cout << "build index time is " << std::chrono::duration_cast<std::chrono::milliseconds>(done-started).count() << std::endl;
+	std::cout << "max gap is :" << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
+	std::cout << "total time is " << std::chrono::duration_cast<std::chrono::milliseconds>(done-started).count() << std::endl;
+
+	for (size_t i = 0; i < n; i++) {
+		VecSimIndex_AddVector(bf_index, (const void *) reinterpret_cast<HNSWIndex*>(index)->getHNSWIndex()->getDataByLabel(i), i);
+	}
+
+	// run parallel queries
+//	started = std::chrono::high_resolution_clock::now();
+//	done = std::chrono::high_resolution_clock::now();
+//	std::cout << "search index time is " << std::chrono::duration_cast<std::chrono::milliseconds>(done-started).count() << std::endl;
+
+	// Measure recall:
+	size_t total_correct = 0;
+	for (size_t q = 0; q < num_queries; q++) {
+		size_t correct = 0;
+		auto hnsw_results = total_res[q];
+		auto bf_results = VecSimIndex_TopKQuery(bf_index, queries[q], k,
+		                                        nullptr, BY_SCORE);
+		auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
+		while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
+			auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
+			auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
+			while (VecSimQueryResult_IteratorHasNext(bf_it)) {
+				auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
+				if (VecSimQueryResult_GetId(hnsw_res_item) ==
+				    VecSimQueryResult_GetId(bf_res_item)) {
+					correct++;
+					break;
+				}
+			}
+			VecSimQueryResult_IteratorFree(bf_it);
+		}
+		VecSimQueryResult_IteratorFree(hnsw_it);
+
+		VecSimQueryResult_Free(bf_results);
+		VecSimQueryResult_Free(hnsw_results);
+		std::cout << "recall is " << float(correct)/k << std::endl;
+		total_correct += correct;
+	}
+	std::cout << "recall is " << float(total_correct)/(k*num_queries) << std::endl;
+
+	ASSERT_FALSE(true);
+	VecSimIndex_Free(index);
+}

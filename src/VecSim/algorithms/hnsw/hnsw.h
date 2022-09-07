@@ -23,7 +23,7 @@
 #include <sys/resource.h>
 #include <fstream>
 
-#define ENABLE_PARALLELIZATION_READ
+#define ENABLE_PARALLELIZATION
 
 #ifdef ENABLE_PARALLELIZATION
 #define ENABLE_PARALLELIZATION_READ
@@ -85,6 +85,7 @@ private:
     // relies on this field.
     idType max_id;
     size_t maxlevel_;
+	set<idType> ids_in_process;
 
     // Index data structures
     idType entrypoint_node_;
@@ -100,9 +101,10 @@ private:
     size_t pool_initial_size;
 #endif
 #ifdef ENABLE_PARALLELIZATION
-    std::mutex global; // shared_timed_mutex for read/write lock
+    mutable std::mutex global; // shared_timed_mutex for read/write lock
     std::mutex cur_element_count_guard_;
     mutable std::vector<std::mutex> link_list_locks_;
+	mutable std::vector<std::mutex> incoming_links_locks_;
 #endif
 
 #ifdef BUILD_TESTS
@@ -166,6 +168,7 @@ public:
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
 
+	size_t max_gap;  // For stats/debugging
     inline void setEf(size_t ef);
     inline size_t getEf() const;
     inline void setEpsilon(double epsilon);
@@ -189,6 +192,7 @@ public:
                                           VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
+	char *getDataByLabel(labeltype label);
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
     inline unsigned short int getListCount(const linklistsizeint *ptr) const;
     inline void resizeIndex(size_t new_max_elements);
@@ -288,6 +292,12 @@ labelType *HNSWIndex<DataType, DistType>::getExternalLabelPtr(idType internal_id
 template <typename DataType, typename DistType>
 char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
     return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
+}
+
+template <typename DataType, typename DistType>
+char *HNSWIndex<DataType, DistType>::getDataByLabel(labeltype label) {
+	tableint internal_id = label_lookup_[label];
+	return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
 template <typename DataType, typename DistType>
@@ -441,12 +451,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void 
         __builtin_prefetch(elements_tags + *(node_links + j + 1));
         __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
 
-        if (elements_tags[candidate_id] == visited_tag)
-        // Pre-fetch the next candidate data into memory cache, to improve performance.
-        idType *next_candidate_pos = node_links + j + 1;
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
-        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag || candidate_id > max_id)
             continue;
         elements_tags[candidate_id] = visited_tag;
         char *currObj1 = (getDataByInternalId(candidate_id));
@@ -625,7 +630,10 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     idType next_closest_entry_point = selectedNeighbors.back();
     {
-        linklistsizeint *ll_cur = get_linklist_at_level(cur_c, level);
+#ifdef ENABLE_PARALLELIZATION
+		std::unique_lock<std::mutex> el_lock (link_list_locks_[cur_c]);
+#endif
+		linklistsizeint *ll_cur = get_linklist_at_level(cur_c, level);
         if (*ll_cur) {
             throw std::runtime_error("The newly inserted element should have blank link list");
         }
@@ -670,7 +678,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             candidatesMaxHeap<DistType> candidates(this->allocator);
             // (re)use the bitmap to represent the set of the original neighbours for the current
             // selected neighbour.
-            neighbors_bitmap.assign(max_id + 1, false);
+            neighbors_bitmap.assign(cur_element_count, false);
             DistType d_max = this->dist_func(getDataByInternalId(cur_c),
                                              getDataByInternalId(selectedNeighbor), this->dim);
             candidates.emplace(d_max, cur_c);
@@ -691,7 +699,32 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
             // remove the current neighbor from the incoming list of nodes for the
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
-            auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
+	        auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
+
+#ifdef ENABLE_PARALLELIZATION
+			// Take all locks by the order of the ids - first the outgoing edges locks and then the incoming edges
+			// to avoid deadlocks. Also, we must release the neighbor's lock at this point again to void deadlock.
+			lock.unlock();
+			std::sort(removed_links, removed_links + removed_links_num);
+	        std::unique_lock<std::mutex> link_list_locks[removed_links_num];
+	        std::unique_lock<std::mutex> incoming_link_locks[removed_links_num + 1]; // for selected neighbor.
+	        for (size_t i = 0; i < removed_links_num; i++) {
+				if (removed_links[i] != cur_c) {
+					link_list_locks[i] = std::unique_lock<std::mutex>(link_list_locks_[removed_links[i]]);
+				}
+			}
+			bool selected_neighbour_incoming_links_locked = false;
+	        for (size_t i = 0; i < removed_links_num; i++) {
+				if (removed_links[i] > selectedNeighbor && !selected_neighbour_incoming_links_locked) {
+					incoming_link_locks[removed_links_num] = std::unique_lock<std::mutex>(incoming_links_locks_[selectedNeighbor]);
+					selected_neighbour_incoming_links_locked = true;
+				}
+		        incoming_link_locks[i] = std::unique_lock<std::mutex>(incoming_links_locks_[removed_links[i]]);
+	        }
+			if (!selected_neighbour_incoming_links_locked) {
+				incoming_link_locks[removed_links_num] = std::unique_lock<std::mutex>(incoming_links_locks_[selectedNeighbor]);
+			}
+#endif
             for (size_t i = 0; i < removed_links_num; i++) {
                 idType node_id = removed_links[i];
                 auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
@@ -955,7 +988,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
       label_lookup_(max_elements, allocator)
 #ifdef ENABLE_PARALLELIZATION
       ,
-      link_list_locks_(max_elements)
+      link_list_locks_(max_elements),
+	  incoming_links_locks_(max_elements)
 #endif
 {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
@@ -976,6 +1010,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
     this->pool_initial_size = pool_initial_size;
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
         this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
+	max_gap = 0;
 #else
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
@@ -1053,6 +1088,7 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     label_lookup_.reserve(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+	std::vector<std::mutex>(new_max_elements).swap(incoming_links_locks_);
 #endif
 #ifdef ENABLE_PARALLELIZATION_READ
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
@@ -1183,6 +1219,7 @@ template <typename DataType, typename DistType>
 int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
 
     idType cur_c;
+	size_t element_max_level = getRandomLevel(mult_);
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1198,32 +1235,29 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
 
         // Checking if an element with the given label already exists. if so, remove it.
         if (label_lookup_.find(label) != label_lookup_.end()) {
-            deleteVector(label);
+            // Todo - this should occur in multi-threaded scenario
+			deleteVector(label);
         }
         if (cur_element_count >= max_elements_) {
             size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
             resizeIndex(max_elements_ + vectors_to_add);
         }
-        cur_c = max_id = cur_element_count++;
+		cur_c = cur_element_count++;
         label_lookup_[label] = cur_c;
-    }
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
-#endif
-    // choose randomly the maximum level in which the new element will be in the index.
-    size_t element_max_level = getRandomLevel(mult_);
-    element_levels_[cur_c] = element_max_level;
+		ids_in_process.insert(cur_c);
+		element_levels_[cur_c] = element_max_level;
+	}
 
 #ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::shared_timed_mutex> entry_point_lock(global);
+    std::unique_lock<std::mutex> entry_point_lock(global);
 #endif
     size_t maxlevelcopy = maxlevel_;
+	size_t currObj = entrypoint_node_;
 
 #ifdef ENABLE_PARALLELIZATION
     if (element_max_level <= maxlevelcopy)
         entry_point_lock.unlock();
 #endif
-    size_t currObj = entrypoint_node_;
 
     memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
@@ -1267,7 +1301,9 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
                         if (cand < 0 || cand > max_elements_)
                             throw std::runtime_error(
                                 "candidate error: candidate id is out of index range");
-
+	                    if (cand > max_id) {
+		                    continue; // this candidate is still being indexed at this time.
+	                    }
                         DistType d =
                             this->dist_func(vector_data, getDataByInternalId(cand), this->dim);
                         if (d < cur_dist) {
@@ -1310,17 +1346,34 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
         }
         maxlevel_ = element_max_level;
     }
-    return true;
+#ifdef ENABLE_PARALLELIZATION
+	std::unique_lock<std::mutex> lock(cur_element_count_guard_);
+	if (cur_c == *ids_in_process.begin()) {
+		max_id = cur_c;
+	}
+	ids_in_process.erase(cur_c);
+	if (cur_element_count-max_id > max_gap) {
+		max_gap = cur_element_count-max_id;
+	}
+#endif
+	return true;
+
 }
 
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const {
 
+#ifdef ENABLE_PARALLELIZATION
+	std::unique_lock<std::mutex> lock(global);
+#endif
     if (cur_element_count == 0) {
         return entrypoint_node_;
     }
     idType currObj = entrypoint_node_;
+#ifdef ENABLE_PARALLELIZATION
+	lock.unlock();
+#endif
     DistType cur_dist =
         this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
     for (size_t level = maxlevel_; level > 0; level--) {
@@ -1331,6 +1384,9 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                 return HNSW_INVALID_ID;
             }
             changed = false;
+#ifdef ENABLE_PARALLELIZATION
+	        std::unique_lock<std::mutex> obj_lock(link_list_locks_[currObj]);
+#endif
             linklistsizeint *node_ll = get_linklist(currObj, level);
             unsigned short links_count = getListCount(node_ll);
             auto *node_links = (idType *)(node_ll + 1);
