@@ -541,7 +541,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
         if (return_list.size() >= M)
             break;
         pair<DistType, idType> current_pair = queue_closest.top();
-        DistType candidate2query_dist = -current_pair.first;
+        DistType candidate_to_query_dist = -current_pair.first;
         queue_closest.pop();
         bool good = true;
 
@@ -549,10 +549,10 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
         for (pair<DistType, idType> second_pair : return_list) {
-            DistType candidate2selected_dist =
+            DistType candidate_to_selected_dist =
                 this->dist_func(getDataByInternalId(second_pair.second),
                                 getDataByInternalId(current_pair.second), this->dim);
-            if (candidate2selected_dist < candidate2query_dist) {
+            if (candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
             }
