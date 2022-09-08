@@ -1306,7 +1306,13 @@ TEST_F(HNSWMultiTest, testInitialSizeEstimation_No_InitialCapacity) {
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
-    ASSERT_EQ(estimation, actual);
+
+    // labels_lookup and element_levels containers are not allocated at all in some platforms,
+    // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
+    // single bucket. This, we get the following range in which we expect the initial memory to be
+    // in.
+    ASSERT_GE(actual, estimation);
+    ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
 
     VecSimIndex_Free(index);
 }
