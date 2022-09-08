@@ -22,7 +22,6 @@ TEST_F(HNSWTest, TEST_TEST_TEST) {
     auto s = al->getAllocationSize();
     vecsim_stl::vector<idType>vec(0, al);
     auto e = al->getAllocationSize();
-    printf("%zi\n", e-s);
     ASSERT_EQ(e-s, 0);
 }
 
