@@ -91,7 +91,7 @@ private:
 #endif
 #ifdef BUILD_TESTS
     // Allow the following test to access the index size private member.
-    template <typename DataType, typename DistType>
+    template <typename, typename>
     friend class HNSWIndexSerializer;
     friend class HNSWTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
@@ -450,6 +450,8 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
     __builtin_prefetch(getDataByInternalId(*node_links));
 
+    // Cast radius once instead of each time we check that candidate_dist <= radius_
+    DistType radius_ = DistType(radius);
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
@@ -469,7 +471,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             // If the new candidate is in the requested radius, add it to the results set.
-            if (candidate_dist <= radius) {
+            if (candidate_dist <= radius_) {
                 auto new_result = VecSimQueryResult{};
                 VecSimQueryResult_SetId(new_result, getExternalLabel(candidate_id));
                 VecSimQueryResult_SetScore(new_result, candidate_dist);
@@ -1419,6 +1421,7 @@ template <typename DataType, typename DistType>
 VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
     idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
+
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1432,6 +1435,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     // Set the initial effective-range to be at least the distance from the entry-point.
     DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType dynamic_range = ep_dist;
+
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
         auto new_result = VecSimQueryResult{};
@@ -1445,6 +1449,8 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
+    // Cast radius once instead of each time we check that -curr_el_pair.first >= radius_.
+    DistType radius_ = DistType(radius);
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
@@ -1459,7 +1465,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         candidate_set.pop();
 
         // Decrease the effective range, but keep dyn_range >= radius.
-        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius) {
+        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius_) {
             dynamic_range = -curr_el_pair.first;
             dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
         }
@@ -1467,6 +1473,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         // Go over the candidate neighbours, add them to the candidates list if they are within the
         // epsilon environment of the dynamic range, and add them to the results if they are in the
         // requested radius.
+        // Here we send the radius as double to match the function arguments type.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
                                      &results, candidate_set, dynamic_range_search_boundaries,
                                      radius);
@@ -1483,7 +1490,6 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
                                                                  double radius,
                                                                  VecSimQueryParams *queryParams) {
-
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
 
@@ -1509,7 +1515,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
             epsilon_ = queryParams->hnswRuntimeParams.epsilon;
         }
     }
-    void *timeoutCtx = nullptr;
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
@@ -1519,6 +1524,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
 
     // search bottom layer
+    // Here we send the radius as double to match the function arguments type.
     rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, this->epsilon_,
                                                     radius, timeoutCtx, &rl.code);
 

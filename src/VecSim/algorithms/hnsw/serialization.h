@@ -250,8 +250,8 @@ void HNSWIndexSerializer<DataType, DistType>::restoreGraph(std::ifstream &input)
 
 template <typename DataType, typename DistType>
 HNSWIndexSerializer<DataType, DistType>::HNSWIndexSerializer(
-   HNSWIndex<DataType, DistType> *hnsw_index_) : hnsw_index(hnsw_index_) {}
-}
+    HNSWIndex<DataType, DistType> *hnsw_index_)
+    : hnsw_index(hnsw_index_) {}
 
 template <typename DataType, typename DistType>
 void HNSWIndexSerializer<DataType, DistType>::saveIndex(const std::string &location) {
@@ -284,9 +284,8 @@ void HNSWIndexSerializer<DataType, DistType>::loadIndex(const std::string &locat
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndexSerializer<DistType, Datatype>::reset(
-    HNSWIndex<DistType, Datatype> *hnsw_index_) {
-   hnsw_index = hnsw_index_;
+void HNSWIndexSerializer<DataType, DistType>::reset(HNSWIndex<DataType, DistType> *hnsw_index_) {
+    hnsw_index = hnsw_index_;
 }
 
 template <typename DataType, typename DistType>
