@@ -279,7 +279,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
 
     // Account for allocating link lists for levels higher than 0, if exists.
     if (vec_max_level > 0) {
-        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level + 1 +
+        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level +
                                      AllocatorTest::vecsimAllocationOverhead;
     }
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
@@ -320,7 +320,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     size_t buckets_diff = hnswIndex->label_lookup_.bucket_count() - buckets_num_before;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
     if (vec_max_level > 0) {
-        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level + 1 +
+        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level +
                                      AllocatorTest::vecsimAllocationOverhead;
     }
 
@@ -348,9 +348,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
     // single bucket. This, we get the following range in which we expect the initial memory to be
     // in.
-    ASSERT_LE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params) + sizeof(size_t));
-    ASSERT_GE(initial_memory_size,
-              HNSWFactory::EstimateInitialSize(&params) - 2 * vecsimAllocationOverhead);
+    ASSERT_GE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params));
+    ASSERT_LE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params) + sizeof(size_t) +
+                                       2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
     size_t block_size = hnswIndex->info().hnswInfo.blockSize;
@@ -425,6 +425,6 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
                                                   hash_table_memory + 2 * vecsimAllocationOverhead);
     ASSERT_GE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-                                                  hash_table_memory + vecsimAllocationOverhead);
+                                                  hash_table_memory);
     VecSimIndex_Free(hnswIndex);
 }
