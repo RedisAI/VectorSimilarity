@@ -1283,8 +1283,8 @@ TEST_F(HNSWMultiTest, testSizeEstimation) {
         }
         actual += VecSimIndex_AddVector(index, vec, n + i);
     }
-    ASSERT_GE(estimation * 1.001, actual);
-    ASSERT_LE(estimation * 0.999, actual);
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
 
     VecSimIndex_Free(index);
 }
