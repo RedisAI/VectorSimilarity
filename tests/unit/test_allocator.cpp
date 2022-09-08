@@ -424,7 +424,7 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // zero, while in others the entire capacity reduced to zero (including the header).
     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
                                                   hash_table_memory + 2 * vecsimAllocationOverhead);
-    ASSERT_GE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-                                                  hash_table_memory);
+    ASSERT_GE(allocator->getAllocationSize(),
+              HNSWFactory::EstimateInitialSize(&params) + hash_table_memory);
     VecSimIndex_Free(hnswIndex);
 }
