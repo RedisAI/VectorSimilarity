@@ -1661,8 +1661,8 @@ TEST_F(HNSWTest, testCosine) {
 
 TEST_F(HNSWTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 1000;
-    size_t bs = DEFAULT_BLOCK_SIZE;
+    size_t n = 10000;
+    size_t bs = 1000;
     size_t M = 32;
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -1697,7 +1697,7 @@ TEST_F(HNSWTest, testSizeEstimation) {
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = VecSimIndex_EstimateElementSize(&params) * (bs % n + bs);
+    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
 
     actual = 0;
     for (size_t i = 0; i < bs; i++) {
