@@ -124,7 +124,8 @@ public:
     void saveIndex(const std::string &location) {
         VecSimIndexInfo info = this->index->info();
         if (info.hnswInfo.type == VecSimType_FLOAT32) {
-            auto serializer = HNSWIndexSerializer<float, float>(index);
+            auto serializer = HNSWIndexSerializer<float, float>(
+                reinterpret_cast<HNSWIndex<float, float> *>(index));
             serializer.saveIndex(location);
         }
     }
@@ -132,7 +133,8 @@ public:
     void loadIndex(const std::string &location) {
         VecSimIndexInfo info = this->index->info();
         if (info.hnswInfo.type == VecSimType_FLOAT32) {
-            auto serializer = HNSWIndexSerializer<float, float>(index);
+            auto serializer = HNSWIndexSerializer<float, float>(
+                reinterpret_cast<HNSWIndex<float, float> *>(index));
             serializer.loadIndex(location);
         }
     }
