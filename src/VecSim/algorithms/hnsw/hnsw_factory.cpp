@@ -79,8 +79,9 @@ size_t EstimateElementSize(const HNSWParams *params) {
     } else {
         // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
         // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) + sizeof(size_t);
+        // plus an internal pointer
+        size_label_lookup_node = sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
+                                 sizeof(size_t) + sizeof(size_t);
     }
 
     // 1 entry in visited nodes + 1 entry in element levels + (approximately) 1 bucket in labels
