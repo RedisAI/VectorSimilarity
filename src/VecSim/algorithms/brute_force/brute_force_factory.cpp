@@ -3,14 +3,14 @@
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_common.h" // labelType
 
-VecSimIndex *BruteForceFactory::NewIndex(const BFParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator) {
+namespace BruteForceFactory {
+VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
     return new (allocator) BruteForceIndex_Single<float, float>(params, allocator);
 }
 
-size_t BruteForceFactory::EstimateInitialSize(const BFParams *params) {
+size_t EstimateInitialSize(const BFParams *params) {
 
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
@@ -26,6 +26,7 @@ size_t BruteForceFactory::EstimateInitialSize(const BFParams *params) {
     return est;
 }
 
-size_t BruteForceFactory::EstimateElementSize(const BFParams *params) {
+size_t EstimateElementSize(const BFParams *params) {
     return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
 }
+}; // namespace BruteForceFactory

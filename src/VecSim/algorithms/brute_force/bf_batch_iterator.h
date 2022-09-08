@@ -23,7 +23,7 @@ private:
     void swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices,
                     size_t res_num);
 
-    inline VecSimQueryResult_Code calculateScores();
+    VecSimQueryResult_Code calculateScores();
 
 public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,

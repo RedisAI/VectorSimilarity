@@ -8,6 +8,8 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
+#include "VecSim/vec_sim_index.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h" //newBatchIterator
 
 #include <deque>
 #include <memory>
@@ -21,22 +23,21 @@
 #include <sys/resource.h>
 #include <fstream>
 
-namespace hnswlib {
-using namespace std;
 using spaces::dist_func_t;
+using std::pair;
 
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
 
-typedef unsigned int linklistsizeint;
+typedef idType linklistsizeint;
 
-template <typename dist_t>
-using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, idType>>;
-template <typename dist_t>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labelType>>;
+template <typename DistType>
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
+template <typename DistType>
+using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<DistType, labelType>;
 
-template <typename dist_t>
-class HierarchicalNSW : public VecsimBaseObject {
+template <typename DataType, typename DistType>
+class HNSWIndex : public VecSimIndexAbstract<DistType> {
 private:
     // Index build parameters
     size_t max_elements_;
@@ -50,7 +51,6 @@ private:
     double epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
-    size_t dim;
     size_t data_size_;
     size_t size_data_per_element_;
     size_t size_links_per_element_;
@@ -60,9 +60,6 @@ private:
     size_t incoming_links_offset0;
     size_t incoming_links_offset;
     double mult_;
-
-    // callback for computing distance between two points in the underline space.
-    dist_func_t<dist_t> dist_func_;
 
     // Index level generator of the top level for a new element
     std::default_random_engine level_generator_;
@@ -96,155 +93,159 @@ private:
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
-    friend class HNSWLibTest_preferAdHocOptimization_Test;
-    friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
+    friend class HNSWTest_preferAdHocOptimization_Test;
+    friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
     friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
-    friend class HNSWLibTest_testSizeEstimation_Test;
+    friend class HNSWTest_testSizeEstimation_Test;
 #endif
 
-    HierarchicalNSW() {}                                // default constructor
-    HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
-    void setExternalLabel(idType internal_id, labelType label);
-    labelType *getExternalLabelPtr(idType internal_id) const;
-    size_t getRandomLevel(double reverse_size);
-    vecsim_stl::vector<idType> *getIncomingEdgesPtr(idType internal_id, size_t level) const;
-    void setIncomingEdgesPtr(idType internal_id, size_t level, void *set_ptr);
+    HNSWIndex() = delete;                  // default constructor is disabled.
+    HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
+    inline void setExternalLabel(idType internal_id, labelType label);
+    inline labelType *getExternalLabelPtr(idType internal_id) const;
+    inline size_t getRandomLevel(double reverse_size);
+    inline vecsim_stl::vector<idType> *getIncomingEdgesPtr(idType internal_id, size_t level) const;
+    inline void setIncomingEdgesPtr(idType internal_id, size_t level, void *edges_ptr);
     inline linklistsizeint *get_linklist0(idType internal_id) const;
     inline linklistsizeint *get_linklist(idType internal_id, size_t level) const;
-    void setListCount(linklistsizeint *ptr, unsigned short int size);
-    void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
-                          size_t Mcurmax, idType *node_neighbors,
-                          const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
-                          size_t *removed_links_num);
-    inline dist_t processCandidate(idType curNodeId, const void *data_point, size_t layer,
-                                   size_t ef, tag_t visited_tag,
-                                   candidatesMaxHeap<dist_t> &top_candidates,
-                                   candidatesMaxHeap<dist_t> &candidates_set,
-                                   dist_t lowerBound) const;
+    inline void setListCount(linklistsizeint *ptr, unsigned short int size);
+    inline void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates,
+                                 size_t Mcurmax, idType *node_neighbors,
+                                 const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
+                                 size_t *removed_links_num);
+    inline DistType processCandidate(idType curNodeId, const void *data_point, size_t layer,
+                                     size_t ef, tag_t visited_tag,
+                                     candidatesMaxHeap<DistType> &top_candidates,
+                                     candidatesMaxHeap<DistType> &candidates_set,
+                                     DistType lowerBound) const;
     inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
                                              double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
-                                             candidatesMaxHeap<dist_t> &candidate_set,
-                                             dist_t lowerBound, dist_t radius) const;
-    candidatesMaxHeap<dist_t> searchLayer(idType ep_id, const void *data_point, size_t layer,
-                                          size_t ef) const;
-    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(idType ep_id,
-                                                                  const void *data_point, size_t ef,
-                                                                  size_t k, void *timeoutCtx,
-                                                                  VecSimQueryResult_Code *rc) const;
+                                             candidatesMaxHeap<DistType> &candidate_set,
+                                             DistType lowerBound, DistType radius) const;
+    candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
+                                            size_t ef) const;
+    candidatesLabelsMaxHeap<DistType>
+    searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
+                                  void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                          double epsilon, dist_t radius,
+                                                          double epsilon, DistType radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
-    void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
-    idType mutuallyConnectNewElement(idType cur_c, candidatesMaxHeap<dist_t> &top_candidates,
-                                     size_t level);
+    void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
+    inline idType mutuallyConnectNewElement(idType cur_c,
+                                            candidatesMaxHeap<DistType> &top_candidates,
+                                            size_t level);
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
-    void replaceEntryPoint(idType element_internal_id);
-    void SwapLastIdWithDeletedId(idType element_internal_id, idType last_element_internal_id);
+    inline void replaceEntryPoint();
+    inline void SwapLastIdWithDeletedId(idType element_internal_id,
+                                        idType last_element_internal_id);
 
 public:
-    HierarchicalNSW(const HNSWParams *params, dist_func_t<dist_t> func,
-                    std::shared_ptr<VecSimAllocator> allocator, size_t random_seed = 100,
-                    size_t initial_pool_size = 1);
-    virtual ~HierarchicalNSW();
+    HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+              size_t random_seed = 100, size_t initial_pool_size = 1);
+    virtual ~HNSWIndex();
 
-    void setEf(size_t ef);
-    size_t getEf() const;
+    inline void setEf(size_t ef);
+    inline size_t getEf() const;
     inline void setEpsilon(double epsilon);
     inline double getEpsilon() const;
-    size_t getIndexSize() const;
-    size_t getIndexLabelCount() const;
-    size_t getIndexCapacity() const;
-    size_t getEfConstruction() const;
-    size_t getM() const;
-    size_t getMaxLevel() const;
-    size_t getEntryPointLabel() const;
-    idType getEntryPointId() const;
-    labelType getExternalLabel(idType internal_id) const;
-    VisitedNodesHandler *getVisitedList() const;
+    inline size_t indexSize() const override;
+    inline size_t indexLabelCount() const override;
+    inline size_t getIndexCapacity() const;
+    inline size_t getEfConstruction() const;
+    inline size_t getM() const;
+    inline size_t getMaxLevel() const;
+    inline size_t getEntryPointLabel() const;
+    inline idType getEntryPointId() const;
+    inline labelType getExternalLabel(idType internal_id) const;
+    inline VisitedNodesHandler *getVisitedList() const;
+    VecSimIndexInfo info() const override;
+    VecSimInfoIterator *infoIterator() const override;
+    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                          VecSimQueryParams *queryParams) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
-    unsigned short int getListCount(const linklistsizeint *ptr) const;
-    void resizeIndex(size_t new_max_elements);
-    void removePoint(labelType label);
-    void addPoint(const void *data_point, labelType label);
-    dist_t getDistanceByLabelFromPoint(labelType label, const void *data_point);
-    idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                               VecSimQueryResult_Code *rc) const;
-    vecsim_stl::max_priority_queue<pair<dist_t, labelType>>
-    searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
-    VecSimQueryResult *searchRange(const void *query_data, dist_t radius, void *timeoutCtx,
-                                   VecSimQueryResult_Code *rc) const;
-    bool isLabelExist(labelType label);
+    inline unsigned short int getListCount(const linklistsizeint *ptr) const;
+    inline void resizeIndex(size_t new_max_elements);
+    int deleteVector(labelType label) override;
+    int addVector(const void *vector_data, labelType label) override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override;
+    inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                      VecSimQueryResult_Code *rc) const;
+    VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
+                                     VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQuery(const void *query_data, DistType radius,
+                                      VecSimQueryParams *queryParams) override;
 };
 
 /**
  * getters and setters of index data
  */
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setEf(size_t ef) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::setEf(size_t ef) {
     ef_ = ef;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEf() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getEf() const {
     return ef_;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setEpsilon(double epsilon) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::setEpsilon(double epsilon) {
     epsilon_ = epsilon;
 }
 
-template <typename dist_t>
-double HierarchicalNSW<dist_t>::getEpsilon() const {
+template <typename DataType, typename DistType>
+double HNSWIndex<DataType, DistType>::getEpsilon() const {
     return epsilon_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getIndexSize() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::indexSize() const {
     return cur_element_count;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getIndexLabelCount() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::indexLabelCount() const {
     return label_lookup_.size();
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getIndexCapacity() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getIndexCapacity() const {
     return max_elements_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEfConstruction() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getEfConstruction() const {
     return ef_construction_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getM() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getM() const {
     return M_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
     return maxlevel_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEntryPointLabel() const {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
     if (entrypoint_node_ != HNSW_INVALID_ID)
         return (size_t)getExternalLabel(entrypoint_node_);
     return SIZE_MAX;
 }
 
-template <typename dist_t>
-labelType HierarchicalNSW<dist_t>::getExternalLabel(idType internal_id) const {
+template <typename DataType, typename DistType>
+labelType HNSWIndex<DataType, DistType>::getExternalLabel(idType internal_id) const {
     labelType return_label;
     memcpy(&return_label,
            (data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_),
@@ -252,43 +253,43 @@ labelType HierarchicalNSW<dist_t>::getExternalLabel(idType internal_id) const {
     return return_label;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setExternalLabel(idType internal_id, labelType label) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::setExternalLabel(idType internal_id, labelType label) {
     memcpy((data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), &label,
            sizeof(labelType));
 }
 
-template <typename dist_t>
-labelType *HierarchicalNSW<dist_t>::getExternalLabelPtr(idType internal_id) const {
+template <typename DataType, typename DistType>
+labelType *HNSWIndex<DataType, DistType>::getExternalLabelPtr(idType internal_id) const {
     return (labelType *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                          label_offset_);
 }
 
-template <typename dist_t>
-char *HierarchicalNSW<dist_t>::getDataByInternalId(idType internal_id) const {
+template <typename DataType, typename DistType>
+char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
     return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
+template <typename DataType, typename DistType>
+size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(level_generator_)) * reverse_size;
     return (size_t)r;
 }
 
-template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labelType label,
-                                                            const void *data_point) {
-    if (label_lookup_.find(label) == label_lookup_.end()) {
+template <typename DataType, typename DistType>
+double HNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
+                                                      const void *vector_data) const {
+    auto id = label_lookup_.find(label);
+    if (id == label_lookup_.end()) {
         return INVALID_SCORE;
     }
-    dist_t t = dist_func_(data_point, getDataByInternalId(label_lookup_[label]), dim);
-    return t;
+    return this->dist_func(vector_data, getDataByInternalId(id->second), this->dim);
 }
 
-template <typename dist_t>
-vecsim_stl::vector<idType> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(idType internal_id,
-                                                                         size_t level) const {
+template <typename DataType, typename DistType>
+vecsim_stl::vector<idType> *HNSWIndex<DataType, DistType>::getIncomingEdgesPtr(idType internal_id,
+                                                                               size_t level) const {
     if (level == 0) {
         return reinterpret_cast<vecsim_stl::vector<idType> *>(
             *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
@@ -299,68 +300,65 @@ vecsim_stl::vector<idType> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(idType 
                    incoming_links_offset));
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(idType internal_id, size_t level, void *set_ptr) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::setIncomingEdgesPtr(idType internal_id, size_t level,
+                                                        void *edges_ptr) {
     if (level == 0) {
         memcpy(data_level0_memory_ + internal_id * size_data_per_element_ + incoming_links_offset0,
-               &set_ptr, sizeof(void *));
+               &edges_ptr, sizeof(void *));
     } else {
         memcpy(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset,
-               &set_ptr, sizeof(void *));
+               &edges_ptr, sizeof(void *));
     }
 }
 
-template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(idType internal_id) const {
+template <typename DataType, typename DistType>
+linklistsizeint *HNSWIndex<DataType, DistType>::get_linklist0(idType internal_id) const {
     return (linklistsizeint *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                                offsetLevel0_);
 }
 
-template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(idType internal_id, size_t level) const {
+template <typename DataType, typename DistType>
+linklistsizeint *HNSWIndex<DataType, DistType>::get_linklist(idType internal_id,
+                                                             size_t level) const {
     return (linklistsizeint *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_);
 }
 
-template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(idType internal_id,
-                                                                size_t level) const {
+template <typename DataType, typename DistType>
+linklistsizeint *HNSWIndex<DataType, DistType>::get_linklist_at_level(idType internal_id,
+                                                                      size_t level) const {
     return level == 0 ? get_linklist0(internal_id) : get_linklist(internal_id, level);
 }
 
-template <typename dist_t>
-unsigned short int HierarchicalNSW<dist_t>::getListCount(const linklistsizeint *ptr) const {
+template <typename DataType, typename DistType>
+unsigned short int HNSWIndex<DataType, DistType>::getListCount(const linklistsizeint *ptr) const {
     return *((unsigned short int *)ptr);
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setListCount(linklistsizeint *ptr, unsigned short int size) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::setListCount(linklistsizeint *ptr, unsigned short int size) {
     *((unsigned short int *)(ptr)) = *((unsigned short int *)&size);
 }
 
-template <typename dist_t>
-idType HierarchicalNSW<dist_t>::getEntryPointId() const {
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::getEntryPointId() const {
     return entrypoint_node_;
 }
 
-template <typename dist_t>
-VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
+template <typename DataType, typename DistType>
+VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler.get();
 }
 
-template <typename dist_t>
-bool HierarchicalNSW<dist_t>::isLabelExist(labelType label) {
-    return (label_lookup_.find(label) != label_lookup_.end());
-}
 /**
  * helper functions
  */
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
-                                               candidatesMaxHeap<dist_t> candidates, size_t Mcurmax,
-                                               idType *node_neighbors,
-                                               const vecsim_stl::vector<bool> &neighbors_bitmap,
-                                               idType *removed_links, size_t *removed_links_num) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeExtraLinks(
+    linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates, size_t Mcurmax,
+    idType *node_neighbors, const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
+    size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
@@ -387,12 +385,11 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
     *removed_links_num = removed_idx;
 }
 
-template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::processCandidate(idType curNodeId, const void *data_point,
-                                                 size_t layer, size_t ef, tag_t visited_tag,
-                                                 candidatesMaxHeap<dist_t> &top_candidates,
-                                                 candidatesMaxHeap<dist_t> &candidate_set,
-                                                 dist_t lowerBound) const {
+template <typename DataType, typename DistType>
+DistType HNSWIndex<DataType, DistType>::processCandidate(
+    idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
+    candidatesMaxHeap<DistType> &top_candidates, candidatesMaxHeap<DistType> &candidate_set,
+    DistType lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -417,7 +414,7 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(idType curNodeId, const void *d
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *currObj1 = (getDataByInternalId(candidate_id));
 
-        dist_t dist1 = dist_func_(data_point, currObj1, dim);
+        DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
         if (top_candidates.size() < ef || lowerBound > dist1) {
             candidate_set.emplace(-dist1, candidate_id);
 
@@ -437,13 +434,11 @@ dist_t HierarchicalNSW<dist_t>::processCandidate(idType curNodeId, const void *d
     return lowerBound;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(idType curNodeId, const void *query_data,
-                                                           size_t layer, double epsilon,
-                                                           tag_t visited_tag,
-                                                           VecSimQueryResult **results,
-                                                           candidatesMaxHeap<dist_t> &candidate_set,
-                                                           dist_t dyn_range, dist_t radius) const {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
+    idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
+    VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
+    DistType radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -469,7 +464,7 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(idType curNodeId, con
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *candidate_data = getDataByInternalId(candidate_id);
 
-        dist_t candidate_dist = dist_func_(query_data, candidate_data, dim);
+        DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
         if (candidate_dist < dyn_range) {
             candidate_set.emplace(-candidate_dist, candidate_id);
 
@@ -487,9 +482,10 @@ void HierarchicalNSW<dist_t>::processCandidate_RangeSearch(idType curNodeId, con
     __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
 }
 
-template <typename dist_t>
-candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(idType ep_id, const void *data_point,
-                                                               size_t layer, size_t ef) const {
+template <typename DataType, typename DistType>
+candidatesMaxHeap<DistType>
+HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
+                                           size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -498,18 +494,18 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(idType ep_id, con
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    candidatesMaxHeap<dist_t> top_candidates(this->allocator);
-    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
-    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
-    dist_t lowerBound = dist;
+    DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+    DistType lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
@@ -525,15 +521,15 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(idType ep_id, con
     return top_candidates;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates,
-                                                       const size_t M) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
+    candidatesMaxHeap<DistType> &top_candidates, const size_t M) {
     if (top_candidates.size() < M) {
         return;
     }
 
-    candidatesMaxHeap<dist_t> queue_closest(this->allocator);
-    vecsim_stl::vector<std::pair<dist_t, idType>> return_list(this->allocator);
+    candidatesMaxHeap<DistType> queue_closest(this->allocator);
+    vecsim_stl::vector<pair<DistType, idType>> return_list(this->allocator);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
         // (higher).
@@ -544,19 +540,19 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
     while (queue_closest.size()) {
         if (return_list.size() >= M)
             break;
-        std::pair<dist_t, idType> current_pair = queue_closest.top();
-        dist_t dist_to_query = -current_pair.first;
+        pair<DistType, idType> current_pair = queue_closest.top();
+        DistType candidate_to_query_dist = -current_pair.first;
         queue_closest.pop();
         bool good = true;
 
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
-        for (std::pair<dist_t, idType> second_pair : return_list) {
-            dist_t curdist = dist_func_(getDataByInternalId(second_pair.second),
-                                        getDataByInternalId(current_pair.second), dim);
-            ;
-            if (curdist < dist_to_query) {
+        for (pair<DistType, idType> second_pair : return_list) {
+            DistType candidate_to_selected_dist =
+                this->dist_func(getDataByInternalId(second_pair.second),
+                                getDataByInternalId(current_pair.second), this->dim);
+            if (candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
             }
@@ -566,15 +562,14 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
         }
     }
 
-    for (std::pair<dist_t, idType> current_pair : return_list) {
+    for (pair<DistType, idType> current_pair : return_list) {
         top_candidates.emplace(-current_pair.first, current_pair.second);
     }
 }
 
-template <typename dist_t>
-idType HierarchicalNSW<dist_t>::mutuallyConnectNewElement(idType cur_c,
-                                                          candidatesMaxHeap<dist_t> &top_candidates,
-                                                          size_t level) {
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
+    idType cur_c, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
     size_t Mcurmax = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
     if (top_candidates.size() > M_)
@@ -608,7 +603,7 @@ idType HierarchicalNSW<dist_t>::mutuallyConnectNewElement(idType cur_c,
     }
 
     // go over the selected neighbours - selectedNeighbor is the neighbour id
-    vecsim_stl::vector<bool> neighbors_bitmap(allocator);
+    vecsim_stl::vector<bool> neighbors_bitmap(this->allocator);
     for (idType selectedNeighbor : selectedNeighbors) {
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
@@ -632,18 +627,19 @@ idType HierarchicalNSW<dist_t>::mutuallyConnectNewElement(idType cur_c,
             setListCount(ll_other, sz_link_list_other + 1);
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
-            candidatesMaxHeap<dist_t> candidates(this->allocator);
+            candidatesMaxHeap<DistType> candidates(this->allocator);
             // (re)use the bitmap to represent the set of the original neighbours for the current
             // selected neighbour.
             neighbors_bitmap.assign(max_id + 1, false);
-            dist_t d_max =
-                dist_func_(getDataByInternalId(cur_c), getDataByInternalId(selectedNeighbor), dim);
+            DistType d_max = this->dist_func(getDataByInternalId(cur_c),
+                                             getDataByInternalId(selectedNeighbor), this->dim);
             candidates.emplace(d_max, cur_c);
             // consider cur_c as if it was a link of the selected neighbor
             neighbors_bitmap[cur_c] = true;
             for (size_t j = 0; j < sz_link_list_other; j++) {
-                candidates.emplace(dist_func_(getDataByInternalId(neighbor_neighbors[j]),
-                                              getDataByInternalId(selectedNeighbor), dim),
+                candidates.emplace(this->dist_func(getDataByInternalId(neighbor_neighbors[j]),
+                                                   getDataByInternalId(selectedNeighbor),
+                                                   this->dim),
                                    neighbor_neighbors[j]);
                 neighbors_bitmap[neighbor_neighbors[j]] = true;
             }
@@ -685,13 +681,13 @@ idType HierarchicalNSW<dist_t>::mutuallyConnectNewElement(idType cur_c,
     return next_closest_entry_point;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     idType element_internal_id, idType neighbour_id, idType *neighbours_list,
     idType *neighbour_neighbours_list, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
     // put the deleted element's neighbours in the candidates.
-    candidatesMaxHeap<dist_t> candidates(this->allocator);
+    candidatesMaxHeap<DistType> candidates(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (idType *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
@@ -699,9 +695,9 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
         if (neighbours[j] == neighbour_id) {
             continue;
         }
-        candidates.emplace(
-            dist_func_(getDataByInternalId(neighbours[j]), getDataByInternalId(neighbour_id), dim),
-            neighbours[j]);
+        candidates.emplace(this->dist_func(getDataByInternalId(neighbours[j]),
+                                           getDataByInternalId(neighbour_id), this->dim),
+                           neighbours[j]);
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
@@ -716,8 +712,8 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
             neighbour_neighbours[j] == element_internal_id) {
             continue;
         }
-        candidates.emplace(dist_func_(getDataByInternalId(neighbour_id),
-                                      getDataByInternalId(neighbour_neighbours[j]), dim),
+        candidates.emplace(this->dist_func(getDataByInternalId(neighbour_id),
+                                           getDataByInternalId(neighbour_neighbours[j]), this->dim),
                            neighbour_neighbours[j]);
     }
 
@@ -777,11 +773,12 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(
     }
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::replaceEntryPoint(idType element_internal_id) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
+    idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
-    while (element_internal_id == entrypoint_node_) {
-        linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id, maxlevel_);
+    while (old_entry == entrypoint_node_) {
+        linklistsizeint *top_level_list = get_linklist_at_level(old_entry, maxlevel_);
         if (getListCount(top_level_list) > 0) {
             // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
             entrypoint_node_ = ((idType *)(top_level_list + 1))[0];
@@ -789,7 +786,7 @@ void HierarchicalNSW<dist_t>::replaceEntryPoint(idType element_internal_id) {
             // If there is no neighbors in the current level, check for any vector at
             // this level to be the new entry point.
             for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
-                if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
+                if (element_levels_[cur_id] == maxlevel_ && cur_id != old_entry) {
                     entrypoint_node_ = cur_id;
                     break;
                 }
@@ -797,7 +794,7 @@ void HierarchicalNSW<dist_t>::replaceEntryPoint(idType element_internal_id) {
         }
         // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
         // until we find a new entry point, or the index is empty.
-        if (element_internal_id == entrypoint_node_) {
+        if (old_entry == entrypoint_node_) {
             maxlevel_--;
             if ((int)maxlevel_ < 0) {
                 maxlevel_ = HNSW_INVALID_LEVEL;
@@ -807,9 +804,9 @@ void HierarchicalNSW<dist_t>::replaceEntryPoint(idType element_internal_id) {
     }
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(idType element_internal_id,
-                                                      idType last_element_internal_id) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
+                                                            idType last_element_internal_id) {
     // swap label
     labelType last_element_label = getExternalLabel(last_element_internal_id);
     label_lookup_[last_element_label] = element_internal_id;
@@ -899,12 +896,14 @@ void HierarchicalNSW<dist_t>::SwapLastIdWithDeletedId(idType element_internal_id
     size_t efRuntime;
     double epsilon;
 } HNSWParams; */
-template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params, dist_func_t<dist_t> func,
+template <typename DataType, typename DistType>
+HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecsimBaseObject(allocator), max_elements_(params->initialCapacity), dim(params->dim),
-      data_size_(VecSimType_sizeof(params->type) * dim), dist_func_(func),
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
+                                    params->blockSize, params->multi),
+      max_elements_(params->initialCapacity),
+      data_size_(VecSimType_sizeof(params->type) * this->dim),
       element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
@@ -970,7 +969,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params, dist_func_t<d
 
     linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
     if (linkLists_ == nullptr)
-        throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate linklists");
+        throw std::runtime_error("Not enough memory: HNSWIndex failed to allocate linklists");
 
     // The i-th entry in linkLists array points to max_level[i] (continuous)
     // chunks of memory, each one will look like this:
@@ -982,8 +981,8 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(const HNSWParams *params, dist_func_t<d
     incoming_links_offset = maxM_ * sizeof(idType) + sizeof(linklistsizeint);
 }
 
-template <typename dist_t>
-HierarchicalNSW<dist_t>::~HierarchicalNSW() {
+template <typename DataType, typename DistType>
+HNSWIndex<DataType, DistType>::~HNSWIndex() {
     if (max_id != HNSW_INVALID_ID) {
         for (idType id = 0; id <= max_id; id++) {
             for (size_t level = 0; level <= element_levels_[id]; level++) {
@@ -1001,8 +1000,8 @@ HierarchicalNSW<dist_t>::~HierarchicalNSW() {
 /**
  * Index API functions
  */
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     element_levels_.resize(new_max_elements);
     element_levels_.shrink_to_fit();
     label_lookup_.reserve(new_max_elements);
@@ -1032,11 +1031,14 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
     max_elements_ = new_max_elements;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::removePoint(const labelType label) {
-
+template <typename DataType, typename DistType>
+int HNSWIndex<DataType, DistType>::deleteVector(const labelType label) {
+    // check that the label actually exists in the graph, and update the number of elements.
+    if (label_lookup_.find(label) == label_lookup_.end()) {
+        return false;
+    }
     idType element_internal_id = label_lookup_[label];
-    vecsim_stl::vector<bool> neighbours_bitmap(allocator);
+    vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
     // go over levels and repair connections
     size_t element_top_level = element_levels_[element_internal_id];
@@ -1095,7 +1097,7 @@ void HierarchicalNSW<dist_t>::removePoint(const labelType label) {
     // replace the entry point with another one, if we are deleting the current entry point.
     if (element_internal_id == entrypoint_node_) {
         assert(element_top_level == maxlevel_);
-        replaceEntryPoint(element_internal_id);
+        replaceEntryPoint();
     }
 
     // Swap the last id with the deleted one, and invalidate the last id data.
@@ -1114,18 +1116,47 @@ void HierarchicalNSW<dist_t>::removePoint(const labelType label) {
     } else {
         SwapLastIdWithDeletedId(element_internal_id, last_element_internal_id);
     }
+
+    // If we need to free a complete block & there is a least one block between the
+    // capacity and the size.
+    if (cur_element_count % this->blockSize == 0 &&
+        cur_element_count + this->blockSize <= max_elements_) {
+
+        // Check if the capacity is aligned to block size.
+        size_t extra_space_to_free = max_elements_ % this->blockSize;
+
+        // Remove one block from the capacity.
+        this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
+    }
+    return true;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType label) {
+template <typename DataType, typename DistType>
+int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
 
     idType cur_c;
+
+    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
+        float_vector_normalize(normalized_data, this->dim);
+        vector_data = normalized_data;
+    }
 
     {
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
 
+        // Checking if an element with the given label already exists. if so, remove it.
+        if (label_lookup_.find(label) != label_lookup_.end()) {
+            deleteVector(label);
+        }
+        if (cur_element_count >= max_elements_) {
+            size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
+            resizeIndex(max_elements_ + vectors_to_add);
+        }
         cur_c = max_id = cur_element_count++;
         label_lookup_[label] = cur_c;
     }
@@ -1152,7 +1183,7 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
 
     // Initialisation of the data and label
     memcpy(getExternalLabelPtr(cur_c), &label, sizeof(labelType));
-    memcpy(getDataByInternalId(cur_c), data_point, data_size_);
+    memcpy(getDataByInternalId(cur_c), vector_data, data_size_);
 
     if (element_max_level > 0) {
         linkLists_[cur_c] =
@@ -1165,7 +1196,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
         if (element_max_level < maxlevelcopy) {
-            dist_t cur_dist = dist_func_(data_point, getDataByInternalId(currObj), dim);
+            DistType cur_dist =
+                this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
@@ -1189,7 +1221,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
                             throw std::runtime_error(
                                 "candidate error: candidate id is out of index range");
 
-                        dist_t d = dist_func_(data_point, getDataByInternalId(cand), dim);
+                        DistType d =
+                            this->dist_func(vector_data, getDataByInternalId(cand), this->dim);
                         if (d < cur_dist) {
                             cur_dist = d;
                             currObj = cand;
@@ -1204,8 +1237,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
             if (level > maxlevelcopy || level < 0) // possible?
                 throw std::runtime_error("Level error");
 
-            candidatesMaxHeap<dist_t> top_candidates =
-                searchLayer(currObj, data_point, level, ef_construction_);
+            candidatesMaxHeap<DistType> top_candidates =
+                searchLayer(currObj, vector_data, level, ef_construction_);
             currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
         }
 
@@ -1230,21 +1263,23 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labelType l
         }
         maxlevel_ = element_max_level;
     }
+    return true;
 }
 
-template <typename dist_t>
-idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                                    VecSimQueryResult_Code *rc) const {
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+                                                          VecSimQueryResult_Code *rc) const {
 
     if (cur_element_count == 0) {
         return entrypoint_node_;
     }
     idType currObj = entrypoint_node_;
-    dist_t cur_dist = dist_func_(query_data, getDataByInternalId(entrypoint_node_), dim);
+    DistType cur_dist =
+        this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
-            if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
+            if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
                 *rc = VecSim_QueryResult_TimedOut;
                 return HNSW_INVALID_ID;
             }
@@ -1257,7 +1292,7 @@ idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void
                 if (candidate > max_elements_)
                     throw std::runtime_error("candidate error: out of index range");
 
-                dist_t d = dist_func_(query_data, getDataByInternalId(candidate), dim);
+                DistType d = this->dist_func(query_data, getDataByInternalId(candidate), this->dim);
                 if (d < cur_dist) {
                     cur_dist = d;
                     currObj = candidate;
@@ -1270,12 +1305,12 @@ idType HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void
     return currObj;
 }
 
-template <typename dist_t>
-candidatesLabelsMaxHeap<dist_t>
-HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                       size_t ef, size_t k, void *timeoutCtx,
-                                                       VecSimQueryResult_Code *rc) const {
-    candidatesLabelsMaxHeap<dist_t> results(this->allocator);
+template <typename DataType, typename DistType>
+candidatesLabelsMaxHeap<DistType>
+HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
+                                                             size_t ef, size_t k, void *timeoutCtx,
+                                                             VecSimQueryResult_Code *rc) const {
+    candidatesLabelsMaxHeap<DistType> results(this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -1284,22 +1319,22 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void 
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    candidatesMaxHeap<dist_t> top_candidates(this->allocator);
-    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
-    dist_t dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
-    dist_t lowerBound = dist;
+    DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+    DistType lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
         if ((-curr_el_pair.first) > lowerBound) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }
@@ -1323,29 +1358,66 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(idType ep_id, const void 
     return results;
 }
 
-template <typename dist_t>
-candidatesLabelsMaxHeap<dist_t>
-HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeoutCtx,
-                                   VecSimQueryResult_Code *rc) const {
+template <typename DataType, typename DistType>
+VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
+                                                                VecSimQueryParams *queryParams) {
+
+    VecSimQueryResult_List rl = {0};
+    this->last_mode = STANDARD_KNN;
 
     if (cur_element_count == 0) {
-        *rc = VecSim_QueryResult_OK;
-        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
+        rl.code = VecSim_QueryResult_OK;
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
-    if (VecSim_OK != *rc) {
-        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
-    }
-    candidatesLabelsMaxHeap<dist_t> results = searchBottomLayer_WithTimeout(
-        bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, rc);
+    void *timeoutCtx = nullptr;
 
-    return results;
+    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic
+        memcpy(normalized_data, query_data, this->dim * sizeof(DataType));
+        float_vector_normalize(normalized_data, this->dim);
+        query_data = normalized_data;
+    }
+    // Get original efRuntime and store it.
+    size_t originalEF = ef_;
+
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.efRuntime != 0) {
+            ef_ = queryParams->hnswRuntimeParams.efRuntime;
+        }
+    }
+
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
+    if (VecSim_OK != rl.code) {
+        ef_ = originalEF;
+        return rl;
+    }
+
+    candidatesLabelsMaxHeap<DistType> results = searchBottomLayer_WithTimeout(
+        bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, &rl.code);
+
+    // Restore efRuntime.
+    ef_ = originalEF;
+
+    if (VecSim_OK != rl.code) {
+        return rl;
+    }
+
+    rl.results = array_new_len<VecSimQueryResult>(results.size(), results.size());
+    for (int i = (int)results.size() - 1; i >= 0; --i) {
+        VecSimQueryResult_SetId(rl.results[i], results.top().second);
+        VecSimQueryResult_SetScore(rl.results[i], results.top().first);
+        results.pop();
+    }
+    return rl;
 }
 
-template <typename dist_t>
-VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
-    idType ep_id, const void *data_point, double epsilon, dist_t radius, void *timeoutCtx,
+template <typename DataType, typename DistType>
+VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
+    idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
@@ -1355,11 +1427,11 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
 #endif
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
-    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
-    dist_t ep_dist = dist_func_(data_point, getDataByInternalId(ep_id), dim);
-    dist_t dynamic_range = ep_dist;
+    DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+    DistType dynamic_range = ep_dist;
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
         auto new_result = VecSimQueryResult{};
@@ -1369,18 +1441,18 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
         dynamic_range = radius; // to ensure that dyn_range >= radius.
     }
 
-    dist_t dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
+    DistType dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
     candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, idType> curr_el_pair = candidate_set.top();
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
         // finish the search.
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<dist_t>::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return results;
         }
@@ -1407,24 +1479,297 @@ VecSimQueryResult *HierarchicalNSW<dist_t>::searchRangeBottomLayer_WithTimeout(
     return results;
 }
 
-template <typename dist_t>
-VecSimQueryResult *HierarchicalNSW<dist_t>::searchRange(const void *query_data, dist_t radius,
-                                                        void *timeoutCtx,
-                                                        VecSimQueryResult_Code *rc) const {
+template <typename DataType, typename DistType>
+VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
+                                                                 DistType radius,
+                                                                 VecSimQueryParams *queryParams) {
+
+    VecSimQueryResult_List rl = {0};
+    this->last_mode = RANGE_QUERY;
 
     if (cur_element_count == 0) {
-        *rc = VecSim_QueryResult_OK;
-        return array_new<VecSimQueryResult>(0);
+        rl.code = VecSim_QueryResult_OK;
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
+    }
+    void *timeoutCtx = nullptr;
+
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        // TODO: need more generic when other types will be supported.
+        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
+        float_vector_normalize(normalized_blob, this->dim);
+        query_data = normalized_blob;
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
-    if (VecSim_OK != *rc) {
-        return array_new<VecSimQueryResult>(0);
+    double originalEpsilon = epsilon_;
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
+            epsilon_ = queryParams->hnswRuntimeParams.epsilon;
+        }
     }
+
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
+    if (VecSim_OK != rl.code) {
+        epsilon_ = originalEpsilon;
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
+    }
+
     // search bottom layer
-    VecSimQueryResult *result = searchRangeBottomLayer_WithTimeout(
-        bottom_layer_ep, query_data, this->epsilon_, radius, timeoutCtx, rc);
-    return result;
+    rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, this->epsilon_,
+                                                    radius, timeoutCtx, &rl.code);
+
+    // Restore the default epsilon.
+    epsilon_ = originalEpsilon;
+    return rl;
 }
 
-} // namespace hnswlib
+template <typename DataType, typename DistType>
+VecSimBatchIterator *
+HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
+                                                VecSimQueryParams *queryParams) {
+    // As this is the only supported type, we always allocate 4 bytes for every element in the
+    // vector.
+    assert(this->vecType == VecSimType_FLOAT32);
+    auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    if (this->metric == VecSimMetric_Cosine) {
+        float_vector_normalize((DataType *)queryBlobCopy, this->dim);
+    }
+    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
+    return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
+
+    VecSimIndexInfo info;
+    info.algo = VecSimAlgo_HNSWLIB;
+    info.hnswInfo.dim = this->dim;
+    info.hnswInfo.type = this->vecType;
+    info.hnswInfo.isMulti = this->isMulti;
+    info.hnswInfo.metric = this->metric;
+    info.hnswInfo.blockSize = this->blockSize;
+    info.hnswInfo.M = this->getM();
+    info.hnswInfo.efConstruction = this->getEfConstruction();
+    info.hnswInfo.efRuntime = this->getEf();
+    info.hnswInfo.epsilon = this->epsilon_;
+    info.hnswInfo.indexSize = this->indexSize();
+    info.hnswInfo.indexLabelCount = this->indexLabelCount();
+    info.hnswInfo.max_level = this->getMaxLevel();
+    info.hnswInfo.entrypoint = this->getEntryPointLabel();
+    info.hnswInfo.memory = this->allocator->getAllocationSize();
+    info.hnswInfo.last_mode = this->last_mode;
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
+    VecSimIndexInfo info = this->info();
+    // For readability. Update this number when needed.
+    size_t numberOfInfoFields = 12;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TYPE_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.hnswInfo.type)}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.dim}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::METRIC_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.hnswInfo.metric)}}});
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexSize}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexLabelCount}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.M}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efConstruction}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efRuntime}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.max_level}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.entrypoint}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.memory}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .fieldValue = {FieldValue{
+                             .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+                         .fieldType = INFOFIELD_FLOAT64,
+                         .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
+
+    return infoIterator;
+}
+
+template <typename DataType, typename DistType>
+bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
+                                                      bool initial_check) {
+    // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
+    // see scripts/HNSW_batches_clf.py
+    size_t index_size = this->indexSize();
+    if (subsetSize > index_size) {
+        throw std::runtime_error("internal error: subset size cannot be larger than index size");
+    }
+    size_t d = this->dim;
+    size_t M = this->getM();
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    bool res;
+
+    // node 0
+    if (index_size <= 30000) {
+        // node 1
+        if (index_size <= 5500) {
+            // node 5
+            res = true;
+        } else {
+            // node 6
+            if (r <= 0.17) {
+                // node 11
+                res = true;
+            } else {
+                // node 12
+                if (k <= 12) {
+                    // node 13
+                    if (d <= 55) {
+                        // node 17
+                        res = false;
+                    } else {
+                        // node 18
+                        if (M <= 10) {
+                            // node 19
+                            res = false;
+                        } else {
+                            // node 20
+                            res = true;
+                        }
+                    }
+                } else {
+                    // node 14
+                    res = true;
+                }
+            }
+        }
+    } else {
+        // node 2
+        if (r < 0.07) {
+            // node 3
+            if (index_size <= 750000) {
+                // node 15
+                res = true;
+            } else {
+                // node 16
+                if (k <= 7) {
+                    // node 21
+                    res = false;
+                } else {
+                    // node 22
+                    if (r <= 0.03) {
+                        // node 23
+                        res = true;
+                    } else {
+                        // node 24
+                        res = false;
+                    }
+                }
+            }
+        } else {
+            // node 4
+            if (d <= 75) {
+                // node 7
+                res = false;
+            } else {
+                // node 8
+                if (k <= 12) {
+                    // node 9
+                    if (r <= 0.21) {
+                        // node 27
+                        if (M <= 57) {
+                            // node 29
+                            if (index_size <= 75000) {
+                                // node 31
+                                res = true;
+                            } else {
+                                // node 32
+                                res = false;
+                            }
+                        } else {
+                            // node 30
+                            res = true;
+                        }
+                    } else {
+                        // node 28
+                        res = false;
+                    }
+                } else {
+                    // node 10
+                    if (M <= 10) {
+                        // node 25
+                        if (r <= 0.17) {
+                            // node 33
+                            res = true;
+                        } else {
+                            // node 34
+                            res = false;
+                        }
+                    } else {
+                        // node 26
+                        if (index_size <= 300000) {
+                            // node 35
+                            res = true;
+                        } else {
+                            // node 36
+                            if (r <= 0.17) {
+                                // node 37
+                                res = true;
+                            } else {
+                                // node 38
+                                res = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Set the mode - if this isn't the initial check, we switched mode form batches to ad-hoc.
+    this->last_mode =
+        res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
+    return res;
+}

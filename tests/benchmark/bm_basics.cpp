@@ -73,8 +73,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
         memcpy(removed_vec.data(),
-               reinterpret_cast<HNSWIndex *>(hnsw_index)
-                   ->getHNSWIndex()
+               reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)
                    ->getDataByInternalId(id_to_remove),
                dim * sizeof(float));
         blobs.push_back(removed_vec);

@@ -1,22 +1,20 @@
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
-#include "VecSim/algorithms/hnsw/hnswlib.h" //linklistsizeint
-#include "VecSim/vec_sim_common.h"          // labelType
+#include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/vec_sim_common.h"
+#include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
-using namespace hnswlib;
+namespace HNSWFactory {
 
-VecSimIndex *HNSWFactory::NewIndex(const HNSWParams *params,
-                                   std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     assert(!params->multi);
-    return new (allocator) HNSWIndex(params, allocator);
+    return new (allocator) HNSWIndex<float, float>(params, allocator);
 }
 
-size_t HNSWFactory::EstimateInitialSize(const HNSWParams *params) {
+size_t EstimateInitialSize(const HNSWParams *params) {
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    est += sizeof(HNSWIndex);
-    est += sizeof(hnswlib::HierarchicalNSW<float>) + sizeof(size_t);
+    est += sizeof(HNSWIndex<float, float>);
     // Used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
     est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);
@@ -39,7 +37,7 @@ size_t HNSWFactory::EstimateInitialSize(const HNSWParams *params) {
     return est;
 }
 
-size_t HNSWFactory::EstimateElementSize(const HNSWParams *params) {
+size_t EstimateElementSize(const HNSWParams *params) {
     size_t size_links_level0 = sizeof(linklistsizeint) + params->M * 2 * sizeof(idType) +
                                sizeof(void *) + sizeof(vecsim_stl::vector<idType>);
     size_t size_links_higher_level = sizeof(linklistsizeint) + params->M * sizeof(idType) +
@@ -73,3 +71,13 @@ size_t HNSWFactory::EstimateElementSize(const HNSWParams *params) {
      */
     return size_meta_data + size_total_data_per_element;
 }
+
+// TODO overload for doubles
+VecSimBatchIterator *newBatchIterator(void *queryBlob, VecSimQueryParams *queryParams,
+                                      std::shared_ptr<VecSimAllocator> allocator,
+                                      HNSWIndex<float, float> *index) {
+
+    return new (allocator)
+        HNSW_BatchIterator<float, float>(queryBlob, index, queryParams, allocator);
+}
+}; // namespace HNSWFactory

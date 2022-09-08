@@ -238,7 +238,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::max_priority_queue<std::pair<DistType, labelType>> TopCandidates(this->allocator);
+    vecsim_stl::max_priority_queue<DistType, labelType> TopCandidates(this->allocator);
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {

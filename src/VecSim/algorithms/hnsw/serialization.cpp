@@ -3,10 +3,8 @@
 #include <utility>
 #include "serialization.h"
 #include "VecSim/utils/vecsim_stl.h"
-#include "hnswlib.h"
+#include "hnsw.h"
 #define HNSW_INVALID_META_DATA SIZE_MAX
-
-namespace hnswlib {
 
 // Helper functions for serializing the index.
 template <typename T>
@@ -200,9 +198,8 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     }
 }
 
-HNSWIndexSerializer::HNSWIndexSerializer(std::shared_ptr<HierarchicalNSW<float>> hnsw_index_) {
-    hnsw_index = std::move(hnsw_index_); // Hold a reference of the index.
-}
+HNSWIndexSerializer::HNSWIndexSerializer(HNSWIndex<float, float> *hnsw_index_)
+    : hnsw_index(hnsw_index_) {}
 
 void HNSWIndexSerializer::saveIndex(const std::string &location) {
     std::ofstream output(location, std::ios::binary);
@@ -232,15 +229,7 @@ void HNSWIndexSerializer::loadIndex(const std::string &location) {
     input.close();
 }
 
-void HNSWIndexSerializer::reset(std::shared_ptr<hnswlib::HierarchicalNSW<float>> hnsw_index_) {
-    // Hold the allocator, so it won't be destroyed while VecSimBaseObject is released.
-    auto allocator = hnsw_index->getAllocator();
-    if (hnsw_index_ == nullptr) {
-        hnsw_index.reset();
-        return;
-    }
-    hnsw_index = hnsw_index_;
-}
+void HNSWIndexSerializer::reset(HNSWIndex<float, float> *hnsw_index_) { hnsw_index = hnsw_index_; }
 
 HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     HNSWIndexMetaData res = {.valid_state = false,
@@ -309,4 +298,3 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     res.valid_state = true;
     return res;
 }
-} // namespace hnswlib
