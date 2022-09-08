@@ -1303,14 +1303,7 @@ TEST_F(HNSWMultiTest, testInitialSizeEstimation_No_InitialCapacity) {
                                                  .blockSize = bs}};
 
     VecSimIndex *index = VecSimIndex_New(&params);
-    // label_lookup_ hash table has additional memory, since STL implementation chooses "an
-    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
-    // buckets are created)
     size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    estimation +=
-        (reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.bucket_count() -
-         n) *
-        sizeof(size_t);
 
     size_t actual = index->getAllocator()->getAllocationSize();
     ASSERT_EQ(estimation, actual);

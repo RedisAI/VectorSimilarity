@@ -40,7 +40,7 @@ public:
         : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}
 
-    ~HNSWIndex_Multi(){};
+    ~HNSWIndex_Multi() {}
 
     inline size_t indexLabelCount() const override;
 
