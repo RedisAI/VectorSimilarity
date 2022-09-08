@@ -20,9 +20,9 @@ protected:
 TEST_F(HNSWTest, TEST_TEST_TEST) {
     auto al = VecSimAllocator::newVecsimAllocator();
     auto s = al->getAllocationSize();
-    vecsim_stl::vector<idType>vec(0, al);
+    vecsim_stl::vector<idType> vec(0, al);
     auto e = al->getAllocationSize();
-    ASSERT_EQ(e-s, 0);
+    ASSERT_EQ(e - s, 0);
 }
 
 TEST_F(HNSWTest, hnsw_vector_add_test) {
