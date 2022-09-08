@@ -29,6 +29,13 @@ using std::pair;
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
 
+// This type is strongly bounded to `idType` because of the way we get the link list:
+//
+// linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
+// unsigned short neighbours_count = getListCount(neighbours_list);
+// auto *neighbours = (idType *)(neighbours_list + 1);
+//
+// TODO: reduce the type to smaller type when possible
 typedef idType linklistsizeint;
 
 template <typename DistType>

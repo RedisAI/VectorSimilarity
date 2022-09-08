@@ -12,13 +12,14 @@ private:
 public:
     BruteForceIndex_Multi(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
         : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdsLookup(allocator) {}
+
     ~BruteForceIndex_Multi() {}
 
-    virtual int addVector(const void *vector_data, size_t label) override;
-    virtual int deleteVector(size_t id) override;
-    virtual double getDistanceFrom(size_t label, const void *vector_data) const override;
+    int addVector(const void *vector_data, labelType label) override;
+    int deleteVector(labelType labelType) override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override;
 
-    virtual inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
+    inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
 private:
     // inline definitions
@@ -54,7 +55,7 @@ private:
 /******************************* Implementation **********************************/
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, size_t label) {
+int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label) {
 
     DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -68,7 +69,7 @@ int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data
 }
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Multi<DataType, DistType>::deleteVector(size_t label) {
+int BruteForceIndex_Multi<DataType, DistType>::deleteVector(labelType label) {
 
     // Find the id to delete.
     auto deleted_label_ids_pair = this->labelToIdsLookup.find(label);
@@ -90,7 +91,7 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVector(size_t label) {
 }
 
 template <typename DataType, typename DistType>
-double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(size_t label,
+double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
                                                                   const void *vector_data) const {
 
     auto IDs = this->labelToIdsLookup.find(label);
