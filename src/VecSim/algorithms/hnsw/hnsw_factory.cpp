@@ -29,11 +29,11 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);
 #else
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
+    est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes
 #endif
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (params->initialCapacity) {
-        est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t);  // visited nodes
         est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
         est += sizeof(size_t) * params->initialCapacity +
                sizeof(size_t); // Labels lookup hash table buckets.

@@ -1198,10 +1198,10 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     if (element_max_level > 0) {
         linkLists_[cur_c] =
-            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level + 1);
+            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level);
         if (linkLists_[cur_c] == nullptr)
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
-        memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level + 1);
+        memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level);
     }
 
     // this condition only means that we are not inserting the first element.
