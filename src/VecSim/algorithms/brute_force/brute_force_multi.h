@@ -42,7 +42,7 @@ private:
 
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
-    friend class BruteForceMultiTest_resizeNAlignIndex_Test;
+    friend class BruteForceMultiTest_resize_and_align_index_Test;
     friend class BruteForceMultiTest_empty_index_Test;
     friend class BruteForceMultiTest_test_delete_swap_block_Test;
     friend class BruteForceMultiTest_remove_vector_after_replacing_block_Test;

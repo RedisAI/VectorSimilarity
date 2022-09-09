@@ -53,7 +53,7 @@ TEST_F(BruteForceMultiTest, vector_add_multiple_test) {
 
 /**** resizing cases ****/
 
-TEST_F(BruteForceMultiTest, resizeNAlignIndex) {
+TEST_F(BruteForceMultiTest, resize_and_align_index) {
     size_t dim = 4;
     size_t n = 15;
     size_t blockSize = 10;
@@ -1162,75 +1162,82 @@ TEST_F(BruteForceMultiTest, brute_get_distance) {
     }
 }
 
-// TEST_F(BruteForceMultiTest, testCosine) {
-//     size_t dim = 128;
-//     size_t n = 100;
+TEST_F(BruteForceMultiTest, testCosine) {
+    size_t dim = 128;
+    size_t n = 100;
 
-//     VecSimParams params{.algo = VecSimAlgo_BF,
-//                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
-//                                              .dim = dim,
-//                                              .metric = VecSimMetric_Cosine,
-//                                              .multi = true,
-//                                              .initialCapacity = n}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_Cosine,
+                                             .multi = true,
+                                             .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
-//     for (size_t i = 1; i <= n; i++) {
-//         float f[dim];
-//         f[0] = (float)i / n;
-//         for (size_t j = 1; j < dim; j++) {
-//             f[j] = 1.0f;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-//     float query[dim];
-//     for (size_t i = 0; i < dim; i++) {
-//         query[i] = 1.0f;
-//     }
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_EQ(id, (n - index));
-//         float first_coordinate = (float)id / n;
-//         // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-//         vector
-//         // and B is the current result vector.
-//         float expected_score =
-//             1.0f -
-//             ((first_coordinate + (float)dim - 1.0f) /
-//              (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate *
-//              first_coordinate)));
-//         // Verify that abs difference between the actual and expected score is at most 1/10^6.
-//         ASSERT_NEAR(score, expected_score, 1e-5);
-//     };
-//     runTopKSearchTest(index, query, 10, verify_res);
+    for (size_t i = 1; i <= n; i++) {
+        float f[dim];
+        f[0] = (float)i / n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0f;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    // Add more worst vector for each label
+    for (size_t i = 1; i <= n; i++) {
+        float f[dim];
+        f[0] = (float)i + n;
+        for (size_t j = 1; j < dim; j++) {
+            f[j] = 1.0f;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    float query[dim];
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0f;
+    }
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        ASSERT_EQ(id, (n - index));
+        float first_coordinate = (float)id / n;
+        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
+        // and B is the current result vector.
+        float expected_score =
+            1.0f -
+            ((first_coordinate + (float)dim - 1.0f) /
+             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+        // Verify that abs difference between the actual and expected score is at most 1/10^6.
+        ASSERT_NEAR(score, expected_score, 1e-5);
+    };
+    runTopKSearchTest(index, query, 10, verify_res);
 
-//     // Test with batch iterator.
-//     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-//     size_t iteration_num = 0;
+    // Test with batch iterator.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    size_t iteration_num = 0;
 
-//     // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
-//     // in every iteration. The order should be from the largest to the lowest id.
-//     size_t n_res = 10;
-//     while (VecSimBatchIterator_HasNext(batchIterator)) {
-//         std::vector<size_t> expected_ids(n_res);
-//         auto verify_res_batch = [&](size_t id, float score, size_t index) {
-//             ASSERT_EQ(id, (n - n_res * iteration_num - index));
-//             float first_coordinate = (float)id / n;
-//             // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-//             // vector and B is the current result vector.
-//             float expected_score =
-//                 1.0f - ((first_coordinate + (float)dim - 1.0f) /
-//                         (sqrtf((float)dim) *
-//                          sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
-//             // Verify that abs difference between the actual and expected score is at most
-//             1/10^6. ASSERT_NEAR(score, expected_score, 1e-5);
-//         };
-//         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
-//         iteration_num++;
-//     }
-//     ASSERT_EQ(iteration_num, n / n_res);
-//     VecSimBatchIterator_Free(batchIterator);
-//     VecSimIndex_Free(index);
-// }
+    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+    // in every iteration. The order should be from the largest to the lowest id.
+    size_t n_res = 10;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::vector<size_t> expected_ids(n_res);
+        auto verify_res_batch = [&](size_t id, float score, size_t index) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - index));
+            float first_coordinate = (float)id / n;
+            // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
+            // vector and B is the current result vector.
+            float expected_score =
+                1.0f - ((first_coordinate + (float)dim - 1.0f) /
+                        (sqrtf((float)dim) *
+                         sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
+            // Verify that abs difference between the actual and expected score is at most 1/10^6.
+            ASSERT_NEAR(score, expected_score, 1e-5);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, n / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
 
 TEST_F(BruteForceMultiTest, testSizeEstimation) {
     size_t dim = 128;

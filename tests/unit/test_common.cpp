@@ -171,6 +171,7 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     // Initial state checks
     ASSERT_EQ(heap.size(), 0);
     ASSERT_TRUE(heap.empty());
+    ASSERT_NO_THROW(heap.top());
 
     // Insert some data in random order
     size_t riders[] = {46, 16, 99, 93};

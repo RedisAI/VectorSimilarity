@@ -77,12 +77,12 @@ protected:
     // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;
     friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
-    friend class BruteForceTest_resizeNAlignIndex_Test;
+    friend class BruteForceTest_resize_and_align_index_Test;
     friend class BruteForceTest_brute_force_vector_update_test_Test;
     friend class BruteForceTest_brute_force_reindexing_same_vector_Test;
     friend class BruteForceTest_test_delete_swap_block_Test;
     friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
-    friend class BruteForceTest_resizeNAlignIndex_largeInitialCapacity_Test;
+    friend class BruteForceTest_resize_and_align_index_largeInitialCapacity_Test;
     friend class BruteForceTest_brute_force_empty_index_Test;
     friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
 #endif
@@ -169,7 +169,7 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
-        // Update id2labelMapping.
+        // Update idToLabelMapping.
         // Put the label of the last_id in the deleted_id.
         setVectorLabel(id_to_delete, last_idx_label);
 
@@ -190,13 +190,13 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         delete last_vector_block;
         this->vectorBlocks.pop_back();
 
-        // Resize and align the id2labelMapping.
-        size_t id2label_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the id2labelMapping
+        // Resize and align the idToLabelMapping.
+        size_t idToLabel_size = idToLabelMapping.size();
+        // If the new size is smaller by at least one block comparing to the idToLabelMapping
         // align to be a multiplication of blocksize  and resize by one block.
-        if (this->count + this->blockSize <= id2label_size) {
-            size_t vector_to_align_count = id2label_size % this->blockSize;
-            this->idToLabelMapping.resize(id2label_size - this->blockSize - vector_to_align_count);
+        if (this->count + this->blockSize <= idToLabel_size) {
+            size_t vector_to_align_count = idToLabel_size % this->blockSize;
+            this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
         }
     }
 
@@ -410,7 +410,7 @@ bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, s
         throw std::runtime_error("internal error: subset size cannot be larger than index size");
     }
     size_t d = this->dim;
-    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;
     if (index_size <= 5500) {
         // node 1
