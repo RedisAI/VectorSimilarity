@@ -681,6 +681,9 @@ TEST_F(HNSWTest, test_dynamic_hnsw_info_iterator) {
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = 1e6;
+    for (size_t i = 0; i < 1e6; i++) {
+        reinterpret_cast<HNSWIndex_Single<float, float> *>(index)->label_lookup_[i] = i;
+    }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
@@ -1569,6 +1572,9 @@ TEST_F(HNSWTest, preferAdHocOptimization) {
 
         // Set the index size artificially to be the required one.
         reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = index_size;
+        for (size_t i = 0; i < index_size; i++) {
+            reinterpret_cast<HNSWIndex_Single<float, float> *>(index)->label_lookup_[i] = i;
+        }
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);

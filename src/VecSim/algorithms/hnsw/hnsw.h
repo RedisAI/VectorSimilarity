@@ -1653,7 +1653,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     }
     size_t d = this->dim;
     size_t M = this->getM();
-    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;
 
     // node 0
