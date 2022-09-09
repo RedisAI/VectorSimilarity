@@ -13,6 +13,8 @@ private:
     friend class AllocatorTest_testIncomingEdgesSet_Test;
     friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
     friend class HNSWTest_testSizeEstimation_Test;
+    friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
+    friend class HNSWTest_preferAdHocOptimization_Test;
 #endif
 
     // VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,

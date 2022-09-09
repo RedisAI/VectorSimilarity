@@ -16,6 +16,9 @@ private:
     friend class HNSWMultiTest_empty_index_Test;
     friend class HNSWMultiTest_indexing_same_vector_Test;
     friend class HNSWMultiTest_search_more_then_there_is_Test;
+    friend class HNSWMultiTest_preferAdHocOptimization_Test;
+    friend class HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test;
+
 #endif
 
     // VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
