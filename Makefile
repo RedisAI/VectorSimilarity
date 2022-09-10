@@ -278,13 +278,16 @@ benchmark:
   	done
 	$(SHOW)python3 -m tox -e benchmark
 
+parallel_benchmark:
+	$(SHOW)$(BINDIR)/benchmark/bm_parallel_HNSW
+
 toxenv:
 ifeq ($(wildcard .tox),)
 	$(SHOW)tox -e flowenv
 endif
 	$(SHOW)bash -c ". ./.tox/flowenv/bin/activate; $$SHELL"
 
-.PHONY: unit_test flow_test mem_test benchmark toxenv
+.PHONY: unit_test flow_test mem_test benchmark toxenv parallel_benchmark
 
 #----------------------------------------------------------------------------------------------
 

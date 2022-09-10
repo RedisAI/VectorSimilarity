@@ -6,8 +6,8 @@ project(VectorSimilarity_Benchmark)
 
 set(CMAKE_CXX_STANDARD 14)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -fopenmp")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -fopenmp")
 
 enable_testing()
 
@@ -17,6 +17,9 @@ add_executable(bm_basics bm_basics.cpp bm_utils.cpp)
 target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
 add_executable(bm_updated_index bm_updated_index.cpp bm_utils.cpp)
 target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
+
+add_executable(bm_parallel_HNSW bm_parallel_HNSW.cpp)
+target_link_libraries(bm_parallel_HNSW VectorSimilarity)
 
 #########################################################################################
 # Passed this line we have optimization enabled by the compiler.                        #
