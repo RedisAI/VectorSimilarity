@@ -1352,8 +1352,8 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
 		max_id = cur_c;
 	}
 	ids_in_process.erase(cur_c);
-	if (cur_element_count-max_id > max_gap) {
-		max_gap = cur_element_count-max_id;
+	if (cur_element_count- (int)max_id > max_gap) {
+		max_gap = cur_element_count-(int)max_id;
 	}
 #endif
 	return true;

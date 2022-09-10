@@ -91,7 +91,7 @@ void run_parallel_search_benchmark() {
 	std::cout << "Total search time is "
 	          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count() << " ms" << std::endl;
 	std::cout << "Max gap between number of vectors whose indexing began to the number"
-	             "of vectors whose indexing finished and available for search is :"
+	             "of vectors whose indexing finished and available for search is: "
 	          << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
 
 	for (size_t i = 0; i < n; i++) {
@@ -200,7 +200,7 @@ void run_parallel_indexing_benchmark() {
 	std::cout << "Total build time is "
 	          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count() << " ms" << std::endl;
 	std::cout << "Max gap between number of vectors whose indexing began to the number"
-	             "of vectors whose indexing finished and available for search is :"
+	             "of vectors whose indexing finished and available for search is: "
 	          << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
 
 	for (size_t i = 0; i < n; i++) {
@@ -218,7 +218,7 @@ void run_parallel_indexing_benchmark() {
 		auto hnsw_results = VecSimIndex_TopKQuery(index, queries[q],
 		                                          k, nullptr, BY_SCORE);
 		done = std::chrono::high_resolution_clock::now();
-		total_time += std::chrono::duration_cast<std::chrono::milliseconds>(done-started).count();
+		total_time += std::chrono::duration_cast<std::chrono::microseconds>(done-started).count();
 		size_t correct = 0;
 		auto bf_results = VecSimIndex_TopKQuery(bf_index, queries[q], k,
 		                                        nullptr, BY_SCORE);
@@ -246,7 +246,7 @@ void run_parallel_indexing_benchmark() {
 		}
 		total_correct += correct;
 	}
-	std::cout << "Total search time is " << total_time << " ms" << std::endl;
+	std::cout << "Total search time is " << total_time/1000 << " ms" << std::endl;
 	std::cout << "Total recall is " << float(total_correct) / (k * num_queries) << std::endl;
 
 	VecSimIndex_Free(index);
@@ -335,7 +335,7 @@ void run_all_parallel_benchmark() {
 	std::cout << "Total build/search time is "
 	          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count() << " ms" << std::endl;
 	std::cout << "Max gap between number of vectors whose indexing began to the number"
-	             "of vectors whose indexing finished and available for search is :"
+	             "of vectors whose indexing finished and available for search is: "
 	          << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
 
 	for (size_t i = 0; i < n; i++) {
@@ -381,7 +381,7 @@ void run_all_parallel_benchmark() {
 }
 
 int main() {
-	run_all_parallel_benchmark();
 	run_parallel_indexing_benchmark();
 	run_parallel_search_benchmark();
+	run_all_parallel_benchmark();
 }
