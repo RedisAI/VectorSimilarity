@@ -15,6 +15,7 @@ import paella
 class VecSimSetup(paella.Setup):
     def __init__(self, args):
         paella.Setup.__init__(self, args.nop)
+        self.no_rmpytools = args.no_rmpytools
 
     def common_first(self):
         self.install_downloaders()
@@ -47,7 +48,8 @@ class VecSimSetup(paella.Setup):
     def common_last(self):
         self.run("{PYTHON} {READIES}/bin/getcmake --usr".format(PYTHON=self.python, READIES=READIES),
                  sudo=self.os != 'macos')
-        self.run("{PYTHON} {READIES}/bin/getrmpytools --reinstall".format(PYTHON=self.python, READIES=READIES))
+        if not self.no_rmpytools:
+            self.run("{PYTHON} {READIES}/bin/getrmpytools --reinstall --modern --pypi".format(PYTHON=self.python, READIES=READIES))
         self.run("%s/bin/getclang --format" % READIES)
         self.pip_install("-r %s/sbin/requirements.txt" % ROOT)
 
@@ -55,6 +57,7 @@ class VecSimSetup(paella.Setup):
 
 parser = argparse.ArgumentParser(description='Set up system for build.')
 parser.add_argument('-n', '--nop', action="store_true", help='no operation')
+parser.add_argument('--no-rmpytools', action="store_true", help='no operation')
 args = parser.parse_args()
 
 VecSimSetup(args).setup()

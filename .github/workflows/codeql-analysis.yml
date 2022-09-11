@@ -64,7 +64,8 @@ jobs:
 
     - run: |
         git submodule update --init --recursive
-        ./sbin/setup
+        ./deps/readies/bin/getpy3
+        ./sbin/system-setup.py --no-rmpytools
         make
 
     - name: Perform CodeQL Analysis
