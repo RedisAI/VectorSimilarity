@@ -229,6 +229,7 @@ void HNSWIndexSerializer::loadIndex(const std::string &location) {
     input.close();
 }
 
+// The serializer does not own the index, here we just replace the pointed index.
 void HNSWIndexSerializer::reset(HNSWIndex<float, float> *hnsw_index_) { hnsw_index = hnsw_index_; }
 
 HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {

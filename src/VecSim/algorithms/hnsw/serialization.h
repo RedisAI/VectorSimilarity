@@ -18,6 +18,9 @@ typedef enum EncodingVersion { EncodingVersion_V1 = 1 } EncodingVersion;
 
 class HNSWIndexSerializer {
 private:
+    // The serializer does not own the index, and it may be freed under the serializer feet.
+    // Use the serializer with extra care, and dont use any function besides `reset` after
+    // `VecSimIndex_Free` was invoked for the pointed index.
     HNSWIndex<float, float> *hnsw_index;
 
     void saveIndexFields(std::ofstream &output);

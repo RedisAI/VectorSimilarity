@@ -1,20 +1,24 @@
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
-#include "VecSim/vec_sim_common.h" // labelType
+#include "VecSim/algorithms/brute_force/brute_force_multi.h"
 
 namespace BruteForceFactory {
 VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
-    assert(!params->multi);
-    return new (allocator) BruteForceIndex_Single<float, float>(params, allocator);
+    if (params->multi)
+        return new (allocator) BruteForceIndex_Multi<float, float>(params, allocator);
+    else
+        return new (allocator) BruteForceIndex_Single<float, float>(params, allocator);
 }
 
 size_t EstimateInitialSize(const BFParams *params) {
 
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (!params->multi)
+    if (params->multi)
+        est += sizeof(BruteForceIndex_Multi<float, float>);
+    else
         est += sizeof(BruteForceIndex_Single<float, float>);
 
     // Parameters related part.
