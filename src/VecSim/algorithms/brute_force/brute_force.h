@@ -5,7 +5,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 
@@ -392,8 +391,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
         float_vector_normalize((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator)
-        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    return BruteForceFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
 }
 
 template <typename DataType, typename DistType>

@@ -2,6 +2,7 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_common.h" // labelType
+#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 
 namespace BruteForceFactory {
 VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
