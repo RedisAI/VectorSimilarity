@@ -63,11 +63,7 @@ jobs:
     #    uses a compiled language
 
     - run: |
-        mkdir -p deps
-        cd deps
-        git clone https://github.com/RedisLabsModules/readies.git
-        cd ../
-        sudo ./sbin/system-setup.py
+        ./sbin/setup
         make
 
     - name: Perform CodeQL Analysis

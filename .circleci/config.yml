@@ -28,6 +28,7 @@ commands:
               echo "Identifies as actively ignoring CI, no testing required."
               circleci step halt
             fi
+
   early_return_for_forked_pull_requests:
     description: >-
       If this build is from a fork, stop executing the current job and return success.
@@ -40,12 +41,13 @@ commands:
               echo "Nothing to do for forked PRs, so marking this step successful"
               circleci step halt
             fi
+
   setup-automation:
     steps:
       - run:
           name: Setup automation
           command: |
-            (mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
+            git submodule update --init deps/readies
             ./deps/readies/bin/getpy3
 
   checkout-all:
@@ -57,10 +59,11 @@ commands:
 
   install-prerequisites:
     steps:
-      - setup-automation
       - run:
           name: System setup
-          command: ./sbin/system-setup.py
+          command: |
+            ./sbin/setup
+            python3 -m pip list
 
   setup-ubuntu:
     steps:
@@ -100,8 +103,9 @@ commands:
             pip3 install redisbench-admin
       - run:
           name: Benchmark
+          shell: /bin/bash -l -eo pipefail
           command: |
-            bash -l -c "make benchmark"
+            make benchmark
             if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
             for bm_class in basics updated_index spaces batch_iterator; do
               redisbench-admin export \
@@ -121,13 +125,16 @@ commands:
       - install-prerequisites
       - run:
           name: Build
-          command: bash -l -c "make build"
+          shell: /bin/bash -l -eo pipefail
+          command: make build
       - run:
           name: Unit test
-          command: bash -l -c "make unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make unit_test
       - run:
           name: Valgrind test
-          command: bash -l -c "make VG=1 build unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make VG=1 build unit_test
 
   build-steps:
     steps:
@@ -142,19 +149,24 @@ commands:
       - install-prerequisites
       - run:
           name: Check format
-          command: bash -l -c "make check-format"
+          shell: /bin/bash -l -eo pipefail
+          command: make check-format
       - run:
           name: Build
-          command: bash -l -c "make build"
+          shell: /bin/bash -l -eo pipefail
+          command: make build
       - run:
           name: Unit test
-          command: bash -l -c "make unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make unit_test
       - run:
           name: Valgrind test
-          command: bash -l -c "make VG=1 build unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make VG=1 build unit_test
       - run:
           name: Build Python bindings
-          command: bash -l -c "make pybind"
+          shell: /bin/bash -l -eo pipefail
+          command: make pybind
       - run:
           name: Flow tests
           command: |
@@ -273,7 +285,8 @@ jobs:
       - checkout-all
       - run:
           name: Run & build tests
-          command: bash -l -c "make SAN=<<parameters.san-type>> build unit_test"
+          shell: /bin/bash -l -eo pipefail
+          command: make SAN=<<parameters.san-type>> build unit_test
 
   nightly_flow:
     resource_class: large
@@ -314,7 +327,8 @@ jobs:
       - install-prerequisites
       - run:
           name: Build
-          command: bash -l -c "make build"
+          shell: /bin/bash -l -eo pipefail
+          command: make build
       - benchmark
 
 #----------------------------------------------------------------------------------------------------------------------------------
