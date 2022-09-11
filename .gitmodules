@@ -1,4 +1,7 @@
 [submodule "deps/pybind11"]
 	path = deps/pybind11
 	url = https://github.com/pybind/pybind11.git
+[submodule "deps/readies"]
+	path = deps/readies
+	url = https://github.com/RedisLabsModules/readies.git
 
