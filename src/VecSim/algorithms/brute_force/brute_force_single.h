@@ -46,10 +46,10 @@ protected:
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
 
-    inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
-                                                       VecSimQueryParams *queryParams) override {
+    inline BF_BatchIterator<DataType, DistType> *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
         return new (this->allocator)
-            BFS_BatchIterator(queryBlob, this, queryParams, this->allocator);
+            BFS_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
