@@ -427,12 +427,14 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
 
+        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+            continue;
+
         // Pre-fetch the next candidate data into memory cache, to improve performance.
         idType *next_candidate_pos = node_links + j + 1;
         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
-            continue;
+
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *currObj1 = (getDataByInternalId(candidate_id));
 
