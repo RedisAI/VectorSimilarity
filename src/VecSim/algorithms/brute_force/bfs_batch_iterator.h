@@ -3,11 +3,12 @@
 
 #include <limits>
 
-class BFS_BatchIterator : public BF_BatchIterator {
+template <typename DataType, typename DistType>
+class BFS_BatchIterator : public BF_BatchIterator<DataType, DistType> {
 public:
-    BFS_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,
+    BFS_BatchIterator(void *query_vector, const BruteForceIndex<DataType, DistType> *index,
                       VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
-        : BF_BatchIterator(query_vector, index, queryParams, allocator) {}
+        : BF_BatchIterator<DataType, DistType>(query_vector, index, queryParams, allocator) {}
 
     ~BFS_BatchIterator() override = default;
 
@@ -27,11 +28,11 @@ private:
                 return rc;
             }
             for (size_t i = 0; i < block_scores.size(); i++) {
-                this->scores.emplace_back(block_scores[i], index->getVectorLabel(curr_id));
+                this->scores.emplace_back(block_scores[i], this->index->getVectorLabel(curr_id));
                 ++curr_id;
             }
         }
-        assert(curr_id == index->indexSize());
+        assert(curr_id == this->index->indexSize());
         return VecSim_QueryResult_OK;
     }
 };
