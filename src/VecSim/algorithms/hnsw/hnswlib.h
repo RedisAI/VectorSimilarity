@@ -803,31 +803,35 @@ bool HierarchicalNSW<dist_t, T>::removePoint(const labeltype label) {
     if (element_internal_id == entrypoint_node_) {
         assert(element_top_level == maxlevel_);
         // Sets the (arbitrary) new entry point.
-        while (element_internal_id == entrypoint_node_) {
-            level_data *top_level_meta = getMetadata(element_internal_id, maxlevel_);
-
-            if (top_level_meta->numLinks > 0) {
-                // Tries to set the (arbitrary) first neighbor as the entry point.
-                entrypoint_node_ = top_level_meta->links[0];
-            } else {
-                // If there is no neighbors in the current level, check for any vector at
-                // this level to be the new entry point.
-                for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
-                    if (getTopLevel(cur_id) == maxlevel_ && cur_id != element_internal_id) {
-                        entrypoint_node_ = cur_id;
-                        break;
+        level_data *top_level_meta = getMetadata(element_internal_id, maxlevel_);
+        if (top_level_meta->numLinks > 0) {
+            // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
+            entrypoint_node_ = top_level_meta->links[0];
+        } else {
+            tableint new_entry = HNSW_INVALID_ID;
+            size_t new_max_level = HNSW_INVALID_LEVEL;
+            // If there is no neighbors in the current level, check for any vector at
+            // this level to be the new entry point.
+            tableint cur_id = 0;
+            while (cur_id <= max_id &&
+                   (getTopLevel(cur_id) == HNSW_INVALID_LEVEL || cur_id == entrypoint_node_)) {
+                cur_id++;
+            }
+            if (cur_id <= max_id) {
+                new_entry = cur_id;
+                size_t cur_lvl = new_max_level = getTopLevel(cur_id);
+                while (cur_id <= max_id) {
+                    cur_lvl = getTopLevel(cur_id);
+                    if (cur_lvl > new_max_level && cur_lvl != HNSW_INVALID_LEVEL &&
+                        cur_id != entrypoint_node_) {
+                        new_entry = cur_id;
+                        new_max_level = cur_lvl;
                     }
+                    cur_id++;
                 }
             }
-            // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
-            // until we find a new entry point, or the index is empty.
-            if (element_internal_id == entrypoint_node_) {
-                maxlevel_--;
-                if ((int)maxlevel_ < 0) {
-                    maxlevel_ = HNSW_INVALID_LEVEL;
-                    entrypoint_node_ = HNSW_INVALID_ID;
-                }
-            }
+            maxlevel_ = new_max_level;
+            entrypoint_node_ = new_entry;
         }
     }
 
