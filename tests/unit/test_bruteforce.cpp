@@ -90,7 +90,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
 
     // VectorBlocks vector is empty.
     ASSERT_EQ(bf_index->vectorBlocks.size(), 0);
-    // id2label size shouldnt change.
+    // id2label size shouldn't change.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
 
     BruteForceIndex_Single<float, float> *bf_single_index =
@@ -104,7 +104,7 @@ TEST_F(BruteForceTest, brute_force_vector_update_test) {
 
 /**** resizing cases ****/
 
-TEST_F(BruteForceTest, resizeNAlignIndex) {
+TEST_F(BruteForceTest, resize_and_align_index) {
     size_t dim = 4;
     size_t n = 15;
     size_t blockSize = 10;
@@ -163,8 +163,8 @@ TEST_F(BruteForceTest, resizeNAlignIndex) {
     VecSimIndex_Free(index);
 }
 
-// Case 1: initial cpapcity is larger than block size, and it is not aligned.
-TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
+// Case 1: initial capacity is larger than block size, and it is not aligned.
+TEST_F(BruteForceTest, resize_and_align_index_largeInitialCapacity) {
     size_t dim = 4;
     size_t n = 10; // Determines the initial size of idToLabelMapping.
     size_t bs = 3;
@@ -190,7 +190,7 @@ TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
     }
 
     size_t idToLabelMapping_size = bf_index->idToLabelMapping.size();
-    // The idToLabelMapping size shouldnt change, should remain n.
+    // The idToLabelMapping size shouldn't change, should remain n.
     ASSERT_EQ(idToLabelMapping_size, n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), bs + 1);
 
@@ -212,7 +212,7 @@ TEST_F(BruteForceTest, resizeNAlignIndex_largeInitialCapacity) {
         ++i;
     }
     ASSERT_EQ(bf_index->idToLabelMapping.size(), bs);
-    // Add and delete a vector to acheive:
+    // Add and delete a vector to achieve:
     // size % block_size == 0 && size + bs <= idToLabelMapping_size(3).
     // idToLabelMapping_size should be resized to zero.
     VecSimIndex_AddVector(index, (const void *)a, 0);
@@ -246,7 +246,7 @@ TEST_F(BruteForceTest, brute_force_empty_index) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // Try to remove from an empty index - should fail because label doesnt exist.
+    // Try to remove from an empty index - should fail because label doesn't exist.
     VecSimIndex_DeleteVector(index, 0);
 
     // Add one vector.
@@ -268,7 +268,7 @@ TEST_F(BruteForceTest, brute_force_empty_index) {
 
     // Try to remove it again.
     // The idToLabelMapping_size should remain unchanged, as we are trying to delete a label that
-    // doesnt exist.
+    // doesn't exist.
     VecSimIndex_DeleteVector(index, 1);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), idToLabelMapping_size);
     // Nor the size.
@@ -514,7 +514,7 @@ TEST_F(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
 }
 
 TEST_F(BruteForceTest, test_delete_swap_block) {
-    size_t initiail_capacity = 5; // idToLabelMapping initial size.
+    size_t initial_capacity = 5; // idToLabelMapping initial size.
     size_t k = 5;
     size_t dim = 2;
 
@@ -529,14 +529,14 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
                         .bfParams = BFParams{.type = VecSimType_FLOAT32,
                                              .dim = dim,
                                              .metric = VecSimMetric_L2,
-                                             .initialCapacity = initiail_capacity,
+                                             .initialCapacity = initial_capacity,
                                              .blockSize = 3}};
     VecSimIndex *index = VecSimIndex_New(&params);
     BruteForceIndex<float, float> *bf_index =
         reinterpret_cast<BruteForceIndex<float, float> *>(index);
 
     // idToLabelMapping initial size equals n.
-    ASSERT_EQ(bf_index->idToLabelMapping.size(), initiail_capacity);
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), initial_capacity);
 
     size_t n = 6;
     for (size_t i = 0; i < n; i++) {
@@ -593,7 +593,7 @@ TEST_F(BruteForceTest, test_delete_swap_block) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceTest, sanity_rinsert_1280) {
+TEST_F(BruteForceTest, sanity_reinsert_1280) {
     size_t n = 5;
     size_t d = 1280;
     size_t k = 5;
@@ -649,6 +649,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
+    ASSERT_FALSE(info.bfInfo.isMulti);
     // Default args.
     ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
@@ -665,6 +666,7 @@ TEST_F(BruteForceTest, test_bf_info) {
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
+    ASSERT_FALSE(info.bfInfo.isMulti);
     // User args.
     ASSERT_EQ(info.bfInfo.blockSize, 1);
     ASSERT_EQ(info.bfInfo.indexSize, 0);
