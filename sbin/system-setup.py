@@ -47,7 +47,7 @@ class VecSimSetup(paella.Setup):
     def common_last(self):
         self.run("{PYTHON} {READIES}/bin/getcmake --usr".format(PYTHON=self.python, READIES=READIES),
                  sudo=self.os != 'macos')
-        self.run("{PYTHON} {READIES}/bin/getrmpytools --reinstall --modern --pypi".format(PYTHON=self.python, READIES=READIES))
+        self.run("{PYTHON} {READIES}/bin/getrmpytools --reinstall".format(PYTHON=self.python, READIES=READIES))
         self.run("%s/bin/getclang --format" % READIES)
         self.pip_install("-r %s/sbin/requirements.txt" % ROOT)
 
