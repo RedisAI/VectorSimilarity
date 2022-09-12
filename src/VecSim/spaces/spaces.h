@@ -18,15 +18,23 @@ using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
 enum CalculationGuideline {
     NO_OPTIMIZATION = 0,
-    Ext16 = 1,          // dim % 16 == 0
-    Ext4 = 2,           // dim % 4 == 0
-    ExtResiduals16 = 3, // dim > 16 && dim % 16 < 4
-    ExtResiduals4 = 4,  // dim > 4
+    ITER_512_BITS = 1, // FP32 -> dim % 16 == 0, FP64 -> dim % 8 == 0
+    ITER_128_BITS = 2, // FP32 -> dim % 4 == 0, FP64 -> dim % 2 == 0
+    ITER_512_BITS_RESIDUALS =
+        3, // FP32 ->  dim > 16 && dim % 16 < 4, FP64 -> dim > 8 && dim % 8 < 2,
+    ITER_128_BITS_RESIDUALS = 4, // FP32 ->dim > 4, FP64 -> dim > 2
 };
 
-CalculationGuideline GetCalculationGuideline(size_t dim);
+CalculationGuideline FP32_GetCalculationGuideline(size_t dim);
+CalculationGuideline FP64_GetCalculationGuideline(size_t dim);
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func);
+
+// Useful numbers
+const unsigned int LOG_BASE2_16 = 4;
+const unsigned int LOG_BASE2_8 = 3;
+const unsigned int LOG_BASE2_4 = 2;
+const unsigned int LOG_BASE2_2 = 1;
 
 } // namespace spaces

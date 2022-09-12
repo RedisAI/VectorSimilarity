@@ -4,26 +4,43 @@
 #include "VecSim/spaces/L2_space.h"
 namespace spaces {
 
-/*** Defined in vec_sim_common.h
+/*** Defined in spaces.h
+ //optimization are defined according to
+ // num_bits_per_iteration / bits_count_per_element
     NO_OPTIMIZATION = 0,
-    Ext16 = 1,          // dim % 16 == 0
-    Ext4 = 2,           // dim % 4 == 0
-    ExtResiduals16 = 3, // dim > 16 && dim % 16 < 4
-    ExtResiduals4 = 4,  // dim > 4
-};
+    ITER_512_BITS = 1,          // FP32 -> dim % 16 == 0, FP64 -> dim % 8 == 0
+    ITER_128_BITS = 2,           // FP32 -> dim % 4 == 0, FP64 -> dim % 2 == 0
+    ITER_512_BITS_RESIDUALS = 3, //FP32 ->  dim > 16 && dim % 16 < 4, FP64 -> dim > 8 && dim % 8 <
+2, ITER_128_BITS_RESIDUALS = 4,  // FP32 ->dim > 4, FP64 -> dim > 2
 ***/
-CalculationGuideline GetCalculationGuideline(size_t dim) {
+CalculationGuideline FP32_GetCalculationGuideline(size_t dim) {
 
     CalculationGuideline ret_score = NO_OPTIMIZATION;
 
     if (dim % 16 == 0) {
-        ret_score = Ext16;
+        ret_score = ITER_512_BITS;
     } else if (dim % 4 == 0) {
-        ret_score = Ext4;
+        ret_score = ITER_128_BITS;
     } else if (dim > 16 && dim % 16 < 4) {
-        ret_score = ExtResiduals16;
+        ret_score = ITER_512_BITS_RESIDUALS;
     } else if (dim > 4) {
-        ret_score = ExtResiduals4;
+        ret_score = ITER_128_BITS_RESIDUALS;
+    }
+    return ret_score;
+}
+
+CalculationGuideline FP64_GetCalculationGuideline(size_t dim) {
+
+    CalculationGuideline ret_score = NO_OPTIMIZATION;
+
+    if (dim % 8 == 0) {
+        ret_score = ITER_512_BITS;
+    } else if (dim % 2 == 0) {
+        ret_score = ITER_128_BITS;
+    } else if (dim > 8 && dim % 8 < 2) {
+        ret_score = ITER_512_BITS_RESIDUALS;
+    } else if (dim > 2) {
+        ret_score = ITER_128_BITS_RESIDUALS;
     }
     return ret_score;
 }
