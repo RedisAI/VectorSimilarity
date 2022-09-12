@@ -34,10 +34,10 @@ private:
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
 
-    inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
-                                                       VecSimQueryParams *queryParams) override {
+    inline BF_BatchIterator<DataType, DistType> *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
         return new (this->allocator)
-            BFM_BatchIterator(queryBlob, this, queryParams, this->allocator);
+            BFM_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
