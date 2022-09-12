@@ -24,6 +24,9 @@ typedef enum EncodingVersion { EncodingVersion_V1 = 1 } EncodingVersion;
 template <typename DataType, typename DistType>
 class HNSWIndexSerializer {
 private:
+    // The serializer does not own the index, and it may be freed under the serializer feet.
+    // Use the serializer with extra care, and dont use any function besides `reset` after
+    // `VecSimIndex_Free` was invoked for the pointed index.
     HNSWIndex<DataType, DistType> *hnsw_index;
 
     void saveIndexFields(std::ofstream &output);
@@ -283,6 +286,7 @@ void HNSWIndexSerializer<DataType, DistType>::loadIndex(const std::string &locat
     input.close();
 }
 
+// The serializer does not own the index, here we just replace the pointed index.
 template <typename DataType, typename DistType>
 void HNSWIndexSerializer<DataType, DistType>::reset(HNSWIndex<DataType, DistType> *hnsw_index_) {
     hnsw_index = hnsw_index_;

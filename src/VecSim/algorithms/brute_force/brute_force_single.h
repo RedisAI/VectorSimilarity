@@ -1,8 +1,7 @@
 #pragma once
 
 #include "brute_force.h"
-#include "VecSim/utils/vec_utils.h"
-#include "VecSim/query_result_struct.h"
+#include "bfs_batch_iterator.h"
 
 template <typename DataType, typename DistType>
 class BruteForceIndex_Single : public BruteForceIndex<DataType, DistType> {
@@ -14,11 +13,11 @@ public:
     BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     ~BruteForceIndex_Single();
 
-    virtual int addVector(const void *vector_data, size_t label) override;
-    virtual int deleteVector(size_t id) override;
-    virtual double getDistanceFrom(size_t label, const void *vector_data) const override;
+    int addVector(const void *vector_data, labelType label) override;
+    int deleteVector(labelType label) override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override;
 
-    virtual inline size_t indexLabelCount() const override { return this->count; }
+    inline size_t indexLabelCount() const override { return this->count; }
 
 protected:
     // inline definitions
@@ -41,16 +40,28 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
+    inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewPriorityQueue() override {
+        return new (this->allocator)
+            vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
+    }
+
+    inline BF_BatchIterator<DataType, DistType> *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
+        return new (this->allocator)
+            BFS_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
+    }
+
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;
     friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
-    friend class BruteForceTest_resizeNAlignIndex_Test;
+    friend class BruteForceTest_resize_and_align_index_Test;
     friend class BruteForceTest_brute_force_vector_update_test_Test;
     friend class BruteForceTest_brute_force_reindexing_same_vector_Test;
     friend class BruteForceTest_test_delete_swap_block_Test;
     friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
-    friend class BruteForceTest_resizeNAlignIndex_largeInitialCapacity_Test;
+    friend class BruteForceTest_resize_and_align_index_largeInitialCapacity_Test;
     friend class BruteForceTest_brute_force_empty_index_Test;
     friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
 #endif
@@ -67,7 +78,8 @@ template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, size_t label) {
+int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
+                                                          labelType label) {
 
     DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -89,7 +101,7 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
 }
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::deleteVector(size_t label) {
+int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 
     // Find the id to delete.
     auto deleted_label_id_pair = this->labelToIdLookup.find(label);
@@ -108,7 +120,7 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(size_t label) {
 }
 
 template <typename DataType, typename DistType>
-double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(size_t label,
+double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
                                                                    const void *vector_data) const {
 
     auto optionalId = this->labelToIdLookup.find(label);

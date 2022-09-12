@@ -5,7 +5,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
-#include "VecSim/algorithms/brute_force/bf_batch_iterator.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 
@@ -63,21 +62,27 @@ protected:
     inline void setVectorLabel(idType id, labelType new_label) {
         idToLabelMapping.at(id) = new_label;
     }
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewPriorityQueue() = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
 
+    virtual inline VecSimBatchIterator *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) = 0;
+
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
     friend class BruteForceTest_preferAdHocOptimization_Test;
     friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
-    friend class BruteForceTest_resizeNAlignIndex_Test;
+    friend class BruteForceTest_resize_and_align_index_Test;
     friend class BruteForceTest_brute_force_vector_update_test_Test;
     friend class BruteForceTest_brute_force_reindexing_same_vector_Test;
     friend class BruteForceTest_test_delete_swap_block_Test;
     friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
-    friend class BruteForceTest_resizeNAlignIndex_largeInitialCapacity_Test;
+    friend class BruteForceTest_resize_and_align_index_largeInitialCapacity_Test;
     friend class BruteForceTest_brute_force_empty_index_Test;
     friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
 #endif
@@ -109,7 +114,7 @@ template <typename DataType, typename DistType>
 int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
 
     // Give the vector new id and increase count.
-    idType id = count++;
+    idType id = this->count++;
 
     // Get vector block to store the vector in.
 
@@ -152,19 +157,19 @@ template <typename DataType, typename DistType>
 int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 
     // Get last vector id and label
-    idType last_idx = --count;
+    idType last_idx = --this->count;
     labelType last_idx_label = getVectorLabel(last_idx);
 
     // Get last vector data.
     VectorBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    char *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    void *last_vector_data = last_vector_block->removeAndFetchLastVector();
 
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
-        // Update id2labelmapping.
+        // Update idToLabelMapping.
         // Put the label of the last_id in the deleted_id.
         setVectorLabel(id_to_delete, last_idx_label);
 
@@ -185,13 +190,13 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         delete last_vector_block;
         this->vectorBlocks.pop_back();
 
-        // Resize and align the id2labelmapping.
-        size_t id2label_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the id2labelmapping
+        // Resize and align the idToLabelMapping.
+        size_t idToLabel_size = idToLabelMapping.size();
+        // If the new size is smaller by at least one block comparing to the idToLabelMapping
         // align to be a multiplication of blocksize  and resize by one block.
-        if (count + this->blockSize <= id2label_size) {
-            size_t vector_to_align_count = id2label_size % this->blockSize;
-            this->idToLabelMapping.resize(id2label_size - this->blockSize - vector_to_align_count);
+        if (this->count + this->blockSize <= idToLabel_size) {
+            size_t vector_to_align_count = idToLabel_size % this->blockSize;
+            this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
         }
     }
 
@@ -238,37 +243,37 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::max_priority_queue<DistType, labelType> TopCandidates(this->allocator);
+    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates = getNewPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
+            delete TopCandidates;
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
-            // Always choose the current candidate if we have less than k.
-            if (TopCandidates.size() < k) {
-                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
-                upperBound = TopCandidates.top().first;
-            } else if (scores[i] < upperBound) {
-                // Otherwise, try greedily to improve the top candidates with a vector that
-                // has a better score than the one that has the worst score until now.
-                TopCandidates.emplace(scores[i], getVectorLabel(curr_id));
-                TopCandidates.pop();
-                upperBound = TopCandidates.top().first;
+            // If we have less than k or a better score, insert it.
+            if (scores[i] < upperBound || TopCandidates->size() < k) {
+                TopCandidates->emplace(scores[i], getVectorLabel(curr_id));
+                if (TopCandidates->size() > k) {
+                    // If we now have more than k results, pop the worst one.
+                    TopCandidates->pop();
+                }
+                upperBound = TopCandidates->top().first;
             }
             ++curr_id;
         }
     }
-    assert(curr_id == count);
+    assert(curr_id == this->count);
 
-    rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
-    for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(rl.results[i], TopCandidates.top().first);
-        TopCandidates.pop();
+    rl.results = array_new_len<VecSimQueryResult>(TopCandidates->size(), TopCandidates->size());
+    for (int i = (int)TopCandidates->size() - 1; i >= 0; --i) {
+        VecSimQueryResult_SetId(rl.results[i], TopCandidates->top().second);
+        VecSimQueryResult_SetScore(rl.results[i], TopCandidates->top().first);
+        TopCandidates->pop();
     }
+    delete TopCandidates;
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }
@@ -308,7 +313,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
             ++curr_id;
         }
     }
-    assert(curr_id == count);
+    assert(curr_id == this->count);
     rl.code = VecSim_QueryResult_OK;
     return rl;
 }
@@ -393,8 +398,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
         float_vector_normalize((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
-    return new (this->allocator)
-        BF_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+    return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }
 
 template <typename DataType, typename DistType>
@@ -407,7 +411,7 @@ bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, s
         throw std::runtime_error("internal error: subset size cannot be larger than index size");
     }
     size_t d = this->dim;
-    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;
     if (index_size <= 5500) {
         // node 1

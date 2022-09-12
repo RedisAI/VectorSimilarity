@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/updatable_heap.h"
 
 class CommonTest : public ::testing::Test {
 protected:
@@ -151,7 +152,7 @@ TEST_F(CommonTest, SetTimeoutCallbackFunction) {
     ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
     VecSimQueryResult_Free(rl);
 
-    // Actual test: sets the vecsimindex timeout callback to always return timeout
+    // Actual test: sets the vecsim index timeout callback to always return timeout
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; });
 
     rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
@@ -159,4 +160,86 @@ TEST_F(CommonTest, SetTimeoutCallbackFunction) {
     VecSimQueryResult_Free(rl);
 
     VecSimIndex_Free(index);
+}
+
+TEST_F(CommonTest, Max_Updatable_Heap) {
+    std::pair<int, size_t> p;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    vecsim_stl::updatable_max_heap<int, size_t> heap(allocator);
+
+    // Initial state checks
+    ASSERT_EQ(heap.size(), 0);
+    ASSERT_TRUE(heap.empty());
+    ASSERT_NO_THROW(heap.top());
+
+    // Insert some data in random order
+    size_t riders[] = {46, 16, 99, 93};
+    const size_t n_riders = sizeof(riders) / sizeof(riders[0]);
+    heap.emplace(1, 46);
+    heap.emplace(4, 93);
+    heap.emplace(3, 99);
+    heap.emplace(2, 16);
+
+    for (int i = n_riders; i > 0; i--) {
+        ASSERT_EQ(heap.size(), i);
+        p = {i, riders[i - 1]};
+        ASSERT_TRUE(heap.top() == p);
+        ASSERT_FALSE(heap.empty());
+        heap.pop();
+    }
+
+    ASSERT_EQ(heap.size(), 0);
+    ASSERT_TRUE(heap.empty());
+
+    // Inserting data with the same priority
+    heap.emplace(1, 1);
+    heap.emplace(11, 55);
+    heap.emplace(1, 3);
+    heap.emplace(1, 2);
+
+    ASSERT_EQ(heap.size(), 4);
+    ASSERT_FALSE(heap.empty());
+    p = {11, 55};
+    ASSERT_TRUE(heap.top() == p);
+
+    heap.emplace(0, 55); // Update priority
+
+    ASSERT_EQ(heap.size(), 4); // Same size after update
+    ASSERT_FALSE(heap.empty());
+
+    // Make sure each pop deletes a single element, even if some have the same priority.
+    size_t len = heap.size();
+    for (size_t i = len; i > 0; i--) {
+        ASSERT_EQ(heap.size(), i);
+        ASSERT_FALSE(heap.empty());
+        heap.pop();
+    }
+    ASSERT_EQ(heap.size(), 0);
+    ASSERT_TRUE(heap.empty());
+
+    // Update a priority of an element that share its priority with many others.
+    size_t last = 10;
+    for (size_t i = 0; i <= last; i++) {
+        heap.emplace(2, i);
+    }
+    // Bound the existing elements with higher and lower priorities.
+    heap.emplace(1, 42);
+    heap.emplace(3, 46);
+    size_t size = heap.size();
+
+    // Update to the lowest priority
+    heap.emplace(0, last);
+    ASSERT_EQ(heap.size(), size);
+
+    while (heap.size() > 1) {
+        heap.pop();
+    }
+    ASSERT_EQ(heap.size(), 1);
+    ASSERT_FALSE(heap.empty());
+    p = {0, last};
+    ASSERT_TRUE(heap.top() == p);
+    heap.pop();
+    ASSERT_EQ(heap.size(), 0);
+    ASSERT_TRUE(heap.empty());
 }

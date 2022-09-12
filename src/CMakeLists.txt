@@ -63,7 +63,6 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/utils/vec_utils.cpp
     VecSim/memory/vecsim_malloc.cpp
     VecSim/memory/vecsim_base.cpp
-    VecSim/algorithms/brute_force/bf_batch_iterator.cpp
   )
 
 

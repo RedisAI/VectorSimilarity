@@ -4,6 +4,26 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 
+static bool allUniqueResults(VecSimQueryResult_List res) {
+    size_t len = VecSimQueryResult_Len(res);
+    auto it1 = VecSimQueryResult_List_GetIterator(res);
+    for (size_t i = 0; i < len; i++) {
+        auto ei = VecSimQueryResult_IteratorNext(it1);
+        auto it2 = VecSimQueryResult_List_GetIterator(res);
+        for (size_t j = 0; j < i; j++) {
+            auto ej = VecSimQueryResult_IteratorNext(it2);
+            if (VecSimQueryResult_GetId(ei) == VecSimQueryResult_GetId(ej)) {
+                VecSimQueryResult_IteratorFree(it2);
+                VecSimQueryResult_IteratorFree(it1);
+                return false;
+            }
+        }
+        VecSimQueryResult_IteratorFree(it2);
+    }
+    VecSimQueryResult_IteratorFree(it1);
+    return true;
+}
+
 /*
  * helper function to run Top K search and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
@@ -14,6 +34,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
     VecSimQueryResult_List res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
