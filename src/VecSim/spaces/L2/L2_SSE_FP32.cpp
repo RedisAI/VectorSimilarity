@@ -48,7 +48,7 @@ float FP32_L2SqrSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, size_t q
 }
 
 float FP32_L2SqrSIMD16ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
-    // Calc how many doubles we can calc using 512 bits iterations.
+    // Calc how many floats we can calc using 512 bits iterations.
     size_t qty16 = qty >> 4 << 4;
     float res = FP32_L2SqrSIMD16Ext_SSE(pVect1v, pVect2v, qty16);
     float *pVect1 = (float *)pVect1v + qty16;
@@ -84,7 +84,7 @@ float FP32_L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qt
 }
 
 float FP32_L2SqrSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
-    // Calc how many doubles we can calc using 512 bits iterations.
+    // Calc how many floats we can calc using 512 bits iterations.
     size_t qty4 = qty >> 2 << 2;
 
     float res = FP32_L2SqrSIMD4Ext_SSE(pVect1v, pVect2v, qty4);
