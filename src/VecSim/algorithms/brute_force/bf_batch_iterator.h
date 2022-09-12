@@ -110,8 +110,9 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(siz
                 continue;
             }
         }
-        // If top candidate heap size is smaller than required results number
-        // or the current score is closer than the farthermost vector's -> insert current vector
+        // If top candidate heap size was smaller at the beginning of the iteration than required
+        // results number, or the current score is closer than the farthermost vector's -> insert
+        // current vector
         TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
         TopCandidatesIndices[this->scores[i].second] = i;
         upperBound = TopCandidates.top().first;
