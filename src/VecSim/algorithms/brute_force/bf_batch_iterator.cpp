@@ -26,7 +26,7 @@ VecSimQueryResult_List BF_BatchIterator::searchByHeuristics(size_t n_res,
 }
 
 void BF_BatchIterator::swapScores(
-    const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num) {
+    const vecsim_stl::unordered_map<labelType, size_t> &TopCandidatesIndices, size_t res_num) {
     // Create a set of the indices in the scores array for every results that we return.
     set<size_t> indices;
     for (auto pos : TopCandidatesIndices) {
@@ -60,7 +60,7 @@ VecSimQueryResult_List BF_BatchIterator::heapBasedSearch(size_t n_res) {
     float upperBound = std::numeric_limits<float>::lowest();
     vecsim_stl::max_priority_queue<float, labelType> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
-    vecsim_stl::unordered_map<size_t, size_t> TopCandidatesIndices(n_res, this->allocator);
+    vecsim_stl::unordered_map<labelType, size_t> TopCandidatesIndices(n_res, this->allocator);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {
         if (TopCandidates.size() < n_res) {
             TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
