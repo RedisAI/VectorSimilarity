@@ -90,7 +90,7 @@ float FP32_L2SqrSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, 
     float res = FP32_L2SqrSIMD4Ext_SSE(pVect1v, pVect2v, qty4);
     float *pVect1 = (float *)pVect1v + qty4;
     float *pVect2 = (float *)pVect2v + qty4;
-    
+
     // Calc the rest using a brute force function
     size_t qty_left = qty - qty4;
     float res_tail = FP32_L2Sqr(pVect1, pVect2, qty_left);
