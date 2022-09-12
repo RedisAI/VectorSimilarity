@@ -24,7 +24,7 @@ protected:
     VecSimQueryResult_List searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
     VecSimQueryResult_List selectBasedSearch(size_t n_res);
     VecSimQueryResult_List heapBasedSearch(size_t n_res);
-    void swapScores(const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices,
+    void swapScores(const vecsim_stl::unordered_map<labelType, size_t> &TopCandidatesIndices,
                     size_t res_num);
 
     virtual inline VecSimQueryResult_Code calculateScores() = 0;
@@ -63,7 +63,7 @@ BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
 
 template <typename DataType, typename DistType>
 void BF_BatchIterator<DataType, DistType>::swapScores(
-    const vecsim_stl::unordered_map<size_t, size_t> &TopCandidatesIndices, size_t res_num) {
+    const vecsim_stl::unordered_map<labelType, size_t> &TopCandidatesIndices, size_t res_num) {
     // Create a set of the indices in the scores array for every results that we return.
     vecsim_stl::set<size_t> indices(this->allocator);
     for (auto pos : TopCandidatesIndices) {
@@ -98,25 +98,23 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(siz
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::max_priority_queue<DistType, labelType> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
-    vecsim_stl::unordered_map<size_t, size_t> TopCandidatesIndices(n_res, this->allocator);
+    vecsim_stl::unordered_map<labelType, size_t> TopCandidatesIndices(n_res, this->allocator);
     for (size_t i = this->scores_valid_start_pos; i < this->scores.size(); i++) {
-        if (TopCandidates.size() < n_res) {
-            TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
-            TopCandidatesIndices[this->scores[i].second] = i;
-            upperBound = TopCandidates.top().first;
-        } else {
-            if (this->scores[i].first >= upperBound) {
-                continue;
-            } else {
+        if (TopCandidates.size() >= n_res) {
+            if (this->scores[i].first < upperBound) {
                 // remove the furthest vector from the candidates and from the label->index mappings
                 // we first remove the worst candidate so we wont exceed the allocated size
                 TopCandidatesIndices.erase(TopCandidates.top().second);
                 TopCandidates.pop();
-                TopCandidatesIndices[this->scores[i].second] = i;
-                TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
-                upperBound = TopCandidates.top().first;
+            } else {
+                continue;
             }
         }
+        // If top candidate heap size is smaller than required results number
+        // or the current score is closer than the farthermost vector's -> insert current vector
+        TopCandidates.emplace(this->scores[i].first, this->scores[i].second);
+        TopCandidatesIndices[this->scores[i].second] = i;
+        upperBound = TopCandidates.top().first;
     }
 
     // Save the top results to return.
