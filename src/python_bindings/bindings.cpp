@@ -110,6 +110,7 @@ protected:
     VecSimIndex *index;
 };
 
+// Currently supports only floats. TODO change after serializer refactoring
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params) {
@@ -123,20 +124,14 @@ public:
     }
     void saveIndex(const std::string &location) {
         VecSimIndexInfo info = this->index->info();
-        if (info.hnswInfo.type == VecSimType_FLOAT32) {
-            auto serializer = HNSWIndexSerializer<float, float>(
-                reinterpret_cast<HNSWIndex<float, float> *>(index));
-            serializer.saveIndex(location);
-        }
+        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
+        serializer.saveIndex(location);
     }
 
     void loadIndex(const std::string &location) {
         VecSimIndexInfo info = this->index->info();
-        if (info.hnswInfo.type == VecSimType_FLOAT32) {
-            auto serializer = HNSWIndexSerializer<float, float>(
-                reinterpret_cast<HNSWIndex<float, float> *>(index));
-            serializer.loadIndex(location);
-        }
+        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
+        serializer.loadIndex(location);
     }
 };
 

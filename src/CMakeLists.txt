@@ -65,6 +65,10 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/memory/vecsim_base.cpp
   )
 
+if(VECSIM_BUILD_TESTS)
+	add_library(VectorSimilaritySerialization VecSim/algorithms/hnsw/serialization.cpp)
+	target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
+endif()
 
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 

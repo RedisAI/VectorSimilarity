@@ -1373,8 +1373,7 @@ TEST_F(HNSWTest, hnsw_serialization_v1) {
                                                  .efRuntime = ef}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    auto serializer =
-        HNSWIndexSerializer<float, float>(reinterpret_cast<HNSWIndex<float, float> *>(index));
+    auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
 
     auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
     // Save and load an empty index.

@@ -99,7 +99,6 @@ private:
 
 #ifdef BUILD_TESTS
     // Allow the following test to access the index size private member.
-    template <typename, typename>
     friend class HNSWIndexSerializer;
     friend class HNSWTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
