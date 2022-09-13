@@ -29,7 +29,7 @@ static bool allUniqueResults(VecSimQueryResult_List res) {
  * the id, score and index of a result, and performs test-specific logic for each.
  */
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
-                       std::function<void(size_t, float, size_t)> ResCB, VecSimQueryParams *params,
+                       std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
     VecSimQueryResult_List res =
         VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
@@ -40,7 +40,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
         VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
-        float score = VecSimQueryResult_GetScore(item);
+        double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
     ASSERT_EQ(res_ind, k);
@@ -53,7 +53,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
  * that takes the id, score and index of a result, and performs test-specific logic for each.
  */
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
-                                std::function<void(size_t, float, size_t)> ResCB,
+                                std::function<void(size_t, double, size_t)> ResCB,
                                 VecSimQueryResult_Order order, size_t expected_n_res) {
     if (expected_n_res == SIZE_MAX)
         expected_n_res = n_res;
@@ -64,7 +64,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
         VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
-        float score = VecSimQueryResult_GetScore(item);
+        double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
     ASSERT_EQ(res_ind, expected_n_res);
@@ -202,8 +202,8 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
  */
-void runRangeQueryTest(VecSimIndex *index, const void *query, float radius,
-                       const std::function<void(size_t, float, size_t)> &ResCB,
+void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
+                       const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryResult_Order order,
                        VecSimQueryParams *params) {
     VecSimQueryResult_List res =
@@ -214,7 +214,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, float radius,
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
         VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
-        float score = VecSimQueryResult_GetScore(item);
+        double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
     ASSERT_EQ(res_ind, expected_res_num);
