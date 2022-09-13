@@ -123,13 +123,11 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        VecSimIndexInfo info = this->index->info();
         auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
         serializer.saveIndex(location);
     }
 
     void loadIndex(const std::string &location) {
-        VecSimIndexInfo info = this->index->info();
         auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
         serializer.loadIndex(location);
     }
