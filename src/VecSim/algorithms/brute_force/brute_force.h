@@ -236,10 +236,9 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     this->last_mode = STANDARD_KNN;
 
     bool is_cosine = this->metric == VecSimMetric_Cosine;
-    float normalized_blob[this->dim *
-                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim *
+                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
     if (is_cosine) {
-        // TODO: need more generic
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
         VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
 
@@ -291,10 +290,9 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     this->last_mode = RANGE_QUERY;
 
     bool is_cosine = this->metric == VecSimMetric_Cosine;
-    float normalized_blob[this->dim *
-                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim *
+                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
     if (is_cosine) {
-        // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
         VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
         queryBlob = normalized_blob;

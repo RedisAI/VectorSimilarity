@@ -82,13 +82,12 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
                                                           labelType label) {
 
     bool is_cosine = this->metric == VecSimMetric_Cosine;
-    float normalized_data[this->dim *
-                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType normalized_blob[this->dim *
+                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
     if (is_cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_data, this->dim);
-        vector_data = normalized_data;
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
     }
 
     auto optionalID = this->labelToIdLookup.find(label);

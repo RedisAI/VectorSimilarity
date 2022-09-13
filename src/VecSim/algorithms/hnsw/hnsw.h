@@ -1146,12 +1146,12 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
     idType cur_c;
 
     bool is_cosine = this->metric == VecSimMetric_Cosine;
-    float normalized_data[this->dim *
-                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
-    if (is_cosine) {                  // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_data, this->dim);
-        vector_data = normalized_data;
+    DataType normalized_blob[this->dim *
+                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
+    if (is_cosine) {
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
     }
 
     {
@@ -1384,13 +1384,12 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
     void *timeoutCtx = nullptr;
 
     bool is_cosine = this->metric == VecSimMetric_Cosine;
-    float normalized_data[this->dim *
-                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim *
+                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
     if (is_cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, query_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_data, this->dim);
-        query_data = normalized_data;
+        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
+        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        query_data = normalized_blob;
     }
     // Get original efRuntime and store it.
     size_t originalEF = ef_;
@@ -1511,11 +1510,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     void *timeoutCtx = nullptr;
 
     bool is_cosine = this->metric == VecSimMetric_Cosine;
-    float normalized_blob[this->dim *
-                          is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType normalized_blob[this->dim *
+                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
     if (is_cosine) {
-
-        // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
         VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
         query_data = normalized_blob;
