@@ -201,6 +201,27 @@ TEST_F(SpacesTest, l2_17) {
     }
 }
 
+// Case: dim > 8  && dim % 8 < 2
+TEST_F(SpacesTest, l2_17_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 17;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+    default:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_SSE(v, v, dim));
+        break;
+        ;
+    }
+}
+
 // This test will trigger the "Residuals" function for dimension < 16, for each optimization.
 TEST_F(SpacesTest, l2_9) {
     Arch_Optimization optimization = getArchitectureOptimization();
@@ -223,6 +244,27 @@ TEST_F(SpacesTest, l2_9) {
         break;
     default:
         ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the "Residuals" function for 2 < dimension < 8, for each optimization.
+TEST_F(SpacesTest, l2_7_doubles) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 7;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+    default:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_SSE(v, v, dim));
+        break;
+        ;
     }
 }
 
@@ -277,31 +319,6 @@ TEST_F(SpacesTest, ip_9) {
 }
 
 // This test will trigger the function for dimension % 16 == 0 for each optimization.
-TEST_F(SpacesTest, ip_16) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 16;
-    float v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-    }
-
-    float baseline = FP32_InnerProduct(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_SSE(v, v, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the function for dimension % 16 == 0 for each optimization.
 TEST_F(SpacesTest, l2_16) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
@@ -320,6 +337,51 @@ TEST_F(SpacesTest, l2_16) {
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, dim));
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 8 == 0 for each optimization.
+TEST_F(SpacesTest, l2_8_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 16;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+    default:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v, dim));
+        break;
+    }
+}
+
+// This test will trigger the function for dimension % 16 == 0 for each optimization.
+TEST_F(SpacesTest, ip_16) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 16;
+    float v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+    }
+
+    float baseline = FP32_InnerProduct(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX512(v, v, dim));
+        optimization = ARCH_OPT_AVX;
+    case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX(v, v, dim));
+        optimization = ARCH_OPT_SSE;
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -374,6 +436,26 @@ TEST_F(SpacesTest, l2_20) {
         break;
     default:
         ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 2 == 0 for each optimization.
+TEST_F(SpacesTest, l2_10_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 20;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+    default:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v, dim));
+        break;
     }
 }
 #endif // CPU_FEATURES_ARCH_X86_64
