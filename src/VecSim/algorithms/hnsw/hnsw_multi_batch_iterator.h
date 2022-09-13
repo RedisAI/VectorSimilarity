@@ -53,41 +53,6 @@ VecSimQueryResult_List HNSWMulti_BatchIterator<DataType, DistType>::prepareResul
     return rl;
 }
 
-// template <typename DataType, typename DistType>
-// candidatesLabelsMaxHeap<DistType> *
-// HNSW_BatchIterator<DataType, DistType>::scanGraph(DistType &lower_bound, idType entry_point,
-//                                                   VecSimQueryResult_Code *rc) {
-
-//     candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
-
-//     while (!candidates.empty()) {
-//         DistType curr_node_dist = candidates.top().first;
-//         idType curr_node_id = candidates.top().second;
-//         // If the closest element in the candidates set is further than the furthest element in
-//         the
-//         // top candidates set, and we have enough results, we finish the search.
-//         if (curr_node_dist > lower_bound && top_candidates->size() >= this->ef) {
-//             break;
-//         }
-//         if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-//             *rc = VecSim_QueryResult_TimedOut;
-//             return top_candidates;
-//         }
-//         if (top_candidates->size() < this->ef || lower_bound > curr_node_dist) {
-//             // $$$ dont emplace if we returned this label already
-//             top_candidates->emplace(curr_node_dist, curr_node_id);
-//             if (top_candidates->size() > this->ef) {
-//                 // If the top candidates queue is full, pass the "worst" results to the "extras",
-//                 // for the next iterations.
-//                 this->top_candidates_extras.emplace(top_candidates->top().first,
-//                                                     top_candidates->top().second);
-//                 top_candidates->pop();
-//             }
-//             lower_bound = top_candidates->top().first;
-//         }
-//     }
-// }
-
 template <typename DataType, typename DistType>
 void HNSWMulti_BatchIterator<DataType, DistType>::fillFromExtras(
     candidatesLabelsMaxHeap<DistType> *top_candidates) {
