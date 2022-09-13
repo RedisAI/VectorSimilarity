@@ -5,7 +5,6 @@
 float FP32_L2SqrSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
-    float PORTABLE_ALIGN16 TmpRes[4];
 
     const float *pEnd1 = pVect1 + qty;
 
@@ -43,6 +42,8 @@ float FP32_L2SqrSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, size_t q
         sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
     }
 
+    // TmpRes must be 16 bytes aligned
+    float PORTABLE_ALIGN16 TmpRes[4];
     _mm_store_ps(TmpRes, sum);
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
 }
@@ -61,7 +62,6 @@ float FP32_L2SqrSIMD16ExtResiduals_SSE(const void *pVect1v, const void *pVect2v,
 }
 
 float FP32_L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
-    float PORTABLE_ALIGN16 TmpRes[4];
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
@@ -79,12 +79,15 @@ float FP32_L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qt
         diff = _mm_sub_ps(v1, v2);
         sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
     }
+
+    // TmpRes must be 16 bytes aligned
+    float PORTABLE_ALIGN16 TmpRes[4];
     _mm_store_ps(TmpRes, sum);
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
 }
 
 float FP32_L2SqrSIMD4ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
-    // Calc how many floats we can calc using 512 bits iterations.
+    // Calc how many floats we can calc using 128 bits iterations.
     size_t qty4 = qty >> 2 << 2;
 
     float res = FP32_L2SqrSIMD4Ext_SSE(pVect1v, pVect2v, qty4);
