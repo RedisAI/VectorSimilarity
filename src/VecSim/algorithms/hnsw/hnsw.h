@@ -182,8 +182,6 @@ public:
     inline VisitedNodesHandler *getVisitedList() const;
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
@@ -196,15 +194,13 @@ public:
     VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
                                       VecSimQueryParams *queryParams) override;
 
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
-
-    // inline priority queue getter that need to be implemented by derived class
-    virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewMaxPriorityQueue() const = 0;
 };
 
 /**
@@ -1530,22 +1526,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
                                                     timeoutCtx, &rl.code);
 
     return rl;
-}
-
-template <typename DataType, typename DistType>
-VecSimBatchIterator *
-HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                VecSimQueryParams *queryParams) {
-    // As this is the only supported type, we always allocate 4 bytes for every element in the
-    // vector.
-    assert(this->vecType == VecSimType_FLOAT32);
-    auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
-    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
-    return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
 }
 
 template <typename DataType, typename DistType>

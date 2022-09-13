@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hnsw.h"
+#include "hnsw_single_batch_iterator.h"
 
 template <typename DataType, typename DistType>
 class HNSWIndex_Single : public HNSWIndex<DataType, DistType> {
@@ -20,11 +21,6 @@ private:
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override { label_lookup_[label] = id; }
     inline void resizeLabelLookup(size_t new_max_elements) override;
-    inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewMaxPriorityQueue() const override {
-        return new (this->allocator)
-            vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
-    }
 
 public:
     HNSWIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -34,7 +30,14 @@ public:
 
     ~HNSWIndex_Single() {}
 
+    inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
+        return new (this->allocator)
+            vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
+    }
+
     inline size_t indexLabelCount() const override;
+    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
+                                          VecSimQueryParams *queryParams) override;
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
@@ -100,4 +103,22 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
     }
 
     return this->appendVector(vector_data, label);
+}
+
+
+template <typename DataType, typename DistType>
+VecSimBatchIterator *
+HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
+                                                       VecSimQueryParams *queryParams) {
+    // As this is the only supported type, we always allocate 4 bytes for every element in the
+    // vector.
+    assert(this->vecType == VecSimType_FLOAT32);
+    auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
+    if (this->metric == VecSimMetric_Cosine) {
+        normalizeVector((DataType *)queryBlobCopy, this->dim);
+    }
+    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
+    return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
+        queryBlobCopy, this, queryParams, this->allocator);
 }
