@@ -3,6 +3,10 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/updatable_heap.h"
 
+#include <cstdlib> // rand, RAND_MAX
+#include <limits>  //numeric_limits
+#include <cmath>   // exp
+
 class CommonTest : public ::testing::Test {
 protected:
     CommonTest() {}
@@ -242,4 +246,53 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     heap.pop();
     ASSERT_EQ(heap.size(), 0);
     ASSERT_TRUE(heap.empty());
+}
+
+TEST_F(CommonTest, VecSim_Normalize_FP32_Vector) {
+    const size_t dim = 1000;
+    float v[dim];
+
+    // generate random values - always generates the same values
+    for (size_t i = 0; i < dim - 3; ++i) {
+        v[i] = (float)rand() // generate an integral number between 0 and RAND_MAX.
+               + (float)rand() / (float)(RAND_MAX); // add a fp32 number between 0 and 1;
+    }
+
+    // Change some of the vector's values so that the sum of the squared vector's
+    // values will overflow for floats but not for doubles.
+    v[dim - 3] = exp(44);
+    v[dim - 2] = exp(44);
+    v[dim - 1] = exp(44);
+
+    // Normalize the vector
+    VecSim_Normalize(v, dim, VecSimType_FLOAT32);
+
+    // Check that the normelized vector norm is 1
+    float norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        norm += v[i] * v[i];
+    }
+
+    ASSERT_FLOAT_EQ(1.0f, norm);
+}
+
+TEST_F(CommonTest, VecSim_Normalize_FP64_Vector) {
+    const size_t dim = 1000;
+    double v[dim];
+
+    // generate random values - always generates the same values
+    for (size_t i = 0; i < dim; ++i) {
+        v[i] = (double)rand() // generate an integral number between 0 and RAND_MAX.
+               + (double)rand() / (double)(RAND_MAX); // add a fp64 number between 0 and 1;
+    }
+
+    // Normalize the vector
+    VecSim_Normalize(v, dim, VecSimType_FLOAT64);
+
+    // Check that the normelized vector norm is 1.
+    double norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        norm += v[i] * v[i];
+    }
+    ASSERT_LE(1.0 * 0.99, norm);
 }
