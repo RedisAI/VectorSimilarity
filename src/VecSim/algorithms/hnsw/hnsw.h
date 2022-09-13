@@ -1145,12 +1145,10 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
 
     idType cur_c;
 
-    bool is_cosine = this->metric == VecSimMetric_Cosine;
-    DataType normalized_blob[this->dim *
-                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
-    if (is_cosine) {
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        NormalizeVector(normalized_blob, this->dim);
         vector_data = normalized_blob;
     }
 
@@ -1383,12 +1381,10 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    bool is_cosine = this->metric == VecSimMetric_Cosine;
-    DataType normalized_blob[this->dim *
-                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (is_cosine) {
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        NormalizeVector(normalized_blob, this->dim);
         query_data = normalized_blob;
     }
     // Get original efRuntime and store it.
@@ -1509,12 +1505,10 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
     void *timeoutCtx = nullptr;
 
-    bool is_cosine = this->metric == VecSimMetric_Cosine;
-    DataType normalized_blob[this->dim *
-                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine
-    if (is_cosine) {
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        NormalizeVector(normalized_blob, this->dim);
         query_data = normalized_blob;
     }
 
@@ -1553,7 +1547,7 @@ HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        VecSimIndexAbstract<DistType>::NormalizeVector((DataType *)queryBlobCopy, this->dim);
+        NormalizeVector((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);

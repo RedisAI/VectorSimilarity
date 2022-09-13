@@ -7,6 +7,7 @@
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/utils/vec_utils.h" // NormalizeVector
 
 #include <cstring>
 #include <cmath>
@@ -235,12 +236,10 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     this->last_mode = STANDARD_KNN;
 
-    bool is_cosine = this->metric == VecSimMetric_Cosine;
-    DataType normalized_blob[this->dim *
-                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (is_cosine) {
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        NormalizeVector(normalized_blob, this->dim);
 
         queryBlob = normalized_blob;
     }
@@ -289,12 +288,10 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
 
-    bool is_cosine = this->metric == VecSimMetric_Cosine;
-    DataType normalized_blob[this->dim *
-                             is_cosine]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (is_cosine) {
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        VecSimIndexAbstract<DistType>::NormalizeVector(normalized_blob, this->dim);
+        NormalizeVector(normalized_blob, this->dim);
         queryBlob = normalized_blob;
     }
 
@@ -399,7 +396,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        VecSimIndexAbstract<DistType>::NormalizeVector((DataType *)queryBlobCopy, this->dim);
+        NormalizeVector((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);

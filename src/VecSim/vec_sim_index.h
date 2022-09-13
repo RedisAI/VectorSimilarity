@@ -8,8 +8,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
 #include <cassert>
-#include <cmath>  
-#include <limits> 
 
 using spaces::dist_func_t;
 
@@ -54,5 +52,4 @@ public:
     inline size_t GetDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
-
 };
