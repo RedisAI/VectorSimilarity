@@ -69,6 +69,8 @@ float FP32_L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qt
     size_t qty16 = qty >> 4 << 4;
     const float *pEnd1 = pVect1 + qty16;
 
+    const float *pEnd2 = pVect1 + qty;
+
     __m128 diff, v1, v2;
     __m128 sum = _mm_set1_ps(0);
 
@@ -102,8 +104,6 @@ float FP32_L2SqrSIMD4Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qt
         diff = _mm_sub_ps(v1, v2);
         sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
     }
-
-    const float *pEnd2 = pVect1 + qty;
 
     // In each iteration we calculate 4 floats = 128 bits.
     while (pVect1 < pEnd2) {
