@@ -36,6 +36,7 @@ public:
     inline void pop() override;
     inline const std::pair<Priority, Value> top() const override;
     inline size_t size() const override;
+    inline bool contains(Value v) const override {return valueToPriority.find(v)!=valueToPriority.end();}
 };
 
 template <typename Priority, typename Value>

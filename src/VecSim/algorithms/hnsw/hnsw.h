@@ -163,9 +163,9 @@ protected:
     int removeVector(idType id);
 
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
-                              DistType dist, idType id) const;
+                              DistType dist, idType id, const void *data) const;
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
-                              DistType dist, idType id) const;
+                              DistType dist, idType id, const void *data) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -392,15 +392,17 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
-    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
+    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id, const void *data) const {
     heap.emplace(dist, id);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
     vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
-    idType id) const {
-    heap.emplace(dist, getExternalLabel(id));
+    idType id, const void *data) const {
+    labelType label = getExternalLabel(id);
+    if (!heap.contains(label))
+        heap.emplace(this->getDistanceFrom(label, data), label);
 }
 
 template <typename DataType, typename DistType>
@@ -439,7 +441,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         if (lowerBound > dist1 || top_candidates.size() < ef) {
             candidate_set.emplace(-dist1, candidate_id);
 
-            emplaceToHeap(top_candidates, dist1, candidate_id);
+            emplaceToHeap(top_candidates, dist1, candidate_id, data_point);
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
@@ -1333,7 +1335,8 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
     DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType lowerBound = dist;
-    top_candidates->emplace(dist, getExternalLabel(ep_id));
+    labelType ep_lbl = getExternalLabel(ep_id);
+    top_candidates->emplace(this->getDistanceFrom(ep_lbl, data_point), ep_lbl);
     candidate_set.emplace(-dist, ep_id);
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);

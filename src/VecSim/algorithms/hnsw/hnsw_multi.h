@@ -43,7 +43,7 @@ public:
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)
-            vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
+            vecsim_stl::max_priority_queue_unique<DistType, labelType>(this->allocator);
     }
 
     inline size_t indexLabelCount() const override;

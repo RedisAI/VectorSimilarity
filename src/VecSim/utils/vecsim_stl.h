@@ -36,6 +36,7 @@ public:
     virtual inline void pop() = 0;
     virtual inline const std::pair<Priority, Value> top() const = 0;
     virtual inline size_t size() const = 0;
+    virtual inline bool contains(Value v) const = 0;
 };
 
 // max-heap
@@ -56,6 +57,7 @@ public:
     inline void pop() override { max_pq.pop(); }
     inline const std::pair<Priority, Value> top() const override { return max_pq.top(); }
     inline size_t size() const override { return max_pq.size(); }
+    inline bool contains(Value v) const override { return false; }
 };
 
 // min-heap
@@ -83,6 +85,30 @@ public:
         : VecsimBaseObject(alloc),
           std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
                                                                                        alloc) {}
+};
+
+template <typename Priority, typename Value>
+struct max_priority_queue_unique : public abstract_priority_queue<Priority, Value> {
+private:
+    std::priority_queue<std::pair<Priority, Value>, vecsim_stl::vector<std::pair<Priority, Value>>,
+                        std::less<std::pair<Priority, Value>>>
+        max_pq;
+    vecsim_stl::unordered_set<Value> exists;
+
+public:
+    max_priority_queue_unique(const std::shared_ptr<VecSimAllocator> &alloc)
+        : abstract_priority_queue<Priority, Value>(alloc), max_pq(alloc), exists(alloc) {}
+    ~max_priority_queue_unique() {}
+
+    inline void emplace(Priority p, Value v) override {
+        max_pq.emplace(p, v);
+        exists.insert(v);
+    }
+    inline bool empty() const override { return max_pq.empty(); }
+    inline void pop() override { exists.erase(max_pq.top().second); max_pq.pop(); }
+    inline const std::pair<Priority, Value> top() const override { return max_pq.top(); }
+    inline size_t size() const override { return max_pq.size(); }
+    inline bool contains(Value v) const override { return (exists.find(v)!=exists.end()); }
 };
 
 } // namespace vecsim_stl
