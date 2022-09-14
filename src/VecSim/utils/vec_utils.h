@@ -67,7 +67,7 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 size_t VecSimType_sizeof(VecSimType vecsimType);
 
 template <typename DataType>
-void NormalizeVector(DataType *input_vector, size_t dim) {
+void normalizeVector(DataType *input_vector, size_t dim) {
 
     // Cast to double to avoid float overflow.
     double sum = 0;

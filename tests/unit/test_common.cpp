@@ -2,10 +2,12 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/updatable_heap.h"
+#include "VecSim/utils/vec_utils.h"
 
-#include <cstdlib> // rand, RAND_MAX
-#include <limits>  //numeric_limits
-#include <cmath>   // exp
+#include <cstdlib>
+#include <limits>
+#include <cmath>
+#include <random>
 
 class CommonTest : public ::testing::Test {
 protected:
@@ -248,14 +250,25 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     ASSERT_TRUE(heap.empty());
 }
 
-TEST_F(CommonTest, VecSim_Normalize_FP32_Vector) {
+template <typename DataType>
+class UtilsTests : public ::testing::Test {
+public:
+};
+
+using DataTypes = ::testing::Types<float, double>;
+TYPED_TEST_SUITE(UtilsTests, DataTypes);
+
+TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
     const size_t dim = 1000;
-    float v[dim];
+    TypeParam v[dim];
+
+    std::mt19937 rng;
+    rng.seed(47);
+    std::uniform_real_distribution<> dis(0.0, (TypeParam)std::numeric_limits<int>::max());
 
     // generate random values - always generates the same values
-    for (size_t i = 0; i < dim - 3; ++i) {
-        v[i] = (float)rand() // generate an integral number between 0 and RAND_MAX.
-               + (float)rand() / (float)(RAND_MAX); // add a fp32 number between 0 and 1;
+    for (size_t i = 0; i < dim; ++i) {
+        v[i] = dis(rng);
     }
 
     // Change some of the vector's values so that the sum of the squared vector's
@@ -265,34 +278,14 @@ TEST_F(CommonTest, VecSim_Normalize_FP32_Vector) {
     v[dim - 1] = exp(44);
 
     // Normalize the vector
-    VecSim_Normalize(v, dim, VecSimType_FLOAT32);
+    normalizeVector(v, dim);
 
     // Check that the normelized vector norm is 1
-    float norm = 0;
+    TypeParam norm = 0;
     for (size_t i = 0; i < dim; ++i) {
         norm += v[i] * v[i];
     }
 
-    ASSERT_FLOAT_EQ(1.0f, norm);
-}
-
-TEST_F(CommonTest, VecSim_Normalize_FP64_Vector) {
-    const size_t dim = 1000;
-    double v[dim];
-
-    // generate random values - always generates the same values
-    for (size_t i = 0; i < dim; ++i) {
-        v[i] = (double)rand() // generate an integral number between 0 and RAND_MAX.
-               + (double)rand() / (double)(RAND_MAX); // add a fp64 number between 0 and 1;
-    }
-
-    // Normalize the vector
-    VecSim_Normalize(v, dim, VecSimType_FLOAT64);
-
-    // Check that the normelized vector norm is 1.
-    double norm = 0;
-    for (size_t i = 0; i < dim; ++i) {
-        norm += v[i] * v[i];
-    }
-    ASSERT_LE(1.0 * 0.99, norm);
+    TypeParam one = 1.0;
+    ASSERT_NEAR(one, norm, 0.0000001);
 }

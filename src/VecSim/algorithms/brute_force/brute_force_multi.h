@@ -3,7 +3,7 @@
 #include "brute_force.h"
 #include "bfm_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
-#include "VecSim/utils/vec_utils.h" // NormalizeVector
+#include "VecSim/utils/vec_utils.h"
 
 template <typename DataType, typename DistType>
 class BruteForceIndex_Multi : public BruteForceIndex<DataType, DistType> {
@@ -61,7 +61,7 @@ int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        NormalizeVector(normalized_blob, this->dim);
+        normalizeVector(normalized_blob, this->dim);
         vector_data = normalized_blob;
     }
 

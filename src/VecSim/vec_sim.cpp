@@ -126,9 +126,9 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
 
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     if (type == VecSimType_FLOAT32) {
-        NormalizeVector<float>((float *)blob, dim);
+        normalizeVector<float>((float *)blob, dim);
     } else if (type == VecSimType_FLOAT64) {
-        NormalizeVector<double>((double *)blob, dim);
+        normalizeVector<double>((double *)blob, dim);
     }
 }
 
