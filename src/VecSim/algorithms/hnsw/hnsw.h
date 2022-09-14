@@ -392,14 +392,15 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
-    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id, const void *data) const {
+    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id,
+    const void *data) const {
     heap.emplace(dist, id);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
-    vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
-    idType id, const void *data) const {
+    vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist, idType id,
+    const void *data) const {
     labelType label = getExternalLabel(id);
     if (!heap.contains(label))
         heap.emplace(this->getDistanceFrom(label, data), label);

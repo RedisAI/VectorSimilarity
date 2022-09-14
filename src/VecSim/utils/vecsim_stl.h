@@ -105,10 +105,13 @@ public:
         exists.insert(v);
     }
     inline bool empty() const override { return max_pq.empty(); }
-    inline void pop() override { exists.erase(max_pq.top().second); max_pq.pop(); }
+    inline void pop() override {
+        exists.erase(max_pq.top().second);
+        max_pq.pop();
+    }
     inline const std::pair<Priority, Value> top() const override { return max_pq.top(); }
     inline size_t size() const override { return max_pq.size(); }
-    inline bool contains(Value v) const override { return (exists.find(v)!=exists.end()); }
+    inline bool contains(Value v) const override { return (exists.find(v) != exists.end()); }
 };
 
 } // namespace vecsim_stl
