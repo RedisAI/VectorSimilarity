@@ -339,6 +339,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
     };
     float query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
+    runTopKSearchTest(index, query, 0, verify_res); // For sanity, search for nothing
 
     VecSimIndex_Free(index);
 }
@@ -366,34 +367,6 @@ TEST_F(BruteForceTest, brute_force_vector_search_by_id_test) {
 
     float query[] = {50, 50, 50, 50};
     auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, (index + 45)); };
-    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
-
-    VecSimIndex_Free(index);
-}
-
-TEST_F(BruteForceTest, search_for_nothing) {
-    size_t n = 100;
-    size_t k = 0;
-    size_t dim = 4;
-
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-
-    for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, (int)i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-    float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](size_t id, float score, size_t index) { return; };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);

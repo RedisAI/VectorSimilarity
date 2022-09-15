@@ -569,7 +569,7 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
 
 TEST_F(HNSWMultiTest, preferAdHocOptimization) {
     // Save the expected result for every combination that represent a different leaf in the tree.
-    // map: [k, index_size, dim, M, r] -> res
+    // map: [k, label_count, vectors per label, dim, M, r] -> res
     std::map<std::vector<float>, bool> combinations;
     combinations[{5, 100, 3, 5, 5, 0.5}] = true;
     combinations[{5, 100, 5, 5, 5, 0.5}] = true;
