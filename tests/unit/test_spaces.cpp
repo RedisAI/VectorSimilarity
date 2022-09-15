@@ -11,6 +11,71 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vec_utils.h"
 
+using spaces::dist_func_t;
+/****** templates distance function tests suite ******/
+template <typename DistType>
+class DistFuncTest : public testing::Test {
+public:
+    dist_func_t<DistType> dist_func;
+};
+
+using DistTypes = ::testing::Types<float, double>;
+TYPED_TEST_SUITE(DistFuncTest, DistTypes);
+
+/****** no optimization function tests suite ******/
+
+TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
+    // Choose a dim that has no optimizations
+    size_t dim = 3;
+    VecSimMetric metric = VecSimMetric_L2;
+
+    spaces::SetDistFunc(metric, dim, &(this->dist_func));
+
+    // Casting to void * so both sides of the comparison would have the
+    // same type.
+    if (std::is_same<TypeParam, float>::value) {
+        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_L2Sqr));
+    } else if (std::is_same<TypeParam, double>::value) {
+        ASSERT_EQ((void *)this->dist_func, (void *)FP64_L2Sqr);
+    }
+
+    TypeParam a[dim], b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = TypeParam(i + 1.0);
+        b[i] = TypeParam(i + 1.0);
+    }
+
+    TypeParam dist = this->dist_func((const void *)a, (const void *)b, dim);
+    ASSERT_EQ(dist, 0.0);
+}
+
+TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
+    // Choose a dim that has no optimizations
+    size_t dim = 3;
+    VecSimMetric metric = VecSimMetric_IP;
+
+    spaces::SetDistFunc(metric, dim, &(this->dist_func));
+
+    // Casting to void * so both sides of the comparison would have the
+    // same type.
+    if (std::is_same<TypeParam, float>::value) {
+        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_InnerProduct));
+    } else if (std::is_same<TypeParam, double>::value) {
+        ASSERT_EQ((void *)this->dist_func, (void *)FP64_InnerProduct);
+    }
+
+    TypeParam a[dim], b[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = TypeParam(i + 1.5);
+        b[i] = TypeParam(i + 1.5);
+    }
+
+    normalizeVector(a, dim);
+    normalizeVector(b, dim);
+
+    TypeParam dist = this->dist_func((const void *)a, (const void *)b, dim);
+    ASSERT_NEAR(dist, 0.0, 0.00000001);
+}
 class SpacesTest : public ::testing::Test {
 
 protected:
