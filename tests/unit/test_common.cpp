@@ -251,9 +251,7 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
 }
 
 template <typename DataType>
-class UtilsTests : public ::testing::Test {
-public:
-};
+class UtilsTests : public ::testing::Test {};
 
 using DataTypes = ::testing::Types<float, double>;
 TYPED_TEST_SUITE(UtilsTests, DataTypes);
