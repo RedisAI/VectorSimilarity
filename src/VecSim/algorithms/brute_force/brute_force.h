@@ -39,7 +39,7 @@ public:
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                                  VecSimQueryParams *queryParams) override;
+                                                  VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
@@ -72,7 +72,7 @@ protected:
     virtual inline void setVectorId(labelType label, idType id) = 0;
 
     virtual inline VecSimBatchIterator *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) = 0;
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
 
 #ifdef BUILD_TESTS
     // Allow the following tests to access the index private members.
@@ -396,7 +396,7 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
 template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) {
+                                                      VecSimQueryParams *queryParams) const {
     assert(this->vecType == VecSimType_FLOAT32);
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));

@@ -9,7 +9,6 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h" //newBatchIterator
 
 #include <deque>
 #include <memory>
@@ -196,6 +195,7 @@ public:
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
+
 protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;

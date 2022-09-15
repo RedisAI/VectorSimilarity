@@ -13,7 +13,7 @@ private:
                             idType id) override;
 
 public:
-    HNSWSingle_BatchIterator(void *query_vector, HNSWIndex<DataType, DistType> *index,
+    HNSWSingle_BatchIterator(void *query_vector, const HNSWIndex<DataType, DistType> *index,
                              VecSimQueryParams *queryParams,
                              std::shared_ptr<VecSimAllocator> allocator)
         : HNSW_BatchIterator<DataType, DistType>(query_vector, index, queryParams, allocator) {}
@@ -58,15 +58,16 @@ void HNSWSingle_BatchIterator<DataType, DistType>::fillFromExtras(
 template <typename DataType, typename DistType>
 void HNSWSingle_BatchIterator<DataType, DistType>::updateHeaps(
     candidatesLabelsMaxHeap<DistType> *top_candidates, DistType dist, idType id) {
-    if (this->lower_bound > dist || top_candidates->size() < this->ef) {
+    if (top_candidates->size() < this->ef) {
         top_candidates->emplace(dist, this->index->getExternalLabel(id));
-        if (top_candidates->size() > this->ef) {
-            // If the top candidates queue is full, pass the "worst" results to the "extras",
-            // for the next iterations.
-            this->top_candidates_extras.emplace(top_candidates->top().first,
-                                                top_candidates->top().second);
-            top_candidates->pop();
-        }
+        this->lower_bound = top_candidates->top().first;
+    } else if (this->lower_bound > dist) {
+        top_candidates->emplace(dist, this->index->getExternalLabel(id));
+        // If the top candidates queue is full, pass the "worst" results to the "extras",
+        // for the next iterations.
+        this->top_candidates_extras.emplace(top_candidates->top().first,
+                                            top_candidates->top().second);
+        top_candidates->pop();
         this->lower_bound = top_candidates->top().first;
     }
 }

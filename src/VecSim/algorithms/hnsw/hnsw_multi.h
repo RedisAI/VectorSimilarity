@@ -43,7 +43,7 @@ public:
 
     inline size_t indexLabelCount() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) override;
+                                          VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
@@ -144,7 +144,7 @@ HNSWIndex_Multi<DataType, DistType>::rangeQuery(const void *query_data, double r
 template <typename DataType, typename DistType>
 VecSimBatchIterator *
 HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) {
+                                                      VecSimQueryParams *queryParams) const {
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);

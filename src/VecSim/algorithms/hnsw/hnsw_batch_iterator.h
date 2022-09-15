@@ -13,7 +13,7 @@ using spaces::dist_func_t;
 template <typename DataType, typename DistType>
 class HNSW_BatchIterator : public VecSimBatchIterator {
 protected:
-    HNSWIndex<DataType, DistType> *index;
+    const HNSWIndex<DataType, DistType> *index;
     dist_func_t<DistType> dist_func;
     size_t dim;
     VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
@@ -23,14 +23,14 @@ protected:
     size_t ef; // EF Runtime value for this query.
 
     // Data structure that holds the search state between iterations.
-    template <typename Value>
-    using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, Value>;
+    template <typename Identifier>
+    using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, Identifier>;
 
     DistType lower_bound;
     candidatesMinHeap<labelType> top_candidates_extras;
     candidatesMinHeap<idType> candidates;
 
-    candidatesLabelsMaxHeap<DistType> *scanGraph(idType entry_point, VecSimQueryResult_Code *rc);
+    candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryResult_Code *rc);
     virtual inline VecSimQueryResult_List
     prepareResults(candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) = 0;
     inline void visitNode(idType node_id) {
@@ -45,14 +45,14 @@ protected:
                                     DistType dist, idType id) = 0;
 
 public:
-    HNSW_BatchIterator(void *query_vector, HNSWIndex<DataType, DistType> *index,
+    HNSW_BatchIterator(void *query_vector, const HNSWIndex<DataType, DistType> *index,
                        VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
 
     VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
 
     bool isDepleted() override;
 
-    virtual void reset() override;
+    void reset() override;
 
     ~HNSW_BatchIterator() override {}
 };
@@ -61,7 +61,7 @@ public:
 
 template <typename DataType, typename DistType>
 HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
-    void *query_vector, HNSWIndex<DataType, DistType> *index, VecSimQueryParams *queryParams,
+    void *query_vector, const HNSWIndex<DataType, DistType> *index, VecSimQueryParams *queryParams,
     std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
@@ -86,10 +86,10 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 
 template <typename DataType, typename DistType>
 candidatesLabelsMaxHeap<DistType> *
-HNSW_BatchIterator<DataType, DistType>::scanGraph(idType entry_point, VecSimQueryResult_Code *rc) {
+HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
 
     candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
-    if (entry_point == HNSW_INVALID_ID) {
+    if (this->entry_point == HNSW_INVALID_ID) {
         this->depleted = true;
         return top_candidates;
     }
@@ -97,11 +97,11 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(idType entry_point, VecSimQuer
     // In the first iteration, add the entry point to the empty candidates set.
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
-        DistType dist =
-            dist_func(this->getQueryBlob(), this->index->getDataByInternalId(entry_point), dim);
+        DistType dist = dist_func(this->getQueryBlob(),
+                                  this->index->getDataByInternalId(this->entry_point), dim);
         this->lower_bound = dist;
-        this->visitNode(entry_point);
-        candidates.emplace(dist, entry_point);
+        this->visitNode(this->entry_point);
+        candidates.emplace(dist, this->entry_point);
     }
     // Checks that we didn't got timeout between iterations.
     if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
@@ -192,7 +192,7 @@ HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
     }
     // We ask for at least n_res candidate from the scan. In fact, at most ef results will return,
     // and it could be that ef > n_res.
-    auto *top_candidates = this->scanGraph(this->entry_point, &batch.code);
+    auto *top_candidates = this->scanGraph(&batch.code);
     if (VecSim_OK != batch.code) {
         delete top_candidates;
         return batch;

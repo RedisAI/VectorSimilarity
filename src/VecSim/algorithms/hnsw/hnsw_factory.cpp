@@ -2,7 +2,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
-#include "VecSim/algorithms/hnsw/hnsw_batch_iterator.h"
 
 namespace HNSWFactory {
 
