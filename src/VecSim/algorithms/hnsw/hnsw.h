@@ -1389,26 +1389,22 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         query_data = normalized_blob;
     }
     // Get original efRuntime and store it.
-    size_t originalEF = ef_;
+    size_t ef = ef_;
 
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
         if (queryParams->hnswRuntimeParams.efRuntime != 0) {
-            ef_ = queryParams->hnswRuntimeParams.efRuntime;
+            ef = queryParams->hnswRuntimeParams.efRuntime;
         }
     }
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
-        ef_ = originalEF;
         return rl;
     }
 
     candidatesLabelsMaxHeap<DistType> *results = searchBottomLayer_WithTimeout(
-        bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, &rl.code);
-
-    // Restore efRuntime.
-    ef_ = originalEF;
+        bottom_layer_ep, query_data, std::max(ef, k), k, timeoutCtx, &rl.code);
 
     if (VecSim_OK == rl.code) {
         rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
@@ -1512,28 +1508,25 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
         query_data = normalized_blob;
     }
 
-    double originalEpsilon = epsilon_;
+    double epsilon = epsilon_;
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
         if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
-            epsilon_ = queryParams->hnswRuntimeParams.epsilon;
+            epsilon = queryParams->hnswRuntimeParams.epsilon;
         }
     }
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
-        epsilon_ = originalEpsilon;
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
-    rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, this->epsilon_,
-                                                    radius, timeoutCtx, &rl.code);
+    rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, epsilon, radius,
+                                                    timeoutCtx, &rl.code);
 
-    // Restore the default epsilon.
-    epsilon_ = originalEpsilon;
     return rl;
 }
 
