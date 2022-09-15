@@ -120,11 +120,11 @@ protected:
                                  size_t Mcurmax, idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                                  size_t *removed_links_num);
-    template <typename Value>
+    template <typename Identifier>
     inline DistType
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
                      tag_t visited_tag,
-                     vecsim_stl::abstract_priority_queue<DistType, Value> &top_candidates,
+                     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
     inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
                                              double epsilon, tag_t visited_tag,
@@ -406,11 +406,13 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
     heap.emplace(dist, getExternalLabel(id));
 }
 
+// This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
+// overloading to emplace correctly for both cases.
 template <typename DataType, typename DistType>
-template <typename Value>
+template <typename Identifier>
 DistType HNSWIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
-    vecsim_stl::abstract_priority_queue<DistType, Value> &top_candidates,
+    vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
@@ -427,13 +429,13 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
-            continue;
-
         // Pre-fetch the next candidate data into memory cache, to improve performance.
         idType *next_candidate_pos = node_links + j + 1;
         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
+
+        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+            continue;
 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *currObj1 = (getDataByInternalId(candidate_id));
@@ -447,8 +449,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             if (top_candidates.size() > ef)
                 top_candidates.pop();
 
-            lowerBound = std::max(top_candidates.top().first, dist1);
-            // lowerBound = top_candidates.top().first;
+            lowerBound = top_candidates.top().first;
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going

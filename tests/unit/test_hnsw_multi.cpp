@@ -68,12 +68,14 @@ TEST_F(HNSWMultiTest, empty_index) {
     // Try to remove from an empty index - should fail because label doesn't exist.
     VecSimIndex_DeleteVector(index, 0);
 
-    // Add one vector.
+    // Add one vector multiple times.
     float a[dim];
     for (size_t j = 0; j < dim; j++) {
         a[j] = (float)1.7;
     }
 
+    VecSimIndex_AddVector(index, (const void *)a, 1);
+    VecSimIndex_AddVector(index, (const void *)a, 1);
     VecSimIndex_AddVector(index, (const void *)a, 1);
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
@@ -128,7 +130,7 @@ TEST_F(HNSWMultiTest, vector_search_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, search_more_then_there_is) {
+TEST_F(HNSWMultiTest, search_more_than_there_is) {
     size_t dim = 4;
     size_t n = 5;
     size_t perLabel = 3;
@@ -160,6 +162,7 @@ TEST_F(HNSWMultiTest, search_more_then_there_is) {
     auto it = VecSimQueryResult_List_GetIterator(res);
     for (size_t i = 0; i < n_labels; i++) {
         auto el = VecSimQueryResult_IteratorNext(it);
+        ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
         auto ids = reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.at(
@@ -189,12 +192,14 @@ TEST_F(HNSWMultiTest, indexing_same_vector) {
                                                  .initialCapacity = 200}};
     VecSimIndex *index = VecSimIndex_New(&params);
 
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < n / perLabel; i++) {
         float f[dim];
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)(i);
         }
-        VecSimIndex_AddVector(index, (const void *)f, (i / perLabel));
+        for (size_t j = 0; j < perLabel; j++) {
+            VecSimIndex_AddVector(index, (const void *)f, i);
+        }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -206,6 +211,7 @@ TEST_F(HNSWMultiTest, indexing_same_vector) {
     for (size_t i = 0; i < k; i++) {
         auto el = VecSimQueryResult_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
+        ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
         ASSERT_EQ(element_label, i);
         auto ids = reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.at(
             element_label);
@@ -236,10 +242,7 @@ TEST_F(HNSWMultiTest, find_better_score) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
-    // value, so when we search, each vector is better then the previous one. Furthermore, each
-    // label gets at least one better vector than the previous label and one with a score equals to
-    // the best of the previous label, so the multimap holds at least two labels with the same
-    // score.
+    // value.
     std::map<size_t, float> scores;
     for (size_t i = 0; i < n; i++) {
         float f[dim];
@@ -305,12 +308,7 @@ TEST_F(HNSWMultiTest, find_better_score_after_pop) {
     auto verify_res = [&](size_t id, float score, size_t index) {
         ASSERT_EQ(id, n_labels - index - 1);
     };
-    // Having k = n_labels - 1, the heap will continuously pop the worst label before finding the
-    // next vector, which is of the same label and is the best vector yet.
-    runTopKSearchTest(index, query, n_labels - 1, verify_res);
 
-    // Having k = n_labels, the heap will never get to pop the worst label, but we will update the
-    // scores each time.
     runTopKSearchTest(index, query, n_labels, verify_res);
 
     VecSimIndex_Free(index);
@@ -569,39 +567,80 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_Free(index);
 }
 
-// TODO: test different label count.
 TEST_F(HNSWMultiTest, preferAdHocOptimization) {
     // Save the expected result for every combination that represent a different leaf in the tree.
     // map: [k, index_size, dim, M, r] -> res
     std::map<std::vector<float>, bool> combinations;
-    combinations[{5, 1000, 1000, 5, 5, 0.5}] = true;
-    combinations[{5, 6000, 6000, 5, 5, 0.1}] = true;
-    combinations[{5, 6000, 6000, 5, 5, 0.2}] = false;
-    combinations[{5, 6000, 6000, 60, 5, 0.5}] = false;
-    combinations[{5, 6000, 6000, 60, 15, 0.5}] = true;
-    combinations[{15, 6000, 6000, 50, 5, 0.5}] = true;
-    combinations[{5, 700000, 700000, 60, 5, 0.05}] = true;
-    combinations[{5, 800000, 800000, 60, 5, 0.05}] = false;
-    combinations[{10, 800000, 800000, 60, 5, 0.01}] = true;
-    combinations[{10, 800000, 800000, 60, 5, 0.05}] = false;
-    combinations[{10, 800000, 800000, 60, 5, 0.1}] = false;
-    combinations[{10, 60000, 60000, 100, 5, 0.1}] = true;
-    combinations[{10, 80000, 80000, 100, 5, 0.1}] = false;
-    combinations[{10, 60000, 60000, 100, 60, 0.1}] = true;
-    combinations[{10, 60000, 60000, 100, 5, 0.3}] = false;
-    combinations[{20, 60000, 60000, 100, 5, 0.1}] = true;
-    combinations[{20, 60000, 60000, 100, 5, 0.2}] = false;
-    combinations[{20, 60000, 60000, 100, 20, 0.1}] = true;
-    combinations[{20, 350000, 350000, 100, 20, 0.1}] = true;
-    combinations[{20, 350000, 350000, 100, 20, 0.2}] = false;
+    combinations[{5, 100, 3, 5, 5, 0.5}] = true;
+    combinations[{5, 100, 5, 5, 5, 0.5}] = true;
+    combinations[{5, 100, 10, 5, 5, 0.5}] = true;
+    combinations[{5, 600, 3, 5, 5, 0.1}] = true;
+    combinations[{5, 600, 5, 5, 5, 0.1}] = true;
+    combinations[{5, 600, 10, 5, 5, 0.1}] = false;
+    combinations[{5, 600, 3, 5, 5, 0.2}] = true;
+    combinations[{5, 600, 5, 5, 5, 0.2}] = true;
+    combinations[{5, 600, 10, 5, 5, 0.2}] = false;
+    combinations[{5, 600, 3, 60, 5, 0.5}] = true;
+    combinations[{5, 600, 5, 60, 5, 0.5}] = true;
+    combinations[{5, 600, 10, 60, 5, 0.5}] = false;
+    combinations[{5, 600, 3, 60, 15, 0.5}] = true;
+    combinations[{5, 600, 5, 60, 15, 0.5}] = true;
+    combinations[{5, 600, 10, 60, 15, 0.5}] = true;
+    combinations[{15, 600, 3, 50, 5, 0.5}] = true;
+    combinations[{15, 600, 5, 50, 5, 0.5}] = true;
+    combinations[{15, 600, 10, 50, 5, 0.5}] = true;
+    combinations[{5, 70000, 3, 60, 5, 0.05}] = false;
+    combinations[{5, 70000, 5, 60, 5, 0.05}] = false;
+    combinations[{5, 70000, 10, 60, 5, 0.05}] = false;
+    combinations[{5, 80000, 3, 60, 5, 0.05}] = false;
+    combinations[{5, 80000, 5, 60, 5, 0.05}] = false;
+    combinations[{5, 80000, 10, 60, 5, 0.05}] = false;
+    combinations[{10, 80000, 3, 60, 5, 0.01}] = true;
+    combinations[{10, 80000, 5, 60, 5, 0.01}] = true;
+    combinations[{10, 80000, 10, 60, 5, 0.01}] = false;
+    combinations[{10, 80000, 3, 60, 5, 0.05}] = false;
+    combinations[{10, 80000, 5, 60, 5, 0.05}] = false;
+    combinations[{10, 80000, 10, 60, 5, 0.05}] = false;
+    combinations[{10, 80000, 3, 60, 5, 0.1}] = false;
+    combinations[{10, 80000, 5, 60, 5, 0.1}] = false;
+    combinations[{10, 80000, 10, 60, 5, 0.1}] = false;
+    combinations[{10, 6000, 3, 100, 5, 0.1}] = false;
+    combinations[{10, 6000, 5, 100, 5, 0.1}] = false;
+    combinations[{10, 6000, 10, 100, 5, 0.1}] = false;
+    combinations[{10, 8000, 3, 100, 5, 0.1}] = false;
+    combinations[{10, 8000, 5, 100, 5, 0.1}] = false;
+    combinations[{10, 8000, 10, 100, 5, 0.1}] = false;
+    combinations[{10, 6000, 3, 100, 60, 0.1}] = true;
+    combinations[{10, 6000, 5, 100, 60, 0.1}] = true;
+    combinations[{10, 6000, 10, 100, 60, 0.1}] = false;
+    combinations[{10, 6000, 3, 100, 5, 0.3}] = false;
+    combinations[{10, 6000, 5, 100, 5, 0.3}] = false;
+    combinations[{10, 6000, 10, 100, 5, 0.3}] = false;
+    combinations[{20, 6000, 3, 100, 5, 0.1}] = true;
+    combinations[{20, 6000, 5, 100, 5, 0.1}] = true;
+    combinations[{20, 6000, 10, 100, 5, 0.1}] = false;
+    combinations[{20, 6000, 3, 100, 5, 0.2}] = true;
+    combinations[{20, 6000, 5, 100, 5, 0.2}] = true;
+    combinations[{20, 6000, 10, 100, 5, 0.2}] = false;
+    combinations[{20, 6000, 3, 100, 20, 0.1}] = true;
+    combinations[{20, 6000, 5, 100, 20, 0.1}] = true;
+    combinations[{20, 6000, 10, 100, 20, 0.1}] = true;
+    combinations[{20, 35000, 3, 100, 20, 0.1}] = true;
+    combinations[{20, 35000, 5, 100, 20, 0.1}] = true;
+    combinations[{20, 35000, 10, 100, 20, 0.1}] = false;
+    combinations[{20, 35000, 3, 100, 20, 0.2}] = true;
+    combinations[{20, 35000, 5, 100, 20, 0.2}] = true;
+    combinations[{20, 35000, 10, 100, 20, 0.2}] = false;
 
     for (auto &comb : combinations) {
         auto k = (size_t)comb.first[0];
-        auto index_size = (size_t)comb.first[1];
-        auto label_count = (size_t)comb.first[2];
+        auto label_count = (size_t)comb.first[1];
+        auto perLabel = (size_t)comb.first[2];
         auto dim = (size_t)comb.first[3];
         auto M = (size_t)comb.first[4];
         auto r = comb.first[5];
+
+        auto index_size = label_count * perLabel;
 
         // Create index and check for the expected output of "prefer ad-hoc" heuristics.
         VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
@@ -729,12 +768,10 @@ TEST_F(HNSWMultiTest, search_empty_index) {
         for (size_t j = 0; j < dim; j++) {
             f[j] = (float)i;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, (const void *)f, 46);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    for (size_t i = 0; i < n; i++) {
-        VecSimIndex_DeleteVector(index, i);
-    }
+    VecSimIndex_DeleteVector(index, 46);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Again - we do not expect any results.
@@ -887,9 +924,12 @@ TEST_F(HNSWMultiTest, hnsw_get_distance) {
 
 TEST_F(HNSWMultiTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 1000;
+    size_t n_labels = 1000;
+    size_t perLabel = 1;
     size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
+
+    size_t n = n_labels * perLabel;
 
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
@@ -919,7 +959,7 @@ TEST_F(HNSWMultiTest, testSizeEstimation) {
         for (size_t j = 0; j < dim; j++) {
             vec[j] = (float)i;
         }
-        VecSimIndex_AddVector(index, vec, i);
+        VecSimIndex_AddVector(index, vec, i % n_labels);
     }
 
     // Estimate the memory delta of adding a full new block.
@@ -936,67 +976,6 @@ TEST_F(HNSWMultiTest, testSizeEstimation) {
     ASSERT_LE(estimation * 0.99, actual);
 
     VecSimIndex_Free(index);
-}
-
-TEST_F(HNSWMultiTest, testInitialSizeEstimation_No_InitialCapacity) {
-    size_t dim = 128;
-    size_t n = 0;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_Cosine,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-
-    VecSimIndex *index = VecSimIndex_New(&params);
-    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-
-    size_t actual = index->getAllocator()->getAllocationSize();
-
-    // labels_lookup and element_levels containers are not allocated at all in some platforms,
-    // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
-    // single bucket. This, we get the following range in which we expect the initial memory to be
-    // in.
-    ASSERT_GE(actual, estimation);
-    ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
-
-    VecSimIndex_Free(index);
-}
-
-TEST_F(HNSWMultiTest, testTimeoutReturn) {
-    size_t dim = 4;
-    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
-    VecSimQueryResult_List rl;
-
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 1,
-                                                 .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    VecSimIndex_AddVector(index, vec, 0);
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
-
-    // Checks return code on timeout - knn
-    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
-
-    // Check timeout again - range query
-    // TODO: uncomment when support for HNSW Multi range is enabled
-    // rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
-    // ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    // ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    // VecSimQueryResult_Free(rl);
-
-    VecSimIndex_Free(index);
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
 }
 
 // TEST_F(HNSWMultiTest, testTimeoutReturn_batch_iterator) {

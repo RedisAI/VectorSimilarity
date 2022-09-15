@@ -96,6 +96,35 @@ TEST_F(HNSWTest, hnsw_blob_sanity_test) {
 
     VecSimIndex_Free(index);
 }
+
+TEST_F(HNSWTest, search_for_nothing) {
+    size_t n = 100;
+    size_t k = 0;
+    size_t dim = 4;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        float f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (float)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    auto verify_res = [&](size_t id, float score, size_t index) { return; };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    VecSimIndex_Free(index);
+}
+
 /**** resizing cases ****/
 
 // Add up to capacity.
@@ -1709,6 +1738,33 @@ TEST_F(HNSWTest, testSizeEstimation) {
     }
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
+
+    VecSimIndex_Free(index);
+}
+
+TEST_F(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
+    size_t dim = 128;
+    size_t n = 0;
+    size_t bs = DEFAULT_BLOCK_SIZE;
+
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_Cosine,
+                                                 .initialCapacity = n,
+                                                 .blockSize = bs}};
+
+    VecSimIndex *index = VecSimIndex_New(&params);
+    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
+
+    size_t actual = index->getAllocator()->getAllocationSize();
+
+    // labels_lookup and element_levels containers are not allocated at all in some platforms,
+    // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
+    // single bucket. This, we get the following range in which we expect the initial memory to be
+    // in.
+    ASSERT_GE(actual, estimation);
+    ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
 
     VecSimIndex_Free(index);
 }
