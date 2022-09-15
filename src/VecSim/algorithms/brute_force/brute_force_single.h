@@ -2,6 +2,7 @@
 
 #include "brute_force.h"
 #include "bfs_batch_iterator.h"
+#include "VecSim/utils/vec_utils.h"
 
 template <typename DataType, typename DistType>
 class BruteForceIndex_Single : public BruteForceIndex<DataType, DistType> {
@@ -81,12 +82,11 @@ template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                           labelType label) {
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
-        vector_data = normalized_data;
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
     }
 
     auto optionalID = this->labelToIdLookup.find(label);

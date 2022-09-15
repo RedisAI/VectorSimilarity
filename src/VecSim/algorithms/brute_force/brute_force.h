@@ -7,6 +7,7 @@
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/utils/vec_utils.h"
 
 #include <cstring>
 #include <cmath>
@@ -234,11 +235,12 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
 
     this->last_mode = STANDARD_KNN;
+
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_blob, this->dim);
+        normalizeVector(normalized_blob, this->dim);
+
         queryBlob = normalized_blob;
     }
 
@@ -288,9 +290,8 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_blob, this->dim);
+        normalizeVector(normalized_blob, this->dim);
         queryBlob = normalized_blob;
     }
 
@@ -395,7 +396,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        float_vector_normalize((DataType *)queryBlobCopy, this->dim);
+        normalizeVector((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
