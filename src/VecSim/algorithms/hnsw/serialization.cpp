@@ -287,7 +287,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
             }
         }
     }
-    for (tableint i = 0; i < hnsw_index->cur_element_count; i++) {
+    for (idType i = 0; i < hnsw_index->cur_element_count; i++) {
         for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
             auto inbound_cons = inbound_connections[i][l];
             for (auto con : inbound_cons) {
@@ -299,7 +299,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                 auto node_ll = hnsw_index->get_linklist_at_level(i, l);
                 auto node_ll_len = hnsw_index->getListCount(node_ll);
                 bool found = false;
-                auto *node_neighbors = (tableint *)(node_ll + 1);
+                auto *node_neighbors = (idType *)(node_ll + 1);
                 for (size_t j = 0; j < node_ll_len; j++) {
                     if (node_neighbors[j] == con) {
                         found = true;

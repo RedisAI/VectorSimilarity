@@ -86,7 +86,7 @@ private:
     // relies on this field.
     idType max_id;
     size_t maxlevel_;
-	set<idType> ids_in_process;
+	std::set<idType> ids_in_process;
 
     // Index data structures
     idType entrypoint_node_;
@@ -102,7 +102,7 @@ private:
     size_t pool_initial_size;
 #endif
 #ifdef ENABLE_PARALLELIZATION
-    mutable std::mutex global; // shared_timed_mutex for read/write lock
+    mutable std::mutex global;
     std::mutex cur_element_count_guard_;
     mutable std::vector<std::mutex> link_list_locks_;
 #endif
@@ -137,12 +137,10 @@ private:
                                      candidatesMaxHeap<DistType> &top_candidates,
                                      candidatesMaxHeap<DistType> &candidates_set,
                                      DistType lowerBound) const;
-    inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
-                                             double epsilon, tag_t visited_tag,
-                                             VecSimQueryResult **top_candidates,
-                                             tag_t *elements_tags,
-                                             candidatesMaxHeap<DistType> &candidate_set,
-                                             DistType lowerBound, double radius) const;
+    inline void processCandidate_RangeSearch(
+		    idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
+		    tag_t *elements_tags, VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
+		    double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
     candidatesLabelsMaxHeap<DistType>
@@ -192,7 +190,7 @@ public:
                                           VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
-	char *getDataByLabel(labeltype label);
+	char *getDataByLabel(labelType label);
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
     inline unsigned short int getListCount(const linklistsizeint *ptr) const;
     inline void resizeIndex(size_t new_max_elements);
@@ -447,9 +445,10 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(idType curNodeId, const
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
+	    idType *next_candidate_pos = node_links + j + 1;
 
-        __builtin_prefetch(elements_tags + *(node_links + j + 1));
-        __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
+        __builtin_prefetch(elements_tags + *next_candidate_pos);
+        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
         if (elements_tags[candidate_id] == visited_tag || candidate_id > max_id)
             continue;
@@ -994,16 +993,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       data_size_(VecSimType_sizeof(params->type) * this->dim),
       element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
 
-template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
-                                         std::shared_ptr<VecSimAllocator> allocator, size_t M,
-                                         size_t ef_construction, size_t ef, size_t random_seed,
-                                         size_t pool_initial_size)
-    : VecsimBaseObject(allocator), element_levels_(max_elements, allocator),
-      label_lookup_(max_elements, allocator)
 #ifdef ENABLE_PARALLELIZATION
       ,
-      link_list_locks_(max_elements)
+      link_list_locks_(max_elements_)
 #endif
 {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
@@ -1023,7 +1015,7 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
 #ifdef ENABLE_PARALLELIZATION_READ
     this->pool_initial_size = pool_initial_size;
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
-        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
+        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
     max_gap = 0;
 #else
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
@@ -1312,9 +1304,9 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
                     auto *datal = (idType *)(data + 1);
                     for (int i = 0; i < size; i++) {
                         idType cand = datal[i];
-                        if (cand < 0 || cand > max_elements_)
-                            throw std::runtime_error(
-                                "candidate error: candidate id is out of index range");
+                        if (cand < 0 || cand > max_elements_) {
+	                        throw std::runtime_error("candidate error: candidate id is out of index range");
+                        }
 	                    if (cand > max_id) {
 		                    continue; // this candidate is still being indexed at this time.
 	                    }

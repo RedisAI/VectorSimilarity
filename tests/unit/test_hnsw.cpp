@@ -5,8 +5,6 @@
 #include "VecSim/query_result_struct.h"
 #include <climits>
 #include <unistd.h>
-#include <omp.h>
-#include <thread>
 
 class HNSWTest : public ::testing::Test {
 protected:

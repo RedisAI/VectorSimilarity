@@ -1,5 +1,5 @@
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
 
 #include <unistd.h>
@@ -99,16 +99,16 @@ void run_parallel_search_benchmark() {
               << " ms" << std::endl;
     std::cout << "Max gap between number of vectors whose indexing began to the number"
                  "of vectors whose indexing finished and available for search is: "
-              << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
+              << reinterpret_cast<HNSWIndex<float, float> *>(index)->max_gap << std::endl;
 
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_AddVector(
             bf_index,
-            (const void *)reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByLabel(i),
+            (const void *)reinterpret_cast<HNSWIndex<float, float> *>(index)->getDataByLabel(i),
             i);
     }
     auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(index));
     cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
     serializer.reset();
     // Measure recall:
@@ -212,17 +212,17 @@ void run_parallel_indexing_benchmark() {
               << " ms" << std::endl;
     std::cout << "Max gap between number of vectors whose indexing began to the number"
                  "of vectors whose indexing finished and available for search is: "
-              << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
+              << reinterpret_cast<HNSWIndex<float, float>  *>(index)->max_gap << std::endl;
 
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_AddVector(
             bf_index,
-            (const void *)reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByLabel(i),
+            (const void *)reinterpret_cast<HNSWIndex<float, float>  *>(index)->getDataByLabel(i),
             i);
     }
 
     auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(index));
     cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
     serializer.reset();
     cout << "Running queries (sequentially)" << endl;
@@ -358,16 +358,16 @@ void run_all_parallel_benchmark() {
               << " ms" << std::endl;
     std::cout << "Max gap between number of vectors whose indexing began to the number"
                  "of vectors whose indexing finished and available for search is: "
-              << reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->max_gap << std::endl;
+              << reinterpret_cast<HNSWIndex<float, float>  *>(index)->max_gap << std::endl;
 
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_AddVector(
             bf_index,
-            (const void *)reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex()->getDataByLabel(i),
+            (const void *)reinterpret_cast<HNSWIndex<float, float>  *>(index)->getDataByLabel(i),
             i);
     }
     auto serializer =
-        hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(index));
     cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
     serializer.reset();
 

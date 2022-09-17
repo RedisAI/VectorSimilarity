@@ -263,6 +263,6 @@ template <typename DataType, typename DistType>
 HNSW_BatchIterator<DataType, DistType>::~HNSW_BatchIterator() {
 	this->index->setEf(this->orig_ef_runtime);
 #ifdef ENABLE_PARALLELIZATION_READ
-	this->hnsw_index->returnVisitedList(this->visited_list);
+	this->index->returnVisitedList(this->visited_list);
 #endif
 }
