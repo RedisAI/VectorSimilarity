@@ -95,8 +95,8 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(candidatesMinHeap &candidates,
     // In the first iteration, add the entry point to the empty candidates set.
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
-        DistType dist =
-            dist_func(this->getQueryBlob(), this->index->getDataByInternalId(entry_point), dim);
+        DistType dist = dist_func((DataType *)this->getQueryBlob(),
+                                  this->index->getDataByInternalId(entry_point), dim);
         lower_bound = dist;
         this->visitNode(entry_point);
         candidates.emplace(dist, entry_point);
@@ -163,9 +163,9 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(candidatesMinHeap &candidates,
                 continue;
             }
             this->visitNode(candidate_id);
-            char *candidate_data = this->index->getDataByInternalId(candidate_id);
-            DistType candidate_dist =
-                dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
+            DataType *candidate_data = this->index->getDataByInternalId(candidate_id);
+            DistType candidate_dist = dist_func((const DataType *)this->getQueryBlob(),
+                                                (const DataType *)candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
             __builtin_prefetch(index->get_linklist_at_level(candidates.top().second, 0));
         }

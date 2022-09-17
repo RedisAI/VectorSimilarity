@@ -185,7 +185,7 @@ public:
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
-    char *getDataByInternalId(idType internal_id) const;
+    DataType *getDataByInternalId(idType internal_id) const;
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
     inline unsigned short int getListCount(const linklistsizeint *ptr) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
@@ -285,8 +285,8 @@ labelType *HNSWIndex<DataType, DistType>::getExternalLabelPtr(idType internal_id
 }
 
 template <typename DataType, typename DistType>
-char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
+DataType *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
+    return (DataType *)(data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
 template <typename DataType, typename DistType>
@@ -412,7 +412,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 template <typename DataType, typename DistType>
 template <typename Identifier>
 DistType HNSWIndex<DataType, DistType>::processCandidate(
-    idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
+    idType curNodeId, const void *data_point_, size_t layer, size_t ef, tag_t visited_tag,
     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
@@ -425,6 +425,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
 
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
+
+    const DataType *data_point = (const DataType *)data_point_;
 
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
@@ -439,7 +441,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             continue;
 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *currObj1 = (getDataByInternalId(candidate_id));
+        DataType *currObj1 = (getDataByInternalId(candidate_id));
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
         if (lowerBound > dist1 || top_candidates.size() < ef) {
@@ -462,7 +464,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
-    idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
+    idType curNodeId, const void *query_data_, size_t layer, double epsilon, tag_t visited_tag,
     VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
     double radius) const {
 
@@ -478,6 +480,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
     // Cast radius once instead of each time we check that candidate_dist <= radius_
     DistType radius_ = DistType(radius);
+    const DataType *query_data = (const DataType *)query_data_;
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
@@ -490,7 +493,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *candidate_data = getDataByInternalId(candidate_id);
+        DataType *candidate_data = getDataByInternalId(candidate_id);
 
         DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
         if (candidate_dist < dyn_range) {
@@ -512,7 +515,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
 template <typename DataType, typename DistType>
 candidatesMaxHeap<DistType>
-HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
+HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point_, size_t layer,
                                            size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
@@ -525,6 +528,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
     candidatesMaxHeap<DistType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
+    const DataType *data_point = (const DataType *)data_point_;
     DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
@@ -1153,10 +1157,10 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
+int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data_, const labelType label) {
 
     idType cur_c;
-
+    const DataType *vector_data = (const DataType *)vector_data_;
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
@@ -1210,6 +1214,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     }
 
     // this condition only means that we are not inserting the first element.
+
     if (entrypoint_node_ != HNSW_INVALID_ID) {
         if (element_max_level < maxlevelcopy) {
             DistType cur_dist =
@@ -1283,13 +1288,14 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 }
 
 template <typename DataType, typename DistType>
-idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
+idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data_, void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const {
 
     if (cur_element_count == 0) {
         return entrypoint_node_;
     }
     idType currObj = entrypoint_node_;
+    const DataType *query_data = (const DataType *)query_data_;
     DistType cur_dist =
         this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
     for (size_t level = maxlevel_; level > 0; level--) {
@@ -1323,7 +1329,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
 
 template <typename DataType, typename DistType>
 candidatesLabelsMaxHeap<DistType> *
-HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
+HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point_,
                                                              size_t ef, size_t k, void *timeoutCtx,
                                                              VecSimQueryResult_Code *rc) const {
 
@@ -1337,6 +1343,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
+    const DataType *data_point = (const DataType *)data_point_;
     DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType lowerBound = dist;
     top_candidates->emplace(dist, getExternalLabel(ep_id));
@@ -1422,7 +1429,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
 template <typename DataType, typename DistType>
 VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
-    idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
+    idType ep_id, const void *data_point_, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
 
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
@@ -1436,6 +1443,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
+    const DataType *data_point = (const DataType *)data_point_;
     DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType dynamic_range = ep_dist;
 

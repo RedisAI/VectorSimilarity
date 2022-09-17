@@ -29,7 +29,7 @@ public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
     virtual size_t indexSize() const override;
-    vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
+    vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob_,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
@@ -211,8 +211,11 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 // Compute the score for every vector in the block by using the given distance function.
 template <typename DataType, typename DistType>
-vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockScores(
-    VectorBlock *block, const void *queryBlob, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
+vecsim_stl::vector<DistType>
+BruteForceIndex<DataType, DistType>::computeBlockScores(VectorBlock *block, const void *queryBlob_,
+                                                        void *timeoutCtx,
+                                                        VecSimQueryResult_Code *rc) const {
+    const DataType *queryBlob = (const DataType *)queryBlob_;
     size_t len = block->getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
@@ -220,7 +223,7 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block->getVector(i), queryBlob, this->dim);
+        scores[i] = this->dist_func((const DataType *)block->getVector(i), queryBlob, this->dim);
     }
     *rc = VecSim_QueryResult_OK;
     return scores;

@@ -2,5 +2,5 @@
 
 #include <cstdlib>
 
-float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t qty);
-double FP64_L2Sqr(const void *pVect1v, const void *pVect2v, size_t qty);
+float L2Sqr(const float *pVect1v, const float *pVect2v, size_t qty);
+double L2Sqr(const double *pVect1v, const double *pVect2v, size_t qty);

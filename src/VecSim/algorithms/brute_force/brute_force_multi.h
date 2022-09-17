@@ -18,7 +18,7 @@ public:
 
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType labelType) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
+    double getDistanceFrom(labelType label, const void *vector_data_) const override;
 
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
@@ -92,7 +92,9 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVector(labelType label) {
 
 template <typename DataType, typename DistType>
 double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
-                                                                  const void *vector_data) const {
+                                                                  const void *vector_data_) const {
+
+    const DataType *vector_data = (const DataType *)vector_data_;
 
     auto IDs = this->labelToIdsLookup.find(label);
     if (IDs == this->labelToIdsLookup.end()) {

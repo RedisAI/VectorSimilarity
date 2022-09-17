@@ -7,9 +7,18 @@
 #include "VecSim/spaces/L2/L2_SSE.h"
 namespace spaces {
 
+template <typename DistType>
+dist_func_t<DistType> Return_SSE(CalculationGuideline optimization_type) {
+    static dist_func_t<DistType> dist_funcs[] = {L2Sqr, L2SqrSIMD16Ext_SSE, L2SqrSIMD4Ext_SSE,
+                                                 L2SqrSIMD16ExtResiduals_SSE,
+                                                 L2SqrSIMD4ExtResiduals_SSE};
+
+    return dist_funcs[optimization_type];
+}
+
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 
-    dist_func_t<float> ret_dist_func = FP32_L2Sqr;
+    dist_func_t<float> ret_dist_func = L2Sqr;
 #if defined(M1)
 #elif defined(__x86_64__)
 
@@ -21,7 +30,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 #ifdef __AVX512F__
     {
         static dist_func_t<float> dist_funcs[] = {
-            FP32_L2Sqr, FP32_L2SqrSIMD16Ext_AVX512, FP32_L2SqrSIMD4Ext_AVX512,
+            L2Sqr, FP32_L2SqrSIMD16Ext_AVX512, FP32_L2SqrSIMD4Ext_AVX512,
             FP32_L2SqrSIMD16ExtResiduals_AVX512, FP32_L2SqrSIMD4ExtResiduals_AVX512};
 
         ret_dist_func = dist_funcs[optimization_type];
@@ -31,7 +40,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 #ifdef __AVX__
     {
         static dist_func_t<float> dist_funcs[] = {
-            FP32_L2Sqr, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD4Ext_AVX,
+            L2Sqr, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD4Ext_AVX,
             FP32_L2SqrSIMD16ExtResiduals_AVX, FP32_L2SqrSIMD4ExtResiduals_AVX};
 
         ret_dist_func = dist_funcs[optimization_type];
@@ -41,11 +50,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
     case ARCH_OPT_SSE:
 #ifdef __SSE__
     {
-        static dist_func_t<float> dist_funcs[] = {
-            FP32_L2Sqr, FP32_L2SqrSIMD16Ext_SSE, FP32_L2SqrSIMD4Ext_SSE,
-            FP32_L2SqrSIMD16ExtResiduals_SSE, FP32_L2SqrSIMD4ExtResiduals_SSE};
-
-        ret_dist_func = dist_funcs[optimization_type];
+        ret_dist_func = Return_SSE<float>(optimization_type);
     } break;
     } // switch
 #endif

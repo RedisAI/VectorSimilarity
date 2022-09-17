@@ -1,24 +1,20 @@
 #include "L2.h"
 
-float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t qty) {
-    float *vec1 = (float *)pVect1v;
-    float *vec2 = (float *)pVect2v;
+float L2Sqr(const float *pVect1v, const float *pVect2v, size_t qty) {
 
     float res = 0;
     for (size_t i = 0; i < qty; i++) {
-        float t = vec1[i] - vec2[i];
+        float t = pVect1v[i] - pVect2v[i];
         res += t * t;
     }
     return res;
 }
 
-double FP64_L2Sqr(const void *pVect1v, const void *pVect2v, size_t qty) {
-    double *vec1 = (double *)pVect1v;
-    double *vec2 = (double *)pVect2v;
+double L2Sqr(const double *pVect1v, const double *pVect2v, size_t qty) {
 
     double res = 0;
     for (size_t i = 0; i < qty; i++) {
-        double t = vec1[i] - vec2[i];
+        double t = pVect1v[i] - pVect2v[i];
         res += t * t;
     }
     return res;

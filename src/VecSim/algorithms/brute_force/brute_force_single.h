@@ -16,7 +16,7 @@ public:
 
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType label) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
+    double getDistanceFrom(labelType label, const void *vector_data_) const override;
 
     inline size_t indexLabelCount() const override { return this->count; }
 
@@ -121,8 +121,9 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 
 template <typename DataType, typename DistType>
 double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
-                                                                   const void *vector_data) const {
+                                                                   const void *vector_data_) const {
 
+    const DataType *vector_data = (const DataType *)vector_data_;
     auto optionalId = this->labelToIdLookup.find(label);
     if (optionalId == this->labelToIdLookup.end()) {
         return INVALID_SCORE;

@@ -2,10 +2,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP.h"
 
-float FP32_InnerProductSIMD16Ext_AVX_impl(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_InnerProductSIMD16Ext_AVX_impl(const float *pVect1, const float *pVect2, size_t qty) {
     float PORTABLE_ALIGN32 TmpRes[8];
-    float *pVect1 = (float *)pVect1v;
-    float *pVect2 = (float *)pVect2v;
 
     size_t qty16 = qty >> 4 << 4;
 
@@ -36,14 +34,12 @@ float FP32_InnerProductSIMD16Ext_AVX_impl(const void *pVect1v, const void *pVect
     return sum;
 }
 
-float FP32_InnerProductSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_InnerProductSIMD16Ext_AVX(const float *pVect1v, const float *pVect2v, size_t qty) {
     return 1.0f - FP32_InnerProductSIMD16Ext_AVX_impl(pVect1v, pVect2v, qty);
 }
 
-float FP32_InnerProductSIMD4Ext_AVX_impl(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_InnerProductSIMD4Ext_AVX_impl(const float *pVect1, const float *pVect2, size_t qty) {
     float PORTABLE_ALIGN16 TmpRes[4];
-    float *pVect1 = (float *)pVect1v;
-    float *pVect2 = (float *)pVect2v;
 
     size_t qty16 = qty >> 4 << 4;
     size_t qty4 = qty >> 2 << 2;
@@ -86,31 +82,31 @@ float FP32_InnerProductSIMD4Ext_AVX_impl(const void *pVect1v, const void *pVect2
     return sum;
 }
 
-float FP32_InnerProductSIMD4Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_InnerProductSIMD4Ext_AVX(const float *pVect1v, const float *pVect2v, size_t qty) {
     return 1.0f - FP32_InnerProductSIMD4Ext_AVX_impl(pVect1v, pVect2v, qty);
 }
 
-float FP32_InnerProductSIMD16ExtResiduals_AVX(const void *pVect1v, const void *pVect2v,
+float FP32_InnerProductSIMD16ExtResiduals_AVX(const float *pVect1, const float *pVect2,
                                               size_t qty) {
     size_t qty16 = qty >> 4 << 4;
-    float res = FP32_InnerProductSIMD16Ext_AVX_impl(pVect1v, pVect2v, qty16);
-    float *pVect1 = (float *)pVect1v + qty16;
-    float *pVect2 = (float *)pVect2v + qty16;
+    float res = FP32_InnerProductSIMD16Ext_AVX_impl(pVect1, pVect2, qty16);
+    pVect1 += qty16;
+    pVect2 += qty16;
 
     size_t qty_left = qty - qty16;
-    float res_tail = FP32_InnerProduct_impl(pVect1, pVect2, qty_left);
+    float res_tail = InnerProduct_impl(pVect1, pVect2, qty_left);
     return 1.0f - (res + res_tail);
 }
 
-float FP32_InnerProductSIMD4ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_InnerProductSIMD4ExtResiduals_AVX(const float *pVect1, const float *pVect2, size_t qty) {
     size_t qty4 = qty >> 2 << 2;
 
-    float res = FP32_InnerProductSIMD4Ext_AVX_impl(pVect1v, pVect2v, qty4);
+    float res = FP32_InnerProductSIMD4Ext_AVX_impl(pVect1, pVect2, qty4);
     size_t qty_left = qty - qty4;
 
-    float *pVect1 = (float *)pVect1v + qty4;
-    float *pVect2 = (float *)pVect2v + qty4;
-    float res_tail = FP32_InnerProduct_impl(pVect1, pVect2, qty_left);
+    pVect1 += qty4;
+    pVect2 += qty4;
+    float res_tail = InnerProduct_impl(pVect1, pVect2, qty_left);
 
     return 1.0f - (res + res_tail);
 }

@@ -31,13 +31,8 @@ TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
 
     spaces::SetDistFunc(metric, dim, &(this->dist_func));
 
-    // Casting to void * so both sides of the comparison would have the
-    // same type.
-    if (std::is_same<TypeParam, float>::value) {
-        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_L2Sqr));
-    } else if (std::is_same<TypeParam, double>::value) {
-        ASSERT_EQ((void *)this->dist_func, (void *)FP64_L2Sqr);
-    }
+    TypeParam (*dist_f)(const TypeParam *, const TypeParam *, size_t) = L2Sqr;
+    ASSERT_EQ(this->dist_func, dist_f);
 
     TypeParam a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
@@ -45,7 +40,7 @@ TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
         b[i] = TypeParam(i + 1.0);
     }
 
-    TypeParam dist = this->dist_func((const void *)a, (const void *)b, dim);
+    TypeParam dist = this->dist_func(a, b, dim);
     ASSERT_EQ(dist, 0.0);
 }
 
@@ -58,11 +53,8 @@ TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
 
     // Casting to void * so both sides of the comparison would have the
     // same type.
-    if (std::is_same<TypeParam, float>::value) {
-        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_InnerProduct));
-    } else if (std::is_same<TypeParam, double>::value) {
-        ASSERT_EQ((void *)this->dist_func, (void *)FP64_InnerProduct);
-    }
+    TypeParam (*dist_f)(const TypeParam *, const TypeParam *, size_t) = InnerProduct;
+    ASSERT_EQ(this->dist_func, dist_f);
 
     TypeParam a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
@@ -73,7 +65,7 @@ TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
     normalizeVector(a, dim);
     normalizeVector(b, dim);
 
-    TypeParam dist = this->dist_func((const void *)a, (const void *)b, dim);
+    TypeParam dist = this->dist_func(a, b, dim);
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
 class SpacesTest : public ::testing::Test {
@@ -164,7 +156,7 @@ TEST_F(SpacesTest, l2_17) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v, dim));
@@ -173,7 +165,7 @@ TEST_F(SpacesTest, l2_17) {
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD16ExtResiduals_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -189,7 +181,7 @@ TEST_F(SpacesTest, l2_9) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v, dim));
@@ -198,7 +190,7 @@ TEST_F(SpacesTest, l2_9) {
         ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD4ExtResiduals_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -214,7 +206,7 @@ TEST_F(SpacesTest, ip_17) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, dim);
+    float baseline = InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX512(v, v, dim));
@@ -239,7 +231,7 @@ TEST_F(SpacesTest, ip_9) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, dim);
+    float baseline = InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_AVX512(v, v, dim));
@@ -264,7 +256,7 @@ TEST_F(SpacesTest, ip_16) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, dim);
+    float baseline = InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX512(v, v, dim));
@@ -289,7 +281,7 @@ TEST_F(SpacesTest, l2_16) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v, dim));
@@ -298,7 +290,7 @@ TEST_F(SpacesTest, l2_16) {
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD16Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -314,7 +306,7 @@ TEST_F(SpacesTest, ip_20) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, dim);
+    float baseline = InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_AVX512(v, v, dim));
@@ -339,7 +331,7 @@ TEST_F(SpacesTest, l2_20) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX512(v, v, dim));
@@ -348,7 +340,7 @@ TEST_F(SpacesTest, l2_20) {
         ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD4Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
