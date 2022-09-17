@@ -12,6 +12,7 @@ typedef struct HNSWIndexMetaData {
     size_t unidirectional_connections;
     size_t min_in_degree;
     size_t max_in_degree;
+    size_t incoming_edges_mismatch;
 } HNSWIndexMetaData;
 
 typedef enum EncodingVersion { EncodingVersion_V1 = 1 } EncodingVersion;

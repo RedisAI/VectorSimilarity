@@ -1,6 +1,7 @@
 #include <VecSim/vec_sim.h>
 
 #include <utility>
+#include <map>
 #include "serialization.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "hnsw.h"
@@ -238,15 +239,18 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                              .double_connections = HNSW_INVALID_META_DATA,
                              .unidirectional_connections = HNSW_INVALID_META_DATA,
                              .min_in_degree = HNSW_INVALID_META_DATA,
-                             .max_in_degree = HNSW_INVALID_META_DATA};
+                             .max_in_degree = HNSW_INVALID_META_DATA,
+                             .incoming_edges_mismatch = 0};
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = hnsw_index->getAllocator()->getAllocationSize();
     size_t connections_checked = 0, double_connections = 0;
-    std::vector<int> inbound_connections_num(hnsw_index->max_id + 1, 0);
+    std::vector<int> inbound_connections_num(hnsw_index->cur_element_count, 0);
+    std::vector<std::map<size_t, std::vector<size_t>>> inbound_connections(
+        hnsw_index->cur_element_count);
     size_t incoming_edges_sets_sizes = 0;
     if (hnsw_index->max_id != HNSW_INVALID_ID) {
-        for (size_t i = 0; i <= hnsw_index->max_id; i++) {
+        for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
             for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
                 linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
                 unsigned int size = hnsw_index->getListCount(ll_cur);
@@ -254,11 +258,12 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                 std::set<idType> s;
                 for (unsigned int j = 0; j < size; j++) {
                     // Check if we found an invalid neighbor.
-                    if (data[j] > hnsw_index->max_id || data[j] == i) {
+                    if (data[j] >= hnsw_index->cur_element_count || data[j] == i) {
                         res.valid_state = false;
                         return res;
                     }
                     inbound_connections_num[data[j]]++;
+                    inbound_connections[data[j]][l].push_back(i);
                     s.insert(data[j]);
                     connections_checked++;
 
@@ -282,6 +287,40 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
             }
         }
     }
+    for (tableint i = 0; i < hnsw_index->cur_element_count; i++) {
+        for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
+            auto inbound_cons = inbound_connections[i][l];
+            for (auto con : inbound_cons) {
+                auto it = std::find(hnsw_index->getIncomingEdgesPtr(i, l)->begin(),
+                                    hnsw_index->getIncomingEdgesPtr(i, l)->end(), con);
+                if (it != hnsw_index->getIncomingEdgesPtr(i, l)->end()) {
+                    continue;
+                }
+                auto node_ll = hnsw_index->get_linklist_at_level(i, l);
+                auto node_ll_len = hnsw_index->getListCount(node_ll);
+                bool found = false;
+                auto *node_neighbors = (tableint *)(node_ll + 1);
+                for (size_t j = 0; j < node_ll_len; j++) {
+                    if (node_neighbors[j] == con) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    res.valid_state = false;
+                    return res;
+                }
+            }
+            for (auto con : *hnsw_index->getIncomingEdgesPtr(i, l)) {
+                if (std::find(inbound_cons.begin(), inbound_cons.end(), con) ==
+                    inbound_cons.end()) {
+                    res.valid_state = false;
+                    res.incoming_edges_mismatch++;
+                }
+            }
+        }
+    }
+
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
     res.min_in_degree =
