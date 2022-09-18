@@ -63,30 +63,9 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
-    /*    case ARCH_OPT_AVX512:
-    #ifdef __AVX512F__
-        {
-            static dist_func_t<float> dist_funcs[] = {
-                FP32_InnerProduct, FP32_InnerProductSIMD16Ext_AVX512,
-    FP32_InnerProductSIMD4Ext_AVX512, FP32_InnerProductSIMD16ExtResiduals_AVX512,
-    FP32_InnerProductSIMD4ExtResiduals_AVX512};
-
-            ret_dist_func = dist_funcs[optimization_type];
-        } break;
-    #endif
-        case ARCH_OPT_AVX:
-    #ifdef __AVX__
-        {
-            static dist_func_t<float> dist_funcs[] = {
-                FP32_InnerProduct, FP32_InnerProductSIMD16Ext_AVX, FP32_InnerProductSIMD4Ext_AVX,
-                FP32_InnerProductSIMD16ExtResiduals_AVX, FP32_InnerProductSIMD4ExtResiduals_AVX};
-
-            ret_dist_func = dist_funcs[optimization_type];
-        } break;
-
-    #endif*/
+    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
-    default: // if !OPT_NONE->  SSE is supported. TODO: uncomment AVX when implemented for doubles
 #ifdef __SSE__
     {
         static dist_func_t<double> dist_funcs[] = {
