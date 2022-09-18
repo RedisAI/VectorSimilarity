@@ -2,6 +2,12 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/updatable_heap.h"
+#include "VecSim/utils/vec_utils.h"
+
+#include <cstdlib>
+#include <limits>
+#include <cmath>
+#include <random>
 
 class CommonTest : public ::testing::Test {
 protected:
@@ -242,4 +248,42 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     heap.pop();
     ASSERT_EQ(heap.size(), 0);
     ASSERT_TRUE(heap.empty());
+}
+
+template <typename DataType>
+class UtilsTests : public ::testing::Test {};
+
+using DataTypes = ::testing::Types<float, double>;
+TYPED_TEST_SUITE(UtilsTests, DataTypes);
+
+TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
+    const size_t dim = 1000;
+    TypeParam v[dim];
+
+    std::mt19937 rng;
+    rng.seed(47);
+    std::uniform_real_distribution<> dis(0.0, (TypeParam)std::numeric_limits<int>::max());
+
+    // generate random values - always generates the same values
+    for (size_t i = 0; i < dim; ++i) {
+        v[i] = dis(rng);
+    }
+
+    // Change some of the vector's values so that the sum of the squared vector's
+    // values will overflow for floats but not for doubles.
+    v[dim - 3] = exp(44);
+    v[dim - 2] = exp(44);
+    v[dim - 1] = exp(44);
+
+    // Normalize the vector
+    normalizeVector(v, dim);
+
+    // Check that the normelized vector norm is 1
+    TypeParam norm = 0;
+    for (size_t i = 0; i < dim; ++i) {
+        norm += v[i] * v[i];
+    }
+
+    TypeParam one = 1.0;
+    ASSERT_NEAR(one, norm, 0.0000001);
 }

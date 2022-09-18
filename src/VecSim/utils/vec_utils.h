@@ -4,6 +4,7 @@
 #include "VecSim/vec_sim_common.h"
 #include <VecSim/query_results.h>
 #include <utility>
+#include <cmath> //sqrt
 
 template <typename dist_t>
 struct CompareByFirst {
@@ -49,8 +50,6 @@ public:
     static const char *BATCH_SIZE_STRING;
 };
 
-void float_vector_normalize(float *x, size_t dim);
-
 void sort_results_by_id(VecSimQueryResult_List results);
 
 void sort_results_by_score(VecSimQueryResult_List results);
@@ -66,3 +65,19 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric);
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode);
 
 size_t VecSimType_sizeof(VecSimType vecsimType);
+
+template <typename DataType>
+void normalizeVector(DataType *input_vector, size_t dim) {
+
+    // Cast to double to avoid float overflow.
+    double sum = 0;
+
+    for (size_t i = 0; i < dim; i++) {
+        sum += input_vector[i] * input_vector[i];
+    }
+    DataType norm = sqrt(sum);
+
+    for (size_t i = 0; i < dim; i++) {
+        input_vector[i] = input_vector[i] / norm;
+    }
+}

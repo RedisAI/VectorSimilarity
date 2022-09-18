@@ -7,6 +7,7 @@
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/utils/vec_utils.h"
 
 #include <cstring>
 #include <cmath>
@@ -33,7 +34,7 @@ public:
                                                     VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, DistType radius,
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
@@ -234,11 +235,12 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
 
     this->last_mode = STANDARD_KNN;
+
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_blob, this->dim);
+        normalizeVector(normalized_blob, this->dim);
+
         queryBlob = normalized_blob;
     }
 
@@ -280,7 +282,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType radius,
+BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
@@ -288,9 +290,8 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType 
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_blob, this->dim);
+        normalizeVector(normalized_blob, this->dim);
         queryBlob = normalized_blob;
     }
 
@@ -298,6 +299,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType 
     rl.results =
         array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
 
+    DistType radius_ = DistType(radius);
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
@@ -305,7 +307,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, DistType 
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
-            if (scores[i] <= radius) {
+            if (scores[i] <= radius_) {
                 auto res = VecSimQueryResult{getVectorLabel(curr_id), scores[i]};
                 rl.results = array_append(rl.results, res);
             }
@@ -394,7 +396,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        float_vector_normalize((DataType *)queryBlobCopy, this->dim);
+        normalizeVector((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);

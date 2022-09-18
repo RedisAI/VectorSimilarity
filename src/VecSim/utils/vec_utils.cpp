@@ -50,21 +50,8 @@ int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryRes
 int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
            !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare floats
+    // Compare doubles
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
-
-void float_vector_normalize(float *x, size_t dim) {
-    double sum = 0;
-    for (size_t i = 0; i < dim; i++) {
-        sum += (double)x[i] * (double)x[i];
-    }
-    float norm = sqrt(sum);
-    if (norm == 0)
-        return;
-    for (size_t i = 0; i < dim; i++) {
-        x[i] = x[i] / norm;
-    }
 }
 
 void sort_results_by_id(VecSimQueryResult_List rl) {

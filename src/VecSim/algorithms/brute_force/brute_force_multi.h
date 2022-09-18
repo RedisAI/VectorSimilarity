@@ -3,6 +3,7 @@
 #include "brute_force.h"
 #include "bfm_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
+#include "VecSim/utils/vec_utils.h"
 
 template <typename DataType, typename DistType>
 class BruteForceIndex_Multi : public BruteForceIndex<DataType, DistType> {
@@ -34,10 +35,10 @@ private:
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
 
-    inline BF_BatchIterator *newBatchIterator_Instance(void *queryBlob,
-                                                       VecSimQueryParams *queryParams) override {
+    inline BF_BatchIterator<DataType, DistType> *
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
         return new (this->allocator)
-            BFM_BatchIterator(queryBlob, this, queryParams, this->allocator);
+            BFM_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
@@ -57,12 +58,11 @@ private:
 template <typename DataType, typename DistType>
 int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label) {
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
-        vector_data = normalized_data;
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
     }
 
     return this->appendVector(vector_data, label);

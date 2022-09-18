@@ -98,8 +98,8 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
+    friend class HNSWIndexSerializer;
     friend class HNSWTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
@@ -130,14 +130,14 @@ private:
                                              double epsilon, tag_t visited_tag,
                                              VecSimQueryResult **top_candidates,
                                              candidatesMaxHeap<DistType> &candidate_set,
-                                             DistType lowerBound, DistType radius) const;
+                                             DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
     candidatesLabelsMaxHeap<DistType>
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
                                   void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                          double epsilon, DistType radius,
+                                                          double epsilon, double radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
@@ -186,7 +186,7 @@ public:
                                       VecSimQueryResult_Code *rc) const;
     VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
                                      VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *query_data, DistType radius,
+    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
                                       VecSimQueryParams *queryParams) override;
 };
 
@@ -445,7 +445,7 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
     VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
-    DistType radius) const {
+    double radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -457,6 +457,8 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
     __builtin_prefetch(getDataByInternalId(*node_links));
 
+    // Cast radius once instead of each time we check that candidate_dist <= radius_
+    DistType radius_ = DistType(radius);
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
@@ -476,7 +478,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             // If the new candidate is in the requested radius, add it to the results set.
-            if (candidate_dist <= radius) {
+            if (candidate_dist <= radius_) {
                 auto new_result = VecSimQueryResult{};
                 VecSimQueryResult_SetId(new_result, getExternalLabel(candidate_id));
                 VecSimQueryResult_SetScore(new_result, candidate_dist);
@@ -1143,12 +1145,11 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
 
     idType cur_c;
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, vector_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
-        vector_data = normalized_data;
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
     }
 
     {
@@ -1380,12 +1381,11 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    DataType normalized_data[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic
-        memcpy(normalized_data, query_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_data, this->dim);
-        query_data = normalized_data;
+        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        query_data = normalized_blob;
     }
     // Get original efRuntime and store it.
     size_t originalEF = ef_;
@@ -1424,8 +1424,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
 template <typename DataType, typename DistType>
 VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
-    idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
+    idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
+
     auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1439,6 +1440,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     // Set the initial effective-range to be at least the distance from the entry-point.
     DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType dynamic_range = ep_dist;
+
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
         auto new_result = VecSimQueryResult{};
@@ -1452,6 +1454,8 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
+    // Cast radius once instead of each time we check that -curr_el_pair.first >= radius_.
+    DistType radius_ = DistType(radius);
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
@@ -1466,7 +1470,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         candidate_set.pop();
 
         // Decrease the effective range, but keep dyn_range >= radius.
-        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius) {
+        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius_) {
             dynamic_range = -curr_el_pair.first;
             dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
         }
@@ -1474,6 +1478,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         // Go over the candidate neighbours, add them to the candidates list if they are within the
         // epsilon environment of the dynamic range, and add them to the results if they are in the
         // requested radius.
+        // Here we send the radius as double to match the function arguments type.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
                                      &results, candidate_set, dynamic_range_search_boundaries,
                                      radius);
@@ -1488,9 +1493,8 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
-                                                                 DistType radius,
+                                                                 double radius,
                                                                  VecSimQueryParams *queryParams) {
-
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
 
@@ -1503,9 +1507,8 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
-        // TODO: need more generic when other types will be supported.
         memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        float_vector_normalize(normalized_blob, this->dim);
+        normalizeVector(normalized_blob, this->dim);
         query_data = normalized_blob;
     }
 
@@ -1525,6 +1528,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
 
     // search bottom layer
+    // Here we send the radius as double to match the function arguments type.
     rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, this->epsilon_,
                                                     radius, timeoutCtx, &rl.code);
 
@@ -1540,10 +1544,10 @@ HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
     // As this is the only supported type, we always allocate 4 bytes for every element in the
     // vector.
     assert(this->vecType == VecSimType_FLOAT32);
-    auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
+    auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        float_vector_normalize((DataType *)queryBlobCopy, this->dim);
+        normalizeVector((DataType *)queryBlobCopy, this->dim);
     }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);

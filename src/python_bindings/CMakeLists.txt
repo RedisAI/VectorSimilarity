@@ -7,6 +7,8 @@ add_subdirectory(${root}/src VectorSimilarity)
 
 include_directories(${root}/src)
 
+# build bindings with -DBUILD_TESTS flag
+ADD_DEFINITIONS(-DBUILD_TESTS)
 pybind11_add_module(VecSim bindings.cpp)
 
 target_link_libraries(VecSim VectorSimilarity)

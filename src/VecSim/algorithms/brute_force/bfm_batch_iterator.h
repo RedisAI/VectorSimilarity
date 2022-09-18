@@ -3,11 +3,12 @@
 
 #include <limits>
 
-class BFM_BatchIterator : public BF_BatchIterator {
+template <typename DataType, typename DistType>
+class BFM_BatchIterator : public BF_BatchIterator<DataType, DistType> {
 public:
-    BFM_BatchIterator(void *query_vector, const BruteForceIndex<float, float> *index,
+    BFM_BatchIterator(void *query_vector, const BruteForceIndex<DataType, DistType> *index,
                       VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
-        : BF_BatchIterator(query_vector, index, queryParams, allocator) {}
+        : BF_BatchIterator<DataType, DistType>(query_vector, index, queryParams, allocator) {}
 
     ~BFM_BatchIterator() override = default;
 
@@ -15,9 +16,8 @@ private:
     inline VecSimQueryResult_Code calculateScores() override {
 
         this->scores.reserve(this->index->indexLabelCount());
-        // TODO: template temporary map
-        vecsim_stl::unordered_map<labelType, float> tmp_scores(this->index->indexLabelCount(),
-                                                               this->allocator);
+        vecsim_stl::unordered_map<labelType, DistType> tmp_scores(this->index->indexLabelCount(),
+                                                                  this->allocator);
         vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
         VecSimQueryResult_Code rc;
 
@@ -30,7 +30,7 @@ private:
                 return rc;
             }
             for (size_t i = 0; i < block_scores.size(); i++) {
-                labelType curr_label = index->getVectorLabel(curr_id);
+                labelType curr_label = this->index->getVectorLabel(curr_id);
                 auto curr_pair = tmp_scores.find(curr_label);
                 // For each score, emplace or update the score of the label.
                 if (curr_pair == tmp_scores.end()) {
@@ -41,7 +41,7 @@ private:
                 ++curr_id;
             }
         }
-        assert(curr_id == index->indexSize());
+        assert(curr_id == this->index->indexSize());
         for (auto p : tmp_scores) {
             this->scores.emplace_back(p.second, p.first);
         }
