@@ -1244,11 +1244,12 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
 
         // Checking if an element with the given label already exists. if so, remove it.
         if (label_lookup_.find(label) != label_lookup_.end()) {
-            // Todo - this should occur in multi-threaded scenario
+            // this should not occur in multi-threaded scenario
 			deleteVector(label);
         }
         if (cur_element_count >= max_elements_) {
-            size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
+	        // this should not occur in multi-threaded scenario
+	        size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
             resizeIndex(max_elements_ + vectors_to_add);
         }
 		cur_c = cur_element_count++;
