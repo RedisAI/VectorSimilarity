@@ -63,7 +63,7 @@ TYPED_TEST(DistFuncTest, ip_no_optimization_get_func_test) {
 
 TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
     // Choose a dim that has no optimizations
-    size_t dim = 3;
+    size_t dim = 1;
     VecSimMetric metric = VecSimMetric_L2;
 
     spaces::SetDistFunc(metric, dim, &(this->dist_func));
