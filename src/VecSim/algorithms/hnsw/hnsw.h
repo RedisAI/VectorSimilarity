@@ -700,40 +700,43 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
             auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
 
-            //#ifdef ENABLE_PARALLELIZATION
-            //			// Take all locks by the order of the ids - first the outgoing edges locks and
-            //then the incoming edges
-            //			// to avoid deadlocks. Also, we must release the neighbor's lock at this point
-            //again to void deadlock. 			neighbours_lock.unlock(); 			std::sort(removed_links,
-            //removed_links + removed_links_num); 	        std::unique_lock<std::mutex>
-            //link_list_locks[removed_links_num]; 	        bool selected_neighbor_lock_acquired = false; 			for
-            //(size_t i = 0; i < removed_links_num; i++) { 				if (removed_links[i] == cur_c) {
-            //					continue;
-            //				}
-            //				if (removed_links[i] > selectedNeighbor && !selected_neighbor_lock_acquired)
-            //{ 					neighbours_lock.lock(); 					selected_neighbor_lock_acquired = true;
-            //				}
-            //				link_list_locks[i] =
-            //std::unique_lock<std::mutex>(link_list_locks_[removed_links[i]]);
-            //			}
-            //			if (!selected_neighbor_lock_acquired) {
-            //				neighbours_lock.lock();
-            //			}
-            //#endif
+#ifdef ENABLE_PARALLELIZATION
+			// Take all locks by the order of the ids to avoid deadlocks.
+			// Also, we must release the neighbor's lock at this point again to avoid deadlock.
+			neighbours_lock.unlock();
+			std::sort(removed_links,removed_links + removed_links_num);
+			std::unique_lock<std::mutex>
+            link_list_locks[removed_links_num];
+			bool selected_neighbor_lock_acquired = false;
+			for (size_t i = 0; i < removed_links_num; i++) {
+				if (removed_links[i] == cur_c) {
+					continue;
+				}
+				if (removed_links[i] > selectedNeighbor && !selected_neighbor_lock_acquired) {
+					neighbours_lock.lock();
+					selected_neighbor_lock_acquired = true;
+				}
+				link_list_locks[i] =
+						std::unique_lock<std::mutex>(link_list_locks_[removed_links[i]]);
+			}
+            if (!selected_neighbor_lock_acquired) {
+                neighbours_lock.lock();
+            }
+#endif
             for (size_t i = 0; i < removed_links_num; i++) {
                 idType node_id = removed_links[i];
-#ifdef ENABLE_PARALLELIZATION
-                std::unique_lock<std::mutex> node_lock;
-                neighbours_lock.unlock();
-                size_t lower_id = node_id < selectedNeighbor ? node_id : selectedNeighbor;
-                if (lower_id == selectedNeighbor) {
-                    neighbours_lock.lock();
-                    node_lock = std::unique_lock<std::mutex>(link_list_locks_[node_id]);
-                } else {
-                    node_lock = std::unique_lock<std::mutex>(link_list_locks_[node_id]);
-                    neighbours_lock.lock();
-                }
-#endif
+//#ifdef ENABLE_PARALLELIZATION
+//                std::unique_lock<std::mutex> node_lock;
+//                neighbours_lock.unlock();
+//                size_t lower_id = node_id < selectedNeighbor ? node_id : selectedNeighbor;
+//                if (lower_id == selectedNeighbor) {
+//                    neighbours_lock.lock();
+//                    node_lock = std::unique_lock<std::mutex>(link_list_locks_[node_id]);
+//                } else {
+//                    node_lock = std::unique_lock<std::mutex>(link_list_locks_[node_id]);
+//                    neighbours_lock.lock();
+//                }
+//#endif
                 auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
