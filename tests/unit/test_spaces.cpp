@@ -19,9 +19,48 @@ public:
     dist_func_t<DistType> dist_func;
 };
 
+#include <tuple>
+
 using DistTypes = ::testing::Types<float, double>;
+
 TYPED_TEST_SUITE(DistFuncTest, DistTypes);
 
+template <typename DistType, VecSimMetric metric>
+struct space_class {
+    static VecSimMetric get() { return metric; }
+    dist_func_t<DistType> dist_func;
+};
+template <typename SpaceType>
+class GetDistFuncTest : public ::testing::Test {
+
+public:
+    SpaceType space_m;
+    decltype(SpaceType::dist_func) *get_dist_func_ptr() { return &(this->space_m.dist_func); }
+    decltype(SpaceType::dist_func) get_dist_func() { return this->space_m.dist_func; }
+
+    VecSimMetric metric_;
+};
+
+using SpacesTypes =
+    ::testing::Types<space_class<float, VecSimMetric_IP>, space_class<float, VecSimMetric_L2>,
+                     space_class<double, VecSimMetric_IP>, space_class<double, VecSimMetric_L2>>;
+
+TYPED_TEST_SUITE(GetDistFuncTest, SpacesTypes);
+// INSTANTIATE_TEST_SUITE_P(My, GetDistFuncTest<double>,testing::Values(VecSimMetric_Cosine,
+// VecSimMetric_IP, VecSimMetric_L2), test_get_space);
+TYPED_TEST(GetDistFuncTest, test_get_space) {
+    size_t dim = 3;
+    VecSimMetric metric = TypeParam::get();
+    spaces::SetDistFunc(metric, dim, this->get_dist_func_ptr());
+
+    // Casting to void * so both sides of the comparison would have the
+    // same type.
+    if (std::is_same<TypeParam, float>::value) {
+        ASSERT_EQ((void *)(this->get_dist_func()), (void *)(FP32_L2Sqr));
+    } else if (std::is_same<TypeParam, double>::value) {
+        ASSERT_EQ((void *)this->get_dist_func(), (void *)FP64_L2Sqr);
+    }
+}
 /****** no optimization function tests suite ******/
 
 TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
