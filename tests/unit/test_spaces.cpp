@@ -22,6 +22,43 @@ public:
 using DistTypes = ::testing::Types<float, double>;
 TYPED_TEST_SUITE(DistFuncTest, DistTypes);
 
+/****** Get distance function tests  ******/
+
+// No Optimization distance function.
+TYPED_TEST(DistFuncTest, l2_no_optimization_get_func_test) {
+    // Choose a dim that has no optimizations
+    size_t dim = 1;
+    VecSimMetric metric = VecSimMetric_L2;
+
+    spaces::SetDistFunc(metric, dim, &(this->dist_func));
+
+    // Casting to void * so both sides of the comparison would have the
+    // same type.
+    if (std::is_same<TypeParam, float>::value) {
+        ASSERT_EQ(spaces::GetCalculationGuideline(dim), spaces::NO_OPTIMIZATION);
+        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_L2Sqr));
+    } else if (std::is_same<TypeParam, double>::value) {
+        ASSERT_EQ((void *)this->dist_func, (void *)FP64_L2Sqr);
+    }
+}
+
+// No Optimization distance function.
+TYPED_TEST(DistFuncTest, ip_no_optimization_get_func_test) {
+    // Choose a dim that has no optimizations
+    size_t dim = 1;
+    VecSimMetric metric = VecSimMetric_IP;
+
+    spaces::SetDistFunc(metric, dim, &(this->dist_func));
+
+    // Casting to void * so both sides of the comparison would have the
+    // same type.
+    if (std::is_same<TypeParam, float>::value) {
+        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_InnerProduct));
+    } else if (std::is_same<TypeParam, double>::value) {
+        ASSERT_EQ((void *)this->dist_func, (void *)FP64_InnerProduct);
+    }
+}
+
 /****** no optimization function tests suite ******/
 
 TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
@@ -30,14 +67,6 @@ TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
     VecSimMetric metric = VecSimMetric_L2;
 
     spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    // Casting to void * so both sides of the comparison would have the
-    // same type.
-    if (std::is_same<TypeParam, float>::value) {
-        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_L2Sqr));
-    } else if (std::is_same<TypeParam, double>::value) {
-        ASSERT_EQ((void *)this->dist_func, (void *)FP64_L2Sqr);
-    }
 
     TypeParam a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
@@ -55,14 +84,6 @@ TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
     VecSimMetric metric = VecSimMetric_IP;
 
     spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    // Casting to void * so both sides of the comparison would have the
-    // same type.
-    if (std::is_same<TypeParam, float>::value) {
-        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_InnerProduct));
-    } else if (std::is_same<TypeParam, double>::value) {
-        ASSERT_EQ((void *)this->dist_func, (void *)FP64_InnerProduct);
-    }
 
     TypeParam a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
