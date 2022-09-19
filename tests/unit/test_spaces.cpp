@@ -36,12 +36,9 @@ class GetDistFuncTest : public ::testing::Test {
 public:
     SpaceType space_m;
     decltype(SpaceType::dist_func) get_dist_func() { return space_m.dist_func; }
-    void set_dist_func(size_t dim) { 
-            spaces::SetDistFunc(SpaceType::get_metric(), dim, &(space_m.dist_func));
-}
-
-
-    VecSimMetric metric_;
+    void set_dist_func(size_t dim) {
+        spaces::SetDistFunc(SpaceType::get_metric(), dim, &(space_m.dist_func));
+    }
 };
 
 using SpacesTypes =
