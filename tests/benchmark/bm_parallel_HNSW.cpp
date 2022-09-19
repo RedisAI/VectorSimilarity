@@ -27,6 +27,7 @@ private:
 
 	float computeRecall(const std::vector<VecSimQueryResult_List> &total_res, VecSimIndex *bf_index, bool show_trace=false) {
 		size_t total_correct = 0;
+		size_t total_correct_cur = 0;
 		for (size_t q = 0; q < queries.size(); q++) {
 			size_t correct = 0;
 			auto hnsw_results = total_res[q];
@@ -50,9 +51,11 @@ private:
 			VecSimQueryResult_Free(bf_results);
 			VecSimQueryResult_Free(hnsw_results);
 			total_correct += correct;
+			total_correct_cur += correct;
 			if (show_trace && q % 1000 == 999) {
 				std::cout << "Accumulated recall after " << q+1 << " queries is "
-				          << float(total_correct) / (k * q) << std::endl;
+				          << float(total_correct_cur) / (k * 1000) << std::endl;
+				total_correct_cur = 0;
 			}
 		}
 		return (float)total_correct / ((float)k*(float)queries.size());

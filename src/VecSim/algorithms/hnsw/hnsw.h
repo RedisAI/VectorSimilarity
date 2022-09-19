@@ -705,8 +705,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 			// Also, we must release the neighbor's lock at this point again to avoid deadlock.
 			neighbours_lock.unlock();
 			std::sort(removed_links,removed_links + removed_links_num);
-			std::unique_lock<std::mutex>
-            link_list_locks[removed_links_num];
+			std::unique_lock<std::mutex> link_list_locks[removed_links_num];
 			bool selected_neighbor_lock_acquired = false;
 			for (size_t i = 0; i < removed_links_num; i++) {
 				if (removed_links[i] == cur_c) {
@@ -1385,7 +1384,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     lock.unlock();
 #endif
     DistType cur_dist =
-        this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
+        this->dist_func(query_data, getDataByInternalId(currObj), this->dim);
     for (size_t level = maxlevel_; level > 0; level--) {
         bool changed = true;
         while (changed) {
