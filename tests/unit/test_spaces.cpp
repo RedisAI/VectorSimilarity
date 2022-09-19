@@ -305,6 +305,7 @@ TEST_F(SpacesTest, l2_8_double) {
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX(v, v, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v, dim));
     case ARCH_OPT_NONE:
@@ -328,6 +329,7 @@ TEST_F(SpacesTest, l2_10_double) {
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v, dim));
     case ARCH_OPT_NONE:
@@ -350,6 +352,7 @@ TEST_F(SpacesTest, l2_17_double) {
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX(v, v, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_SSE(v, v, dim));
     case ARCH_OPT_NONE:
@@ -375,6 +378,7 @@ TEST_F(SpacesTest, l2_7_double) {
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_SSE(v, v, dim));
     case ARCH_OPT_NONE:
