@@ -27,7 +27,7 @@ TYPED_TEST_SUITE(DistFuncTest, DistTypes);
 
 template <typename DistType, VecSimMetric metric>
 struct space_class {
-    static VecSimMetric get() { return metric; }
+    static VecSimMetric get_metric() { return metric; }
     dist_func_t<DistType> dist_func;
 };
 template <typename SpaceType>
@@ -35,8 +35,11 @@ class GetDistFuncTest : public ::testing::Test {
 
 public:
     SpaceType space_m;
-    decltype(SpaceType::dist_func) *get_dist_func_ptr() { return &(this->space_m.dist_func); }
-    decltype(SpaceType::dist_func) get_dist_func() { return this->space_m.dist_func; }
+    decltype(SpaceType::dist_func) get_dist_func() { return space_m.dist_func; }
+    void set_dist_func(size_t dim) { 
+            spaces::SetDistFunc(SpaceType::get_metric(), dim, &(space_m.dist_func));
+}
+
 
     VecSimMetric metric_;
 };
@@ -50,9 +53,7 @@ TYPED_TEST_SUITE(GetDistFuncTest, SpacesTypes);
 // VecSimMetric_IP, VecSimMetric_L2), test_get_space);
 TYPED_TEST(GetDistFuncTest, test_get_space) {
     size_t dim = 3;
-    VecSimMetric metric = TypeParam::get();
-    spaces::SetDistFunc(metric, dim, this->get_dist_func_ptr());
-
+    this->set_dist_func(dim);
     // Casting to void * so both sides of the comparison would have the
     // same type.
     if (std::is_same<TypeParam, float>::value) {
@@ -68,8 +69,7 @@ TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
     size_t dim = 3;
     VecSimMetric metric = VecSimMetric_L2;
 
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
+    this->set_dist_func(dim);
     // Casting to void * so both sides of the comparison would have the
     // same type.
     if (std::is_same<TypeParam, float>::value) {
@@ -93,7 +93,7 @@ TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
     size_t dim = 3;
     VecSimMetric metric = VecSimMetric_IP;
 
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
+    this->set_dist_func(dim);
 
     // Casting to void * so both sides of the comparison would have the
     // same type.
