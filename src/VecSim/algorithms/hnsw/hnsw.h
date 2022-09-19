@@ -1265,7 +1265,7 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
     size_t currObj = entrypoint_node_;
 
 #ifdef ENABLE_PARALLELIZATION
-    if (element_max_level <= maxlevelcopy)
+    if (element_max_level <= (size_t)maxlevelcopy)
         entry_point_lock.unlock();
 #endif
 
@@ -1348,7 +1348,7 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
         }
     } else {
         // Do nothing for the first element
-        entrypoint_node_ = 0;
+        entrypoint_node_ = cur_c;
         for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
