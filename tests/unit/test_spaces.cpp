@@ -400,6 +400,7 @@ TEST_F(SpacesTest, ip_8_double) {
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8Ext_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
         break;
     default:
         ASSERT_TRUE(false);
@@ -421,6 +422,7 @@ TEST_F(SpacesTest, ip_10_double) {
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
         break;
     default:
         ASSERT_TRUE(false);
@@ -442,6 +444,7 @@ TEST_F(SpacesTest, ip_17_double) {
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
         break;
     default:
         ASSERT_TRUE(false);
@@ -464,6 +467,7 @@ TEST_F(SpacesTest, ip_7_double) {
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
         break;
     default:
         ASSERT_TRUE(false);
