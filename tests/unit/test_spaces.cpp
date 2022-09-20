@@ -200,7 +200,7 @@ TEST_F(SpacesTest, l2_17) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_InnerProduct(v, v, dim);
+    float baseline = FP32_L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v, dim));
@@ -225,7 +225,7 @@ TEST_F(SpacesTest, ip_17) {
         v[i] = (float)i;
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX512(v, v, dim));
