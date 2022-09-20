@@ -307,7 +307,7 @@ int main() {
 					.blockSize = n}};
 
 	auto bm = BM_ParallelHNSW(params, bf_params, n_threads, n_queries, k);
-	bm.run_parallel_search_benchmark();
     bm.run_parallel_indexing_benchmark();
+	bm.run_parallel_search_benchmark();
 	bm.run_all_parallel_benchmark();
 }

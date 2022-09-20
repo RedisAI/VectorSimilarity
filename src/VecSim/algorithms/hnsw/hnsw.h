@@ -1284,7 +1284,7 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
     }
 
     // this condition only means that we are not inserting the first element.
-    if (entrypoint_node_ != HNSW_INVALID_ID) {
+    if (currObj != HNSW_INVALID_ID) {
         if (element_max_level < maxlevelcopy) {
             DistType cur_dist =
                 this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
