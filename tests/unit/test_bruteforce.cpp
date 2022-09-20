@@ -339,6 +339,7 @@ TEST_F(BruteForceTest, brute_force_vector_search_test_l2) {
     };
     float query[] = {50, 50, 50, 50};
     runTopKSearchTest(index, query, k, verify_res);
+    runTopKSearchTest(index, query, 0, verify_res); // For sanity, search for nothing
 
     VecSimIndex_Free(index);
 }
