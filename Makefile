@@ -276,7 +276,7 @@ benchmark:
 	for bm_class in basics updated_index spaces batch_iterator; do \
   		$(BINDIR)/benchmark/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
   	done
-	$(SHOW)python3 -m tox -e benchmark
+	#$(SHOW)python3 -m tox -e benchmark
 
 toxenv:
 ifeq ($(wildcard .tox),)
