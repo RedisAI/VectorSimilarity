@@ -97,8 +97,7 @@ commands:
             sudo apt update
             sudo apt install python3-pip -y
             sudo pip3 uninstall virtualenv
-            pip3 install --upgrade pip
-            pip3 install --ignore-installed PyYAML
+            sudo pip3 install --upgrade pip PyYAML
             pip3 install redisbench-admin
       - run:
           name: Benchmark
