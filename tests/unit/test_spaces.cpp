@@ -11,95 +11,6 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vec_utils.h"
 
-using spaces::dist_func_t;
-/****** templates distance function tests suite ******/
-template <typename DistType>
-class DistFuncTest : public testing::Test {
-public:
-    dist_func_t<DistType> dist_func;
-};
-
-using DistTypes = ::testing::Types<float, double>;
-
-TYPED_TEST_SUITE(DistFuncTest, DistTypes);
-
-/****** Get distance function tests  ******/
-
-// No Optimization distance function.
-TYPED_TEST(DistFuncTest, l2_no_optimization_get_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 1;
-    VecSimMetric metric = VecSimMetric_L2;
-
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    // Casting to void * so both sides of the comparison would have the
-    // same type.
-    if (std::is_same<TypeParam, float>::value) {
-        ASSERT_EQ(spaces::FP32_GetCalculationGuideline(dim), spaces::NO_OPTIMIZATION);
-        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_L2Sqr));
-    } else if (std::is_same<TypeParam, double>::value) {
-        ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::NO_OPTIMIZATION);
-        ASSERT_EQ((void *)this->dist_func, (void *)FP64_L2Sqr);
-    }
-}
-
-// No Optimization distance function.
-TYPED_TEST(DistFuncTest, ip_no_optimization_get_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 1;
-    VecSimMetric metric = VecSimMetric_IP;
-
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    // Casting to void * so both sides of the comparison would have the
-    // same type.
-    if (std::is_same<TypeParam, float>::value) {
-        ASSERT_EQ((void *)(this->dist_func), (void *)(FP32_InnerProduct));
-    } else if (std::is_same<TypeParam, double>::value) {
-        ASSERT_EQ((void *)this->dist_func, (void *)FP64_InnerProduct);
-    }
-}
-
-/****** no optimization function tests suite ******/
-
-TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 1;
-    VecSimMetric metric = VecSimMetric_L2;
-
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    TypeParam a[dim], b[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = TypeParam(i + 1.0);
-        b[i] = TypeParam(i + 1.0);
-    }
-
-    TypeParam dist = this->dist_func((const void *)a, (const void *)b, dim);
-    ASSERT_EQ(dist, 0.0);
-}
-
-TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 1;
-    VecSimMetric metric = VecSimMetric_IP;
-
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    TypeParam a[dim], b[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = TypeParam(i + 1.5);
-        b[i] = TypeParam(i + 1.5);
-    }
-
-    normalizeVector(a, dim);
-    normalizeVector(b, dim);
-
-    TypeParam dist = this->dist_func((const void *)a, (const void *)b, dim);
-    ASSERT_NEAR(dist, 0.0, 0.00000001);
-}
-
 class SpacesTest : public ::testing::Test {
 
 protected:
@@ -280,31 +191,6 @@ TEST_F(SpacesTest, ip_9) {
 }
 
 // This test will trigger the function for dimension % 16 == 0 for each optimization.
-TEST_F(SpacesTest, l2_16) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 16;
-    float v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-    }
-
-    float baseline = FP32_L2Sqr(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the function for dimension % 16 == 0 for each optimization.
 TEST_F(SpacesTest, ip_16) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
@@ -323,6 +209,31 @@ TEST_F(SpacesTest, ip_16) {
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_SSE(v, v, dim));
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 16 == 0 for each optimization.
+TEST_F(SpacesTest, l2_16) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 16;
+    float v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (float)i;
+    }
+
+    float baseline = FP32_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v, dim));
+        optimization = ARCH_OPT_AVX;
+    case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
+        optimization = ARCH_OPT_SSE;
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);
