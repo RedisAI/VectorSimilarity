@@ -120,7 +120,7 @@ protected:
                                  size_t Mcurmax, idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                                  size_t *removed_links_num);
-    template <typename Identifier>
+    template <typename Identifier> // Either idType or labelType
     inline DistType
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
                      tag_t visited_tag,
@@ -151,19 +151,10 @@ protected:
     inline void resizeIndex(size_t new_max_elements);
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
-    // inline label to id setters that need to be implemented by derived class
-    virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
-    virtual inline void setVectorId(labelType label, idType id) = 0;
-    virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
-
-    // inline priority queue getter that need to be implemented by derived class
-    virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewMaxPriorityQueue() const = 0;
-
-    // Private internal function that implements generic single vector insertion.
+    // Protected internal function that implements generic single vector insertion.
     int appendVector(const void *vector_data, labelType label);
 
-    // Private internal function that implements generic single vector deletion.
+    // Protected internal function that implements generic single vector deletion.
     int removeVector(idType id);
 
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
@@ -204,6 +195,16 @@ public:
                                      VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
                                       VecSimQueryParams *queryParams) override;
+
+protected:
+    // inline label to id setters that need to be implemented by derived class
+    virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
+    virtual inline void setVectorId(labelType label, idType id) = 0;
+    virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
+
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
+    getNewMaxPriorityQueue() const = 0;
 };
 
 /**
@@ -1403,6 +1404,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         return rl;
     }
 
+    // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results = searchBottomLayer_WithTimeout(
         bottom_layer_ep, query_data, std::max(ef, k), k, timeoutCtx, &rl.code);
 

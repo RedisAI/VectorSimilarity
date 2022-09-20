@@ -274,7 +274,7 @@ TEST_F(HNSWTest, emptyIndex) {
     VecSimIndex_AddVector(index, (const void *)a, 1);
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
-    // The capacity should change to be aligned with the vector size.
+    // The capacity should change to be aligned with the block size.
 
     HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
     size_t new_capacity = hnswIndex->getIndexCapacity();
@@ -681,8 +681,9 @@ TEST_F(HNSWTest, test_dynamic_hnsw_info_iterator) {
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = 1e6;
+    auto &label_lookup = reinterpret_cast<HNSWIndex_Single<float, float> *>(index)->label_lookup_;
     for (size_t i = 0; i < 1e6; i++) {
-        reinterpret_cast<HNSWIndex_Single<float, float> *>(index)->label_lookup_[i] = i;
+        label_lookup[i] = i;
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
