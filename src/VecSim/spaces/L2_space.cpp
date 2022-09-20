@@ -54,4 +54,5 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
     return ret_dist_func;
 }
 
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) { return FP64_L2Sqr; }
 } // namespace spaces
