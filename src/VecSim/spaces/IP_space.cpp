@@ -53,4 +53,6 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
     return ret_dist_func;
 }
 
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) { return FP64_InnerProduct; }
+
 } // namespace spaces
