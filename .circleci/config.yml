@@ -96,23 +96,23 @@ commands:
           command: |
             sudo apt update
             sudo apt install python3-pip -y
-            python3 --version
+            pip3 uninstall virtualenv
             pip3 install --ignore-installed PyYAML
             pip3 install redisbench-admin
-      # - run:
-      #     name: Benchmark
-      #     command: |
-      #       bash -l -c "make benchmark"
-      #       if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
-      #       for bm_class in basics updated_index spaces batch_iterator; do
-      #         redisbench-admin export \
-      #                     --results-format google.benchmark \
-      #                     --github_repo $CIRCLE_PROJECT_REPONAME \
-      #                     --github_org $CIRCLE_PROJECT_USERNAME \
-      #                     --github_branch $branch \
-      #                     --benchmark-result-file ${bm_class}_results.json
-      #       done
-      #     no_output_timeout: 180m
+      - run:
+          name: Benchmark
+          command: |
+            bash -l -c "make benchmark"
+            if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
+            for bm_class in basics updated_index spaces batch_iterator; do
+              redisbench-admin export \
+                          --results-format google.benchmark \
+                          --github_repo $CIRCLE_PROJECT_REPONAME \
+                          --github_org $CIRCLE_PROJECT_USERNAME \
+                          --github_branch $branch \
+                          --benchmark-result-file ${bm_class}_results.json
+            done
+          no_output_timeout: 180m
 
   tiny-build-steps:
     steps:
