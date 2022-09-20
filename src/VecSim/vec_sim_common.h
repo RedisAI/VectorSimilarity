@@ -25,7 +25,14 @@ typedef enum {
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 
 // Distance metric
-typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
+typedef enum {
+    VecSimMetric_L2,
+    VecSimMetric_IP,
+    VecSimMetric_Cosine,
+    VecSimMetric_WGS84,
+    VecSimMetric_WGS84_2D = VecSimMetric_WGS84,
+    VecSimMetric_WGS84_3D
+} VecSimMetric;
 
 typedef size_t labelType;
 typedef unsigned int idType;

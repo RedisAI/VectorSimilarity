@@ -2,6 +2,7 @@
 
 #include "VecSim/vec_sim_common.h"   // enum VecSimMetric
 #include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
+#include <cmath>
 namespace spaces {
 
 static const Arch_Optimization arch_opt = getArchitectureOptimization();
@@ -28,4 +29,7 @@ CalculationGuideline GetCalculationGuideline(size_t dim);
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
 
+float GeoDistance2D(const void *p1v, const void *p2v, size_t dummy);
+
+float GeoDistance3D(const void *p1v, const void *p2v, size_t dummy);
 } // namespace spaces
