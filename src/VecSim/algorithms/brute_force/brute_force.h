@@ -65,7 +65,7 @@ protected:
     }
     // inline priority queue getter that need to be implemented by derived class
     virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewPriorityQueue() = 0;
+    getNewMaxPriorityQueue() = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
@@ -233,8 +233,12 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
-
     this->last_mode = STANDARD_KNN;
+
+    if (0 == k) {
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
+    }
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
@@ -245,7 +249,8 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates = getNewPriorityQueue();
+    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
+        getNewMaxPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {

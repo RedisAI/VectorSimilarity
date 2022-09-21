@@ -220,7 +220,7 @@ TEST_F(BruteForceMultiTest, vector_search_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(BruteForceMultiTest, search_more_then_there_is) {
+TEST_F(BruteForceMultiTest, search_more_than_there_is) {
     size_t dim = 4;
     size_t n = 5;
     size_t perLabel = 3;

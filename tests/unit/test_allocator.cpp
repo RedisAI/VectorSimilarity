@@ -213,9 +213,9 @@ TEST_F(AllocatorTest, test_hnsw) {
         .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
 
     float vec[128] = {};
-    HNSWIndex<float, float> *hnswIndex =
-        new (allocator) HNSWIndex<float, float>(&params, allocator);
-    expectedAllocationSize += sizeof(HNSWIndex<float, float>) + vecsimAllocationOverhead;
+    HNSWIndex_Single<float, float> *hnswIndex =
+        new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
+    expectedAllocationSize += sizeof(HNSWIndex_Single<float, float>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
@@ -259,7 +259,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
                          .metric = VecSimMetric_L2,
                          .initialCapacity = 10,
                          .M = 2};
-    auto *hnswIndex = new (allocator) HNSWIndex<float, float>(&params, allocator);
+    auto *hnswIndex = new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
     float vec0[] = {0.0f, 0.0f};
@@ -279,7 +279,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
 
     // Account for allocating link lists for levels higher than 0, if exists.
     if (vec_max_level > 0) {
-        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level + 1 +
+        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level +
                                      AllocatorTest::vecsimAllocationOverhead;
     }
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
@@ -320,7 +320,7 @@ TEST_F(AllocatorTest, testIncomingEdgesSet) {
     size_t buckets_diff = hnswIndex->label_lookup_.bucket_count() - buckets_num_before;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
     if (vec_max_level > 0) {
-        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level + 1 +
+        expected_allocation_delta += hnswIndex->size_links_per_element_ * vec_max_level +
                                      AllocatorTest::vecsimAllocationOverhead;
     }
 
@@ -340,7 +340,7 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // Build HNSW index with default args and initial capacity of zero.
     HNSWParams params = {
         .type = VecSimType_FLOAT32, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
-    auto *hnswIndex = new (allocator) HNSWIndex<float, float>(&params, allocator);
+    auto *hnswIndex = new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
     size_t initial_memory_size = allocator->getAllocationSize();
@@ -348,9 +348,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
     // single bucket. This, we get the following range in which we expect the initial memory to be
     // in.
-    ASSERT_LE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params) + sizeof(size_t));
-    ASSERT_GE(initial_memory_size,
-              HNSWFactory::EstimateInitialSize(&params) - 2 * vecsimAllocationOverhead);
+    ASSERT_GE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params));
+    ASSERT_LE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params) + sizeof(size_t) +
+                                       2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
     size_t block_size = hnswIndex->info().hnswInfo.blockSize;
@@ -422,11 +422,9 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory) {
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to
     // zero, while in others the entire capacity reduced to zero (including the header).
-    // Also, the element_levels vector capacity should become zero, so we should reduce its header
-    // that always counted in the initial size estimation.
     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-                                                  hash_table_memory - vecsimAllocationOverhead);
-    ASSERT_GE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-                                                  hash_table_memory - 2 * vecsimAllocationOverhead);
+                                                  hash_table_memory + 2 * vecsimAllocationOverhead);
+    ASSERT_GE(allocator->getAllocationSize(),
+              HNSWFactory::EstimateInitialSize(&params) + hash_table_memory);
     VecSimIndex_Free(hnswIndex);
 }

@@ -42,7 +42,7 @@ protected:
     }
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewPriorityQueue() override {
+    getNewMaxPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
