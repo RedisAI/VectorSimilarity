@@ -8,23 +8,23 @@ namespace spaces {
  //optimization are defined according to
  // num_bits_per_iteration / bits_count_per_element
     NO_OPTIMIZATION = 0,
-    ITER_512_BITS = 1,          // FP32 -> dim % 16 == 0, FP64 -> dim % 8 == 0
-    ITER_128_BITS = 2,           // FP32 -> dim % 4 == 0, FP64 -> dim % 2 == 0
-    ITER_512_BITS_RESIDUALS = 3, //FP32 ->  dim > 16 && dim % 16 < 4, FP64 -> dim > 8 && dim % 8 <
-2, ITER_128_BITS_RESIDUALS = 4,  // FP32 ->dim > 4, FP64 -> dim > 2
+    SPLIT_TO_512_BITS = 1,          // FP32 -> dim % 16 == 0, FP64 -> dim % 8 == 0
+    SPLIT_TO_512_128_BITS = 2,           // FP32 -> dim % 4 == 0, FP64 -> dim % 2 == 0
+    SPLIT_TO_512_BITS_WITH_RESIDUALS = 3, //FP32 ->  dim > 16 && dim % 16 < 4, FP64 -> dim > 8 &&
+dim % 8 < 2, SPLIT_TO_128_BITS_WITH_RESIDUALS = 4,  // FP32 ->dim > 4, FP64 -> dim > 2
 ***/
 CalculationGuideline FP32_GetCalculationGuideline(size_t dim) {
 
     CalculationGuideline ret_score = NO_OPTIMIZATION;
 
     if (dim % 16 == 0) {
-        ret_score = ITER_512_BITS;
+        ret_score = SPLIT_TO_512_BITS;
     } else if (dim % 4 == 0) {
-        ret_score = ITER_128_BITS;
+        ret_score = SPLIT_TO_512_128_BITS;
     } else if (dim > 16 && dim % 16 < 4) {
-        ret_score = ITER_512_BITS_RESIDUALS;
+        ret_score = SPLIT_TO_512_BITS_WITH_RESIDUALS;
     } else if (dim > 4) {
-        ret_score = ITER_128_BITS_RESIDUALS;
+        ret_score = SPLIT_TO_128_BITS_WITH_RESIDUALS;
     }
     return ret_score;
 }
@@ -34,13 +34,13 @@ CalculationGuideline FP64_GetCalculationGuideline(size_t dim) {
     CalculationGuideline ret_score = NO_OPTIMIZATION;
 
     if (dim % 8 == 0) {
-        ret_score = ITER_512_BITS;
+        ret_score = SPLIT_TO_512_BITS;
     } else if (dim % 2 == 0) {
-        ret_score = ITER_128_BITS;
+        ret_score = SPLIT_TO_512_128_BITS;
     } else if (dim > 8 && dim % 8 < 2) {
-        ret_score = ITER_512_BITS_RESIDUALS;
+        ret_score = SPLIT_TO_512_BITS_WITH_RESIDUALS;
     } else if (dim > 2) {
-        ret_score = ITER_128_BITS_RESIDUALS;
+        ret_score = SPLIT_TO_128_BITS_WITH_RESIDUALS;
     }
     return ret_score;
 }
