@@ -368,7 +368,8 @@ TEST_F(SpacesTest, l2_7_double) {
         v[i] = (double)i;
     }
 
-    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_128_BITS_WITH_RESIDUALS);
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
+              spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
     double baseline = FP64_L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented

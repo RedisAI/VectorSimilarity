@@ -22,7 +22,7 @@ enum CalculationGuideline {
     SPLIT_TO_512_128_BITS = 2, // FP32 -> dim % 4 == 0, FP64 -> dim % 2 == 0
     SPLIT_TO_512_BITS_WITH_RESIDUALS =
         3, // FP32 ->  dim > 16 && dim % 16 < 4, FP64 -> dim > 8 && dim % 8 < 2,
-    SPLIT_TO_128_BITS_WITH_RESIDUALS = 4, // FP32 ->dim > 4, FP64 -> dim > 2
+    SPLIT_TO_512_128_BITS_WITH_RESIDUALS = 4, // FP32 ->dim > 4, FP64 -> dim > 2
 };
 
 CalculationGuideline FP32_GetCalculationGuideline(size_t dim);
