@@ -40,10 +40,10 @@ float GeoDistance2D(const void *p1v, const void *p2v, size_t dummy) {
     float *p1 = (float *)p1v;
     float *p2 = (float *)p2v;
     float lat1r, lon1r, lat2r, lon2r, u, v;
-    lat1r = deg_rad(p1[0]);
-    lon1r = deg_rad(p1[1]);
-    lat2r = deg_rad(p2[0]);
-    lon2r = deg_rad(p2[1]);
+    lat1r = deg_rad(p1[1]);
+    lon1r = deg_rad(p1[0]);
+    lat2r = deg_rad(p2[1]);
+    lon2r = deg_rad(p2[0]);
     u = sin((lat2r - lat1r) / 2);
     v = sin((lon2r - lon1r) / 2);
     return 2.0 * EARTH_RADIUS_IN_METERS * asin(sqrt(u * u + cos(lat1r) * cos(lat2r) * v * v));
