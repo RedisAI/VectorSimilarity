@@ -393,7 +393,7 @@ TEST_F(SpacesTest, ip_8_double) {
         v[i] = (double)i;
     }
 
-    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::ITER_512_BITS);
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
@@ -415,7 +415,7 @@ TEST_F(SpacesTest, ip_10_double) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
     }
-    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::ITER_128_BITS);
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
@@ -437,7 +437,7 @@ TEST_F(SpacesTest, ip_17_double) {
         v[i] = (double)i;
     }
 
-    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::ITER_512_BITS_RESIDUALS);
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
@@ -459,7 +459,8 @@ TEST_F(SpacesTest, ip_7_double) {
         v[i] = (double)i;
     }
 
-    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::ITER_128_BITS_RESIDUALS);
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
+              spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
 
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
