@@ -241,7 +241,6 @@ TEST_F(SpacesTest, l2_16) {
 }
 
 // This test will trigger the function for dimension % 4 == 0 for each optimization.
-// optimization.
 TEST_F(SpacesTest, ip_20) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 20;
@@ -290,6 +289,100 @@ TEST_F(SpacesTest, l2_20) {
         ASSERT_TRUE(false);
     }
 }
+
+// This test will trigger the function for dimension % 8 == 0 for each optimization.
+TEST_F(SpacesTest, l2_8_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 16;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the function for dimension % 2 == 0 for each optimization.
+TEST_F(SpacesTest, l2_10_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 10;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+// This test will trigger the function for dim > 8  && dim % 8 < 2 for each optimization.
+TEST_F(SpacesTest, l2_17_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 17;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
+// This test will trigger the "Residuals" function for 2 < dimension < 8, dim %2 != 0 for each
+// optimization.
+TEST_F(SpacesTest, l2_7_double) {
+    Arch_Optimization optimization = getArchitectureOptimization();
+    size_t dim = 7;
+    double v[dim];
+    for (size_t i = 0; i < dim; i++) {
+        v[i] = (double)i;
+    }
+
+    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
+              spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
+    double baseline = FP64_L2Sqr(v, v, dim);
+    switch (optimization) {
+    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_SSE(v, v, dim));
+    case ARCH_OPT_NONE:
+        break;
+    default:
+        ASSERT_TRUE(false);
+    }
+}
+
 #endif // CPU_FEATURES_ARCH_X86_64
 
 #endif // M1/X86_64
