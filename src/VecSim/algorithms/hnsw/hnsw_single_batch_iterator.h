@@ -27,8 +27,8 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWSingle_BatchIterator<DataType, DistType>::prepareResults(
     candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) {
     VecSimQueryResult_List rl = {0};
-    // size_t initial_results_num = array_len(batch_results);
-    // Put the "spare" results (if exist) in the results heap.
+
+    // Put the "spare" results (if exist) in the extra candidates heap.
     while (top_candidates->size() > n_res) {
         this->top_candidates_extras.emplace(top_candidates->top().first,
                                             top_candidates->top().second); // (distance, label)

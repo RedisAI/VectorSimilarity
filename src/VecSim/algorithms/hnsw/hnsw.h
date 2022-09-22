@@ -101,6 +101,7 @@ protected:
     friend class HNSWMultiTest_preferAdHocOptimization_Test;
     friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test;
+    friend class HNSWMultiTest_MultiBatchIteratorHeapLogic_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;
     friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
 #endif
