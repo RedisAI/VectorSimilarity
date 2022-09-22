@@ -53,7 +53,7 @@ private:
 			total_correct += correct;
 			total_correct_cur += correct;
 			if (show_trace && q % 1000 == 999) {
-				std::cout << "Accumulated recall after " << q+1 << " queries is "
+				std::cout << "After running " << q+1 << " queries, recall of the last 1000 queries is "
 				          << float(total_correct_cur) / (k * 1000) << std::endl;
 				total_correct_cur = 0;
 			}
@@ -93,7 +93,7 @@ public:
 	~BM_ParallelHNSW() = default;
 
 	void run_parallel_search_benchmark() {
-		cout << "\nStarting parallel searching benchmark using " << n_threads << " threads" << endl;
+		cout << "\n***Starting parallel searching benchmark using " << n_threads << " threads***" << endl;
 
 		auto hnsw_index = VecSimIndex_New(&hnswParams);
 		auto bf_index = VecSimIndex_New(&bfParams);
@@ -124,7 +124,7 @@ public:
 		std::vector<VecSimQueryResult_List> total_res(queries.size());
 		atomic_int q_counter(0);
 
-		cout << "\nRunning " << queries.size() << " queries using " << n_threads << " threads..." << endl;
+		cout << "Running " << queries.size() << " queries using " << n_threads << " threads..." << endl;
 		started = std::chrono::high_resolution_clock::now();
 #pragma omp parallel num_threads(n_threads)                                                        \
     shared(hnsw_index, queries, total_res, k, cout, q_counter) default(none)
@@ -152,7 +152,7 @@ public:
 	}
 
 	void run_parallel_indexing_benchmark() {
-		cout << "\nStarting parallel indexing benchmark using " << n_threads << " threads" << endl;
+		cout << "\n***Starting parallel indexing benchmark using " << n_threads << " threads***" << endl;
 
 		auto hnsw_index = VecSimIndex_New(&hnswParams);
 		auto bf_index = VecSimIndex_New(&bfParams);
@@ -179,8 +179,8 @@ public:
 		std::cout << "Total build time is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
-		std::cout << "Max gap between number of vectors whose indexing began to the number "
-		             "of vectors whose indexing finished and available for search is: "
+		std::cout << "Max gap between number of vectors whose indexing began to the number"
+		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
 
 		for (size_t i = 0; i < data.size(); i++) {
@@ -213,7 +213,7 @@ public:
 	}
 
 	void run_all_parallel_benchmark() {
-		cout << "\nStarting parallel indexing + searching benchmark using " << n_threads << " threads"
+		cout << "\n***Starting parallel indexing + searching benchmark using " << n_threads << " threads***"
 		     << endl;
 		auto hnsw_index = VecSimIndex_New(&hnswParams);
 		auto bf_index = VecSimIndex_New(&bfParams);
@@ -238,7 +238,7 @@ public:
 #pragma omp critical
 				cout << "Thread " << myID << " done indexing vectors" << endl;
 			} else {
-				std::this_thread::sleep_for(std::chrono::milliseconds(4000));
+				std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 #pragma omp critical
 				cout << "Thread " << myID << " start running queries, index size upon search starts: "
 				     << VecSimIndex_IndexSize(hnsw_index) << endl;
@@ -262,7 +262,7 @@ public:
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
-		             "of vectors whose indexing finished and available for search is: "
+		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
 
 		auto serializer =
