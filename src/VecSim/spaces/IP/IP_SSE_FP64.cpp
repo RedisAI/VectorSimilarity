@@ -51,7 +51,7 @@ double FP64_InnerProductSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, s
 
 double FP64_InnerProductSIMD8ExtResiduals_SSE(const void *pVect1v, const void *pVect2v,
                                               size_t qty) {
-    size_t qty8 = qty >> 2 << 2;
+    size_t qty8 = qty >> 3 << 3;
     double res = FP64_InnerProductSIMD8Ext_SSE_impl(pVect1v, pVect2v, qty8);
     double *pVect1 = (double *)pVect1v + qty8;
     double *pVect2 = (double *)pVect2v + qty8;
@@ -65,7 +65,7 @@ double FP64_InnerProductSIMD2Ext_SSE_impl(const void *pVect1v, const void *pVect
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    // Calc how many doubles we can calc using 512 bits iterations.
+    // Calculate how many doubles we can calculate using 512 bits iterations.
     size_t qty8 = qty >> 3 << 3;
     const double *pEnd1 = pVect1 + qty8;
 
@@ -101,7 +101,7 @@ double FP64_InnerProductSIMD2Ext_SSE_impl(const void *pVect1v, const void *pVect
         sum_prod = _mm_add_pd(sum_prod, _mm_mul_pd(v1, v2));
     }
 
-    // Calc the rest using 128 bits iterations.
+    // Calculate the rest using 128 bits iterations.
     while (pVect1 < pEnd2) {
         v1 = _mm_loadu_pd(pVect1);
         pVect1 += 2;
@@ -123,14 +123,14 @@ double FP64_InnerProductSIMD2Ext_SSE(const void *pVect1v, const void *pVect2v, s
 
 double FP64_InnerProductSIMD2ExtResiduals_SSE(const void *pVect1v, const void *pVect2v,
                                               size_t qty) {
-    // Calc how many doubles we can calc using 128 bits iterations.
+    // Calculate how many doubles we can calculate using 128 bits iterations.
     size_t qty2 = qty >> 1 << 1;
 
     double res = FP64_InnerProductSIMD2Ext_SSE_impl(pVect1v, pVect2v, qty2);
     double *pVect1 = (double *)pVect1v + qty2;
     double *pVect2 = (double *)pVect2v + qty2;
 
-    // Calc the rest using a brute force function
+    // Calculate the rest using the basic function.
     size_t qty_left = qty - qty2;
     double res_tail = FP64_InnerProduct_impl(pVect1, pVect2, qty_left);
 

@@ -130,7 +130,7 @@ double FP64_L2SqrSIMD2ExtResiduals_SSE(const void *pVect1v, const void *pVect2v,
     double *pVect1 = (double *)pVect1v + qty2;
     double *pVect2 = (double *)pVect2v + qty2;
 
-    // Calc the rest using a brute force function.
+    // Calc the rest using the basic function.
     size_t qty_left = qty - qty2;
     double res_tail = FP64_L2Sqr(pVect1, pVect2, qty_left);
 
