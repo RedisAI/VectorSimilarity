@@ -96,20 +96,22 @@ TEST_F(SpacesTest, l2_16) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
     float v[dim];
+    float v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
+        v2[i] = (float)(i + 1);
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v2, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v2, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -171,20 +173,22 @@ TEST_F(SpacesTest, l2_20) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 20;
     float v[dim];
+    float v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
+        v2[i] = (float)(i + 1);
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX512(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX(v, v2, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_SSE(v, v2, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -196,20 +200,22 @@ TEST_F(SpacesTest, l2_17) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 17;
     float v[dim];
+    float v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
+        v2[i] = (float)(i + 1);
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX(v, v2, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_SSE(v, v2, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -246,20 +252,22 @@ TEST_F(SpacesTest, l2_9) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 9;
     float v[dim];
+    float v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
+        v2[i] = (float)(i + 1);
     }
 
-    float baseline = FP32_L2Sqr(v, v, dim);
+    float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX(v, v2, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_SSE(v, v2, dim));
         break;
     default:
         ASSERT_TRUE(false);
@@ -296,18 +304,20 @@ TEST_F(SpacesTest, l2_8_double) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
     double v[dim];
+    double v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
+        v2[i] = (double)(i + 1);
     }
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v2, dim));
     case ARCH_OPT_NONE:
         break;
     default:
@@ -320,18 +330,20 @@ TEST_F(SpacesTest, l2_10_double) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 10;
     double v[dim];
+    double v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
+        v2[i] = (double)(i + 1);
     }
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v2, dim));
     case ARCH_OPT_NONE:
         break;
     default:
@@ -343,18 +355,20 @@ TEST_F(SpacesTest, l2_17_double) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 17;
     double v[dim];
+    double v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
+        v2[i] = (double)(i + 1);
     }
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_SSE(v, v2, dim));
     case ARCH_OPT_NONE:
         break;
     default:
@@ -368,19 +382,21 @@ TEST_F(SpacesTest, l2_7_double) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 7;
     double v[dim];
+    double v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
+        v2[i] = (double)(i + 1);
     }
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
               spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_SSE(v, v2, dim));
     case ARCH_OPT_NONE:
         break;
     default:
