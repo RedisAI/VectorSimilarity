@@ -4,23 +4,44 @@
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
 
 namespace BruteForceFactory {
-VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+template <typename DataType, typename DistType = DataType>
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
+                                                 std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     if (params->multi)
-        return new (allocator) BruteForceIndex_Multi<float, float>(params, allocator);
+        return new (allocator) BruteForceIndex_Multi<DataType, DistType>(params, allocator);
     else
-        return new (allocator) BruteForceIndex_Single<float, float>(params, allocator);
+        return new (allocator) BruteForceIndex_Single<DataType, DistType>(params, allocator);
+}
+VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+    if (params->type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
+    } else if (params->type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(params, allocator);
+    }
+
+    // If we got here something is wrong.
+    return NULL;
+}
+
+template <typename DataType, typename DistType = DataType>
+inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
+    // check if single and return new bf_index
+    if (is_multi)
+        return sizeof(BruteForceIndex_Multi<DataType, DistType>);
+    else
+        return sizeof(BruteForceIndex_Single<DataType, DistType>);
 }
 
 size_t EstimateInitialSize(const BFParams *params) {
 
     // Constant part (not effected by parameters).
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (params->multi)
-        est += sizeof(BruteForceIndex_Multi<float, float>);
-    else
-        est += sizeof(BruteForceIndex_Single<float, float>);
-
+    if (params->type == VecSimType_FLOAT32) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
+    } else if (params->type == VecSimType_FLOAT64) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
+    }
     // Parameters related part.
 
     if (params->initialCapacity) {
