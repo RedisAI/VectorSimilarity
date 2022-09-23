@@ -13,7 +13,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    CalculationGuideline optimization_type = GetCalculationGuideline(dim);
+    CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
@@ -52,5 +52,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
 #endif // __x86_64__
     return ret_dist_func;
 }
+
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) { return FP64_InnerProduct; }
 
 } // namespace spaces

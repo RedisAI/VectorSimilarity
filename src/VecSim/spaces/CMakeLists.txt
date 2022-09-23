@@ -83,7 +83,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	if(CXX_SSE)
 		project(VectorSimilaritySpaces_sse)
 			add_library(VectorSimilaritySpaces_sse STATIC
-				L2/L2_SSE.cpp
+				L2/L2_SSE_FP32.cpp
+				L2/L2_SSE_FP64.cpp
 				IP/IP_SSE.cpp
 				)
 		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_sse)

@@ -13,7 +13,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 #if defined(M1)
 #elif defined(__x86_64__)
 
-    CalculationGuideline optimization_type = GetCalculationGuideline(dim);
+    CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
@@ -51,6 +51,34 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 #endif
 
 #endif // __x86_64__
+    return ret_dist_func;
+}
+
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
+
+    dist_func_t<double> ret_dist_func = FP64_L2Sqr;
+#if defined(M1)
+#elif defined(__x86_64__)
+
+    CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
+    switch (arch_opt) {
+    case ARCH_OPT_NONE:
+        break;
+    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+#ifdef __SSE__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_SSE, FP64_L2SqrSIMD2Ext_SSE,
+            FP64_L2SqrSIMD8ExtResiduals_SSE, FP64_L2SqrSIMD2ExtResiduals_SSE};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    } // switch
+
+#endif // __x86_64__ */
     return ret_dist_func;
 }
 
