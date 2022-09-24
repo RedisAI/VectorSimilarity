@@ -2,7 +2,7 @@
 #include "L2.h"
 #include "VecSim/spaces/space_includes.h"
 
-float L2SqrSIMD16Ext_SSE(const float *pVect1, const float *pVect2, size_t qty) {
+float L2SqrSIMDsplit512Ext_SSE(const float *pVect1, const float *pVect2, size_t qty) {
 
     const float *pEnd1 = pVect1 + qty;
 
@@ -49,7 +49,7 @@ float L2SqrSIMD16Ext_SSE(const float *pVect1, const float *pVect2, size_t qty) {
 float L2SqrSIMD16ExtResiduals_SSE(const float *pVect1, const float *pVect2, size_t qty) {
     // Calculate how many floats we can calculate using 512 bits iterations.
     size_t qty16 = qty >> 4 << 4;
-    float res = L2SqrSIMD16Ext_SSE(pVect1, pVect2, qty16);
+    float res = L2SqrSIMDsplit512Ext_SSE(pVect1, pVect2, qty16);
     pVect1 += qty16;
     pVect2 += qty16;
 

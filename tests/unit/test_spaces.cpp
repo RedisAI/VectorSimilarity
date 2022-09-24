@@ -290,7 +290,7 @@ TEST_F(SpacesTest, l2_16) {
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
         optimization = ARCH_OPT_SSE;
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, L2SqrSIMD16Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMDsplit512Ext_SSE(v, v, dim));
         break;
     default:
         ASSERT_TRUE(false);

@@ -9,7 +9,7 @@ namespace spaces {
 
 template <typename DistType>
 dist_func_t<DistType> Return_SSE(CalculationGuideline optimization_type) {
-    static dist_func_t<DistType> dist_funcs[] = {L2Sqr, L2SqrSIMD16Ext_SSE, L2SqrSIMD4Ext_SSE,
+    static dist_func_t<DistType> dist_funcs[] = {L2Sqr, L2SqrSIMDsplit512Ext_SSE, L2SqrSIMD4Ext_SSE,
                                                  L2SqrSIMD16ExtResiduals_SSE,
                                                  L2SqrSIMD4ExtResiduals_SSE};
 

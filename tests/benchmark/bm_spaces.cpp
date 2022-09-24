@@ -56,8 +56,13 @@ BENCHMARK_DISTANCE_F(AVX, IP_4_Residuals, FP32_InnerProductSIMD4ExtResiduals_AVX
 #ifdef __SSE__
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
-
-BENCHMARK_DISTANCE_F(SSE, L2_16, L2SqrSIMD16Ext_SSE)
+#include "VecSim/spaces/spaces.h"
+template<typename DIST_T>
+struct func {
+    func(spaces::dist_func_t<DIST_T> f) : function(f) {};
+    spaces::dist_func_t<DIST_T> function;
+};
+BENCHMARK_DISTANCE_F(SSE, L2_16, func<float>(L2SqrSIMDsplit512Ext_SSE).function)
 BENCHMARK_DISTANCE_F(SSE, L2_4, L2SqrSIMD4Ext_SSE)
 BENCHMARK_DISTANCE_F(SSE, L2_16_Residuals, L2SqrSIMD16ExtResiduals_SSE)
 BENCHMARK_DISTANCE_F(SSE, L2_4_Residuals, L2SqrSIMD4ExtResiduals_SSE)
