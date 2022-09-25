@@ -57,7 +57,8 @@ double HNSWIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
     if (id == label_lookup_.end()) {
         return INVALID_SCORE;
     }
-    return this->dist_func(vector_data, this->getDataByInternalId(id->second), this->dim);
+    return this->dist_func((const DataType *)vector_data, this->getDataByInternalId(id->second),
+                           this->dim);
 }
 
 /**

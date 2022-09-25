@@ -60,7 +60,7 @@ size_t HNSWIndex_Multi<DataType, DistType>::indexLabelCount() const {
 
 template <typename DataType, typename DistType>
 double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
-                                                            const void *vector_data) const {
+                                                            const void *vector_data_) const {
 
     auto IDs = this->label_lookup_.find(label);
     if (IDs == this->label_lookup_.end()) {
@@ -68,6 +68,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
     }
 
     DistType dist = std::numeric_limits<DistType>::infinity();
+    const DataType *vector_data = static_cast<const DataType *>(vector_data_);
     for (auto id : IDs->second) {
         DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
         dist = (dist < d) ? dist : d;

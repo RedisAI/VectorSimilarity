@@ -2,7 +2,7 @@
 #include "L2.h"
 #include "VecSim/spaces/space_includes.h"
 
-double FP64_L2SqrSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
+double L2SqrSIMDsplit512Ext_SSE(const double *pVect1v, const double *pVect2v, size_t qty) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
@@ -48,21 +48,21 @@ double FP64_L2SqrSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, size_t q
     return TmpRes[0] + TmpRes[1];
 }
 
-double FP64_L2SqrSIMD8ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
+double L2SqrSIMD8ExtResiduals_SSE(const double *pVect1v, const double *pVect2v, size_t qty) {
     // Calculate how many doubles we can calculate using 512 bits iterations.
     size_t qty8 = qty >> 3 << 3;
-    double res = FP64_L2SqrSIMD8Ext_SSE(pVect1v, pVect2v, qty8);
+    double res = L2SqrSIMDsplit512Ext_SSE(pVect1v, pVect2v, qty8);
     double *pVect1 = (double *)pVect1v + qty8;
     double *pVect2 = (double *)pVect2v + qty8;
 
     // Calculate the rest using the basic function.
     size_t qty_left = qty - qty8;
-    double res_tail = FP64_L2Sqr(pVect1, pVect2, qty_left);
+    double res_tail = L2Sqr(pVect1, pVect2, qty_left);
 
     return (res + res_tail);
 }
 
-double FP64_L2SqrSIMD2Ext_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
+double L2SqrSIMD2Ext_SSE(const double *pVect1v, const double *pVect2v, size_t qty) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
@@ -122,17 +122,17 @@ double FP64_L2SqrSIMD2Ext_SSE(const void *pVect1v, const void *pVect2v, size_t q
     return TmpRes[0] + TmpRes[1];
 }
 
-double FP64_L2SqrSIMD2ExtResiduals_SSE(const void *pVect1v, const void *pVect2v, size_t qty) {
+double L2SqrSIMD2ExtResiduals_SSE(const double *pVect1v, const double *pVect2v, size_t qty) {
     // Calculate how many doubles we can calculate using 128 bits iterations.
     size_t qty2 = qty >> 1 << 1;
-    double res = FP64_L2SqrSIMD2Ext_SSE(pVect1v, pVect2v, qty2);
+    double res = L2SqrSIMD2Ext_SSE(pVect1v, pVect2v, qty2);
 
     double *pVect1 = (double *)pVect1v + qty2;
     double *pVect2 = (double *)pVect2v + qty2;
 
     // Calc the rest using a brute force function.
     size_t qty_left = qty - qty2;
-    double res_tail = FP64_L2Sqr(pVect1, pVect2, qty_left);
+    double res_tail = L2Sqr(pVect1, pVect2, qty_left);
 
     return (res + res_tail);
 }

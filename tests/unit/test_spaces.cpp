@@ -26,13 +26,7 @@ TYPED_TEST_SUITE(DistFuncTest, DistTypes);
 
 TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
     // Choose a dim that has no optimizations
-    size_t dim = 3;
-    VecSimMetric metric = VecSimMetric_L2;
-
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    TypeParam (*dist_f)(const TypeParam *, const TypeParam *, size_t) = L2Sqr;
-    ASSERT_EQ(this->dist_func, dist_f);
+    size_t dim = 5;
 
     TypeParam a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
@@ -40,21 +34,13 @@ TYPED_TEST(DistFuncTest, l2_no_optimization_func_test) {
         b[i] = TypeParam(i + 1.0);
     }
 
-    TypeParam dist = this->dist_func(a, b, dim);
+    TypeParam dist = L2Sqr(a, b, dim);
     ASSERT_EQ(dist, 0.0);
 }
 
-TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
+TYPED_TEST(DistFuncTest, ip_no_optimization_func_test) {
     // Choose a dim that has no optimizations
-    size_t dim = 3;
-    VecSimMetric metric = VecSimMetric_IP;
-
-    spaces::SetDistFunc(metric, dim, &(this->dist_func));
-
-    // Casting to void * so both sides of the comparison would have the
-    // same type.
-    TypeParam (*dist_f)(const TypeParam *, const TypeParam *, size_t) = InnerProduct;
-    ASSERT_EQ(this->dist_func, dist_f);
+    size_t dim = 5;
 
     TypeParam a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
@@ -65,9 +51,10 @@ TYPED_TEST(DistFuncTest, IP_no_optimization_func_test) {
     normalizeVector(a, dim);
     normalizeVector(b, dim);
 
-    TypeParam dist = this->dist_func(a, b, dim);
+    TypeParam dist = InnerProduct(a, b, dim);
     ASSERT_NEAR(dist, 0.0, 0.00000001);
 }
+
 class SpacesTest : public ::testing::Test {
 
 protected:
@@ -79,74 +66,32 @@ protected:
 
     void TearDown() override {}
 };
-
-TEST_F(SpacesTest, float_l2_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 5;
-
-    float a[dim], b[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = float(i + 1.0);
-        b[i] = float(i + 1.0);
-    }
-
-    float dist = FP32_L2Sqr((const void *)a, (const void *)b, dim);
-    ASSERT_EQ(dist, 0.0);
-}
-
-TEST_F(SpacesTest, double_l2_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 5;
-
-    double a[dim], b[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = double(i + 1.0);
-        b[i] = double(i + 1.0);
-    }
-
-    double dist = FP64_L2Sqr((const void *)a, (const void *)b, dim);
-    ASSERT_EQ(dist, 0.0);
-}
-
-TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 5;
-
-    float a[dim], b[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = float(i + 1.5);
-        b[i] = float(i + 1.5);
-    }
-
-    normalizeVector(a, dim);
-    normalizeVector(b, dim);
-
-    float dist = FP32_InnerProduct((const void *)a, (const void *)b, dim);
-    ASSERT_FLOAT_EQ(dist, 0.0f);
-}
-
-TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
-    size_t dim = 5;
-
-    double a[dim], b[dim];
-    for (size_t i = 0; i < dim; i++) {
-        a[i] = double(i + 1.5);
-        b[i] = double(i + 1.5);
-    }
-
-    normalizeVector(a, dim);
-    normalizeVector(b, dim);
-
-    double dist = FP64_InnerProduct((const void *)a, (const void *)b, dim);
-    ASSERT_NEAR(dist, 0.0, 0.00000001);
-}
-
 #if defined(M1)
 
 #elif defined(__x86_64)
 #include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
+
+/* template <size_t dim, typename DataType, typename DistType = DataType>
+struct DistFuncParams {
+    static VecSimType get_dim() { return dim; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
+};
+template <typename dist_func_params_t>
+class OptDistFuncTest : public testing::Test {
+public:
+};
+
+#define TEST_DATA_T typename DistFuncParams::data_t
+#define TEST_DIST_T typename DistFuncParams::dist_t
+using DataTypeSet = ::testing::Types<DistFuncParams<16, float>, DistFuncParams<16, double>,
+                                     DistFuncParams<20, float>, DistFuncParams<10, double>,
+                                     DistFuncParams<17, float>, DistFuncParams<17, double>,
+                                     DistFuncParams<7, float>, DistFuncParams<7, double>,
+                                     >;
+
+TYPED_TEST_CASE(DistFuncTest, DataTypeSet); */
 // This test will trigger the "Residuals" function for dimension > 16, for each optimization.
 TEST_F(SpacesTest, l2_17) {
     Arch_Optimization optimization = getArchitectureOptimization();
@@ -248,7 +193,7 @@ TEST_F(SpacesTest, ip_9) {
 }
 
 // This test will trigger the function for dimension % 16 == 0 for each optimization.
-TEST_F(SpacesTest, ip_16) {
+TYPED_TEST(DistFuncTest, ip_16) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
     float v[dim];
@@ -273,22 +218,20 @@ TEST_F(SpacesTest, ip_16) {
 }
 
 // This test will trigger the function for dimension % 16 == 0 for each optimization.
-TEST_F(SpacesTest, l2_16) {
+TYPED_TEST(DistFuncTest, l2_16) {
     Arch_Optimization optimization = getArchitectureOptimization();
     size_t dim = 16;
-    float v[dim];
+    TypeParam v[dim];
     for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
+        v[i] = (TypeParam)i;
     }
 
-    float baseline = L2Sqr(v, v, dim);
+    TypeParam baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
+
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
+
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, L2SqrSIMDsplit512Ext_SSE(v, v, dim));
         break;
@@ -347,29 +290,6 @@ TEST_F(SpacesTest, l2_20) {
     }
 }
 
-// This test will trigger the function for dimension % 8 == 0 for each optimization.
-TEST_F(SpacesTest, l2_8_double) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 16;
-    double v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (double)i;
-    }
-
-    ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
-    double baseline = FP64_L2Sqr(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
-    case ARCH_OPT_AVX:
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v, dim));
-    case ARCH_OPT_NONE:
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
 // This test will trigger the function for dimension % 2 == 0 for each optimization.
 TEST_F(SpacesTest, l2_10_double) {
     Arch_Optimization optimization = getArchitectureOptimization();
@@ -380,12 +300,12 @@ TEST_F(SpacesTest, l2_10_double) {
     }
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD2Ext_SSE(v, v, dim));
     case ARCH_OPT_NONE:
         break;
     default:
@@ -402,12 +322,12 @@ TEST_F(SpacesTest, l2_17_double) {
     }
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD8ExtResiduals_SSE(v, v, dim));
     case ARCH_OPT_NONE:
         break;
     default:
@@ -427,12 +347,12 @@ TEST_F(SpacesTest, l2_7_double) {
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
               spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
-    double baseline = FP64_L2Sqr(v, v, dim);
+    double baseline = L2Sqr(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
     case ARCH_OPT_AVX:
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_SSE(v, v, dim));
+        ASSERT_EQ(baseline, L2SqrSIMD2ExtResiduals_SSE(v, v, dim));
     case ARCH_OPT_NONE:
         break;
     default:

@@ -61,7 +61,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 
 dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
 
-    dist_func_t<double> ret_dist_func = FP64_L2Sqr;
+    dist_func_t<double> ret_dist_func = L2Sqr;
 #if defined(M1)
 #elif defined(__x86_64__)
 
@@ -74,16 +74,16 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
     case ARCH_OPT_SSE:
 #ifdef __SSE__
     {
-        static dist_func_t<double> dist_funcs[] = {
-            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_SSE, FP64_L2SqrSIMD2Ext_SSE,
-            FP64_L2SqrSIMD8ExtResiduals_SSE, FP64_L2SqrSIMD2ExtResiduals_SSE};
+        static dist_func_t<double> dist_funcs[] = {L2Sqr, L2SqrSIMDsplit512Ext_SSE,
+                                                   L2SqrSIMD2Ext_SSE, L2SqrSIMD8ExtResiduals_SSE,
+                                                   L2SqrSIMD2ExtResiduals_SSE};
 
         ret_dist_func = dist_funcs[optimization_type];
     } break;
 #endif
     } // switch
 
-    #endif // __x86_64__ */
+#endif // __x86_64__ */
     return ret_dist_func;
 }
 
