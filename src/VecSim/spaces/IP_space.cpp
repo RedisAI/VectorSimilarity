@@ -53,6 +53,31 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
     return ret_dist_func;
 }
 
-dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) { return FP64_InnerProduct; }
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
+
+    dist_func_t<double> ret_dist_func = FP64_InnerProduct;
+#if defined(M1)
+#elif defined(__x86_64__)
+
+    CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
+    switch (arch_opt) {
+    case ARCH_OPT_NONE:
+        break;
+    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX:
+    case ARCH_OPT_SSE:
+#ifdef __SSE__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_SSE, FP64_InnerProductSIMD2Ext_SSE,
+            FP64_InnerProductSIMD8ExtResiduals_SSE, FP64_InnerProductSIMD2ExtResiduals_SSE};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    } // switch
+#endif // __x86_64__ */
+    return ret_dist_func;
+}
 
 } // namespace spaces
