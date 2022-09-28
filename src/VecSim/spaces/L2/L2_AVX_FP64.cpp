@@ -37,7 +37,7 @@ double FP64_L2SqrSIMD2Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    // Calc how many doubles we can calc using 512 bits iterations.
+    // Calculate how many doubles we can calculate using 512 bits iterations.
     size_t qty8 = qty >> 3 << 3;
 
     const double *pEnd1 = pVect1 + qty8;
@@ -82,20 +82,20 @@ double FP64_L2SqrSIMD2Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
 }
 
 double FP64_L2SqrSIMD8ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
-    // Calc how many doubles we can calc using 512 bits iterations.
+    // Calculate how many doubles we can calculate using 512 bits iterations.
     size_t qty8 = qty >> 3 << 3;
     double res = FP64_L2SqrSIMD8Ext_AVX(pVect1v, pVect2v, qty8);
     double *pVect1 = (double *)pVect1v + qty8;
     double *pVect2 = (double *)pVect2v + qty8;
 
-    // Calc the rest using a brute force function
+    // Calculate the rest using the basic function
     size_t qty_left = qty - qty8;
     double res_tail = FP64_L2Sqr(pVect1, pVect2, qty_left);
     return (res + res_tail);
 }
 
 double FP64_L2SqrSIMD2ExtResiduals_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
-    // Calc how many doubles we can calc using 512 bits iterations.
+    // Calculate how many doubles we can calculate using 512 bits iterations.
     size_t qty2 = qty >> 1 << 1;
     double res = FP64_L2SqrSIMD2Ext_AVX(pVect1v, pVect2v, qty2);
     double *pVect1 = (double *)pVect1v + qty2;
