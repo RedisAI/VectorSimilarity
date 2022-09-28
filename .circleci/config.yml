@@ -305,7 +305,7 @@ jobs:
   run-benchmarks:
     # Run on the same machine - for steady benchmarks
     machine:
-      image: ubuntu-2004:202010-01
+      image: ubuntu-2004:2022.07.1
     resource_class: large
     steps:
       - setup-ubuntu-sudo
