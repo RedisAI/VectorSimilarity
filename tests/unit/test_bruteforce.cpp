@@ -17,10 +17,15 @@ template <typename index_type_t>
 class BruteForceTest : public ::testing::Test {
     using data_t = typename index_type_t::data_t;
 protected:    
-    void GenerateVector(data_t *output, size_t dim) {
+    void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
         for (size_t i = 0; i < dim; i++) {
-            output[i] = (data_t)i;
+            output[i] = (data_t)value;
         }       
+    }
+    void GenerateNAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
+        data_t v[dim];
+        this->GenerateVector(v, dim, value); // i / 10 is in integer (take the "floor" value).
+        VecSimIndex_AddVector(index, v, id);       
     }
 };
 
@@ -42,9 +47,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
     VecSimIndex *index = VecSimIndex_New(&params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    TEST_DATA_T a[dim];
-    this->GenerateVector(a, dim);
-    VecSimIndex_AddVector(index, (const void *)a, 1);
+    this->GenerateNAddVector(index, dim, 1);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
@@ -304,9 +307,8 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
     VecSimIndex *index = VecSimIndex_New(&params);
 
     for (size_t i = 0; i < n; i++) {
-        TEST_DATA_T f[dim];
-        this->GenerateVector(f, dim);
-        VecSimIndex_AddVector(index, (const void *)f, (size_t)i);
+        this->GenerateNAddVector(index, dim, i, i);
+
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -315,10 +317,143 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
     for (size_t i = n - 1; i > n - 1 - k; i--) {
         expected_ids.insert(i);
     }
-    auto verify_res = [&](size_t id, TEST_DIST_T score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
         expected_ids.erase(id);
     };
     runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i);
+
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
+    };
+    TEST_DATA_T query[] = {50, 50, 50, 50};
+    runTopKSearchTest(index, query, k, verify_res);
+    runTopKSearchTest(index, query, 0, verify_res); // For sanity, search for nothing
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_vector_search_by_id_test) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i);
+
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    TEST_DATA_T query[] = {50, 50, 50, 50};
+    auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, (index + 45)); };
+    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_indexing_same_vector) {
+    size_t n = 100;
+    size_t k = 10;
+    size_t dim = 4;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i / 10);// i / 10 is in integer (take the "floor" value).
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    TEST_DATA_T query[] = {4.9, 4.95, 5.05, 5.1};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_reindexing_same_vector) {
+    size_t n = 100;
+    size_t k = 10;
+    size_t dim = 4;
+    size_t initial_capacity = 200;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = initial_capacity}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
+        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i / 10);// i / 10 is in integer (take the "floor" value).
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
+    TEST_DATA_T query[] = {4.9, 4.95, 5.05, 5.1};
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+
+    // Delete all vectors.
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // The vector block should be removed.
+    ASSERT_EQ(bf_index->getVectorBlocks().size(), 0);
+
+    // id2label size should remain the same.
+    ASSERT_EQ(bf_index->idToLabelMapping.size(), initial_capacity);
+
+    // Reinsert the same vectors under the same ids.
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i / 10);// i / 10 is in integer (take the "floor" value).
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Run the same query again.
+    runTopKSearchTest(index, query, k, verify_res);
+
     VecSimIndex_Free(index);
 }
