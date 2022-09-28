@@ -73,7 +73,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	if(CXX_AVX)
 		project(VectorSimilaritySpaces_avx)
 			add_library(VectorSimilaritySpaces_avx STATIC
-				L2/L2_AVX.cpp
+				L2/L2_AVX_FP32.cpp
+				L2/L2_AVX_FP64.cpp
 				IP/IP_AVX.cpp
 				)
 		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx)
