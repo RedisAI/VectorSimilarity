@@ -36,7 +36,7 @@ private:
     }
 
     inline BF_BatchIterator<DataType, DistType> *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
         return new (this->allocator)
             BFM_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
     }

@@ -69,7 +69,7 @@ bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator) { return !iterat
 
 void VecSimBatchIterator_Free(VecSimBatchIterator *iterator) {
     // Batch iterator might be deleted after the index, so it should keep the allocator before
-    // deleteing.
+    // deleting.
     auto allocator = iterator->getAllocator();
     delete iterator;
 }
