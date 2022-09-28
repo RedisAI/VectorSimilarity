@@ -736,3 +736,162 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
+    size_t dim = 4;
+    size_t n = 100;
+    size_t k = 11;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_IP,
+                                             .initialCapacity = 200,
+                                             .blockSize = 1}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    float query[] = {50, 50, 50, 50};
+    std::set<size_t> expected_ids;
+    for (size_t i = n - 1; i > n - 1 - k; i--) {
+        expected_ids.insert(i);
+    }
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
+        expected_ids.erase(id);
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
+    size_t dim = 4;
+    size_t n = 100;
+    size_t k = 11;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 200,
+                                             .blockSize = 1}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    VecSimIndexInfo info = VecSimIndex_Info(index);
+    ASSERT_EQ(info.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.bfInfo.blockSize, 1);
+
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
+    };
+    TEST_DATA_T query[] = {50, 50, 50, 50};
+    runTopKSearchTest(index, query, k, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, brute_force_search_empty_index) {
+    size_t dim = 4;
+    size_t n = 100;
+    size_t k = 11;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = 200}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    TEST_DATA_T query[] = {50, 50, 50, 50};
+
+    // We do not expect any results.
+    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
+    // Add some vectors and remove them all from index, so it will be empty again.
+    for (size_t i = 0; i < n; i++) {
+        this->GenerateNAddVector(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    for (size_t i = 0; i < n; i++) {
+        VecSimIndex_DeleteVector(index, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    // Again - we do not expect any results.
+    res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    it = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_IteratorFree(it);
+    VecSimQueryResult_Free(res);
+
+    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
+
+    VecSimIndex_Free(index);
+}
+
+//TODO: write parametrized test instead of checking the type
+TYPED_TEST(BruteForceTest, brute_force_test_inf_score) {
+    size_t n = 4;
+    size_t k = 4;
+
+    VecSimType type = TypeParam::get_index_type();
+    size_t dim = type == VecSimType_FLOAT32 ? 2 : 1;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = type,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
+    // yield "inf" result when we calculate distance between the vectors.
+    VecSimIndex_AddVector(index, "abcdefgh", 1);
+    VecSimIndex_AddVector(index, "abcdefgg", 2);
+    VecSimIndex_AddVector(index, "abcdefgh", 3);
+    VecSimIndex_AddVector(index, "abbdefgh", 4);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
+
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        if (index == 0) {
+            ASSERT_EQ(1, id);
+        } else if (index == 1) {
+#include <stdio.h>
+            printf("score = %f\n", score);
+            ASSERT_EQ(3, id);
+        } else {
+            printf("id = %ld, score = %f\n",id,  score);
+            ASSERT_TRUE(id == 2 || id == 4);
+        }
+    };
+    runTopKSearchTest(index, "abcdefgh", k, verify_res);
+    VecSimIndex_Free(index);
+}
