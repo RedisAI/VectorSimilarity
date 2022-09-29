@@ -679,7 +679,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
+TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
     size_t dim = 4;
     size_t n = 100;
     size_t k = 11;
@@ -716,7 +716,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip_blocksize_1) {
     }
 }
 
-TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2_blocksize_1) {
+TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
     size_t dim = 4;
     size_t n = 100;
     size_t k = 11;
