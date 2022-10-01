@@ -95,11 +95,13 @@ protected:
 #endif
 
 #ifdef BUILD_TESTS
-    // Allow the following test to access the index size private member.
     friend class HNSWIndexSerializer;
-    friend class HNSWTest_preferAdHocOptimization_Test;
+    // Allow the following test to access the index size private member.
+#include "VecSim/friend_test_decl.h"
+    INDEX_TEST_FRIEND_CLASS(HNSWTest_test_dynamic_hnsw_info_iterator_Test)
+
+    INDEX_TEST_FRIEND_CLASS(HNSWTest_preferAdHocOptimization_Test)
     friend class HNSWMultiTest_preferAdHocOptimization_Test;
-    friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
     friend class HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test;
     friend class HNSWMultiTest_MultiBatchIteratorHeapLogic_Test;
     friend class AllocatorTest_testIncomingEdgesSet_Test;

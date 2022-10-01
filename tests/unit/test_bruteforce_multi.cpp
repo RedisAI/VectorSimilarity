@@ -994,22 +994,22 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     VecSimIndex_Free(index);
 }
 
-/* TYPED_TEST(BruteForceMultiTest, brute_get_distance) {
+TYPED_TEST(BruteForceMultiTest, brute_get_distance) {
     size_t n_labels = 2;
     size_t dim = 2;
     size_t numIndex = 3;
     VecSimIndex *index[numIndex];
     std::vector<double> distances;
 
-    float v1_0[] = {M_PI, M_PI};
-    float v2_0[] = {M_E, M_E};
-    float v3_1[] = {M_PI, M_E};
-    float v4_1[] = {M_SQRT2, -M_SQRT2};
+    TEST_DATA_T v1_0[] = {M_PI, M_PI};
+    TEST_DATA_T v2_0[] = {M_E, M_E};
+    TEST_DATA_T v3_1[] = {M_PI, M_E};
+    TEST_DATA_T v4_1[] = {M_SQRT2, -M_SQRT2};
 
+    VecSimType type = TypeParam::get_index_type();
     VecSimParams params{
         .algo = VecSimAlgo_BF,
-        .bfParams =
-            BFParams{.type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = 4}};
+        .bfParams = BFParams{.type = type, .dim = dim, .multi = true, .initialCapacity = 4}};
 
     for (size_t i = 0; i < numIndex; i++) {
         params.bfParams.metric = (VecSimMetric)i;
@@ -1021,11 +1021,11 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
         ASSERT_EQ(VecSimIndex_IndexSize(index[i]), 4);
     }
 
-    void *query = v1_0;
-    void *norm = v2_0;                               // {e, e}
-    VecSim_Normalize(norm, dim, VecSimType_FLOAT32); // now {1/sqrt(2), 1/sqrt(2)}
-    ASSERT_FLOAT_EQ(((float *)norm)[0], 1.0f / sqrt(2.0f));
-    ASSERT_FLOAT_EQ(((float *)norm)[1], 1.0f / sqrt(2.0f));
+    TEST_DATA_T *query = v1_0;
+    TEST_DATA_T *norm = v2_0;          // {e, e}
+    VecSim_Normalize(norm, dim, type); // now {1/sqrt(2), 1/sqrt(2)}
+    ASSERT_NEAR(norm[0], 1.0 / sqrt(2.0), 1e-5);
+    ASSERT_NEAR(norm[1], 1.0 / sqrt(2.0), 1e-5);
     double dist;
 
     // VecSimMetric_L2
@@ -1034,7 +1034,7 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     distances = {0, 0.1791922003030777};
     for (size_t i = 0; i < n_labels; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_IP
@@ -1043,7 +1043,7 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     distances = {-18.73921012878418, -17.409339904785156};
     for (size_t i = 0; i < n_labels; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_Cosine
@@ -1052,7 +1052,7 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     distances = {5.9604644775390625e-08, 0.0025991201400756836};
     for (size_t i = 0; i < n_labels; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i, norm);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // Bad values
@@ -1065,8 +1065,8 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     for (size_t i = 0; i < numIndex; i++) {
         VecSimIndex_Free(index[i]);
     }
-} */
-/*
+}
+
 TYPED_TEST(BruteForceMultiTest, testCosine) {
     size_t dim = 128;
     size_t n = 100;
@@ -1100,50 +1100,38 @@ TYPED_TEST(BruteForceMultiTest, testCosine) {
     TEST_DATA_T query[dim];
     this->GenerateVector(query, dim);
 
-    auto verify_res = [&](size_t id, double score, size_t res_rank) {
-        ASSERT_EQ(id, (n - res_rank));
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, (n - result_rank));
 
-        double expected_score = index->getDistanceFrom(id, query); */
-/*         double first_coordinate = (double)id / n;
-        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
-        // and B is the current result vector.
-        double expected_score =
-            1.0 -
-            ((first_coordinate + (double)dim - 1.0) /
-             (sqrt((double)dim) * sqrt((double)(dim - 1) + first_coordinate * first_coordinate)));
-        // Verify that abs difference between the actual and expected score is at most 1/10^6. */
-/*       ASSERT_NEAR(score, expected_score, 1e-5);
-   };
-   runTopKSearchTest(index, query, 10, verify_res);
+        double expected_score = index->getDistanceFrom(id, query);
 
-   // Test with batch iterator.
-   VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-   size_t iteration_num = 0;
+        ASSERT_NEAR(score, expected_score, 1e-6);
+    };
+    VecSim_Normalize(query, dim, TypeParam::get_index_type());
+    runTopKSearchTest(index, query, 10, verify_res);
 
-   // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
-   // in every iteration. The order should be from the largest to the lowest id.
-   size_t n_res = 10;
-   while (VecSimBatchIterator_HasNext(batchIterator)) {
-       std::vector<size_t> expected_ids(n_res);
-       auto verify_res_batch = [&](size_t id, double score, size_t index) {
-           ASSERT_EQ(id, (n - n_res * iteration_num - index));
-           double first_coordinate = (double)id / n;
-           // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-           // vector and B is the current result vector.
-           double expected_score =
-               1.0 - ((first_coordinate + (double)dim - 1.0) /
-                       (sqrt((double)dim) *
-                        sqrt((double)(dim - 1) + first_coordinate * first_coordinate)));
-           // Verify that abs difference between the actual and expected score is at most 1/10^6.
-           ASSERT_NEAR(score, expected_score, 1e-5);
-       };
-       runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
-       iteration_num++;
-   }
-   ASSERT_EQ(iteration_num, n / n_res);
-   VecSimBatchIterator_Free(batchIterator);
-   VecSimIndex_Free(index);
-} */
+    // Test with batch iterator.
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    size_t iteration_num = 0;
+
+    // get the 10 vectors whose ids are the maximal among those that hasn't been returned yet,
+    // in every iteration. The order should be from the largest to the lowest id.
+    size_t n_res = 10;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        std::vector<size_t> expected_ids(n_res);
+        auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            double expected_score = index->getDistanceFrom(id, query);
+
+            ASSERT_NEAR(score, expected_score, 1e-6);
+        };
+        runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
+        iteration_num++;
+    }
+    ASSERT_EQ(iteration_num, n / n_res);
+    VecSimBatchIterator_Free(batchIterator);
+    VecSimIndex_Free(index);
+}
 
 TYPED_TEST(BruteForceMultiTest, testSizeEstimation) {
     size_t dim = 128;

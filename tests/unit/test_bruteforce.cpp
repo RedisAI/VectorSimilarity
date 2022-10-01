@@ -1168,7 +1168,7 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
     array_free(rparams);
 }
 
-/* TYPED_TEST(BruteForceTest, brute_get_distance) {
+TYPED_TEST(BruteForceTest, brute_get_distance) {
     size_t n = 4;
     size_t dim = 2;
     size_t numIndex = 3;
@@ -1197,29 +1197,29 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
     TEST_DATA_T *query = v1;
     TEST_DATA_T *norm = v2;            // {e, e}
     VecSim_Normalize(norm, dim, type); // now {1/sqrt(2), 1/sqrt(2)}
-    ASSERT_FLOAT_EQ(norm[0], 1.0 / sqrt(2.0));
-    ASSERT_FLOAT_EQ(norm[1], 1.0 / sqrt(2.0));
+    ASSERT_NEAR(norm[0], 1.0 / sqrt(2.0), 1e-5);
+    ASSERT_NEAR(norm[1], 1.0 / sqrt(2.0), 1e-5);
     double dist;
 
     // VecSimMetric_L2
     distances = {0, 0.3583844006061554, 0.1791922003030777, 23.739208221435547};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i + 1, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_IP
     distances = {-18.73921012878418, -16.0794677734375, -17.409339904785156, 1};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i + 1, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_Cosine
     distances = {5.9604644775390625e-08, 5.9604644775390625e-08, 0.0025991201400756836, 1};
     for (size_t i = 0; i < n; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i + 1, norm);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // Bad values
@@ -1233,7 +1233,6 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
         VecSimIndex_Free(index[i]);
     }
 }
- */
 
 TYPED_TEST(BruteForceTest, preferAdHocOptimization) {
     // Save the expected ratio which is the threshold between ad-hoc and batches mode
@@ -1607,7 +1606,7 @@ TYPED_TEST(BruteForceTest, rangeQuery) {
 
     VecSimIndex_Free(index);
 }
-/*
+
 TYPED_TEST(BruteForceTest, rangeQueryCosine) {
     size_t n = 100;
     size_t dim = 4;
@@ -1626,25 +1625,28 @@ TYPED_TEST(BruteForceTest, rangeQueryCosine) {
             f[j] = 1.0;
         }
         // Use as label := n - (internal id)
-        VecSimIndex_AddVector(index, f, n - i);
+        VecSimIndex_AddVector(index, (const void *)f, n - i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim);
-    auto verify_res = [&](size_t id, double score, size_t res_rank) {
-        ASSERT_EQ(id, res_rank + 1);
-        double expected_score = index->getDistanceFrom(n - id, query);//TODO: closest should be 1 !!
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = 1.0;
+    }
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, result_rank + 1);
+        double expected_score = index->getDistanceFrom(id, query);
         // Verify that abs difference between the actual and expected score is at most 1/10^5.
-        ASSERT_NEAR(score, expected_score, 1e-5);
+        ASSERT_EQ(score, expected_score);
     };
-    uint expected_num_results = 30;
+
+    uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    double radius = std::abs(index->getDistanceFrom(expected_num_results, query));
+    VecSim_Normalize(query, dim, TypeParam::get_index_type());
+    double radius = index->getDistanceFrom(31, query);
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
     // Return results BY_ID should give the same results.
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
 
     VecSimIndex_Free(index);
 }
- */
