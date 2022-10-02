@@ -36,7 +36,7 @@ protected:
 using DataTypeSet =
     ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
 
-TYPED_TEST_CASE(BruteForceTest, DataTypeSet);
+TYPED_TEST_SUITE(BruteForceTest, DataTypeSet);
 
 TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
 

@@ -45,7 +45,7 @@ protected:
 using DataTypeSet =
     ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
 
-TYPED_TEST_CASE(HNSWTest, DataTypeSet);
+TYPED_TEST_SUITE(HNSWTest, DataTypeSet);
 
 TYPED_TEST(HNSWTest, hnsw_vector_add_test) {
     size_t dim = 4;

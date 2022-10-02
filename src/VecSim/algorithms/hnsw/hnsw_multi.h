@@ -12,11 +12,12 @@ private:
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
     // Allow the following test to access the index size private member.
+#include "VecSim/friend_test_decl.h"
+    INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_empty_index_Test)
+    INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_search_more_than_there_is_Test)
     friend class HNSWMultiTest_testSizeEstimation_Test;
     friend class HNSWMultiTest_testInitialSizeEstimation_No_InitialCapacity_Test;
-    friend class HNSWMultiTest_empty_index_Test;
     friend class HNSWMultiTest_indexing_same_vector_Test;
-    friend class HNSWMultiTest_search_more_than_there_is_Test;
     friend class HNSWMultiTest_preferAdHocOptimization_Test;
     friend class HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test;
 

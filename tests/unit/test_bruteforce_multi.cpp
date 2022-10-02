@@ -40,7 +40,7 @@ protected:
 using DataTypeSet =
     ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
 
-TYPED_TEST_CASE(BruteForceMultiTest, DataTypeSet);
+TYPED_TEST_SUITE(BruteForceMultiTest, DataTypeSet);
 
 TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
     size_t dim = 4;
