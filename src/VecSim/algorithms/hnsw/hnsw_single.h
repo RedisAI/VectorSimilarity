@@ -110,9 +110,6 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) const {
-    // As this is the only supported type, we always allocate 4 bytes for every element in the
-    // vector.
-    assert(this->vecType == VecSimType_FLOAT32);
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
