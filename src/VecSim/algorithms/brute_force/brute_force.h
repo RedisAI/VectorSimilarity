@@ -386,7 +386,7 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
 template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) {
+                                                      VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
