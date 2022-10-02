@@ -1162,7 +1162,6 @@ TYPED_TEST(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
 
 TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     size_t dim = 4;
-    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
     VecSimQueryResult_List rl;
 
     BFParams params{.type = TypeParam::get_index_type(),
@@ -1172,18 +1171,22 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
                     .initialCapacity = 1,
                     .blockSize = 5};
     VecSimIndex *index = CreateNewIndex(params);
-    VecSimIndex_AddVector(index, vec, 0);
+
+    this->GenerateNAddVector(index, dim, 0, 1.0);
+
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
+    TEST_DATA_T query[dim];
+    this->GenerateVector(query, dim, 1.0);
     // Checks return code on timeout - knn
-    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    rl = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     // Check timeout again - range query
     // TODO: uncomment when support for BFM range is enabled
-    // rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
+    // rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
     // ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
     // ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     // VecSimQueryResult_Free(rl);
