@@ -15,7 +15,13 @@ struct IndexType {
 
 template <typename index_type_t>
 class BruteForceTest : public ::testing::Test {
+public:
+    BruteForceTest() : params{} {
+        params.type = index_type_t::get_index_type();
+        params.multi = false;
+    }
     using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
 
 protected:
     void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
@@ -29,6 +35,15 @@ protected:
         this->GenerateVector(v, dim, value); // i / 10 is in integer (take the "floor" value).
         return VecSimIndex_AddVector(index, v, id);
     }
+
+    BruteForceIndex_Single<data_t, dist_t> *CastToBF_Single(VecSimIndex *index) {
+        return reinterpret_cast<BruteForceIndex_Single<data_t, dist_t> *>(index);
+    }
+    BruteForceIndex<data_t, dist_t> *CastToBF(VecSimIndex *index) {
+        return reinterpret_cast<BruteForceIndex<data_t, dist_t> *>(index);
+    }
+
+    BFParams params;
 };
 
 #define TEST_DATA_T typename TypeParam::data_t
@@ -41,12 +56,11 @@ TYPED_TEST_SUITE(BruteForceTest, DataTypeSet);
 TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
 
     size_t dim = 4;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_IP,
-                                             .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_IP;
+    this->params.initialCapacity = 200;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     this->GenerateNAddVector(index, dim, 1);
@@ -59,14 +73,13 @@ TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
 TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     size_t dim = 4;
     size_t n = 1;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_IP,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_IP;
+    this->params.initialCapacity = n;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -101,7 +114,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
 
     BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *bf_single_index =
-        reinterpret_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(index);
+        this->CastToBF_Single(index);
 
     // Label2id of the last vector doesn't exist.
     ASSERT_EQ(bf_single_index->labelToIdLookup.find(1), bf_single_index->labelToIdLookup.end());
@@ -115,15 +128,14 @@ TYPED_TEST(BruteForceTest, resize_and_align_index) {
     size_t dim = 4;
     size_t n = 15;
     size_t blockSize = 10;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n,
-                                             .blockSize = blockSize}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+    this->params.blockSize = blockSize;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     for (size_t i = 0; i < n; i++) {
@@ -168,15 +180,15 @@ TYPED_TEST(BruteForceTest, resize_and_align_index_largeInitialCapacity) {
     size_t dim = 4;
     size_t n = 10; // Determines the initial size of idToLabelMapping.
     size_t bs = 3;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n,
-                                             .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+    this->params.blockSize = bs;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // add up to blocksize + 1 = 3 + 1 = 4
@@ -229,15 +241,15 @@ TYPED_TEST(BruteForceTest, brute_force_empty_index) {
     size_t dim = 4;
     size_t n = 20;
     size_t bs = 6;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n,
-                                             .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+    this->params.blockSize = bs;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
@@ -272,12 +284,11 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_by_id_test) {
     size_t k = 11;
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i, i);
@@ -296,13 +307,11 @@ TYPED_TEST(BruteForceTest, brute_force_indexing_same_vector) {
     size_t k = 10;
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
 
+    VecSimIndex *index = CreateNewIndex(this->params);
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i,
                                  i / 10); // i / 10 is in integer (take the "floor" value).
@@ -325,14 +334,13 @@ TYPED_TEST(BruteForceTest, brute_force_reindexing_same_vector) {
     size_t dim = 4;
     size_t initial_capacity = 200;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = initial_capacity}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = initial_capacity;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
 
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor" value).
@@ -377,13 +385,11 @@ TYPED_TEST(BruteForceTest, brute_force_reindexing_same_vector_different_id) {
     size_t k = 10;
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
 
+    VecSimIndex *index = CreateNewIndex(this->params);
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i,
                                  i / 10); // i / 10 is in integer (take the "floor" value).
@@ -430,15 +436,14 @@ TYPED_TEST(BruteForceTest, test_delete_swap_block) {
     // Delete the id 1 will delete it from the first vector block 0 [0 ,1, 2] and will move vector
     // data of id 5 to vector block 0 at index 1. id2label[1] should hold the label of the vector
     // that was in id 5.
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = initial_capacity,
-                                             .blockSize = 3}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = initial_capacity;
+    this->params.blockSize = 3;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
 
     // idToLabelMapping initial size equals n.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), initial_capacity);
@@ -465,7 +470,7 @@ TYPED_TEST(BruteForceTest, test_delete_swap_block) {
     ASSERT_EQ(bf_index->getVectorLabel(1), id5_prev_label);
 
     BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *bf_single_index =
-        reinterpret_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(index);
+        this->CastToBF_Single(index);
 
     // label2id value at label5 should be 1
     auto last_vector_new_id = bf_single_index->labelToIdLookup[id5_prev_label];
@@ -499,13 +504,11 @@ TYPED_TEST(BruteForceTest, sanity_reinsert_1280) {
     size_t d = 1280;
     size_t k = 5;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = d,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
+    this->params.dim = d;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
 
-    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     auto *vectors = (TEST_DATA_T *)malloc(n * d * sizeof(TEST_DATA_T));
 
@@ -544,12 +547,12 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
     size_t d = 128;
 
     // Build with default args.
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = d,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = d;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
@@ -560,13 +563,11 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
     VecSimIndex_Free(index);
 
     d = 1280;
-    params = VecSimParams{.algo = VecSimAlgo_BF,
-                          .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                               .dim = d,
-                                               .metric = VecSimMetric_L2,
-                                               .initialCapacity = n,
-                                               .blockSize = 1}};
-    index = VecSimIndex_New(&params);
+    this->params.dim = d;
+    this->params.blockSize = 1;
+
+    index = CreateNewIndex(this->params);
+
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.bfInfo.dim, d);
@@ -583,13 +584,14 @@ TYPED_TEST(BruteForceTest, test_basic_bf_info_iterator) {
     VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
 
     for (size_t i = 0; i < 3; i++) {
+
         // Build with default args.
-        VecSimParams params{.algo = VecSimAlgo_BF,
-                            .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                                 .dim = d,
-                                                 .metric = metrics[i],
-                                                 .initialCapacity = n}};
-        VecSimIndex *index = VecSimIndex_New(&params);
+
+        this->params.dim = d;
+        this->params.metric = metrics[i], this->params.initialCapacity = n;
+
+        VecSimIndex *index = CreateNewIndex(this->params);
+
         VecSimIndexInfo info = VecSimIndex_Info(index);
         VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
         compareFlatIndexInfoToIterator(info, infoIter);
@@ -600,12 +602,12 @@ TYPED_TEST(BruteForceTest, test_basic_bf_info_iterator) {
 
 TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     size_t d = 128;
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = d,
-                                             .metric = VecSimMetric_L2,
-                                             .blockSize = 1}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = d;
+    this->params.metric = VecSimMetric_L2;
+    this->params.blockSize = 1;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(1, info.bfInfo.blockSize);
@@ -659,7 +661,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index)->count = 1e4;
+    this->CastToBF(index)->count = 1e4;
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
@@ -685,13 +687,13 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
     size_t k = 11;
 
     for (size_t blocksize : {12, DEFAULT_BLOCK_SIZE}) {
-        VecSimParams params{.algo = VecSimAlgo_BF,
-                            .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_IP,
-                                                 .initialCapacity = 200,
-                                                 .blockSize = blocksize}};
-        VecSimIndex *index = VecSimIndex_New(&params);
+
+        this->params.dim = dim;
+        this->params.metric = VecSimMetric_IP;
+        this->params.initialCapacity = 200;
+        this->params.blockSize = blocksize;
+
+        VecSimIndex *index = CreateNewIndex(this->params);
 
         VecSimIndexInfo info = VecSimIndex_Info(index);
         ASSERT_EQ(info.algo, VecSimAlgo_BF);
@@ -721,19 +723,18 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
     size_t n = 100;
     size_t k = 11;
 
-    for (size_t block_size : {12, DEFAULT_BLOCK_SIZE}) {
+    for (size_t blocksize : {12, DEFAULT_BLOCK_SIZE}) {
 
-        VecSimParams params{.algo = VecSimAlgo_BF,
-                            .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .initialCapacity = 200,
-                                                 .blockSize = block_size}};
-        VecSimIndex *index = VecSimIndex_New(&params);
+        this->params.dim = dim;
+        this->params.metric = VecSimMetric_L2;
+        this->params.initialCapacity = 200;
+        this->params.blockSize = blocksize;
+
+        VecSimIndex *index = CreateNewIndex(this->params);
 
         VecSimIndexInfo info = VecSimIndex_Info(index);
         ASSERT_EQ(info.algo, VecSimAlgo_BF);
-        ASSERT_EQ(info.bfInfo.blockSize, block_size);
+        ASSERT_EQ(info.bfInfo.blockSize, blocksize);
 
         for (size_t i = 0; i < n; i++) {
             this->GenerateNAddVector(index, dim, i, i);
@@ -757,12 +758,12 @@ TYPED_TEST(BruteForceTest, brute_force_search_empty_index) {
     size_t n = 100;
     size_t k = 11;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     TEST_DATA_T query[] = {50, 50, 50, 50};
@@ -812,11 +813,11 @@ TYPED_TEST(BruteForceTest, brute_force_test_inf_score) {
     VecSimType type = TypeParam::get_index_type();
     size_t dim = type == VecSimType_FLOAT32 ? 2 : 1;
 
-    VecSimParams params{
-        .algo = VecSimAlgo_BF,
-        .bfParams =
-            BFParams{.type = type, .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
     // yield "inf" result when we calculate distance between the vectors.
@@ -843,13 +844,12 @@ TYPED_TEST(BruteForceTest, brute_force_remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t n = 2;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200,
-                                             .blockSize = 1}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
+    this->params.blockSize = 1;
+    VecSimIndex *index = CreateNewIndex(this->params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Add 2 vectors, into 2 separated blocks.
@@ -871,15 +871,14 @@ TYPED_TEST(BruteForceTest, brute_force_zero_minimal_capacity) {
     size_t dim = 4;
     size_t n = 2;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 0,
-                                             .blockSize = 1}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index =
-        reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 0;
+    this->params.blockSize = 1;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -906,13 +905,9 @@ TYPED_TEST(BruteForceTest, brute_force_zero_minimal_capacity) {
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator) {
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim, this->params.metric = VecSimMetric_L2,
+    this->params.initialCapacity = 200, this->params.blockSize = 5;
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     // run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
@@ -954,13 +949,12 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator) {
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 200,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
+    this->params.blockSize = 5;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     // Run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
@@ -1012,13 +1006,12 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator_reset) {
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 100000,
-                                             .blockSize = 100000}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 100000;
+    this->params.blockSize = 100000;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     size_t n = 10000;
     for (size_t i = 0; i < n; i++) {
@@ -1065,12 +1058,11 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     size_t dim = 4;
     size_t n = 1000;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
     TEST_DATA_T query[dim];
@@ -1130,13 +1122,12 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 0,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 0;
+    this->params.blockSize = 5;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
@@ -1180,13 +1171,12 @@ TYPED_TEST(BruteForceTest, brute_get_distance) {
     TEST_DATA_T v3[] = {M_PI, M_E};
     TEST_DATA_T v4[] = {M_SQRT2, -M_SQRT2};
 
-    VecSimType type = TypeParam::get_index_type();
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = type, .dim = dim, .initialCapacity = n}};
+    this->params.dim = dim;
+    this->params.initialCapacity = n;
 
     for (size_t i = 0; i < numIndex; i++) {
-        params.bfParams.metric = (VecSimMetric)i;
-        index[i] = VecSimIndex_New(&params);
+        this->params.metric = (VecSimMetric)i;
+        index[i] = CreateNewIndex(this->params);
         VecSimIndex_AddVector(index[i], v1, 1);
         VecSimIndex_AddVector(index[i], v2, 2);
         VecSimIndex_AddVector(index[i], v3, 3);
@@ -1195,8 +1185,8 @@ TYPED_TEST(BruteForceTest, brute_get_distance) {
     }
 
     TEST_DATA_T *query = v1;
-    TEST_DATA_T *norm = v2;            // {e, e}
-    VecSim_Normalize(norm, dim, type); // now {1/sqrt(2), 1/sqrt(2)}
+    TEST_DATA_T *norm = v2;                         // {e, e}
+    VecSim_Normalize(norm, dim, this->params.type); // now {1/sqrt(2), 1/sqrt(2)}
     ASSERT_NEAR(norm[0], 1.0 / sqrt(2.0), 1e-5);
     ASSERT_NEAR(norm[1], 1.0 / sqrt(2.0), 1e-5);
     double dist;
@@ -1251,16 +1241,14 @@ TYPED_TEST(BruteForceTest, preferAdHocOptimization) {
     for (size_t index_size : {1000, 6000, 600000}) {
         for (size_t dim : {4, 80, 350, 780}) {
             // Create index and check for the expected output of "prefer ad-hoc".
-            VecSimParams params{.algo = VecSimAlgo_BF,
-                                .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                                     .dim = dim,
-                                                     .metric = VecSimMetric_IP,
-                                                     .initialCapacity = index_size}};
-            VecSimIndex *index = VecSimIndex_New(&params);
+            this->params.dim = dim;
+            this->params.metric = VecSimMetric_IP;
+            this->params.initialCapacity = index_size;
+
+            VecSimIndex *index = CreateNewIndex(this->params);
 
             // Set the index size artificially to be the required one.
-            (reinterpret_cast<BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *>(index))->count =
-                index_size;
+            (this->CastToBF(index))->count = index_size;
             ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
             for (float r : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f}) {
                 bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * index_size), 50, true);
@@ -1274,11 +1262,9 @@ TYPED_TEST(BruteForceTest, preferAdHocOptimization) {
         }
     }
     // Corner cases - empty index.
-    VecSimParams params{
-        .algo = VecSimAlgo_BF,
-        .bfParams =
-            BFParams{.type = TypeParam::get_index_type(), .dim = 4, .metric = VecSimMetric_IP}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = 4;
+    this->params.metric = VecSimMetric_IP;
+    VecSimIndex *index = CreateNewIndex(this->params);
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
@@ -1296,12 +1282,11 @@ TYPED_TEST(BruteForceTest, batchIteratorSwapIndices) {
     size_t dim = 4;
     size_t n = 10000;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     TEST_DATA_T close_vec[] = {1.0, 1.0, 1.0, 1.0};
     TEST_DATA_T further_vec[] = {2.0, 2.0, 2.0, 2.0};
@@ -1359,12 +1344,11 @@ TYPED_TEST(BruteForceTest, testCosine) {
     size_t dim = 128;
     size_t n = 100;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_Cosine,
-                                             .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_Cosine;
+    this->params.initialCapacity = n;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 1; i <= n; i++) {
         TEST_DATA_T f[dim];
@@ -1425,20 +1409,18 @@ TYPED_TEST(BruteForceTest, testSizeEstimation) {
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_Cosine,
-                                             .initialCapacity = n,
-                                             .blockSize = bs}};
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_Cosine;
+    this->params.initialCapacity = n;
+    this->params.blockSize = bs;
 
-    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    VecSimIndex *index = VecSimIndex_New(&params);
+    size_t estimation = EstimateInitialSize(this->params);
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
-    estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    estimation = EstimateElementSize(this->params) * bs;
 
     actual = this->GenerateNAddVector(index, dim, 0);
     ASSERT_GE(estimation * 1.01, actual);
@@ -1452,15 +1434,13 @@ TYPED_TEST(BruteForceTest, testInitialSizeEstimationWithInitialCapacity) {
     size_t n = 100;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_Cosine,
-                                             .initialCapacity = n,
-                                             .blockSize = bs}};
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_Cosine;
+    this->params.initialCapacity = n;
+    this->params.blockSize = bs;
 
-    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    VecSimIndex *index = VecSimIndex_New(&params);
+    size_t estimation = EstimateInitialSize(this->params);
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
     ASSERT_EQ(estimation, actual);
@@ -1472,13 +1452,13 @@ TYPED_TEST(BruteForceTest, testTimeoutReturn) {
     size_t dim = 4;
     VecSimQueryResult_List rl;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 1,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 1;
+    this->params.blockSize = 5;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     TEST_DATA_T vec[dim];
@@ -1506,13 +1486,12 @@ TYPED_TEST(BruteForceTest, testTimeoutReturn_batch_iterator) {
     size_t n = 10;
     VecSimQueryResult_List rl;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = n,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+    this->params.blockSize = 5;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i, i);
@@ -1557,12 +1536,11 @@ TYPED_TEST(BruteForceTest, rangeQuery) {
     size_t n = 2000;
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .blockSize = n / 2}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.blockSize = n / 2;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i, i);
@@ -1611,12 +1589,11 @@ TYPED_TEST(BruteForceTest, rangeQueryCosine) {
     size_t n = 100;
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = TypeParam::get_index_type(),
-                                             .dim = dim,
-                                             .metric = VecSimMetric_Cosine,
-                                             .blockSize = n / 2}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_Cosine;
+    this->params.blockSize = n / 2;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T f[dim];
@@ -1642,7 +1619,7 @@ TYPED_TEST(BruteForceTest, rangeQueryCosine) {
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)
     // to get the radius.
-    VecSim_Normalize(query, dim, TypeParam::get_index_type());
+    VecSim_Normalize(query, dim, this->params.type);
     double radius = index->getDistanceFrom(31, query);
     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
     // Return results BY_ID should give the same results.

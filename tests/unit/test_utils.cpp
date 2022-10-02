@@ -4,6 +4,44 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 
+inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+    return params;
+}
+inline VecSimParams CreateParams(const BFParams &bf_params) {
+    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    return params;
+}
+
+VecSimIndex *CreateNewIndex(const HNSWParams &hnsw_params) {
+    VecSimParams params = CreateParams(hnsw_params);
+    return VecSimIndex_New(&params);
+}
+VecSimIndex *CreateNewIndex(const BFParams &bf_params) {
+    VecSimParams params = CreateParams(bf_params);
+    return VecSimIndex_New(&params);
+}
+
+size_t EstimateInitialSize(const HNSWParams &hnsw_params) {
+    VecSimParams params = CreateParams(hnsw_params);
+    return VecSimIndex_EstimateInitialSize(&params);
+}
+
+size_t EstimateInitialSize(const BFParams &bf_params) {
+    VecSimParams params = CreateParams(bf_params);
+    return VecSimIndex_EstimateInitialSize(&params);
+}
+
+size_t EstimateElementSize(const HNSWParams &hnsw_params) {
+    VecSimParams params = CreateParams(hnsw_params);
+    return VecSimIndex_EstimateElementSize(&params);
+}
+
+size_t EstimateElementSize(const BFParams &bf_params) {
+    VecSimParams params = CreateParams(bf_params);
+    return VecSimIndex_EstimateElementSize(&params);
+}
+
 static bool allUniqueResults(VecSimQueryResult_List res) {
     size_t len = VecSimQueryResult_Len(res);
     auto it1 = VecSimQueryResult_List_GetIterator(res);
@@ -28,11 +66,16 @@ static bool allUniqueResults(VecSimQueryResult_List res) {
  * helper function to run Top K search and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
  */
+
+VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
+    VecSimQueryParams QueryParams = {.hnswRuntimeParams = RuntimeParams};
+    return QueryParams;
+}
+
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
-    VecSimQueryResult_List res =
-        VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
+    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);

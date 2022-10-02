@@ -15,6 +15,11 @@ struct IndexType {
 
 template <typename index_type_t>
 class HNSWMultiTest : public ::testing::Test {
+public:
+    HNSWMultiTest() : params{} {
+        params.type = index_type_t::get_index_type();
+        params.multi = true;
+    }
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
@@ -38,6 +43,8 @@ protected:
     HNSWIndex_Multi<data_t, dist_t> *CastToHNSW_Multi(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex_Multi<data_t, dist_t> *>(index);
     }
+
+    HNSWParams params;
 };
 
 #define TEST_DATA_T typename TypeParam::data_t
@@ -50,13 +57,12 @@ TYPED_TEST_SUITE(HNSWMultiTest, DataTypeSet);
 TYPED_TEST(HNSWMultiTest, vector_add_multiple_test) {
     size_t dim = 4;
     size_t rep = 5;
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = TypeParam::get_index_type(),
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_IP,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_IP;
+    this->params.initialCapacity = 200;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Adding multiple vectors under the same label
@@ -85,14 +91,14 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     size_t dim = 4;
     size_t n = 20;
     size_t bs = 6;
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = TypeParam::get_index_type(),
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = n;
+    this->params.blockSize = bs;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
@@ -124,13 +130,11 @@ TYPED_TEST(HNSWMultiTest, vector_search_test) {
     size_t n_labels = 100;
     size_t k = 11;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = TypeParam::get_index_type(),
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+    this->params.initialCapacity = 200;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i % n_labels, i);
@@ -160,12 +164,10 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
     // We want to make sure we get only 2 results back (because the results should have unique
     // labels), although the index contains 5 vectors.
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = TypeParam::get_index_type(),
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    this->params.dim = dim;
+    this->params.metric = VecSimMetric_L2;
+
+    VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
         this->GenerateNAddVector(index, dim, i / perLabel, i);
