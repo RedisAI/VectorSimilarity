@@ -41,9 +41,9 @@ double FP64_InnerProductSIMD2Ext_AVX512_impl(const void *pVect1v, const void *pV
     while (pVect1 < pEnd1) {
 
         __m512d v1 = _mm512_loadu_pd(pVect1);
-        pVect1 += 16;
+        pVect1 += 8;
         __m512d v2 = _mm512_loadu_pd(pVect2);
-        pVect2 += 16;
+        pVect2 += 8;
         sum512 = _mm512_add_pd(sum512, _mm512_mul_pd(v1, v2));
     }
 
@@ -53,9 +53,9 @@ double FP64_InnerProductSIMD2Ext_AVX512_impl(const void *pVect1v, const void *pV
 
     while (pVect1 < pEnd2) {
         v1 = _mm_loadu_pd(pVect1);
-        pVect1 += 4;
+        pVect1 += 2;
         v2 = _mm_loadu_pd(pVect2);
-        pVect2 += 4;
+        pVect2 += 2;
         sum_prod = _mm_add_pd(sum_prod, _mm_mul_pd(v1, v2));
     }
 
