@@ -510,7 +510,7 @@ TYPED_TEST(BruteForceTest, sanity_reinsert_1280) {
 
     VecSimIndex *index = CreateNewIndex(this->params);
 
-    auto *vectors = (TEST_DATA_T *)malloc(n * d * sizeof(TEST_DATA_T));
+    auto *vectors = new TEST_DATA_T[n * d];
 
     // Generate random vectors in every iteration and inert them under different ids.
     for (size_t iter = 1; iter <= 3; iter++) {
@@ -538,7 +538,7 @@ TYPED_TEST(BruteForceTest, sanity_reinsert_1280) {
             VecSimIndex_DeleteVector(index, i * iter);
         }
     }
-    free(vectors);
+    delete[] vectors;
     VecSimIndex_Free(index);
 }
 
