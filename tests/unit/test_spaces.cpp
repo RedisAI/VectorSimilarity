@@ -314,8 +314,8 @@ TEST_F(SpacesTest, l2_8_double) {
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-	    ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX512(v, v2, dim));
-	case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX512(v, v2, dim));
+    case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v2, dim));
@@ -341,8 +341,8 @@ TEST_F(SpacesTest, l2_10_double) {
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-	    ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX512(v, v2, dim));
-	case ARCH_OPT_AVX:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX512(v, v2, dim));
+    case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v2, dim));
@@ -367,7 +367,7 @@ TEST_F(SpacesTest, l2_17_double) {
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-	    ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
@@ -396,7 +396,7 @@ TEST_F(SpacesTest, l2_7_double) {
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-	    ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX512(v, v2, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
