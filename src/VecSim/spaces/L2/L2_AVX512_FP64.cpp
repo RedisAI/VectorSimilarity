@@ -81,7 +81,7 @@ double FP64_L2SqrSIMD8ExtResiduals_AVX512(const void *pVect1v, const void *pVect
 double FP64_L2SqrSIMD2ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v, size_t qty) {
     // Calculate how many doubles we can calculate using 128 bits iterations.
     size_t qty4 = qty >> 1 << 1;
-    double res = FP32_L2SqrSIMD4Ext_AVX512(pVect1v, pVect2v, qty4);
+    double res = FP64_L2SqrSIMD2Ext_AVX512(pVect1v, pVect2v, qty4);
     double *pVect1 = (double *)pVect1v + qty4;
     double *pVect2 = (double *)pVect2v + qty4;
 
