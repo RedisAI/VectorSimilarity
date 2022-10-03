@@ -65,6 +65,16 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
         break;
     case ARCH_OPT_AVX512:
     case ARCH_OPT_AVX:
+#ifdef __AVX__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX, FP64_InnerProductSIMD2Ext_AVX,
+            FP64_InnerProductSIMD8ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+
+#endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
     {
