@@ -72,8 +72,8 @@ double FP64_InnerProductSIMD8ExtResiduals_AVX512(const void *pVect1v, const void
                                                  size_t qty) {
     size_t qty8 = qty >> 3 << 3;
     double res = FP64_InnerProductSIMD8Ext_AVX512_impl(pVect1v, pVect2v, qty8);
-    double *pVect1 = (double *)pVect1v + qty;
-    double *pVect2 = (double *)pVect2v + qty;
+    double *pVect1 = (double *)pVect1v + qty8;
+    double *pVect2 = (double *)pVect2v + qty8;
 
     size_t qty_left = qty - qty8;
     double res_tail = FP64_InnerProduct_impl(pVect1, pVect2, qty_left);
