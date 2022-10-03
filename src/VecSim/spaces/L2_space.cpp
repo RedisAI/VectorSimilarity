@@ -65,6 +65,15 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
     case ARCH_OPT_NONE:
         break;
     case ARCH_OPT_AVX512:
+#ifdef __AVX512F__
+	    {
+		    static dist_func_t<double> dist_funcs[] = {
+				    FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD2Ext_AVX512,
+				    FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD2ExtResiduals_AVX512};
+
+		    ret_dist_func = dist_funcs[optimization_type];
+	    } break;
+#endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
     {

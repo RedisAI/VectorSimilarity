@@ -313,8 +313,9 @@ TEST_F(SpacesTest, l2_8_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
-    case ARCH_OPT_AVX:
+    case ARCH_OPT_AVX512:
+	    ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX512(v, v2, dim));
+	case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_SSE(v, v2, dim));
@@ -339,8 +340,9 @@ TEST_F(SpacesTest, l2_10_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
-    case ARCH_OPT_AVX:
+    case ARCH_OPT_AVX512:
+	    ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX512(v, v2, dim));
+	case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_SSE(v, v2, dim));
@@ -364,7 +366,8 @@ TEST_F(SpacesTest, l2_17_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX512:
+	    ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
@@ -392,7 +395,8 @@ TEST_F(SpacesTest, l2_7_double) {
               spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX512:
+	    ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
