@@ -3,33 +3,36 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
+#include "test_utils.h"
 
 #include <cstdlib>
 #include <limits>
 #include <cmath>
 #include <random>
-
-class CommonTest : public ::testing::Test {
-protected:
-    CommonTest() {}
-
-    ~CommonTest() override {}
-
-    void SetUp() override {}
-
-    void TearDown() override {}
+template <VecSimType type, typename DataType, typename DistType = DataType>
+struct IndexType {
+    static VecSimType get_index_type() { return type; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
 };
 
-TEST_F(CommonTest, ResolveQueryRuntimeParams) {
+template <typename index_type_t>
+class CommonIndexTest : public ::testing::Test {};
+
+using DataTypeSet =
+    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+
+TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
+
+TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 0,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    BFParams params = {.type = TypeParam::get_index_type(),
+                       .dim = dim,
+                       .metric = VecSimMetric_L2,
+                       .initialCapacity = 0,
+                       .blockSize = 5};
+    VecSimIndex *index = CreateNewIndex(params);
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
@@ -140,39 +143,17 @@ TEST_F(CommonTest, ResolveQueryRuntimeParams) {
     array_free(rparams);
 }
 
-TEST_F(CommonTest, SetTimeoutCallbackFunction) {
-    size_t dim = 4;
-    float vec[] = {1.0f, 1.0f, 1.0f, 1.0f};
-    VecSimQueryResult_List rl;
+template <typename DataType>
+class UtilsTests : public ::testing::Test {};
 
-    VecSimParams params{.algo = VecSimAlgo_BF,
-                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
-                                             .dim = dim,
-                                             .metric = VecSimMetric_L2,
-                                             .initialCapacity = 1,
-                                             .blockSize = 5}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    VecSimIndex_AddVector(index, vec, 0);
+using DataTypes = ::testing::Types<float, double>;
+TYPED_TEST_SUITE(UtilsTests, DataTypes);
 
-    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
-    VecSimQueryResult_Free(rl);
-
-    // Actual test: sets the vecsim index timeout callback to always return timeout
-    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; });
-
-    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    VecSimQueryResult_Free(rl);
-
-    VecSimIndex_Free(index);
-}
-
-TEST_F(CommonTest, Max_Updatable_Heap) {
-    std::pair<int, size_t> p;
+TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
+    std::pair<TypeParam, size_t> p;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    vecsim_stl::updatable_max_heap<int, size_t> heap(allocator);
+    vecsim_stl::updatable_max_heap<TypeParam, size_t> heap(allocator);
 
     // Initial state checks
     ASSERT_EQ(heap.size(), 0);
@@ -182,14 +163,17 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     // Insert some data in random order
     size_t riders[] = {46, 16, 99, 93};
     const size_t n_riders = sizeof(riders) / sizeof(riders[0]);
-    heap.emplace(1, 46);
-    heap.emplace(4, 93);
-    heap.emplace(3, 99);
-    heap.emplace(2, 16);
+    enum Priority { FIRST = 0, SECOND = 1, THIRD = 2, FOURTH = 3 };
+    const TypeParam priorities[] = {M_PI, M_E, M_SQRT2, -M_SQRT2 * M_E};
 
-    for (int i = n_riders; i > 0; i--) {
-        ASSERT_EQ(heap.size(), i);
-        p = {i, riders[i - 1]};
+    heap.emplace(priorities[THIRD], riders[1]);
+    heap.emplace(priorities[FIRST], riders[3]);
+    heap.emplace(priorities[SECOND], riders[2]);
+    heap.emplace(priorities[FOURTH], riders[0]);
+
+    for (int i = 0; i < n_riders; ++i) {
+        ASSERT_EQ(heap.size(), n_riders - i);
+        p = {priorities[i], riders[n_riders - 1 - i]};
         ASSERT_TRUE(heap.top() == p);
         ASSERT_FALSE(heap.empty());
         heap.pop();
@@ -199,17 +183,17 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     ASSERT_TRUE(heap.empty());
 
     // Inserting data with the same priority
-    heap.emplace(1, 1);
-    heap.emplace(11, 55);
-    heap.emplace(1, 3);
-    heap.emplace(1, 2);
+    heap.emplace(M_E, 1);
+    heap.emplace(M_PI, 55);
+    heap.emplace(M_E, 3);
+    heap.emplace(M_E, 2);
 
     ASSERT_EQ(heap.size(), 4);
     ASSERT_FALSE(heap.empty());
-    p = {11, 55};
+    p = {M_PI, 55};
     ASSERT_TRUE(heap.top() == p);
 
-    heap.emplace(0, 55); // Update priority
+    heap.emplace(M_SQRT2, 55); // Update priority
 
     ASSERT_EQ(heap.size(), 4); // Same size after update
     ASSERT_FALSE(heap.empty());
@@ -227,15 +211,15 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     // Update a priority of an element that share its priority with many others.
     size_t last = 10;
     for (size_t i = 0; i <= last; i++) {
-        heap.emplace(2, i);
+        heap.emplace(M_E, i);
     }
     // Bound the existing elements with higher and lower priorities.
-    heap.emplace(1, 42);
-    heap.emplace(3, 46);
+    heap.emplace(M_SQRT2, 42);
+    heap.emplace(M_PI, 46);
     size_t size = heap.size();
 
     // Update to the lowest priority
-    heap.emplace(0, last);
+    heap.emplace(-M_SQRT2, last);
     ASSERT_EQ(heap.size(), size);
 
     while (heap.size() > 1) {
@@ -243,18 +227,12 @@ TEST_F(CommonTest, Max_Updatable_Heap) {
     }
     ASSERT_EQ(heap.size(), 1);
     ASSERT_FALSE(heap.empty());
-    p = {0, last};
+    p = {-M_SQRT2, last};
     ASSERT_TRUE(heap.top() == p);
     heap.pop();
     ASSERT_EQ(heap.size(), 0);
     ASSERT_TRUE(heap.empty());
 }
-
-template <typename DataType>
-class UtilsTests : public ::testing::Test {};
-
-using DataTypes = ::testing::Types<float, double>;
-TYPED_TEST_SUITE(UtilsTests, DataTypes);
 
 TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
     const size_t dim = 1000;
