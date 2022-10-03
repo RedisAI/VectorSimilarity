@@ -24,13 +24,12 @@ protected:
 };
 
 TEST_F(SpacesTest, float_l2_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
     size_t dim = 5;
 
     float a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
-        a[i] = float(i + 1.0);
-        b[i] = float(i + 1.0);
+        a[i] = float(i + 1.5);
+        b[i] = float(i + 1.5);
     }
 
     float dist = FP32_L2Sqr((const void *)a, (const void *)b, dim);
@@ -38,13 +37,12 @@ TEST_F(SpacesTest, float_l2_no_optimization_func_test) {
 }
 
 TEST_F(SpacesTest, double_l2_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
     size_t dim = 5;
 
     double a[dim], b[dim];
     for (size_t i = 0; i < dim; i++) {
-        a[i] = double(i + 1.0);
-        b[i] = double(i + 1.0);
+        a[i] = double(i + 1.5);
+        b[i] = double(i + 1.5);
     }
 
     double dist = FP64_L2Sqr((const void *)a, (const void *)b, dim);
@@ -52,7 +50,6 @@ TEST_F(SpacesTest, double_l2_no_optimization_func_test) {
 }
 
 TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
     size_t dim = 5;
 
     float a[dim], b[dim];
@@ -69,7 +66,6 @@ TEST_F(SpacesTest, float_ip_no_optimization_func_test) {
 }
 
 TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
-    // Choose a dim that has no optimizations
     size_t dim = 5;
 
     double a[dim], b[dim];
@@ -90,215 +86,144 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 #elif defined(__x86_64)
 #include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
+#include <tuple>
 
-// This test will trigger the function for dimension % 16 == 0 for each optimization.
-TEST_F(SpacesTest, l2_16) {
+using spaces::dist_func_t;
+namespace spaces_test {
+// Functions for dimension % 16 == 0 for each optimization.
+static dist_func_t<float> L2_dist_funcs_16Ext[] = {
+    FP32_L2SqrSIMD16Ext_AVX512, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD16Ext_SSE, FP32_L2Sqr};
+static dist_func_t<float> IP_dist_funcs_16Ext[] = {
+    FP32_InnerProductSIMD16Ext_AVX512, FP32_InnerProductSIMD16Ext_AVX,
+    FP32_InnerProductSIMD16Ext_SSE, FP32_InnerProduct};
+// Functions for dimension % 4 == 0 for each optimization.
+static dist_func_t<float> L2_dist_funcs_4Ext[] = {FP32_L2SqrSIMD4Ext_AVX512, FP32_L2SqrSIMD4Ext_AVX,
+                                                  FP32_L2SqrSIMD4Ext_SSE, FP32_L2Sqr};
+static dist_func_t<float> IP_dist_funcs_4Ext[] = {FP32_InnerProductSIMD4Ext_AVX512,
+                                                  FP32_InnerProductSIMD4Ext_AVX,
+                                                  FP32_InnerProductSIMD4Ext_SSE, FP32_InnerProduct};
+// Function for dimension > 16, for each optimization.
+static dist_func_t<float> L2_dist_funcs_16ExtResiduals[] = {
+    FP32_L2SqrSIMD16ExtResiduals_AVX512, FP32_L2SqrSIMD16ExtResiduals_AVX,
+    FP32_L2SqrSIMD16ExtResiduals_SSE, FP32_L2Sqr};
+static dist_func_t<float> IP_dist_funcs_16ExtResiduals[] = {
+    FP32_InnerProductSIMD16ExtResiduals_AVX512, FP32_InnerProductSIMD16ExtResiduals_AVX,
+    FP32_InnerProductSIMD16ExtResiduals_SSE, FP32_InnerProduct};
+// Function for dimension < 16, for each optimization.
+static dist_func_t<float> L2_dist_funcs_4ExtResiduals[] = {
+    FP32_L2SqrSIMD4ExtResiduals_AVX512, FP32_L2SqrSIMD4ExtResiduals_AVX,
+    FP32_L2SqrSIMD4ExtResiduals_SSE, FP32_L2Sqr};
+static dist_func_t<float> IP_dist_funcs_4ExtResiduals[] = {
+    FP32_InnerProductSIMD4ExtResiduals_AVX512, FP32_InnerProductSIMD4ExtResiduals_AVX,
+    FP32_InnerProductSIMD4ExtResiduals_SSE, FP32_InnerProduct};
+} // namespace spaces_test
+
+class SpacesOptimizationTest
+    : public testing::TestWithParam<std::tuple<size_t, dist_func_t<float> *>> {
+};
+
+TEST_P(SpacesOptimizationTest, FP32DistanceFunctionTest) {
     Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 16;
+    size_t dim = std::get<0>(GetParam());
     float v[dim];
     float v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
-        v2[i] = (float)(i + 1);
+        v2[i] = (float)(i + 1.5);
     }
 
-    float baseline = FP32_L2Sqr(v, v2, dim);
+    dist_func_t<float> *arch_opt_funcs = std::get<1>(GetParam());
+    float baseline = arch_opt_funcs[3](v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v2, dim));
-        optimization = ARCH_OPT_AVX;
+        ASSERT_EQ(baseline, arch_opt_funcs[0](v, v2, dim));
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX(v, v2, dim));
-        optimization = ARCH_OPT_SSE;
+        ASSERT_EQ(baseline, arch_opt_funcs[1](v, v2, dim));
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_SSE(v, v2, dim));
+        ASSERT_EQ(baseline, arch_opt_funcs[2](v, v2, dim));
         break;
     default:
         ASSERT_TRUE(false);
     }
 }
+INSTANTIATE_TEST_SUITE_P(
+    DimNOptFuncs, SpacesOptimizationTest,
+    testing::Values(std::make_tuple(16, spaces_test::L2_dist_funcs_16Ext),
+                    std::make_tuple(16, spaces_test::IP_dist_funcs_16Ext),
+                    std::make_tuple(20, spaces_test::L2_dist_funcs_4Ext),
+                    std::make_tuple(20, spaces_test::IP_dist_funcs_4Ext),
+                    std::make_tuple(17, spaces_test::L2_dist_funcs_16ExtResiduals),
+                    std::make_tuple(17, spaces_test::IP_dist_funcs_16ExtResiduals),
+                    std::make_tuple(9, spaces_test::L2_dist_funcs_4ExtResiduals),
+                    std::make_tuple(9, spaces_test::IP_dist_funcs_4ExtResiduals)));
 
-// This test will trigger the function for dimension % 16 == 0 for each optimization.
-TEST_F(SpacesTest, ip_16) {
+namespace spaces_test {
+// Functions for dimension % 16 == 0 for each optimization.
+static dist_func_t<double> L2_dist_funcs_8Ext[] = {
+    NULL, FP64_L2SqrSIMD8Ext_AVX, FP64_L2SqrSIMD8Ext_SSE, FP64_L2Sqr};
+static dist_func_t<double> IP_dist_funcs_8Ext[] = {
+    NULL, FP32_InnerProductSIMD16Ext_AVX,
+    FP32_InnerProductSIMD16Ext_SSE, FP32_InnerProduct};
+// Functions for dimension % 4 == 0 for each optimization.
+static dist_func_t<double> L2_dist_funcs_2Ext[] = {NULL, FP64_L2SqrSIMD2Ext_AVX,
+                                                  FP64_L2SqrSIMD2Ext_SSE, FP64_L2Sqr};
+static dist_func_t<double> IP_dist_funcs_4Ext[] = {NULL,
+                                                  FP32_InnerProductSIMD4Ext_AVX,
+                                                  FP32_InnerProductSIMD4Ext_SSE, FP32_InnerProduct};
+// Function for dimension > 16, for each optimization.
+static dist_func_t<double> L2_dist_funcs_8ExtResiduals[] = {
+    NULL, FP64_L2SqrSIMD8ExtResiduals_AVX,
+    FP64_L2SqrSIMD8ExtResiduals_SSE, FP64_L2Sqr};
+static dist_func_t<float> IP_dist_funcs_8ExtResiduals[] = {
+    NULL, FP32_InnerProductSIMD16ExtResiduals_AVX,
+    FP32_InnerProductSIMD16ExtResiduals_SSE, FP32_InnerProduct};
+// Function for dimension < 16, for each optimization.
+static dist_func_t<double> L2_dist_funcs_2ExtResiduals[] = {
+    NULL, FP64_L2SqrSIMD2ExtResiduals_AVX,
+    FP64_L2SqrSIMD2ExtResiduals_SSE, FP64_L2Sqr};
+static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
+    NULL, FP32_InnerProductSIMD4ExtResiduals_AVX,
+    FP32_InnerProductSIMD4ExtResiduals_SSE, FP32_InnerProduct};
+} // namespace spaces_test
+
+class SpacesOptimizationTest
+    : public testing::TestWithParam<std::tuple<size_t, dist_func_t<float> *>> {
+};
+
+TEST_P(SpacesOptimizationTest, FP32DistanceFunctionTest) {
     Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 16;
-    float v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-    }
-
-    float baseline = FP32_InnerProduct(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_SSE(v, v, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the function for dimension % 4 == 0 for each optimization.
-TEST_F(SpacesTest, ip_20) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 20;
-    float v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-    }
-
-    float baseline = FP32_InnerProduct(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_SSE(v, v, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the function for dimension % 4 == 0 for each optimization.
-TEST_F(SpacesTest, l2_20) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 20;
+    size_t dim = std::get<0>(GetParam());
     float v[dim];
     float v2[dim];
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
-        v2[i] = (float)(i + 1);
+        v2[i] = (float)(i + 1.5);
     }
 
-    float baseline = FP32_L2Sqr(v, v2, dim);
+    dist_func_t<float> *arch_opt_funcs = std::get<1>(GetParam());
+    float baseline = arch_opt_funcs[3](v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX512(v, v2, dim));
-        optimization = ARCH_OPT_AVX;
+        ASSERT_EQ(baseline, arch_opt_funcs[0](v, v2, dim));
     case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX(v, v2, dim));
-        optimization = ARCH_OPT_SSE;
+        ASSERT_EQ(baseline, arch_opt_funcs[1](v, v2, dim));
     case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_SSE(v, v2, dim));
+        ASSERT_EQ(baseline, arch_opt_funcs[2](v, v2, dim));
         break;
     default:
         ASSERT_TRUE(false);
     }
 }
-
-// This test will trigger the "Residuals" function for dimension > 16, for each optimization.
-TEST_F(SpacesTest, l2_17) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 17;
-    float v[dim];
-    float v2[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-        v2[i] = (float)(i + 1);
-    }
-
-    float baseline = FP32_L2Sqr(v, v2, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v2, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX(v, v2, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_SSE(v, v2, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the "Residuals" function for dimension > 16, for each optimization.
-TEST_F(SpacesTest, ip_17) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 17;
-    float v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-    }
-
-    float baseline = FP32_InnerProduct(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_SSE(v, v, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the "Residuals" function for dimension < 16, for each optimization.
-TEST_F(SpacesTest, l2_9) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 9;
-    float v[dim];
-    float v2[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-        v2[i] = (float)(i + 1);
-    }
-
-    float baseline = FP32_L2Sqr(v, v2, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v2, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX(v, v2, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_SSE(v, v2, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
-// This test will trigger the "Residuals" function for dimension < 16, for each optimization.
-TEST_F(SpacesTest, ip_9) {
-    Arch_Optimization optimization = getArchitectureOptimization();
-    size_t dim = 9;
-    float v[dim];
-    for (size_t i = 0; i < dim; i++) {
-        v[i] = (float)i;
-    }
-
-    float baseline = FP32_InnerProduct(v, v, dim);
-    switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_AVX512(v, v, dim));
-        optimization = ARCH_OPT_AVX;
-    case ARCH_OPT_AVX:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_AVX(v, v, dim));
-        optimization = ARCH_OPT_SSE;
-    case ARCH_OPT_SSE:
-        ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_SSE(v, v, dim));
-        break;
-    default:
-        ASSERT_TRUE(false);
-    }
-}
-
+INSTANTIATE_TEST_SUITE_P(
+    DimNOptFuncs, SpacesOptimizationTest,
+    testing::Values(std::make_tuple(16, spaces_test::L2_dist_funcs_16Ext),
+                    std::make_tuple(16, spaces_test::IP_dist_funcs_16Ext),
+                    std::make_tuple(20, spaces_test::L2_dist_funcs_4Ext),
+                    std::make_tuple(20, spaces_test::IP_dist_funcs_4Ext),
+                    std::make_tuple(17, spaces_test::L2_dist_funcs_16ExtResiduals),
+                    std::make_tuple(17, spaces_test::IP_dist_funcs_16ExtResiduals),
+                    std::make_tuple(9, spaces_test::L2_dist_funcs_4ExtResiduals),
+                    std::make_tuple(9, spaces_test::IP_dist_funcs_4ExtResiduals)));
 // This test will trigger the function for dimension % 8 == 0 for each optimization.
 TEST_F(SpacesTest, l2_8_double) {
     Arch_Optimization optimization = getArchitectureOptimization();
