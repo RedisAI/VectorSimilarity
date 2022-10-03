@@ -18,7 +18,6 @@ float FP32_InnerProductSIMD16Ext_AVX512_impl(const void *pVect1v, const void *pV
         __m512 v2 = _mm512_loadu_ps(pVect2);
         pVect2 += 16;
         sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(v1, v2));
-        // sum512 = _mm512_fmadd_ps(v1, v2, sum512);
     }
 
     return _mm512_reduce_add_ps(sum512);
@@ -48,7 +47,6 @@ float FP32_InnerProductSIMD4Ext_AVX512_impl(const void *pVect1v, const void *pVe
         __m512 v2 = _mm512_loadu_ps(pVect2);
         pVect2 += 16;
         sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(v1, v2));
-        // sum512 = _mm512_fmadd_ps(v1, v2, sum512);
     }
 
     __m128 v1, v2;

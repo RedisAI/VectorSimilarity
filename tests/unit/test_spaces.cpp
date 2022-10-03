@@ -420,7 +420,8 @@ TEST_F(SpacesTest, ip_8_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX512 is implemented
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD8Ext_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8Ext_AVX(v, v, dim));
     case ARCH_OPT_SSE:
@@ -443,7 +444,8 @@ TEST_F(SpacesTest, ip_10_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX512 is implemented
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX(v, v, dim));
     case ARCH_OPT_SSE:
@@ -466,7 +468,8 @@ TEST_F(SpacesTest, ip_17_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX and AVX512 is implemented
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX(v, v, dim));
     case ARCH_OPT_SSE:
@@ -491,7 +494,8 @@ TEST_F(SpacesTest, ip_7_double) {
 
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO: add comparison when AVX512 is implemented
+    case ARCH_OPT_AVX512:
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX(v, v, dim));
     case ARCH_OPT_SSE:

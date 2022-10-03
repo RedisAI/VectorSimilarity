@@ -66,8 +66,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 				add_library(VectorSimilaritySpaces_avx512 STATIC
 					L2/L2_AVX512_FP32.cpp
 					L2/L2_AVX512_FP64.cpp
-					IP/IP_AVX512.cpp
-					)
+					IP/IP_AVX512_FP32.cpp
+					IP/IP_AVX512_FP64.cpp)
 		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx512)
 	else()
 		message("Building without AVX512")
