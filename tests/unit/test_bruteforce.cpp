@@ -1360,18 +1360,11 @@ TYPED_TEST(BruteForceTest, testCosine) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
-    for (size_t i = 0; i < dim; i++) {
-        query[i] = 1.0;
-    }
-    auto verify_res = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, (n - index));
-        TEST_DATA_T first_coordinate = (TEST_DATA_T)id / n;
-        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
-        // and B is the current result vector.
-        double expected_score =
-            1.0 - ((first_coordinate + (TEST_DATA_T)dim - 1.0) /
-                   (sqrt(dim) * sqrt((dim - 1) + first_coordinate * first_coordinate)));
-        // Verify that abs difference between the actual and expected score is at most 1/10^6.
+    this->GenerateVector(query, dim, 1.0);
+    VecSim_Normalize(query, dim, this->params.type);
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, (n - result_rank));
+        TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
         ASSERT_NEAR(score, expected_score, 1e-5);
     };
     runTopKSearchTest(index, query, 10, verify_res);
@@ -1385,15 +1378,9 @@ TYPED_TEST(BruteForceTest, testCosine) {
     size_t n_res = 10;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         std::vector<size_t> expected_ids(n_res);
-        auto verify_res_batch = [&](size_t id, double score, size_t index) {
-            ASSERT_EQ(id, (n - n_res * iteration_num - index));
-            TEST_DATA_T first_coordinate = (TEST_DATA_T)id / n;
-            // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-            // vector and B is the current result vector.
-            double expected_score =
-                1.0 - ((first_coordinate + (TEST_DATA_T)dim - 1.0) /
-                       (sqrt(dim) * sqrt((dim - 1) + first_coordinate * first_coordinate)));
-            // Verify that abs difference between the actual and expected score is at most 1/10^6.
+        auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
             ASSERT_NEAR(score, expected_score, 1e-5);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);

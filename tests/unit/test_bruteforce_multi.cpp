@@ -1078,7 +1078,7 @@ TYPED_TEST(BruteForceMultiTest, testCosine) {
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
 
-        double expected_score = index->getDistanceFrom(id, query);
+        TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
 
         ASSERT_NEAR(score, expected_score, 1e-6);
     };
