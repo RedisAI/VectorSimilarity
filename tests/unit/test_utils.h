@@ -2,9 +2,6 @@
 
 #include <functional>
 #include "VecSim/vec_sim.h"
-// TODO might be useless - remove
-/* VecSimParams CreateParams(const HNSWParams& hnsw_params);
-VecSimParams CreateParams(const BFParams& bf_params); */
 
 VecSimIndex *CreateNewIndex(const HNSWParams &params);
 VecSimIndex *CreateNewIndex(const BFParams &params);

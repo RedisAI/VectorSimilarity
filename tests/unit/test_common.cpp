@@ -171,7 +171,7 @@ TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
     heap.emplace(priorities[SECOND], riders[2]);
     heap.emplace(priorities[FOURTH], riders[0]);
 
-    for (int i = 0; i < n_riders; ++i) {
+    for (size_t i = 0; i < n_riders; ++i) {
         ASSERT_EQ(heap.size(), n_riders - i);
         p = {priorities[i], riders[n_riders - 1 - i]};
         ASSERT_TRUE(heap.top() == p);
