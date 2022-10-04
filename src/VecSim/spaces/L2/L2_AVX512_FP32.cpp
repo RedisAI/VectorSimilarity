@@ -30,10 +30,9 @@ float FP32_L2SqrSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v, size_t
     float *pVect2 = (float *)pVect2v;
 
     size_t qty16 = qty >> 4 << 4;
-    size_t qty4 = qty >> 2 << 2;
 
     const float *pEnd1 = pVect1 + qty16;
-    const float *pEnd2 = pVect1 + qty4;
+    const float *pEnd2 = pVect1 + qty;
 
     __m512 diff512, v1_512, v2_512;
     __m512 sum512 = _mm512_set1_ps(0);
