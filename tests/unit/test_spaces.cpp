@@ -160,23 +160,25 @@ namespace spaces_test {
 // Functions for dimension % 8 == 0 for each optimization.
 static dist_func_t<double> L2_dist_funcs_8Ext[] = {NULL, FP64_L2SqrSIMD8Ext_AVX,
                                                    FP64_L2SqrSIMD8Ext_SSE, FP64_L2Sqr};
-static dist_func_t<double> IP_dist_funcs_8Ext[] = {NULL, FP64_InnerProductSIMD8Ext_AVX, FP64_InnerProductSIMD8Ext_SSE,
-                                                   FP64_InnerProduct};
+static dist_func_t<double> IP_dist_funcs_8Ext[] = {
+    NULL, FP64_InnerProductSIMD8Ext_AVX, FP64_InnerProductSIMD8Ext_SSE, FP64_InnerProduct};
 // Functions for dimension % 2 == 0 for each optimization.
 static dist_func_t<double> L2_dist_funcs_2Ext[] = {NULL, FP64_L2SqrSIMD2Ext_AVX,
                                                    FP64_L2SqrSIMD2Ext_SSE, FP64_L2Sqr};
-static dist_func_t<double> IP_dist_funcs_2Ext[] = {NULL, FP64_InnerProductSIMD2Ext_AVX, FP64_InnerProductSIMD2Ext_SSE,
-                                                   FP64_InnerProduct};
+static dist_func_t<double> IP_dist_funcs_2Ext[] = {
+    NULL, FP64_InnerProductSIMD2Ext_AVX, FP64_InnerProductSIMD2Ext_SSE, FP64_InnerProduct};
 // Function for dim > 8  && dim % 8 < 2, for each optimization.
 static dist_func_t<double> L2_dist_funcs_8ExtResiduals[] = {
     NULL, FP64_L2SqrSIMD8ExtResiduals_AVX, FP64_L2SqrSIMD8ExtResiduals_SSE, FP64_L2Sqr};
 static dist_func_t<double> IP_dist_funcs_8ExtResiduals[] = {
-    NULL, FP64_InnerProductSIMD8ExtResiduals_AVX, FP64_InnerProductSIMD8ExtResiduals_SSE, FP64_InnerProduct};
+    NULL, FP64_InnerProductSIMD8ExtResiduals_AVX, FP64_InnerProductSIMD8ExtResiduals_SSE,
+    FP64_InnerProduct};
 // Function for 2 < dimension < 8, dim %2 != 0 for each optimization.
 static dist_func_t<double> L2_dist_funcs_2ExtResiduals[] = {
     NULL, FP64_L2SqrSIMD2ExtResiduals_AVX, FP64_L2SqrSIMD2ExtResiduals_SSE, FP64_L2Sqr};
 static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
-    NULL, FP64_InnerProductSIMD2ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_SSE, FP64_InnerProduct};
+    NULL, FP64_InnerProductSIMD2ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_SSE,
+    FP64_InnerProduct};
 } // namespace spaces_test
 
 class FP64SpacesOptimizationTest
@@ -201,7 +203,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
         }
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, arch_opt_funcs[1](v, v2, dim));
-        
+
     case ARCH_OPT_SSE:
         ASSERT_EQ(baseline, arch_opt_funcs[2](v, v2, dim));
         break;
