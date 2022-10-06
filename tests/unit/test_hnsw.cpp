@@ -860,16 +860,13 @@ TYPED_TEST(HNSWTest, hnsw_search_empty_index) {
     VecSimIndex_Free(index);
 }
 
-// TODO: FIX
-/* TYPED_TEST(HNSWTest, hnsw_inf_score) {
+class InfTest : public ::testing::Test {};
+TEST_F(InfTest, hnsw_test_inf_score_fp32) {
     size_t n = 4;
     size_t k = 4;
-
-    VecSimType type = TypeParam::get_index_type();
-    size_t dim = type == VecSimType_FLOAT32 ? 2 : 1;
-
+    size_t dim = 2;
     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = type,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
                                                  .dim = dim,
                                                  .metric = VecSimMetric_L2,
                                                  .initialCapacity = n}};
@@ -877,11 +874,47 @@ TYPED_TEST(HNSWTest, hnsw_search_empty_index) {
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
     // yield "inf" result when we calculate distance between the vectors.
+    VecSimIndex_AddVector(index, "abcdefgh", 1);
+    VecSimIndex_AddVector(index, "abcdefgg", 2);
+    VecSimIndex_AddVector(index, "aacdefgh", 3);
+    VecSimIndex_AddVector(index, "abbdefgh", 4);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
-    VecSimIndex_AddVector(index, "FFF0AACCFFF0AACC", 1);
-    VecSimIndex_AddVector(index, "8000AACCFFF0AACC", 2);
-    VecSimIndex_AddVector(index, "FFF0AACBFFF0AACC", 3);
-    VecSimIndex_AddVector(index, "0000AACCFFF0AACC", 4);
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        if (index == 0) {
+            ASSERT_EQ(1, id);
+        } else if (index == 1) {
+            ASSERT_EQ(3, id);
+        } else {
+            ASSERT_TRUE(id == 2 || id == 4);
+            ASSERT_TRUE(std::isinf(score));
+        }
+    };
+    runTopKSearchTest(index, "abcdefgh", k, verify_res);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(InfTest, hnsw_test_inf_score_fp64) {
+    size_t n = 4;
+    size_t k = 4;
+    size_t dim = 2;
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT64,
+                                                 .dim = dim,
+                                                 .metric = VecSimMetric_L2,
+                                                 .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    double query[] = {exp(4), exp(4)};
+    double v1[] = {exp(4), exp(4)};
+    double v2[] = {exp(500), exp(500)};
+    double v3[] = {exp(5), exp(5)};
+    double v4[] = {-exp(500), -exp(500)};
+
+    VecSimIndex_AddVector(index, v1, 1);
+    VecSimIndex_AddVector(index, v2, 2);
+    VecSimIndex_AddVector(index, v3, 3);
+    VecSimIndex_AddVector(index, v4, 4);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
     auto verify_res = [&](size_t id, double score, size_t index) {
@@ -890,15 +923,13 @@ TYPED_TEST(HNSWTest, hnsw_search_empty_index) {
         } else if (index == 1) {
             ASSERT_EQ(3, id);
         } else {
-            ASSERT_TRUE(id == 0 || id == 4);
-            #include <iostream>
-            std::cout<< "score = " <<score << "id = "<<id <<std::endl;
+            ASSERT_TRUE(id == 2 || id == 4);
+            ASSERT_TRUE(std::isinf(score));
         }
     };
-    runTopKSearchTest(index, "FFF0AACCFFF0AACC", k, verify_res);
+    runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
 }
- */
 
 // Tests VecSimIndex_New failure on bad M parameter. Should return null.
 TYPED_TEST(HNSWTest, hnsw_bad_params) {

@@ -805,26 +805,63 @@ TYPED_TEST(BruteForceTest, brute_force_search_empty_index) {
     VecSimIndex_Free(index);
 }
 
-// TODO: write parametrized test instead of checking the type
-TYPED_TEST(BruteForceTest, brute_force_test_inf_score) {
+class InfTest : public ::testing::Test {};
+TEST_F(InfTest, brute_force_test_inf_score_fp32) {
     size_t n = 4;
     size_t k = 4;
+    size_t dim = 2;
 
-    VecSimType type = TypeParam::get_index_type();
-    size_t dim = type == VecSimType_FLOAT32 ? 2 : 1;
-
-    this->params.dim = dim;
-    this->params.metric = VecSimMetric_L2;
-    this->params.initialCapacity = n;
-
-    VecSimIndex *index = CreateNewIndex(this->params);
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT32,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
 
     // The 32 bits of "efgh" and "efgg", and the 32 bits of "abcd" and "abbd" will
     // yield "inf" result when we calculate distance between the vectors.
     VecSimIndex_AddVector(index, "abcdefgh", 1);
     VecSimIndex_AddVector(index, "abcdefgg", 2);
-    VecSimIndex_AddVector(index, "abcdefgh", 3);
+    VecSimIndex_AddVector(index, "aacdefgh", 3);
     VecSimIndex_AddVector(index, "abbdefgh", 4);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
+
+    auto verify_res = [&](size_t id, float score, size_t index) {
+        if (index == 0) {
+            ASSERT_EQ(1, id);
+        } else if (index == 1) {
+            ASSERT_EQ(3, id);
+        } else {
+            ASSERT_TRUE(id == 2 || id == 4);
+            ASSERT_TRUE(std::isinf(score));
+        }
+    };
+    runTopKSearchTest(index, "abcdefgh", k, verify_res);
+    VecSimIndex_Free(index);
+}
+
+TEST_F(InfTest, brute_force_test_inf_score_fp64) {
+    size_t n = 4;
+    size_t k = 4;
+    size_t dim = 2;
+
+    VecSimParams params{.algo = VecSimAlgo_BF,
+                        .bfParams = BFParams{.type = VecSimType_FLOAT64,
+                                             .dim = dim,
+                                             .metric = VecSimMetric_L2,
+                                             .initialCapacity = n}};
+    VecSimIndex *index = VecSimIndex_New(&params);
+
+    double query[] = {exp(4), exp(4)};
+    double v1[] = {exp(4), exp(4)};
+    double v2[] = {exp(500), exp(500)};
+    double v3[] = {exp(5), exp(5)};
+    double v4[] = {-exp(500), -exp(500)};
+
+    VecSimIndex_AddVector(index, v1, 1);
+    VecSimIndex_AddVector(index, v2, 2);
+    VecSimIndex_AddVector(index, v3, 3);
+    VecSimIndex_AddVector(index, v4, 4);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
     auto verify_res = [&](size_t id, double score, size_t index) {
@@ -834,9 +871,10 @@ TYPED_TEST(BruteForceTest, brute_force_test_inf_score) {
             ASSERT_EQ(3, id);
         } else {
             ASSERT_TRUE(id == 2 || id == 4);
+            ASSERT_TRUE(std::isinf(score));
         }
     };
-    runTopKSearchTest(index, "abcdefgh", k, verify_res);
+    runTopKSearchTest(index, query, k, verify_res);
     VecSimIndex_Free(index);
 }
 
