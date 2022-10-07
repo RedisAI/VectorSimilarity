@@ -47,7 +47,7 @@ typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
  * @brief Get the length of the result list that returned from a query.
  */
 size_t VecSimQueryResult_Len(VecSimQueryResult_List results);
-
+size_t VecSimQueryResult_ArrayLen(VecSimQueryResult *rl);
 /**
  * @brief Create an iterator for going over the list of results. The iterator needs to be free
  * with VecSimQueryResult_IteratorFree.
@@ -75,6 +75,8 @@ void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
  */
 void VecSimQueryResult_Free(VecSimQueryResult_List results);
 
+void VecSimQueryResult_FreeArray(VecSimQueryResult *rl);
+
 /**
  * @brief Iterator for running the same query over an index, getting the in each iteration
  * the best results that hasn't returned in the previous iterations.
@@ -99,6 +101,7 @@ VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, s
  */
 bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator);
 
+void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator);
 /**
  * @brief Release the iterator using BatchIterator_Free method
  */

@@ -4,21 +4,30 @@
 #include "VecSim/batch_iterator.h"
 
 struct VecSimQueryResult_Iterator {
+    VecSimQueryResult *first_result;
     VecSimQueryResult *curr_result;
     size_t index;
     size_t results_len;
 
     explicit VecSimQueryResult_Iterator(VecSimQueryResult_List results_array)
-        : curr_result(results_array.results), index(0),
+        : first_result(results_array.results), curr_result(results_array.results), index(0),
           results_len(array_len(results_array.results)) {}
 };
 
 extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List rl) { return array_len(rl.results); }
 
+extern "C" size_t VecSimQueryResult_ArrayLen(VecSimQueryResult *rl) { return array_len(rl); }
+
 extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
     if (rl.results) {
         array_free(rl.results);
         rl.results = NULL;
+    }
+}
+
+extern "C" void VecSimQueryResult_FreeArray(VecSimQueryResult *rl) {
+    if (rl) {
+        array_free(rl);
     }
 }
 
@@ -52,11 +61,16 @@ extern "C" double VecSimQueryResult_GetScore(const VecSimQueryResult *res) {
     if (res == nullptr) {
         return INVALID_SCORE; // "NaN"
     }
-    return (double)res->score;
+    return res->score;
 }
 
 extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator) {
     delete iterator;
+}
+
+extern "C" void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator) {
+    iterator->index = 0;
+    iterator->curr_result = iterator->first_result;
 }
 
 /********************** batch iterator API ***************************/
@@ -69,7 +83,7 @@ bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator) { return !iterat
 
 void VecSimBatchIterator_Free(VecSimBatchIterator *iterator) {
     // Batch iterator might be deleted after the index, so it should keep the allocator before
-    // deleting.
+    // deleteing.
     auto allocator = iterator->getAllocator();
     delete iterator;
 }
