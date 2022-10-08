@@ -41,6 +41,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Check that the compiler supports instructions flag.
 	# This will add the relevant flag both the the space selector and the optimization.
 	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
+	CHECK_CXX_COMPILER_FLAG(-mavx512dq CXX_AVX512F)
 	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
 	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 	if(CXX_AVX512F)

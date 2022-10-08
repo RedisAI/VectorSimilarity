@@ -14,7 +14,7 @@ Arch_Optimization getArchitectureOptimization() {
 #ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"
     cpu_features::X86Features features = cpu_features::GetX86Info().features;
-    if (features.avx512f) {
+    if (features.avx512f && features.avx512dq) {
         return ARCH_OPT_AVX512;
     } else if (features.avx || features.avx2) {
         return ARCH_OPT_AVX;
