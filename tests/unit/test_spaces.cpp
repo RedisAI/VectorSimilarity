@@ -8,8 +8,9 @@
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_AVX512.h"
-#include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/L2_space.h"
 
 class SpacesTest : public ::testing::Test {
 
@@ -101,7 +102,10 @@ TEST_F(SpacesTest, l2_16) {
         v[i] = (float)i;
         v2[i] = (float)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{
+        FP32_L2SqrSIMD16Ext_AVX512, FP32_L2SqrSIMD16Ext_AVX, FP32_L2SqrSIMD16Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -126,7 +130,11 @@ TEST_F(SpacesTest, ip_16) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{FP32_InnerProductSIMD16Ext_AVX512,
+                                                           FP32_InnerProductSIMD16Ext_AVX,
+                                                           FP32_InnerProductSIMD16Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -151,7 +159,11 @@ TEST_F(SpacesTest, ip_20) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{FP32_InnerProductSIMD4Ext_AVX512,
+                                                           FP32_InnerProductSIMD4Ext_AVX,
+                                                           FP32_InnerProductSIMD4Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -178,7 +190,10 @@ TEST_F(SpacesTest, l2_20) {
         v[i] = (float)i;
         v2[i] = (float)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{
+        FP32_L2SqrSIMD4Ext_AVX512, FP32_L2SqrSIMD4Ext_AVX, FP32_L2SqrSIMD4Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -205,7 +220,11 @@ TEST_F(SpacesTest, l2_17) {
         v[i] = (float)i;
         v2[i] = (float)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{FP32_L2SqrSIMD16ExtResiduals_AVX512,
+                                                           FP32_L2SqrSIMD16ExtResiduals_AVX,
+                                                           FP32_L2SqrSIMD16ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -230,7 +249,11 @@ TEST_F(SpacesTest, ip_17) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{
+        FP32_InnerProductSIMD16ExtResiduals_AVX512, FP32_InnerProductSIMD16ExtResiduals_AVX,
+        FP32_InnerProductSIMD16ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -257,7 +280,11 @@ TEST_F(SpacesTest, l2_9) {
         v[i] = (float)i;
         v2[i] = (float)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{FP32_L2SqrSIMD4ExtResiduals_AVX512,
+                                                           FP32_L2SqrSIMD4ExtResiduals_AVX,
+                                                           FP32_L2SqrSIMD4ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -282,7 +309,11 @@ TEST_F(SpacesTest, ip_9) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (float)i;
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<float>>{
+        FP32_InnerProductSIMD4ExtResiduals_AVX512, FP32_InnerProductSIMD4ExtResiduals_AVX,
+        FP32_InnerProductSIMD4ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -309,7 +340,10 @@ TEST_F(SpacesTest, l2_8_double) {
         v[i] = (double)i;
         v2[i] = (double)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{
+        FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD8Ext_AVX, FP64_L2SqrSIMD8Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP64_GetDistFunc(dim)) != dist_funcs.end());
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
@@ -336,7 +370,10 @@ TEST_F(SpacesTest, l2_10_double) {
         v[i] = (double)i;
         v2[i] = (double)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{
+        FP64_L2SqrSIMD2Ext_AVX512, FP64_L2SqrSIMD2Ext_AVX, FP64_L2SqrSIMD2Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP64_GetDistFunc(dim)) != dist_funcs.end());
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
@@ -362,7 +399,11 @@ TEST_F(SpacesTest, l2_17_double) {
         v[i] = (double)i;
         v2[i] = (double)(i + 1);
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{FP64_L2SqrSIMD8ExtResiduals_AVX512,
+                                                            FP64_L2SqrSIMD8ExtResiduals_AVX,
+                                                            FP64_L2SqrSIMD8ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP64_GetDistFunc(dim)) != dist_funcs.end());
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
@@ -393,6 +434,11 @@ TEST_F(SpacesTest, l2_7_double) {
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
               spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{FP64_L2SqrSIMD2ExtResiduals_AVX512,
+                                                            FP64_L2SqrSIMD2ExtResiduals_AVX,
+                                                            FP64_L2SqrSIMD2ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::L2_FP64_GetDistFunc(dim)) != dist_funcs.end());
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -416,7 +462,11 @@ TEST_F(SpacesTest, ip_8_double) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{FP64_InnerProductSIMD8Ext_AVX512,
+                                                            FP64_InnerProductSIMD8Ext_AVX,
+                                                            FP64_InnerProductSIMD8Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP64_GetDistFunc(dim)) != dist_funcs.end());
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
@@ -442,6 +492,11 @@ TEST_F(SpacesTest, ip_10_double) {
         v[i] = (double)i;
     }
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{FP64_InnerProductSIMD2Ext_AVX512,
+                                                            FP64_InnerProductSIMD2Ext_AVX,
+                                                            FP64_InnerProductSIMD2Ext_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP64_GetDistFunc(dim)) != dist_funcs.end());
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
@@ -464,7 +519,11 @@ TEST_F(SpacesTest, ip_17_double) {
     for (size_t i = 0; i < dim; i++) {
         v[i] = (double)i;
     }
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{
+        FP64_InnerProductSIMD8ExtResiduals_AVX512, FP64_InnerProductSIMD8ExtResiduals_AVX,
+        FP64_InnerProductSIMD8ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP64_GetDistFunc(dim)) != dist_funcs.end());
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
@@ -491,7 +550,11 @@ TEST_F(SpacesTest, ip_7_double) {
 
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim),
               spaces::SPLIT_TO_512_128_BITS_WITH_RESIDUALS);
-
+    // Assert that the chosen dist function is suitable to the given dim.
+    auto dist_funcs = std::set<spaces::dist_func_t<double>>{
+        FP64_InnerProductSIMD2ExtResiduals_AVX512, FP64_InnerProductSIMD2ExtResiduals_AVX,
+        FP64_InnerProductSIMD2ExtResiduals_SSE};
+    ASSERT_TRUE(dist_funcs.find(spaces::IP_FP64_GetDistFunc(dim)) != dist_funcs.end());
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512:
