@@ -5,47 +5,23 @@
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
 #include <cmath>
 
-template <VecSimType type, typename DataType, typename DistType = DataType>
-struct IndexType {
-    static VecSimType get_index_type() { return type; }
-    typedef DataType data_t;
-    typedef DistType dist_t;
-};
-
 template <typename index_type_t>
-class BruteForceMultiTest : public ::testing::Test {
+class BruteForceMultiTest : public ::testing::Test, public IndexTestUtils<BFParams> {
 public:
-    BruteForceMultiTest() : params{} {
-        params.type = index_type_t::get_index_type();
-        params.multi = true;
-    }
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-protected:
-    void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
-        for (size_t i = 0; i < dim; i++) {
-            output[i] = (data_t)value;
-        }
-    }
-    // Returns the memory addition after adding the vector to the index.
-    int GenerateNAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
-        data_t v[dim];
-        this->GenerateVector(v, dim, value); // i / 10 is in integer (take the "floor" value).
-        return VecSimIndex_AddVector(index, v, id);
-    }
+    BruteForceMultiTest()
+        : IndexTestUtils<BFParams>(index_type_t::get_index_type(),
+                                   /* is_multi = */ true) {}
 
+protected:
     BruteForceIndex_Multi<data_t, dist_t> *CastToBF_Multi(VecSimIndex *index) {
         return reinterpret_cast<BruteForceIndex_Multi<data_t, dist_t> *>(index);
     }
-
-    BFParams params;
 };
 
-#define TEST_DATA_T typename TypeParam::data_t
-#define TEST_DIST_T typename TypeParam::dist_t
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
 TYPED_TEST_SUITE(BruteForceMultiTest, DataTypeSet);
 
@@ -101,7 +77,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
@@ -122,7 +98,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
-    this->GenerateNAddVector(index, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.bfInfo.indexSize, n + 1);
     // Label count doesn't increase because label 0 already exists
@@ -135,7 +111,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
 
     size_t add_vectors_count = 8;
     for (size_t i = 0; i < add_vectors_count; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
     // Size should be n + 1 + 8 = 24.
@@ -176,7 +152,7 @@ TYPED_TEST(BruteForceMultiTest, empty_index) {
     VecSimIndex_DeleteVector(index, 0);
 
     // Add one vector.
-    this->GenerateNAddVector(index, dim, 1, 1.7);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.7);
 
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
@@ -215,7 +191,7 @@ TYPED_TEST(BruteForceMultiTest, search_more_than_there_is) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i / perLabel, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
@@ -252,7 +228,7 @@ TYPED_TEST(BruteForceMultiTest, indexing_same_vector) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i / perLabel, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -306,7 +282,7 @@ TYPED_TEST(BruteForceMultiTest, find_better_score) {
         // and so on, so each label has some common vectors with all the previous labels.
         size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
 
-        this->GenerateNAddVector(index, dim, i / n_labels, el);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / n_labels, el);
         // This should be the best score for each label.
         if (i % n_labels == n_labels - 1) {
             // `el * el * dim` is the L2-squared value with the 0 vector.
@@ -341,7 +317,7 @@ TYPED_TEST(BruteForceMultiTest, find_better_score_after_pop) {
 
     // Building the index. Each is better than the previous one.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, n - i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, n - i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
@@ -375,12 +351,12 @@ TYPED_TEST(BruteForceMultiTest, reindexing_same_vector_different_id) {
 
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor" value)
-        this->GenerateNAddVector(index, dim, i, TEST_DATA_T(i / 10));
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, TEST_DATA_T(i / 10));
     }
     // Add more vectors under the same labels. their scores should be worst.
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T v[dim];
-        this->GenerateVector(v, dim, TEST_DATA_T(i / 10) + n);
+        GenerateVector<TEST_DATA_T>(v, dim, TEST_DATA_T(i / 10) + n);
         for (size_t j = 0; j < perLabel - 1; j++) {
             VecSimIndex_AddVector(index, v, i);
         }
@@ -402,12 +378,12 @@ TYPED_TEST(BruteForceMultiTest, reindexing_same_vector_different_id) {
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor" value)
-        this->GenerateNAddVector(index, dim, i + 10, TEST_DATA_T(i / 10));
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + 10, TEST_DATA_T(i / 10));
     }
     // Add more vectors under the same labels. their scores should be worst.
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T v[dim];
-        this->GenerateVector(v, dim, TEST_DATA_T(i / 10) + n);
+        GenerateVector<TEST_DATA_T>(v, dim, TEST_DATA_T(i / 10) + n);
         for (size_t j = 0; j < perLabel - 1; j++) {
             VecSimIndex_AddVector(index, v, i + 10);
         }
@@ -450,7 +426,7 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     ASSERT_EQ(bfm_index->idToLabelMapping.size(), initial_capacity);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -671,12 +647,12 @@ TYPED_TEST(BruteForceMultiTest, vector_search_test_l2) {
         ASSERT_EQ(info.bfInfo.blockSize, blocksize);
 
         for (size_t i = 0; i < n; i++) {
-            this->GenerateNAddVector(index, dim, i, i);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         }
         // Add more vectors under the same labels. their scores should be worst.
         for (size_t i = 0; i < n; i++) {
             for (size_t j = 0; j < perLabel - 1; j++) {
-                this->GenerateNAddVector(index, dim, i, i + n);
+                GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i + n);
             }
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
@@ -723,7 +699,7 @@ TYPED_TEST(BruteForceMultiTest, search_empty_index) {
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     for (size_t i = 0; i < n; i++) {
@@ -764,7 +740,7 @@ TYPED_TEST(BruteForceMultiTest, remove_vector_after_replacing_block) {
     // Setting up vectors
     TEST_DATA_T f[n][dim];
     for (size_t i = 0; i < n; i++) {
-        this->GenerateVector(f[i], dim, i);
+        GenerateVector<TEST_DATA_T>(f[i], dim, i);
     }
     // Add 1 vector with label 1
     VecSimIndex_AddVector(index, f[0], 1);
@@ -821,14 +797,14 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator) {
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
         for (size_t i = 0; i < n; i++) {
-            this->GenerateNAddVector(index, dim, i / perLabel, i);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
         ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, m);
 
         // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
         TEST_DATA_T query[dim];
-        this->GenerateVector(query, dim, n);
+        GenerateVector<TEST_DATA_T>(query, dim, n);
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
 
@@ -876,13 +852,13 @@ TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
         for (size_t i = 0; i < n; i++) {
-            this->GenerateNAddVector(index, dim, i / perLabel, i / (10 * perLabel));
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i / (10 * perLabel));
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
         // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
         TEST_DATA_T query[dim];
-        this->GenerateVector(query, dim, n);
+        GenerateVector<TEST_DATA_T>(query, dim, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
@@ -939,17 +915,17 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
 
     // Inserting some big vectors to the index
     for (size_t i = 0; i < init_n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i + n_labels + 46);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i + n_labels + 46);
     }
     // Lastly, inserting small vector for each label
     for (size_t label = 0; label < n_labels; label++) {
-        this->GenerateNAddVector(index, dim, label, label);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n_labels * perLabel);
 
     // Query for (0,0,0,...,0) vector.
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 0);
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
@@ -1073,7 +1049,7 @@ TYPED_TEST(BruteForceMultiTest, testCosine) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim);
+    GenerateVector<TEST_DATA_T>(query, dim);
 
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
@@ -1125,7 +1101,7 @@ TYPED_TEST(BruteForceMultiTest, testSizeEstimation) {
     ASSERT_EQ(estimation, actual);
 
     estimation = EstimateElementSize(this->params) * bs;
-    actual = this->GenerateNAddVector(index, dim, 0);
+    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
 
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
@@ -1163,12 +1139,12 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
 
     VecSimIndex *index = CreateNewIndex(this->params);
 
-    this->GenerateNAddVector(index, dim, 0, 1.0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 1.0);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 1.0);
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     // Checks return code on timeout - knn
     rl = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
     ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
@@ -1199,12 +1175,12 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, n);
+    GenerateVector<TEST_DATA_T>(query, dim, n);
 
     // Fail on second batch (after calculation already completed)
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);

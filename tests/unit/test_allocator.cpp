@@ -8,15 +8,9 @@
 #include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
-namespace allocator {
-
 const size_t vecsimAllocationOverhead = sizeof(size_t);
 
 const size_t hashTableNodeSize = getLabelsLookupNodeSize();
-} // namespace allocator
-
-using allocator::hashTableNodeSize;
-using allocator::vecsimAllocationOverhead;
 
 class AllocatorTest : public ::testing::Test {};
 struct SimpleObject : public VecsimBaseObject {
@@ -80,37 +74,10 @@ TEST_F(AllocatorTest, test_nested_object) {
     delete obj;
 }
 
-template <VecSimType type, typename DataType, typename DistType = DataType>
-struct IndexType {
-    static VecSimType get_index_type() { return type; }
-    typedef DataType data_t;
-    typedef DistType dist_t;
-};
-
 template <typename index_type_t>
-class IndexAllocatorTest : public ::testing::Test {
-public:
-    using data_t = typename index_type_t::data_t;
-    using dist_t = typename index_type_t::dist_t;
+class IndexAllocatorTest : public ::testing::Test {};
 
-protected:
-    void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
-        for (size_t i = 0; i < dim; i++) {
-            output[i] = (data_t)value;
-        }
-    }
-    // Returns the memory addition after adding the vector to the index.
-    int GenerateNAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
-        data_t v[dim];
-        this->GenerateVector(v, dim, value); // i / 10 is in integer (take the "floor" value).
-        return VecSimIndex_AddVector(index, v, id);
-    }
-};
-
-#define TEST_DATA_T typename TypeParam::data_t
-#define TEST_DIST_T typename TypeParam::dist_t
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
 TYPED_TEST_SUITE(IndexAllocatorTest, DataTypeSet);
 
@@ -290,7 +257,7 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
         new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
 
     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
-    this->GenerateNAddVector(hnswIndex, d, 0, 0.0);
+    GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0, 0.0);
 
     // Add another vector and validate it's exact memory allocation delta.
     TEST_DATA_T vec1[] = {1.0, 0.0};
@@ -385,7 +352,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     size_t accumulated_mem_delta = 0;
 
     for (size_t i = 0; i < block_size; i++) {
-        accumulated_mem_delta += this->GenerateNAddVector(hnswIndex, d, i, i);
+        accumulated_mem_delta += GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, i, i);
     }
     // Validate that a single block exists.
     ASSERT_EQ(hnswIndex->indexSize(), block_size);
@@ -398,7 +365,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
 
     // Add another vector, expect resizing of the index to contain two blocks.
     size_t prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
-    size_t mem_delta = this->GenerateNAddVector(hnswIndex, d, block_size, block_size);
+    size_t mem_delta = GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
 
     ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 2 * block_size);

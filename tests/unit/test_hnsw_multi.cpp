@@ -6,36 +6,17 @@
 #include <cmath>
 #include <map>
 
-template <VecSimType type, typename DataType, typename DistType = DataType>
-struct IndexType {
-    static VecSimType get_index_type() { return type; }
-    typedef DataType data_t;
-    typedef DistType dist_t;
-};
-
 template <typename index_type_t>
-class HNSWMultiTest : public ::testing::Test {
+class HNSWMultiTest : public ::testing::Test, public IndexTestUtils<HNSWParams> {
 public:
-    HNSWMultiTest() : params{} {
-        params.type = index_type_t::get_index_type();
-        params.multi = true;
-    }
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-protected:
-    void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
-        for (size_t i = 0; i < dim; i++) {
-            output[i] = (data_t)value;
-        }
-    }
-    // Returns the memory addition after adding the vector to the index.
-    int GenerateNAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
-        data_t v[dim];
-        this->GenerateVector(v, dim, value); // i / 10 is in integer (take the "floor" value).
-        return VecSimIndex_AddVector(index, v, id);
-    }
+    HNSWMultiTest()
+        : IndexTestUtils<HNSWParams>(index_type_t::get_index_type(),
+                                     /* is_multi = */ true) {}
 
+protected:
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
@@ -43,14 +24,9 @@ protected:
     HNSWIndex_Multi<data_t, dist_t> *CastToHNSW_Multi(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex_Multi<data_t, dist_t> *>(index);
     }
-
-    HNSWParams params;
 };
 
-#define TEST_DATA_T typename TypeParam::data_t
-#define TEST_DIST_T typename TypeParam::dist_t
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
 TYPED_TEST_SUITE(HNSWMultiTest, DataTypeSet);
 
@@ -106,7 +82,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
 
     // Add one vector multiple times.
     for (size_t i = 0; i < 3; i++) {
-        this->GenerateNAddVector(index, dim, 1, 1.7);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.7);
     }
 
     // Try to remove it.
@@ -137,13 +113,13 @@ TYPED_TEST(HNSWMultiTest, vector_search_test) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 50);
+    GenerateVector<TEST_DATA_T>(query, dim, 50);
 
     auto verify_res = [&](size_t id, double score, size_t index) {
         size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
@@ -170,13 +146,13 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i / perLabel, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 0);
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
 
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
@@ -212,13 +188,13 @@ TYPED_TEST(HNSWMultiTest, indexing_same_vector) {
 
     for (size_t i = 0; i < n / perLabel; i++) {
         for (size_t j = 0; j < perLabel; j++) {
-            this->GenerateNAddVector(index, dim, i, i);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 0.0);
+    GenerateVector<TEST_DATA_T>(query, dim, 0.0);
     auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, index); };
     runTopKSearchTest(index, query, k, verify_res);
     auto res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
@@ -265,7 +241,7 @@ TYPED_TEST(HNSWMultiTest, find_better_score) {
         // label 9 will get vector elements 9 -> 0 (aka (9 -> 0) + 0),
         // and so on, so each label has some common vectors with all the previous labels.
         size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
-        this->GenerateNAddVector(index, dim, i / n_labels, el);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / n_labels, el);
         // This should be the best score for each label.
         if (i % n_labels == n_labels - 1) {
             // `el * el * dim` is the L2-squared value with the 0 vector.
@@ -281,7 +257,7 @@ TYPED_TEST(HNSWMultiTest, find_better_score) {
     };
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 0.0);
+    GenerateVector<TEST_DATA_T>(query, dim, 0.0);
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndex_Free(index);
@@ -302,13 +278,13 @@ TYPED_TEST(HNSWMultiTest, find_better_score_after_pop) {
     // Building the index. Each is better than the previous one.
     for (size_t i = 0; i < n; i++) {
         size_t el = n - i;
-        this->GenerateNAddVector(index, dim, i % n_labels, el);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, el);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 0);
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
     auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, n_labels - index - 1);
     };
@@ -332,12 +308,12 @@ TYPED_TEST(HNSWMultiTest, reindexing_same_vector_different_id) {
 
     for (size_t i = 0; i < n; i++) {
         // i / 10 is in integer (take the "floor" value)
-        this->GenerateNAddVector(index, dim, i, i / 10);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
     }
     // Add more vectors under the same labels. their scores should be worst.
     for (size_t i = 0; i < n; i++) {
         for (size_t j = 0; j < perLabel - 1; j++) {
-            this->GenerateNAddVector(index, dim, i, TEST_DATA_T(i / 10) + n);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, TEST_DATA_T(i / 10) + n);
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
@@ -356,12 +332,12 @@ TYPED_TEST(HNSWMultiTest, reindexing_same_vector_different_id) {
 
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i + 10, i / 10);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + 10, i / 10);
     }
     // Add more vectors under the same labels. their scores should be worst.
     for (size_t i = 0; i < n; i++) {
         for (size_t j = 0; j < perLabel - 1; j++) {
-            this->GenerateNAddVector(index, dim, i + 10, TEST_DATA_T(i / 10) + n);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i + 10, TEST_DATA_T(i / 10) + n);
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
@@ -681,7 +657,7 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 50);
+    GenerateVector<TEST_DATA_T>(query, dim, 50);
     // We do not expect any results.
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
@@ -697,7 +673,7 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, 46, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 46, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     VecSimIndex_DeleteVector(index, 46);
@@ -876,7 +852,7 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     ASSERT_EQ(estimation, actual);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
     // Estimate the memory delta of adding a full new block.
@@ -884,7 +860,7 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
 
     actual = 0;
     for (size_t i = 0; i < bs; i++) {
-        actual += this->GenerateNAddVector(index, dim, n + i, i);
+        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
     }
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
@@ -912,7 +888,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index) {
 
     // Add up to n.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     // The size and the capacity should be equal.
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
@@ -921,7 +897,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index) {
     ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
     // Add another vector to exceed the initial capacity.
-    this->GenerateNAddVector(index, dim, n);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
 
     // The capacity should be now aligned with the block size.
     // bs = 3, size = 11 -> capacity = 12
@@ -948,9 +924,9 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
 
     // add up to blocksize + 1 = 3 + 1 = 4
     for (size_t i = 0; i < bs; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
-    this->GenerateNAddVector(index, dim, n_labels);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n_labels);
 
     // The capacity shouldn't change, should remain n.
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
@@ -977,13 +953,13 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
     // Add and delete a vector to achieve:
     // size % block_size == 0 && size + bs <= capacity(3).
     // the capacity should be resized to zero
-    this->GenerateNAddVector(index, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     VecSimIndex_DeleteVector(index, 0);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
 
     // Do it again. This time after adding a vector the capacity is increased by bs.
     // Upon deletion it will be resized to zero again.
-    this->GenerateNAddVector(index, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
     VecSimIndex_DeleteVector(index, 0);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
@@ -1009,7 +985,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
 
     // Add up to initial capacity.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
@@ -1020,7 +996,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Add another vector - > the capacity is increased to a multiplication of block_size.
-    this->GenerateNAddVector(index, dim, n);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
 
     ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
 
@@ -1054,7 +1030,7 @@ TYPED_TEST(HNSWMultiTest, emptyIndex) {
     VecSimIndex_DeleteVector(index, 0);
 
     // Add one vector.
-    this->GenerateNAddVector(index, dim, 1, 1.7);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.7);
 
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
@@ -1092,13 +1068,13 @@ TYPED_TEST(HNSWMultiTest, hnsw_vector_search_by_id_test) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i / per_label, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / per_label, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n / per_label);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 50);
+    GenerateVector<TEST_DATA_T>(query, dim, 50);
     auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, (index + 5)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
@@ -1173,7 +1149,7 @@ TYPED_TEST(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, d, i / per_label, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, d, i / per_label, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
@@ -1273,14 +1249,14 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_basic) {
 
     // For every i, add the vector (i,i,i,i) under the label i.
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i / perLabel, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, n);
+    GenerateVector<TEST_DATA_T>(query, dim, n);
 
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
@@ -1325,14 +1301,14 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_reset) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, n);
+    GenerateVector<TEST_DATA_T>(query, dim, n);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
@@ -1379,11 +1355,11 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, n);
+    GenerateVector<TEST_DATA_T>(query, dim, n);
 
     for (size_t i = 0; i < n; i++) {
         // Set labels to be different than the internal ids.
-        this->GenerateNAddVector(index, dim, (n - i - 1) / perLabel, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, (n - i - 1) / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
@@ -1425,7 +1401,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     VecSimIndex *index = CreateNewIndex(this->params);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, n);
+    GenerateVector<TEST_DATA_T>(query, dim, n);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
@@ -1443,7 +1419,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     for (size_t i = 0; i < n - 1; i++) {
-        this->GenerateNAddVector(index, dim, i / perLabel, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
@@ -1506,13 +1482,13 @@ TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     // enforce max level to be 0
     this->CastToHNSW(index)->mult_ = 0;
     for (size_t i = 0; i < n; i++) {
-        this->GenerateNAddVector(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     // enforce entry point to be 0
     this->CastToHNSW(index)->entrypoint_node_ = 0;
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, n);
+    GenerateVector<TEST_DATA_T>(query, dim, n);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // We expect to scan the graph by order of insertion, and to find the last k vectors.
@@ -1669,7 +1645,7 @@ TYPED_TEST(HNSWMultiTest, testCosine) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 1.0);
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     VecSim_Normalize(query, dim, this->params.type);
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
@@ -1711,7 +1687,7 @@ TYPED_TEST(HNSWMultiTest, testCosineBatchIterator) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
 
     TEST_DATA_T query[dim];
-    this->GenerateVector(query, dim, 1.0);
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     VecSim_Normalize(query, dim, this->params.type);
 
     // Test with batch iterator.

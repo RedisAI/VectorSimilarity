@@ -9,18 +9,11 @@
 #include <limits>
 #include <cmath>
 #include <random>
-template <VecSimType type, typename DataType, typename DistType = DataType>
-struct IndexType {
-    static VecSimType get_index_type() { return type; }
-    typedef DataType data_t;
-    typedef DistType dist_t;
-};
 
 template <typename index_type_t>
 class CommonIndexTest : public ::testing::Test {};
 
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+// DataTypeSet are defined in test_utils.h
 
 TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
 
@@ -183,17 +176,17 @@ TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
     ASSERT_TRUE(heap.empty());
 
     // Inserting data with the same priority
-    heap.emplace(M_E, 1);
-    heap.emplace(M_PI, 55);
-    heap.emplace(M_E, 3);
-    heap.emplace(M_E, 2);
+    heap.emplace(priorities[SECOND], 1);
+    heap.emplace(priorities[FIRST], 55);
+    heap.emplace(priorities[SECOND], 3);
+    heap.emplace(priorities[SECOND], 2);
 
     ASSERT_EQ(heap.size(), 4);
     ASSERT_FALSE(heap.empty());
-    p = {M_PI, 55};
+    p = {priorities[FIRST], 55};
     ASSERT_TRUE(heap.top() == p);
 
-    heap.emplace(M_SQRT2, 55); // Update priority
+    heap.emplace(priorities[THIRD], 55); // Update priority
 
     ASSERT_EQ(heap.size(), 4); // Same size after update
     ASSERT_FALSE(heap.empty());
@@ -211,15 +204,15 @@ TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
     // Update a priority of an element that share its priority with many others.
     size_t last = 10;
     for (size_t i = 0; i <= last; i++) {
-        heap.emplace(M_E, i);
+        heap.emplace(priorities[SECOND], i);
     }
     // Bound the existing elements with higher and lower priorities.
-    heap.emplace(M_SQRT2, 42);
-    heap.emplace(M_PI, 46);
+    heap.emplace(priorities[THIRD], 42);
+    heap.emplace(priorities[FIRST], 46);
     size_t size = heap.size();
 
     // Update to the lowest priority
-    heap.emplace(-M_SQRT2, last);
+    heap.emplace(-priorities[THIRD], last);
     ASSERT_EQ(heap.size(), size);
 
     while (heap.size() > 1) {
@@ -227,7 +220,7 @@ TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
     }
     ASSERT_EQ(heap.size(), 1);
     ASSERT_FALSE(heap.empty());
-    p = {-M_SQRT2, last};
+    p = {-priorities[THIRD], last};
     ASSERT_TRUE(heap.top() == p);
     heap.pop();
     ASSERT_EQ(heap.size(), 0);

@@ -1,7 +1,48 @@
 #pragma once
 
 #include <functional>
+#include <cmath>
 #include "VecSim/vec_sim.h"
+#include "gtest/gtest.h"
+
+// IndexType is used to define indices unit tests
+template <VecSimType type, typename DataType, typename DistType = DataType>
+struct IndexType {
+    static VecSimType get_index_type() { return type; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
+};
+
+#define TEST_DATA_T typename TypeParam::data_t
+#define TEST_DIST_T typename TypeParam::dist_t
+
+using DataTypeSet =
+    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+
+template <typename params_t>
+class IndexTestUtils {
+
+protected:
+    IndexTestUtils(VecSimType type, bool is_multi) : params{} {
+        params.type = type;
+        params.multi = is_multi;
+    }
+    params_t params;
+};
+
+template <typename data_t>
+static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
+    for (size_t i = 0; i < dim; i++) {
+        output[i] = (data_t)value;
+    }
+}
+
+template <typename data_t>
+int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
+    data_t v[dim];
+    GenerateVector(v, dim, value);
+    return VecSimIndex_AddVector(index, v, id);
+}
 
 inline VecSimParams CreateParams(const HNSWParams &hnsw_params);
 inline VecSimParams CreateParams(const BFParams &bf_params);
@@ -54,4 +95,15 @@ VecSimParams CreateParams(const HNSWParams &hnsw_params) {
 VecSimParams CreateParams(const BFParams &bf_params) {
     VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
     return params;
+}
+
+inline double GetInfVal(VecSimType type) {
+    if (type == VecSimType_FLOAT64) {
+        return exp(500);
+    } else if (type == VecSimType_FLOAT32) {
+        return exp(60);
+    }
+
+    // if we got here the type is invalid.
+    return 0;
 }
