@@ -13,6 +13,7 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const BFParams *params,
     else
         return new (allocator) BruteForceIndex_Single<DataType, DistType>(params, allocator);
 }
+
 VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     if (params->type == VecSimType_FLOAT32) {
         return NewIndex_ChooseMultiOrSingle<float>(params, allocator);

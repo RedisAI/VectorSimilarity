@@ -10,13 +10,7 @@ private:
 
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
-    // Allow the following test to access the index size private member.
-#include "VecSim/friend_test_decl.h"
-    INDEX_TEST_FRIEND_CLASS(HNSWTest_test_dynamic_hnsw_info_iterator_Test)
-    INDEX_TEST_FRIEND_CLASS(HNSWTest_preferAdHocOptimization_Test)
-    INDEX_TEST_FRIEND_CLASS(HNSWTest_testSizeEstimation_Test)
-    INDEX_TEST_FRIEND_CLASS(IndexAllocatorTest_testIncomingEdgesSet_Test)
-    INDEX_TEST_FRIEND_CLASS(IndexAllocatorTest_test_hnsw_reclaim_memory_Test)
+#include "VecSim/algorithms/hnsw/hnsw_single_tests.h"
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;

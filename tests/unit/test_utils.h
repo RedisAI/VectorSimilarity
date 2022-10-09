@@ -3,14 +3,26 @@
 #include <functional>
 #include "VecSim/vec_sim.h"
 
-VecSimIndex *CreateNewIndex(const HNSWParams &params);
-VecSimIndex *CreateNewIndex(const BFParams &params);
+inline VecSimParams CreateParams(const HNSWParams &hnsw_params);
+inline VecSimParams CreateParams(const BFParams &bf_params);
 
-size_t EstimateInitialSize(const HNSWParams &params);
-size_t EstimateInitialSize(const BFParams &params);
+template <typename IndexParams>
+VecSimIndex *CreateNewIndex(const IndexParams &index_params) {
+    VecSimParams params = CreateParams(index_params);
+    return VecSimIndex_New(&params);
+}
 
-size_t EstimateElementSize(const HNSWParams &params);
-size_t EstimateElementSize(const BFParams &params);
+template <typename IndexParams>
+size_t EstimateInitialSize(const IndexParams &index_params) {
+    VecSimParams params = CreateParams(index_params);
+    return VecSimIndex_EstimateInitialSize(&params);
+}
+
+template <typename IndexParams>
+size_t EstimateElementSize(const IndexParams &index_params) {
+    VecSimParams params = CreateParams(index_params);
+    return VecSimIndex_EstimateElementSize(&params);
+}
 
 VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
 
@@ -34,3 +46,12 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        VecSimQueryParams *params = nullptr);
 
 size_t getLabelsLookupNodeSize();
+
+VecSimParams CreateParams(const HNSWParams &hnsw_params) {
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+    return params;
+}
+VecSimParams CreateParams(const BFParams &bf_params) {
+    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    return params;
+}
