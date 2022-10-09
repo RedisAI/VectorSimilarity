@@ -795,10 +795,10 @@ TYPED_TEST(BruteForceTest, brute_force_test_inf_score) {
     TEST_DATA_T inf_val = GetInfVal(this->params.type);
     ASSERT_FALSE(std::isinf(inf_val));
 
-    TEST_DATA_T query[] = {exp(4), exp(4)};
-    TEST_DATA_T v1[] = {exp(4), exp(4)};
+    TEST_DATA_T query[] = {M_PI, M_PI};
+    TEST_DATA_T v1[] = {M_PI, M_PI};
     TEST_DATA_T v2[] = {inf_val, inf_val};
-    TEST_DATA_T v3[] = {exp(5), exp(5)};
+    TEST_DATA_T v3[] = {M_E, M_E};
     TEST_DATA_T v4[] = {-inf_val, -inf_val};
 
     VecSimIndex_AddVector(index, v1, 1);
