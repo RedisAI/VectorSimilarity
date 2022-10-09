@@ -17,7 +17,8 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
 #ifdef __AVX512F__
     {
         static dist_func_t<float> dist_funcs[] = {
@@ -64,12 +65,26 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
-    case ARCH_OPT_AVX512:
-#ifdef __AVX512F__
+    case ARCH_OPT_AVX512_DQ:
+#ifdef __AVX512DQ__
     {
         static dist_func_t<double> dist_funcs[] = {
             FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD2Ext_AVX512,
             FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD2ExtResiduals_AVX512};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    case ARCH_OPT_AVX512_F:
+#ifdef __AVX512F__
+    {
+        // If AVX512 foundation flag is supported, but AVX512DQ isn't supported, we cannot extract
+        // 2X64-bit elements from the 512bit register and use SIMD optimization on the last dim%8
+        // doubles of the vector. Then, we always use FP64_L2SqrSIMD8ExtResiduals_AVX512 for every
+        // dim which is not divided by 8.
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512,
+            FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512};
 
         ret_dist_func = dist_funcs[optimization_type];
     } break;

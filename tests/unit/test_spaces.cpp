@@ -108,7 +108,8 @@ TEST_F(SpacesTest, l2_16) {
     ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16Ext_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -137,7 +138,8 @@ TEST_F(SpacesTest, ip_16) {
     ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD16Ext_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -166,7 +168,8 @@ TEST_F(SpacesTest, ip_20) {
     ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD4Ext_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -196,7 +199,8 @@ TEST_F(SpacesTest, l2_20) {
     ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD4Ext_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -227,7 +231,8 @@ TEST_F(SpacesTest, l2_17) {
     ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD16ExtResiduals_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -256,7 +261,8 @@ TEST_F(SpacesTest, ip_17) {
     ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD16ExtResiduals_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -287,7 +293,8 @@ TEST_F(SpacesTest, l2_9) {
     ASSERT_TRUE(dist_funcs.find(spaces::L2_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_L2SqrSIMD4ExtResiduals_AVX512(v, v2, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -316,7 +323,8 @@ TEST_F(SpacesTest, ip_9) {
     ASSERT_TRUE(dist_funcs.find(spaces::IP_FP32_GetDistFunc(dim)) != dist_funcs.end());
     float baseline = FP32_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP32_InnerProductSIMD4ExtResiduals_AVX512(v, v, dim));
         optimization = ARCH_OPT_AVX;
     case ARCH_OPT_AVX:
@@ -347,7 +355,8 @@ TEST_F(SpacesTest, l2_8_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8Ext_AVX(v, v2, dim));
@@ -377,8 +386,10 @@ TEST_F(SpacesTest, l2_10_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_128_BITS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX512(v, v2, dim));
+    case ARCH_OPT_AVX512_F:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
@@ -407,7 +418,8 @@ TEST_F(SpacesTest, l2_17_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
+    case ARCH_OPT_AVX512_F:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX(v, v2, dim));
@@ -441,8 +453,10 @@ TEST_F(SpacesTest, l2_7_double) {
     ASSERT_TRUE(dist_funcs.find(spaces::L2_FP64_GetDistFunc(dim)) != dist_funcs.end());
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX512(v, v2, dim));
+    case ARCH_OPT_AVX512_F:
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
@@ -470,7 +484,8 @@ TEST_F(SpacesTest, ip_8_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
+    case ARCH_OPT_AVX512_F:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8Ext_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8Ext_AVX(v, v, dim));
@@ -499,8 +514,10 @@ TEST_F(SpacesTest, ip_10_double) {
     ASSERT_TRUE(dist_funcs.find(spaces::IP_FP64_GetDistFunc(dim)) != dist_funcs.end());
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX512(v, v, dim));
+    case ARCH_OPT_AVX512_F:
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX(v, v, dim));
     case ARCH_OPT_SSE:
@@ -527,7 +544,8 @@ TEST_F(SpacesTest, ip_17_double) {
     ASSERT_EQ(spaces::FP64_GetCalculationGuideline(dim), spaces::SPLIT_TO_512_BITS_WITH_RESIDUALS);
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
+    case ARCH_OPT_AVX512_F:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX(v, v, dim));
@@ -557,8 +575,10 @@ TEST_F(SpacesTest, ip_7_double) {
     ASSERT_TRUE(dist_funcs.find(spaces::IP_FP64_GetDistFunc(dim)) != dist_funcs.end());
     double baseline = FP64_InnerProduct(v, v, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX512(v, v, dim));
+    case ARCH_OPT_AVX512_F:
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX512(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX(v, v, dim));
     case ARCH_OPT_SSE:
