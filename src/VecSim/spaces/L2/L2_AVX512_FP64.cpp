@@ -65,6 +65,34 @@ double FP64_L2SqrSIMD2Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
     return TmpRes[0] + TmpRes[1];
 }
 
+double FP64_L2SqrSIMD2Ext_AVX512_noDQ(const void *pVect1v, const void *pVect2v, size_t qty) {
+    double *pVect1 = (double *)pVect1v;
+    double *pVect2 = (double *)pVect2v;
+
+    size_t qty8 = qty >> 3 << 3;
+
+    // Compute the res for the first qty / 8 of the vectors.
+    double resHead = FP64_L2SqrSIMD8Ext_AVX512(pVect1, pVect2, qty8);
+    pVect1 = pVect1 + qty8;
+    pVect2 = pVect2 + qty8;
+    const double *pEnd2 = pVect1 + qty;
+
+    __m128d v1, v2, diff;
+    __m128d sum = _mm_set1_pd(0);
+    while (pVect1 < pEnd2) {
+        v1 = _mm_loadu_pd(pVect1);
+        pVect1 += 2;
+        v2 = _mm_loadu_pd(pVect2);
+        pVect2 += 2;
+        diff = _mm_sub_pd(v1, v2);
+        sum = _mm_add_pd(sum, _mm_mul_pd(diff, diff));
+    }
+
+    double PORTABLE_ALIGN16 TmpRes[2];
+    _mm_store_pd(TmpRes, sum);
+    return TmpRes[0] + TmpRes[1] + resHead;
+}
+
 double FP64_L2SqrSIMD8ExtResiduals_AVX512(const void *pVect1v, const void *pVect2v, size_t qty) {
     // Calculate how many doubles we can calculate using 512 bits iterations.
     size_t qty8 = qty >> 3 << 3;
@@ -89,4 +117,16 @@ double FP64_L2SqrSIMD2ExtResiduals_AVX512(const void *pVect1v, const void *pVect
     size_t qty_left = qty - qty4;
     double res_tail = FP64_L2Sqr(pVect1, pVect2, qty_left);
     return (res + res_tail);
+}
+
+double FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ(const void *pVect1v, const void *pVect2v,
+                                               size_t qty) {
+    size_t qty2 = qty >> 1 << 1;
+    double res = FP64_L2SqrSIMD2Ext_AVX512_noDQ(pVect1v, pVect2v, qty2);
+    double *pVect1 = (double *)pVect1v + qty2;
+    double *pVect2 = (double *)pVect2v + qty2;
+
+    size_t qty_left = qty - qty2;
+    double res_tail = FP64_L2Sqr(pVect1, pVect2, qty_left);
+    return 1.0 - (res + res_tail);
 }

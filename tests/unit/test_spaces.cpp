@@ -389,7 +389,7 @@ TEST_F(SpacesTest, l2_10_double) {
     case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX512(v, v2, dim));
     case ARCH_OPT_AVX512_F:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX512_noDQ(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2Ext_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
@@ -456,7 +456,7 @@ TEST_F(SpacesTest, l2_7_double) {
     case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX512(v, v2, dim));
     case ARCH_OPT_AVX512_F:
-        ASSERT_EQ(baseline, FP64_L2SqrSIMD8ExtResiduals_AVX512(v, v2, dim));
+        ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ(v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_L2SqrSIMD2ExtResiduals_AVX(v, v2, dim));
     case ARCH_OPT_SSE:
@@ -517,7 +517,7 @@ TEST_F(SpacesTest, ip_10_double) {
     case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX512(v, v, dim));
     case ARCH_OPT_AVX512_F:
-        ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX512(v, v, dim));
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX512_noDQ(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2Ext_AVX(v, v, dim));
     case ARCH_OPT_SSE:
@@ -578,7 +578,7 @@ TEST_F(SpacesTest, ip_7_double) {
     case ARCH_OPT_AVX512_DQ:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX512(v, v, dim));
     case ARCH_OPT_AVX512_F:
-        ASSERT_EQ(baseline, FP64_InnerProductSIMD8ExtResiduals_AVX512(v, v, dim));
+        ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ(v, v, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, FP64_InnerProductSIMD2ExtResiduals_AVX(v, v, dim));
     case ARCH_OPT_SSE:

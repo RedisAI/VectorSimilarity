@@ -79,12 +79,13 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
 #ifdef __AVX512F__
     {
         // If AVX512 foundation flag is supported, but AVX512DQ isn't supported, we cannot extract
-        // 2X64-bit elements from the 512bit register and use SIMD optimization on the last dim%8
-        // doubles of the vector. Then, we always use FP64_L2SqrSIMD8ExtResiduals_AVX512 for every
-        // dim which is not divided by 8.
+        // 2X64-bit elements from the 512bit register, which is required when dim%8 != 0, so we can
+        // continue the vector computations by using 128 register optimization on the vectors'
+        // tails. Then, we use modified versions that split both part of the computation without
+        // using the unsupported extraction operation.
         static dist_func_t<double> dist_funcs[] = {
             FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512,
-            FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512};
+            FP64_L2SqrSIMD2Ext_AVX512_noDQ, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ};
 
         ret_dist_func = dist_funcs[optimization_type];
     } break;
