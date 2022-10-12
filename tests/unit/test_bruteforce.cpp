@@ -1083,7 +1083,7 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
                                            .nameLen = strlen("ef_runtime"),
                                            .value = "200",
                                            .valLen = strlen("200")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, KNN),
               VecSimParamResolverErr_UnknownParam);
 
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
@@ -1092,11 +1092,11 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
                                            .nameLen = strlen("batch_size"),
                                            .value = "100",
                                            .valLen = strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, true), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, HYBRID), VecSim_OK);
     ASSERT_EQ(qparams.batchSize, 100);
 
     // With EF_RUNTIME, its again invalid (for hybrid queries as well).
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, HYBRID),
               VecSimParamResolverErr_UnknownParam);
 
     VecSimIndex_Free(index);

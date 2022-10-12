@@ -99,7 +99,7 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     // Trying to set hybrid policy for non-hybrid query.
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, KNN),
               VecSimParamResolverErr_InvalidPolicy_NHybrid);
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, false),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, KNN),
               VecSimParamResolverErr_InvalidPolicy_NHybrid);
 
     // Check for invalid batch sizes params.
