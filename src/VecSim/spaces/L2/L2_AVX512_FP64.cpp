@@ -88,10 +88,13 @@ double FP64_L2SqrSIMD2Ext_AVX512_noDQ(const void *pVect1v, const void *pVect2v, 
         pVect2 += 2;
         diff = _mm_sub_pd(v1, v2);
         sum = _mm_add_pd(sum, _mm_mul_pd(diff, diff));
+	    double PORTABLE_ALIGN16 TmpRes[2];
+	    _mm_store_pd(TmpRes, sum);
+	    std::cout << "res is: " << TmpRes[0] + TmpRes[1] << std::endl;
     }
 
-    double PORTABLE_ALIGN16 TmpRes[2];
-    _mm_store_pd(TmpRes, sum);
+	double PORTABLE_ALIGN16 TmpRes[2];
+	_mm_store_pd(TmpRes, sum);
     return TmpRes[0] + TmpRes[1] + resHead;
 }
 
