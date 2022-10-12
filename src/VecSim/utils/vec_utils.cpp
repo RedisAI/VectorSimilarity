@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cerrno>
 #include <climits>
+#include <float.h>
 
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
@@ -72,6 +73,19 @@ VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long 
     // The last test checks that the entire rawParam.value was used.
     // We catch here inputs like "3.14", "123text" and so on.
     if (*val <= 0 || *val == LLONG_MAX || errno != 0 || (rawParam.value + rawParam.valLen) != ep) {
+        return VecSimParamResolverErr_BadValue;
+    }
+    return VecSimParamResolver_OK;
+}
+
+VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val) {
+    char *ep; // For checking that strtold used all rawParam.valLen chars.
+    errno = 0;
+    *val = strtod(rawParam.value, &ep);
+    // Here we verify that val is positive and strtod was successful.
+    // The last test checks that the entire rawParam.value was used.
+    // We catch here inputs like "-3.14", "123text" and so on.
+    if (*val <= 0 || *val == DBL_MAX || errno != 0 || (rawParam.value + rawParam.valLen) != ep) {
         return VecSimParamResolverErr_BadValue;
     }
     return VecSimParamResolver_OK;

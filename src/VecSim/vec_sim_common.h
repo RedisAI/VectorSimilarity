@@ -51,7 +51,9 @@ typedef enum {
     VecSimParamResolverErr_UnknownParam,
     VecSimParamResolverErr_BadValue,
     VecSimParamResolverErr_InvalidPolicy_NExits,
+    VecSimParamResolverErr_InvalidPolicy_NKNN,
     VecSimParamResolverErr_InvalidPolicy_NHybrid,
+    VecSimParamResolverErr_InvalidPolicy_NRange,
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize,
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime
 } VecSimResolveCode;
@@ -110,6 +112,12 @@ typedef enum {
     RANGE_QUERY, // Run range query, to return all vectors that are within a given range from the
                  // query vector.
 } VecSearchMode;
+
+typedef enum {
+    KNN,
+    HYBRID,
+    RANGE,
+} VecsimQueryType;
 
 /**
  * @brief Query Runtime parameters.
