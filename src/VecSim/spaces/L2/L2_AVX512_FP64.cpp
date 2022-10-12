@@ -89,8 +89,8 @@ double FP64_L2SqrSIMD2Ext_AVX512_noDQ(const void *pVect1v, const void *pVect2v, 
         sum = _mm_add_pd(sum, _mm_mul_pd(diff, diff));
     }
 
-	double PORTABLE_ALIGN16 TmpRes[2];
-	_mm_store_pd(TmpRes, sum);
+    double PORTABLE_ALIGN16 TmpRes[2];
+    _mm_store_pd(TmpRes, sum);
     return TmpRes[0] + TmpRes[1] + resHead;
 }
 
