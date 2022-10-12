@@ -1,3 +1,4 @@
+#include <iostream>
 #include "L2_AVX512.h"
 #include "L2.h"
 #include "VecSim/spaces/space_includes.h"
@@ -70,16 +71,17 @@ double FP64_L2SqrSIMD2Ext_AVX512_noDQ(const void *pVect1v, const void *pVect2v, 
     double *pVect2 = (double *)pVect2v;
 
     size_t qty8 = qty >> 3 << 3;
+    const double *pEnd = pVect1 + qty;
 
     // Compute the res for the first qty / 8 of the vectors.
     double resHead = FP64_L2SqrSIMD8Ext_AVX512(pVect1, pVect2, qty8);
+	std::cout << "res head is: " << resHead  << " qty8 is: " << qty8 << std::endl;
     pVect1 = pVect1 + qty8;
     pVect2 = pVect2 + qty8;
-    const double *pEnd2 = pVect1 + qty;
 
     __m128d v1, v2, diff;
     __m128d sum = _mm_set1_pd(0);
-    while (pVect1 < pEnd2) {
+    while (pVect1 < pEnd) {
         v1 = _mm_loadu_pd(pVect1);
         pVect1 += 2;
         v2 = _mm_loadu_pd(pVect2);
