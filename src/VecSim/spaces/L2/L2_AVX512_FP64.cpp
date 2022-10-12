@@ -90,8 +90,6 @@ double FP64_L2SqrSIMD2Ext_AVX512_noDQ(const void *pVect1v, const void *pVect2v, 
 
     // Store the res for the first qty / 8 of the vectors.
     double resHead = _mm512_reduce_add_pd(sum512);
-    pVect1 = pVect1 + qty8;
-    pVect2 = pVect2 + qty8;
 
     __m128d v1, v2, diff;
     __m128d sum = _mm_set1_pd(0);
