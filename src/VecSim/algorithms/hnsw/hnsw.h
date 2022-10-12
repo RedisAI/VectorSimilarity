@@ -96,7 +96,7 @@ protected:
 
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
-#include "VecSim/algorithms/hnsw/hnsw_base_tests.h"
+#include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 #endif
 
     HNSWIndex() = delete;                  // default constructor is disabled.

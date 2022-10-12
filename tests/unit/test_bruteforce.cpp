@@ -699,11 +699,11 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
     size_t n = 100;
     size_t k = 11;
 
-    for (size_t blocksize : {12, DEFAULT_BLOCK_SIZE}) {
+    for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
 
         this->params.dim = dim;
         this->params.metric = VecSimMetric_L2;
-        this->params.initialCapacity = 200;
+        this->params.initialCapacity = 55;
         this->params.blockSize = blocksize;
 
         VecSimIndex *index = CreateNewIndex(this->params);
@@ -1168,8 +1168,9 @@ TYPED_TEST(BruteForceTest, brute_get_distance) {
     TEST_DATA_T *query = v1;
     TEST_DATA_T *norm = v2;                         // {e, e}
     VecSim_Normalize(norm, dim, this->params.type); // now {1/sqrt(2), 1/sqrt(2)}
-    ASSERT_NEAR(norm[0], 1.0 / sqrt(2.0), 1e-7);
-    ASSERT_NEAR(norm[1], 1.0 / sqrt(2.0), 1e-7);
+
+    ASSERT_TYPE_EQ(norm[0], TEST_DATA_T(1.0 / sqrt(2.0)));
+    ASSERT_TYPE_EQ(norm[1], TEST_DATA_T(1.0 / sqrt(2.0)));
     double dist;
 
     // VecSimMetric_L2
@@ -1340,11 +1341,17 @@ TYPED_TEST(BruteForceTest, testCosine) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
-    VecSim_Normalize(query, dim, this->params.type);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, this->params.type);
+
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
-        TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
-        ASSERT_NEAR(score, expected_score, 1e-5);
+        TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
+        ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
     };
     runTopKSearchTest(index, query, 10, verify_res);
 
@@ -1359,8 +1366,8 @@ TYPED_TEST(BruteForceTest, testCosine) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
             ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
-            TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
-            ASSERT_NEAR(score, expected_score, 1e-5);
+            TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
+            ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;

@@ -34,6 +34,7 @@ TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
     this->params.initialCapacity = 200;
 
     VecSimIndex *index = CreateNewIndex(this->params);
+    BruteForceIndex_Multi<TEST_DATA_T, TEST_DIST_T> *index_bf_multi = this->CastToBF_Multi(index);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -47,13 +48,13 @@ TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);
-    ASSERT_EQ(this->CastToBF_Multi(index)->indexLabelCount(), 1);
+    ASSERT_EQ(index_bf_multi->indexLabelCount(), 1);
 
     // Deleting the label. All the vectors should be deleted.
     VecSimIndex_DeleteVector(index, 46);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-    ASSERT_EQ(this->CastToBF_Multi(index)->indexLabelCount(), 0);
+    ASSERT_EQ(index_bf_multi->indexLabelCount(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -634,10 +635,10 @@ TYPED_TEST(BruteForceMultiTest, vector_search_test_l2) {
     size_t k = 11;
     size_t perLabel = 4;
 
-    for (size_t blocksize : {12, DEFAULT_BLOCK_SIZE}) {
+    for (size_t blocksize : {1, 12, DEFAULT_BLOCK_SIZE}) {
         this->params.dim = dim;
         this->params.metric = VecSimMetric_L2;
-        this->params.initialCapacity = 200;
+        this->params.initialCapacity = 55;
         this->params.blockSize = blocksize;
 
         VecSimIndex *index = CreateNewIndex(this->params);
@@ -898,7 +899,6 @@ TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     }
     VecSimIndex_Free(index);
 }
-// TODO:FIX!!!!
 TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     size_t dim = 4;
     size_t perLabel = 10;
@@ -977,8 +977,8 @@ TYPED_TEST(BruteForceMultiTest, brute_get_distance) {
     TEST_DATA_T *query = v1_0;
     TEST_DATA_T *norm = v2_0;                       // {e, e}
     VecSim_Normalize(norm, dim, this->params.type); // now {1/sqrt(2), 1/sqrt(2)}
-    ASSERT_NEAR(norm[0], 1.0 / sqrt(2.0), 1e-5);
-    ASSERT_NEAR(norm[1], 1.0 / sqrt(2.0), 1e-5);
+    ASSERT_TYPE_EQ(norm[0], TEST_DATA_T(1.0 / sqrt(2.0)));
+    ASSERT_TYPE_EQ(norm[1], TEST_DATA_T(1.0 / sqrt(2.0)));
     double dist;
 
     // VecSimMetric_L2
@@ -1051,14 +1051,19 @@ TYPED_TEST(BruteForceMultiTest, testCosine) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim);
 
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, this->params.type);
+
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
 
-        TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
+        TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
 
-        ASSERT_NEAR(score, expected_score, 1e-6);
+        ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
     };
-    VecSim_Normalize(query, dim, TypeParam::get_index_type());
     runTopKSearchTest(index, query, 10, verify_res);
 
     // Test with batch iterator.
@@ -1072,9 +1077,9 @@ TYPED_TEST(BruteForceMultiTest, testCosine) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
             ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
-            double expected_score = index->getDistanceFrom(id, query);
+            TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
 
-            ASSERT_NEAR(score, expected_score, 1e-6);
+            ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;

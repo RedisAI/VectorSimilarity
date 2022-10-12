@@ -17,6 +17,12 @@ public:
                                      /* is_multi = */ false) {}
 
 protected:
+    VecSimIndex *CreateNewIndex(HNSWParams &index_params) {
+        index_params.type = index_type_t::get_index_type();
+        index_params.multi = false;
+        VecSimParams params = CreateParams(index_params);
+        return VecSimIndex_New(&params);
+    }
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
@@ -842,13 +848,18 @@ TYPED_TEST(HNSWTest, hnsw_test_inf_score) {
     size_t k = 4;
     size_t dim = 2;
 
-    this->params.dim = dim;
-    this->params.metric = VecSimMetric_L2;
-    this->params.initialCapacity = n;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+    /*     this->params.dim = dim;
+        this->params.metric = VecSimMetric_L2;
+        this->params.initialCapacity = n; */
 
-    VecSimIndex *index = CreateNewIndex(this->params);
+    //    VecSimIndex *index = CreateNewIndex(this->params);
 
-    TEST_DATA_T inf_val = GetInfVal(this->params.type);
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    //    TEST_DATA_T inf_val = GetInfVal(this->params.type);
+
+    TEST_DATA_T inf_val = GetInfVal(params.type);
     ASSERT_FALSE(std::isinf(inf_val));
 
     TEST_DATA_T query[] = {M_PI, M_PI};
@@ -1665,8 +1676,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     // We need to have at least 1 vector in layer higher than 0 to fail there.
     size_t next = 0;
     while (VecSimIndex_Info(index).hnswInfo.max_level == 0) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, next, 1.0);
-        ++next;
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, next++, 1.0);
     }
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
@@ -1761,7 +1771,6 @@ TYPED_TEST(HNSWTest, rangeQueryCosine) {
         ASSERT_EQ(id, result_rank + 1);
         double expected_score = index->getDistanceFrom(id, query);
         ASSERT_EQ(score, expected_score);
-        // ASSERT_NEAR(score, expected_score, 1e-5);
     };
     uint expected_num_results = 31;
     // Calculate the score of the 31st distant vector from the query vector (whose id should be 30)

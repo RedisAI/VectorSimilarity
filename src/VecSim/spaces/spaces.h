@@ -4,7 +4,6 @@
 #include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
 namespace spaces {
 
-/* enum Arch_Optimization { ARCH_OPT_NONE, ARCH_OPT_SSE, ARCH_OPT_AVX, ARCH_OPT_AVX512 }; */
 static const Arch_Optimization arch_opt = getArchitectureOptimization();
 
 template <typename RET_TYPE>

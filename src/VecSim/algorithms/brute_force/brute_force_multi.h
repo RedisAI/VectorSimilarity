@@ -42,7 +42,7 @@ private:
     }
 
 #ifdef BUILD_TESTS
-#include "VecSim/algorithms/brute_force/brute_force_multi_tests_decl.h"
+#include "VecSim/algorithms/brute_force/brute_force_multi_tests_friends.h"
 #endif
 };
 

@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <cmath>
+#include <exception>
+
 #include "VecSim/vec_sim.h"
 #include "gtest/gtest.h"
 
@@ -44,9 +46,15 @@ int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value
     return VecSimIndex_AddVector(index, v, id);
 }
 
-inline VecSimParams CreateParams(const HNSWParams &hnsw_params);
-inline VecSimParams CreateParams(const BFParams &bf_params);
+inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+    return params;
+}
 
+inline VecSimParams CreateParams(const BFParams &bf_params) {
+    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    return params;
+}
 template <typename IndexParams>
 VecSimIndex *CreateNewIndex(const IndexParams &index_params) {
     VecSimParams params = CreateParams(index_params);
@@ -67,6 +75,9 @@ size_t EstimateElementSize(const IndexParams &index_params) {
 
 VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
 
+inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
+
+inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2); }
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
@@ -88,22 +99,12 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
 
 size_t getLabelsLookupNodeSize();
 
-VecSimParams CreateParams(const HNSWParams &hnsw_params) {
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
-    return params;
-}
-VecSimParams CreateParams(const BFParams &bf_params) {
-    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
-    return params;
-}
-
 inline double GetInfVal(VecSimType type) {
     if (type == VecSimType_FLOAT64) {
         return exp(500);
     } else if (type == VecSimType_FLOAT32) {
         return exp(60);
+    } else {
+        throw std::invalid_argument("This type is not supported");
     }
-
-    // if we got here the type is invalid.
-    return 0;
 }

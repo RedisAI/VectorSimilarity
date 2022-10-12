@@ -1646,11 +1646,17 @@ TYPED_TEST(HNSWMultiTest, testCosine) {
 
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
-    VecSim_Normalize(query, dim, this->params.type);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, this->params.type);
+
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
         ASSERT_EQ(id, (n - result_rank));
-        TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
-        ASSERT_NEAR(score, expected_score, 1e-5);
+        TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
+        ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
     };
     runTopKSearchTest(index, query, 10, verify_res);
 
@@ -1688,7 +1694,12 @@ TYPED_TEST(HNSWMultiTest, testCosineBatchIterator) {
 
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
-    VecSim_Normalize(query, dim, this->params.type);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, this->params.type);
 
     // Test with batch iterator.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
@@ -1701,8 +1712,8 @@ TYPED_TEST(HNSWMultiTest, testCosineBatchIterator) {
         std::vector<size_t> expected_ids(n_res);
         auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
             ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
-            TEST_DATA_T expected_score = index->getDistanceFrom(id, query);
-            ASSERT_NEAR(score, expected_score, 1e-5);
+            TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
+            ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;

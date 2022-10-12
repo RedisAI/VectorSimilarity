@@ -11,7 +11,7 @@ private:
 
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
-#include "VecSim/algorithms/hnsw/hnsw_multi_tests.h"
+#include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
