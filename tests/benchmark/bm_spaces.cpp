@@ -22,8 +22,8 @@
 
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
-#define BENCHMARK_DISTANCE_FP64_F(arch, settings, func)                                                 \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces_FP64, arch##_##settings)(benchmark::State & st) {                \
+#define BENCHMARK_DISTANCE_FP64_F(arch, settings, func)                                            \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces_FP64, arch##_##settings)(benchmark::State & st) {           \
         if (opt < ARCH_OPT_##arch) {                                                               \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
             return;                                                                                \
@@ -51,17 +51,17 @@ BENCHMARK_DISTANCE_F(AVX512_F, IP_4_Residuals, FP32_InnerProductSIMD4ExtResidual
 BENCHMARK_DISTANCE_FP64_F(AVX512_F, IP_2, FP64_InnerProductSIMD2Ext_AVX512_noDQ)
 BENCHMARK_DISTANCE_FP64_F(AVX512_F, IP_2_Residuals, FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ)
 
+BENCHMARK_DISTANCE_FP64_F(AVX512_F, L2_2, FP64_L2SqrSIMD2Ext_AVX512_noDQ)
+BENCHMARK_DISTANCE_FP64_F(AVX512_F, L2_2_Residuals, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ)
+#endif // AVX512F
+
+#ifdef __AVX512DQ__
 BENCHMARK_DISTANCE_FP64_F(AVX512_DQ, IP_2, FP64_InnerProductSIMD2Ext_AVX512)
 BENCHMARK_DISTANCE_FP64_F(AVX512_DQ, IP_2_Residuals, FP64_InnerProductSIMD2ExtResiduals_AVX512)
 
-BENCHMARK_DISTANCE_FP64_F(AVX512_F, L2_2, FP64_L2SqrSIMD2Ext_AVX512_noDQ)
-BENCHMARK_DISTANCE_FP64_F(AVX512_F, L2_2_Residuals, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ)
-
 BENCHMARK_DISTANCE_FP64_F(AVX512_DQ, L2_2, FP64_L2SqrSIMD2Ext_AVX512)
 BENCHMARK_DISTANCE_FP64_F(AVX512_DQ, L2_2_Residuals, FP64_L2SqrSIMD2ExtResiduals_AVX512)
-
-
-#endif // AVX512F
+#endif // AVX512DQ
 
 // AVX functions
 #ifdef __AVX__
@@ -144,12 +144,13 @@ BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_F_IP_2) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_F_IP_2_Residuals) RESIDUAL_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_F_L2_2) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_F_L2_2_Residuals) RESIDUAL_PARAMS;
+#endif
 
+#ifdef __AVX512DQ__
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_DQ_IP_2) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_DQ_IP_2_Residuals) RESIDUAL_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_DQ_L2_2) EXACT_PARAMS;
 BENCHMARK_REGISTER_F(BM_VecSimSpaces_FP64, AVX512_DQ_L2_2_Residuals) RESIDUAL_PARAMS;
-
 #endif
 
 #ifdef __AVX__

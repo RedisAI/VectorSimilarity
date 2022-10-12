@@ -71,16 +71,31 @@ double FP64_L2SqrSIMD2Ext_AVX512_noDQ(const void *pVect1v, const void *pVect2v, 
     double *pVect2 = (double *)pVect2v;
 
     size_t qty8 = qty >> 3 << 3;
-    const double *pEnd = pVect1 + qty;
 
-    // Compute the res for the first qty / 8 of the vectors.
-    double resHead = FP64_L2SqrSIMD8Ext_AVX512(pVect1, pVect2, qty8);
+    const double *pEnd1 = pVect1 + qty8;
+    const double *pEnd2 = pVect1 + qty;
+
+    __m512d diff512, v1_512, v2_512;
+    __m512d sum512 = _mm512_set1_pd(0);
+
+    // In each iteration we calculate 8 doubles = 512 bits.
+    while (pVect1 < pEnd1) {
+        v1_512 = _mm512_loadu_pd(pVect1);
+        pVect1 += 8;
+        v2_512 = _mm512_loadu_pd(pVect2);
+        pVect2 += 8;
+        diff512 = _mm512_sub_pd(v1_512, v2_512);
+        sum512 = _mm512_add_pd(sum512, _mm512_mul_pd(diff512, diff512));
+    }
+
+    // Store the res for the first qty / 8 of the vectors.
+    double resHead = _mm512_reduce_add_pd(sum512);
     pVect1 = pVect1 + qty8;
     pVect2 = pVect2 + qty8;
 
     __m128d v1, v2, diff;
     __m128d sum = _mm_set1_pd(0);
-    while (pVect1 < pEnd) {
+    while (pVect1 < pEnd2) {
         v1 = _mm_loadu_pd(pVect1);
         pVect1 += 2;
         v2 = _mm_loadu_pd(pVect2);

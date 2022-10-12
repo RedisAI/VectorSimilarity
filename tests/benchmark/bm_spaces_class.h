@@ -22,15 +22,15 @@ public:
 
 class BM_VecSimSpaces_FP64 : public benchmark::Fixture {
 protected:
-	std::mt19937 rng;
-	size_t dim;
-	double *v1, *v2;
-	Arch_Optimization opt;
+    std::mt19937 rng;
+    size_t dim;
+    double *v1, *v2;
+    Arch_Optimization opt;
 
 public:
-	BM_VecSimSpaces_FP64();
-	~BM_VecSimSpaces_FP64() {}
+    BM_VecSimSpaces_FP64();
+    ~BM_VecSimSpaces_FP64() {}
 
-	void SetUp(const ::benchmark::State &state);
-	void TearDown(const ::benchmark::State &state);
+    void SetUp(const ::benchmark::State &state);
+    void TearDown(const ::benchmark::State &state);
 };
