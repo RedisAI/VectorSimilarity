@@ -6,6 +6,7 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
@@ -121,7 +122,7 @@ protected:
                      candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
     inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
                                              double epsilon, tag_t visited_tag,
-                                             VecSimQueryResult **top_candidates,
+                                             vecsim_stl::abstract_results_container *top_candidates,
                                              candidatesMaxHeap<DistType> &candidate_set,
                                              DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
@@ -192,6 +193,8 @@ public:
 
 protected:
     // inline label to id setters that need to be implemented by derived class
+    virtual inline vecsim_stl::abstract_results_container *
+    getNewResultsContainer(size_t cap) const = 0;
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
@@ -453,8 +456,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
-    VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
-    double radius) const {
+    vecsim_stl::abstract_results_container *results, candidatesMaxHeap<DistType> &candidate_set,
+    DistType dyn_range, double radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -488,10 +491,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             // If the new candidate is in the requested radius, add it to the results set.
             if (candidate_dist <= radius_) {
-                auto new_result = VecSimQueryResult{};
-                VecSimQueryResult_SetId(new_result, getExternalLabel(candidate_id));
-                VecSimQueryResult_SetScore(new_result, candidate_dist);
-                *results = array_append(*results, new_result);
+                results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
         }
     }
@@ -1415,7 +1415,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
 
-    auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
+    auto *res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -1431,10 +1431,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
-        auto new_result = VecSimQueryResult{};
-        VecSimQueryResult_SetId(new_result, getExternalLabel(ep_id));
-        VecSimQueryResult_SetScore(new_result, ep_dist);
-        results = array_append(results, new_result);
+        res_container->emplace(getExternalLabel(ep_id), ep_dist);
         dynamic_range = radius; // to ensure that dyn_range >= radius.
     }
 
@@ -1453,7 +1450,9 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         }
         if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
-            return results;
+            auto res = res_container->get_results();
+            delete res_container;
+            return res;
         }
         candidate_set.pop();
 
@@ -1468,7 +1467,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         // requested radius.
         // Here we send the radius as double to match the function arguments type.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
-                                     &results, candidate_set, dynamic_range_search_boundaries,
+                                     res_container, candidate_set, dynamic_range_search_boundaries,
                                      radius);
     }
 #ifdef ENABLE_PARALLELIZATION
@@ -1476,7 +1475,9 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 #endif
 
     *rc = VecSim_QueryResult_OK;
-    return results;
+    auto res = res_container->get_results();
+    delete res_container;
+    return res;
 }
 
 template <typename DataType, typename DistType>
