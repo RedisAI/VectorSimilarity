@@ -1731,7 +1731,7 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
     // loop to break since we insert a candidate whose distance is within the dynamic range
     // boundaries at the beginning of the search, but when this candidate is popped out from the
     // queue, it's no longer within the dynamic range boundaries.
-    auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = 1.0}};
+    VecSimQueryParams query_params = CreateQueryParams(HNSWRuntimeParams{.epsilon = 1.0});
     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE,
                       &query_params);
 
