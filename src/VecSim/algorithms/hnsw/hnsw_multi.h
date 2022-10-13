@@ -32,6 +32,10 @@ public:
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
+    inline vecsim_stl::abstract_results_container *
+    getNewResultsContainer(size_t cap) const override {
+        return new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator);
+    }
 
     inline size_t indexLabelCount() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -40,8 +44,6 @@ public:
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
-    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
-                                      VecSimQueryParams *queryParams) override;
 };
 
 /**
@@ -122,15 +124,6 @@ int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, cons
     }
 
     return this->appendVector(vector_data, label);
-}
-
-// TODO: support range queries
-template <typename DataType, typename DistType>
-VecSimQueryResult_List
-HNSWIndex_Multi<DataType, DistType>::rangeQuery(const void *query_data, double radius,
-                                                VecSimQueryParams *queryParams) {
-    this->last_mode = RANGE_QUERY;
-    return {array_new<VecSimQueryResult>(0), VecSim_QueryResult_OK};
 }
 
 template <typename DataType, typename DistType>
