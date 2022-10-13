@@ -5,6 +5,7 @@
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
+#include "VecSim/utils/vecsim_results_container.h"
 
 #include <cstdlib>
 #include <limits>
@@ -276,6 +277,43 @@ TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
     TypeParam one = 1.0;
     ASSERT_NEAR(one, norm, 0.0000001);
 }
+
+TEST_F(CommonTest, results_containers) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    auto res1 = VecSimQueryResult_List{0};
+    auto res2 = VecSimQueryResult_List{0};
+    {
+        vecsim_stl::default_results_container drc(allocator);
+        vecsim_stl::unique_results_container urc(allocator);
+
+        for (size_t i = 0; i < 10; i++) {
+            drc.emplace(i, i);
+            urc.emplace(i, i + 10);
+        }
+        for (size_t i = 0; i < 10; i++) {
+            urc.emplace(i, i);
+        }
+        ASSERT_EQ(drc.size(), 10);
+        ASSERT_EQ(urc.size(), 10);
+
+        res1.results = drc.get_results();
+        res2.results = urc.get_results();
+    }
+    sort_results_by_id(res1);
+    sort_results_by_score(res2);
+
+    for (size_t i = 0; i < VecSimQueryResult_Len(res1); i++) {
+        ASSERT_EQ(i, VecSimQueryResult_GetId(res1.results + i));
+    }
+    for (size_t i = 0; i < VecSimQueryResult_Len(res2); i++) {
+        ASSERT_EQ(i, VecSimQueryResult_GetId(res2.results + i));
+    }
+
+    VecSimQueryResult_Free(res1);
+    VecSimQueryResult_Free(res2);
+}
+
 
 class CommonAPITest : public ::testing::Test {};
 
