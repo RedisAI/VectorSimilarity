@@ -21,17 +21,6 @@ struct IndexType {
 using DataTypeSet =
     ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
 
-template <typename params_t>
-class IndexTestUtils {
-
-protected:
-    IndexTestUtils(VecSimType type, bool is_multi) : params{} {
-        params.type = type;
-        params.multi = is_multi;
-    }
-    params_t params;
-};
-
 template <typename data_t>
 static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
     for (size_t i = 0; i < dim; i++) {
@@ -51,6 +40,14 @@ inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
     return params;
 }
 
+template <typename IndexParams>
+inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
+                                   bool is_multi = false) {
+    index_params.type = type;
+    index_params.multi = is_multi;
+    VecSimParams params = CreateParams(index_params);
+    return VecSimIndex_New(&params);
+}
 inline VecSimParams CreateParams(const BFParams &bf_params) {
     VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
     return params;
