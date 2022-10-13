@@ -256,7 +256,7 @@ TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
     ASSERT_NEAR(one, norm, 0.0000001);
 }
 
-TEST_F(CommonTest, results_containers) {
+TYPED_TEST(UtilsTests, results_containers) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     auto res1 = VecSimQueryResult_List{0};

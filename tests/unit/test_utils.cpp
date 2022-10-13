@@ -214,6 +214,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
     VecSimQueryResult_List res =
         VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), expected_res_num);
+    ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {

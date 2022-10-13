@@ -649,10 +649,9 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
-    // TODO: uncomment when support for HNSW Multi range is enabled
-    // res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    // ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    // VecSimQueryResult_Free(res);
+    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
@@ -670,10 +669,9 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     VecSimQueryResult_IteratorFree(it);
     VecSimQueryResult_Free(res);
 
-    // TODO: uncomment when support for HNSW Multi range is enabled
-    // res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    // ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    // VecSimQueryResult_Free(res);
+    res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
+    VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
 }
@@ -1685,112 +1683,64 @@ TYPED_TEST(HNSWMultiTest, testCosineBatchIterator) {
     VecSimIndex_Free(index);
 }
 
-// TEST_F(HNSWMultiTest, rangeQuery) {
-//     size_t n = 5000;
-//     size_t dim = 4;
+TYPED_TEST(HNSWMultiTest, rangeQuery) {
+    size_t n_labels = 1000;
+    size_t per_label = 5;
+    size_t dim = 4;
 
-//     VecSimParams params{
-//         .algo = VecSimAlgo_HNSWLIB,
-//         .hnswParams = HNSWParams{
-//             .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .blockSize = n /
-//             2}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
+    size_t n = n_labels * per_label;
 
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, (int)i);
-//     }
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    HNSWParams params{.dim = dim, .metric = VecSimMetric_L2, .blockSize = n / 2};
+    VecSimIndex *index = this->CreateNewIndex(params);
 
-//     size_t pivot_id = n / 2; // the id to return vectors around it.
-//     float query[] = {(float)pivot_id, (float)pivot_id, (float)pivot_id, (float)pivot_id};
+    // Add some vectors, worst than the second loop (for the given query)
+    for (size_t i = 0; i < n_labels; i++) {
+        TEST_DATA_T f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (TEST_DATA_T)i + n;
+        }
+        // Use as label := n - (internal id)
+        for (size_t j = 0; j < per_label - 1; j++)
+            VecSimIndex_AddVector(index, (const void *)f, i);
+    }
+    for (size_t i = 0; i < n_labels; i++) {
+        TEST_DATA_T f[dim];
+        for (size_t j = 0; j < dim; j++) {
+            f[j] = (TEST_DATA_T)i;
+        }
+        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-//     auto verify_res_by_score = [&](size_t id, float score, size_t index) {
-//         ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
-//         ASSERT_EQ(score, dim * powf((index + 1) / 2, 2));
-//     };
-//     uint expected_num_results = 11;
-//     // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2
-//     score
-//     // in the boundaries.
-//     float radius = dim * powf(expected_num_results / 2, 2);
-//     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
+    size_t pivot_id = n_labels / 2; // the id to return vectors around it.
+    TEST_DATA_T query[] = {(TEST_DATA_T)pivot_id, (TEST_DATA_T)pivot_id, (TEST_DATA_T)pivot_id,
+                           (TEST_DATA_T)pivot_id};
 
-//     // Rerun with a given query params. This high epsilon value will cause the range search main
-//     // loop to break since we insert a candidate whose distance is within the dynamic range
-//     // boundaries at the beginning of the search, but when this candidate is popped out from the
-//     // queue, it's no longer within the dynamic range boundaries.
-//     auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon
-//     = 1.0}}; runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results,
-//     BY_SCORE,
-//                       &query_params);
+    auto verify_res_by_score = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
+        ASSERT_EQ(score, dim * pow((index + 1) / 2, 2));
+    };
+    uint expected_num_results = 11;
+    // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2 score
+    // in the boundaries.
+    TEST_DATA_T radius = dim * pow(expected_num_results / 2, 2);
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
 
-//     // Get results by id.
-//     auto verify_res_by_id = [&](size_t id, float score, size_t index) {
-//         ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
-//         ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
-//     };
-//     runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
+    // Rerun with a given query params. This high epsilon value will cause the range search main
+    // loop to break since we insert a candidate whose distance is within the dynamic range
+    // boundaries at the beginning of the search, but when this candidate is popped out from the
+    // queue, it's no longer within the dynamic range boundaries.
+    auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = 1.0}};
+    runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE,
+                      &query_params);
 
-//     VecSimIndex_Free(index);
-// }
+    // Get results by id.
+    auto verify_res_by_id = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, pivot_id - expected_num_results / 2 + index);
+        ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
+    };
+    runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
 
-// TEST_F(HNSWMultiTest, rangeQueryCosine) {
-//     size_t n = 800;
-//     size_t dim = 4;
-
-//     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-//                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-//                                                  .dim = dim,
-//                                                  .metric = VecSimMetric_Cosine,
-//                                                  .blockSize = n / 2}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         f[0] = float(i + 1) / n;
-//         for (size_t j = 1; j < dim; j++) {
-//             f[j] = 1.0f;
-//         }
-//         // Use as label := n - (internal id)
-//         VecSimIndex_AddVector(index, (const void *)f, n - i);
-//     }
-
-//     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-//     float query[dim];
-//     for (size_t i = 0; i < dim; i++) {
-//         query[i] = 1.0f;
-//     }
-//     auto verify_res = [&](size_t id, float score, size_t index) {
-//         ASSERT_EQ(id, index + 1);
-//         float first_coordinate = float(n - index) / n;
-//         // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-//         vector
-//         // and B is the current result vector.
-//         float expected_score =
-//             1.0f -
-//             ((first_coordinate + (float)dim - 1.0f) /
-//              (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate *
-//              first_coordinate)));
-//         // Verify that abs difference between the actual and expected score is at most 1/10^5.
-//         ASSERT_NEAR(score, expected_score, 1e-5);
-//     };
-//     uint expected_num_results = 31;
-//     // Calculate the score of the 31st distant vector from the query vector (whose id should be
-//     30)
-//     // to get the radius.
-//     float edge_first_coordinate = (float)(n - expected_num_results + 1) / n;
-//     float radius =
-//         1.0f - ((edge_first_coordinate + (float)dim - 1.0f) /
-//                 (sqrtf((float)dim) *
-//                  sqrtf((float)(dim - 1) + edge_first_coordinate * edge_first_coordinate)));
-//     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_SCORE);
-
-//     // Return results BY_ID should give the same results.
-//     runRangeQueryTest(index, query, radius, verify_res, expected_num_results, BY_ID);
-
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
