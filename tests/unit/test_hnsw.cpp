@@ -15,7 +15,7 @@ public:
 protected:
     VecSimIndex *CreateNewIndex(HNSWParams &params) {
         // is_multi = false by default.
-        return ::CreateNewIndex(params, index_type_t::get_index_type());
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type());
     }
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
@@ -513,7 +513,7 @@ TYPED_TEST(HNSWTest, test_hnsw_info) {
     params.blockSize = bs, params.M = 200, params.efConstruction = 1000, params.efRuntime = 500,
     params.epsilon = 0.005;
 
-    index = CreateNewIndex(params);
+    index = this->CreateNewIndex(params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
@@ -1751,15 +1751,14 @@ TEST_F(HNSWGeneralTest, hnsw_serialization_v1) {
     size_t M = 8;
     size_t ef = 10;
 
-    HNSWParams params{.type = VecSimType_FLOAT32,
-                      .dim = dim,
+    HNSWParams params{.dim = dim,
                       .metric = VecSimMetric_L2,
                       .initialCapacity = n,
                       .blockSize = 1,
                       .M = M,
                       .efConstruction = ef,
                       .efRuntime = ef};
-    VecSimIndex *index = CreateNewIndex(params);
+    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
 
     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
 
@@ -1785,7 +1784,7 @@ TEST_F(HNSWGeneralTest, hnsw_serialization_v1) {
     VecSimIndex_Free(index);
 
     // Create new index, set it into the serializer and extract the data to it.
-    auto new_index = CreateNewIndex(params);
+    auto new_index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
 
     serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(new_index));
@@ -1830,7 +1829,7 @@ TEST_F(HNSWGeneralTest, hnsw_serialization_v1) {
     VecSimIndex_Free(new_index);
 
     params.initialCapacity = n / 2; // to ensure that we resize in load time.
-    auto restored_index = CreateNewIndex(params);
+    auto restored_index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
 
     serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(restored_index));

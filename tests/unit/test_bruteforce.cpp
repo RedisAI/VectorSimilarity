@@ -15,7 +15,7 @@ public:
 protected:
     VecSimIndex *CreateNewIndex(BFParams &params) {
         // is_multi = false by default.
-        return ::CreateNewIndex(params, index_type_t::get_index_type());
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type());
     }
 
     BruteForceIndex_Single<data_t, dist_t> *CastToBF_Single(VecSimIndex *index) {

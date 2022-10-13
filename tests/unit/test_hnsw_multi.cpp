@@ -14,7 +14,7 @@ public:
 
 protected:
     VecSimIndex *CreateNewIndex(HNSWParams &params) {
-        return ::CreateNewIndex(params, index_type_t::get_index_type(), true);
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), true);
     }
 
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {

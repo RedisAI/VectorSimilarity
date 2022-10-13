@@ -40,6 +40,12 @@ inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
     return params;
 }
 
+inline VecSimParams CreateParams(const BFParams &bf_params) {
+    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    return params;
+}
+
+namespace test_utils {
 template <typename IndexParams>
 inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
                                    bool is_multi = false) {
@@ -48,16 +54,8 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
     VecSimParams params = CreateParams(index_params);
     return VecSimIndex_New(&params);
 }
-inline VecSimParams CreateParams(const BFParams &bf_params) {
-    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
-    return params;
-}
-template <typename IndexParams>
-VecSimIndex *CreateNewIndex(const IndexParams &index_params) {
-    VecSimParams params = CreateParams(index_params);
-    return VecSimIndex_New(&params);
-}
 
+} // namespace test_utils
 template <typename IndexParams>
 size_t EstimateInitialSize(const IndexParams &index_params) {
     VecSimParams params = CreateParams(index_params);

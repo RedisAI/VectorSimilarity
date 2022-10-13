@@ -20,12 +20,8 @@ TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
 TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     size_t dim = 4;
 
-    BFParams params = {.type = TypeParam::get_index_type(),
-                       .dim = dim,
-                       .metric = VecSimMetric_L2,
-                       .initialCapacity = 0,
-                       .blockSize = 5};
-    VecSimIndex *index = CreateNewIndex(params);
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
