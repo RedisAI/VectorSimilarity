@@ -512,7 +512,7 @@ def test_multi_range_query():
         assert np.all(np.isin(hnsw_labels, np.array(keys)))
 
         # Asserts that all the results are unique
-        assert len(hnsw_labels) == len(np.unique(hnsw_labels))
+        assert len(hnsw_labels[0]) == len(np.unique(hnsw_labels[0]))
 
         assert max(hnsw_distances[0]) <= radius
         recalls[epsilon_rt] = res_num/len(keys)
