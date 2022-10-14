@@ -488,13 +488,14 @@ def test_multi_range_query():
 
     radius = 13.0
     recalls = {}
-    # sort distances of every vector from the target vector and get actual k nearest vectors
+    # calculate distances of the labels in the index
     dists = {}
     for key, vec in vectors:
         dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
 
     dists = list(dists.items())
     dists = sorted(dists, key=lambda pair: pair[1])
+    keys = [key for key, dist in dists if dist <= radius]
 
     for epsilon_rt in [0.001, 0.01, 0.1]:
         query_params = VecSimQueryParams()
@@ -504,13 +505,14 @@ def test_multi_range_query():
         end = time.time()
         res_num = len(hnsw_labels[0])
 
-        keys = [key for key, dist in dists if dist <= radius]
-
         print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
               f' got {res_num} results, which are {res_num/len(keys)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
         assert np.all(np.isin(hnsw_labels, np.array(keys)))
+
+        # Asserts that all the results are unique
+        assert len(hnsw_labels) == len(np.unique(hnsw_labels))
 
         assert max(hnsw_distances[0]) <= radius
         recalls[epsilon_rt] = res_num/len(keys)
