@@ -18,6 +18,11 @@ public:
     int deleteVector(labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
 
+    inline vecsim_stl::abstract_results_container *
+    getNewResultsContainer(size_t cap) const override {
+        return new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator);
+    }
+
     inline size_t indexLabelCount() const override { return this->count; }
 
 protected:
