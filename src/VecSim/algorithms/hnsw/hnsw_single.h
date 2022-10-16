@@ -29,9 +29,10 @@ public:
         return new (this->allocator)
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
-    inline vecsim_stl::abstract_results_container *
+    inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
-        return new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator);
+        return std::unique_ptr<vecsim_stl::abstract_results_container>(
+            new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator));
     }
 
     inline size_t indexLabelCount() const override;
