@@ -1124,11 +1124,10 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     VecSimQueryResult_Free(rl);
 
     // Check timeout again - range query
-    // TODO: uncomment when support for BFM range is enabled
-    // rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    // ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    // ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    // VecSimQueryResult_Free(rl);
+    rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
+    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
+    VecSimQueryResult_Free(rl);
 
     VecSimIndex_Free(index);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
