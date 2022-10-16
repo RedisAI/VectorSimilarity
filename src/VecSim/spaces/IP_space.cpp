@@ -2,6 +2,7 @@
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/IP/IP_AVX512DQ.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_SSE.h"

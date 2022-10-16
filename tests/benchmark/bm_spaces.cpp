@@ -56,6 +56,9 @@ BENCHMARK_DISTANCE_FP64_F(AVX512_F, L2_2_Residuals, FP64_L2SqrSIMD2ExtResiduals_
 #endif // AVX512F
 
 #ifdef __AVX512DQ__
+#include "VecSim/spaces/L2/L2_AVX512DQ.h"
+#include "VecSim/spaces/IP/IP_AVX512DQ.h"
+
 BENCHMARK_DISTANCE_FP64_F(AVX512_DQ, IP_2, FP64_InnerProductSIMD2Ext_AVX512)
 BENCHMARK_DISTANCE_FP64_F(AVX512_DQ, IP_2_Residuals, FP64_InnerProductSIMD2ExtResiduals_AVX512)
 

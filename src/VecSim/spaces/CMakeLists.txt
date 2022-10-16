@@ -65,6 +65,15 @@ endif()
 
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Build and link the relevant optimization for X86.
+	if(CXX_AVX512DQ)
+		project(VectorSimilaritySpaces_avx512dq)
+		add_library(VectorSimilaritySpaces_avx512dq STATIC
+				L2/L2_AVX512DQ_FP64.cpp
+				IP/IP_AVX512DQ_FP64.cpp)
+		target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_avx512dq)
+	else()
+		message("Building without AVX512DQ")
+	endif()
 	if(CXX_AVX512F)
 			project(VectorSimilaritySpaces_avx512)
 				add_library(VectorSimilaritySpaces_avx512 STATIC

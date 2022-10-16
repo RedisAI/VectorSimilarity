@@ -2,6 +2,7 @@
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/L2/L2_AVX512DQ.h"
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
