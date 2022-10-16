@@ -120,11 +120,10 @@ protected:
                      tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
-    inline void processCandidate_RangeSearch(idType curNodeId, const void *data_point, size_t layer,
-                                             double epsilon, tag_t visited_tag,
-                                             vecsim_stl::abstract_results_container *top_candidates,
-                                             candidatesMaxHeap<DistType> &candidate_set,
-                                             DistType lowerBound, double radius) const;
+    inline void processCandidate_RangeSearch(
+        idType curNodeId, const void *data_point, size_t layer, double epsilon, tag_t visited_tag,
+        std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
+        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
     candidatesLabelsMaxHeap<DistType> *
@@ -456,8 +455,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
-    vecsim_stl::abstract_results_container *results, candidatesMaxHeap<DistType> &candidate_set,
-    DistType dyn_range, double radius) const {
+    std::unique_ptr<vecsim_stl::abstract_results_container> &results,
+    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -1416,7 +1415,8 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     VecSimQueryResult_Code *rc) const {
 
     *rc = VecSim_QueryResult_OK;
-    auto *res_container = getNewResultsContainer(10); // arbitrary initial cap.
+    std::unique_ptr<vecsim_stl::abstract_results_container> res_container(
+        getNewResultsContainer(10)); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -1473,9 +1473,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
 #endif
-    auto res = res_container->get_results();
-    delete res_container;
-    return res;
+    return res_container->get_results();
 }
 
 template <typename DataType, typename DistType>
