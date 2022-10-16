@@ -1415,6 +1415,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
 
+    *rc = VecSim_QueryResult_OK;
     auto *res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1450,9 +1451,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         }
         if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
-            auto res = res_container->get_results();
-            delete res_container;
-            return res;
+            break;
         }
         candidate_set.pop();
 
@@ -1470,11 +1469,10 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
                                      res_container, candidate_set, dynamic_range_search_boundaries,
                                      radius);
     }
+
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
 #endif
-
-    *rc = VecSim_QueryResult_OK;
     auto res = res_container->get_results();
     delete res_container;
     return res;

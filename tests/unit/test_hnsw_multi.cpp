@@ -1693,22 +1693,11 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
     HNSWParams params{.dim = dim, .metric = VecSimMetric_L2, .blockSize = n / 2};
     VecSimIndex *index = this->CreateNewIndex(params);
 
-    // Add some vectors, worst than the second loop (for the given query)
     for (size_t i = 0; i < n_labels; i++) {
-        TEST_DATA_T f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (TEST_DATA_T)i + n;
-        }
-        // Use as label := n - (internal id)
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        // Add some vectors, worst than the previous vector (for the given query)
         for (size_t j = 0; j < per_label - 1; j++)
-            VecSimIndex_AddVector(index, (const void *)f, i);
-    }
-    for (size_t i = 0; i < n_labels; i++) {
-        TEST_DATA_T f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (TEST_DATA_T)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, (int)i);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i + n);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
