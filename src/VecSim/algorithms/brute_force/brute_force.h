@@ -304,6 +304,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
+            delete res_container;
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
