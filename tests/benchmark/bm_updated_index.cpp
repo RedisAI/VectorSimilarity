@@ -72,7 +72,7 @@ protected:
                                               .M = BM_VecSimBasics::M,
                                               .efConstruction = BM_VecSimBasics::EF_C}};
         BM_VecSimUpdatedIndex::hnsw_index_updated = VecSimIndex_New(&params);
-        load_HNSW_index(updated_hnsw_index_file, hnsw_index_updated);
+        load_index(updated_hnsw_index_file, hnsw_index_updated);
 
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < n_vectors; ++i) {

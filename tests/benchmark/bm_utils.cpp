@@ -7,16 +7,15 @@
 
 #include "bm_utils.h"
 
-void load_HNSW_index(const char *path, VecSimIndex *hnsw_index) {
+void load_index(const char *path, VecSimIndex *index) {
 
     // Load the index file, if it exists in the expected path.
     auto location = std::string(getenv("ROOT"));
     auto file_name = location + "/" + path;
-    auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index));
     std::ifstream input(file_name, std::ios::binary);
     if (input.is_open()) {
-        serializer.loadIndex(file_name);
-        if (!serializer.checkIntegrity().valid_state) {
+        index->loadIndex(file_name);
+        if (!index->checkIntegrity().valid_state) {
             throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
     } else {
@@ -66,7 +65,7 @@ void BM_VecSimBasics::Initialize() {
     BM_VecSimBasics::hnsw_index = VecSimIndex_New(&params);
 
     // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    load_HNSW_index(hnsw_index_file, hnsw_index);
+    load_index(hnsw_index_file, hnsw_index);
     size_t ef_r = 10;
     reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->setEf(ef_r);
 

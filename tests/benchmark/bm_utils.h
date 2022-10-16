@@ -8,9 +8,9 @@
 #include <random>
 #include <unistd.h>
 #include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_interface.h"
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 
 class BM_VecSimBasics : public benchmark::Fixture {
@@ -44,7 +44,7 @@ public:
  *  Populate the given hnsw_index with the serialized index data in the file
  *  which is located in the given path.
  */
-void load_HNSW_index(const char *path, VecSimIndex *hnsw_index);
+void load_index(const char *path, VecSimIndex *hnsw_index);
 
 /*
  *  Populate the given queries vector with the serialized raw vectors data in

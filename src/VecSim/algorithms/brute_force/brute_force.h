@@ -87,6 +87,9 @@ protected:
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
+
+    virtual void saveIndex(const std::string &location) {}
+    virtual void loadIndex(const std::string &location) {}
 #endif
 };
 
