@@ -264,16 +264,25 @@ TYPED_TEST(UtilsTests, results_containers) {
     {
         vecsim_stl::default_results_container drc(allocator);
         vecsim_stl::unique_results_container urc(allocator);
+        // Checks for leaks if `get_results()` is not invoked
+        vecsim_stl::default_results_container dummy1(allocator);
+        vecsim_stl::unique_results_container dummy2(allocator);
 
         for (size_t i = 0; i < 10; i++) {
             drc.emplace(i, i);
             urc.emplace(i, i + 10);
+
+            dummy1.emplace(i, i);
+            dummy2.emplace(i, i + 10);
         }
         for (size_t i = 0; i < 10; i++) {
             urc.emplace(i, i);
+            dummy2.emplace(i, i);
         }
         ASSERT_EQ(drc.size(), 10);
         ASSERT_EQ(urc.size(), 10);
+        ASSERT_EQ(dummy1.size(), 10);
+        ASSERT_EQ(dummy2.size(), 10);
 
         res1.results = drc.get_results();
         res2.results = urc.get_results();

@@ -59,18 +59,29 @@ public:
 struct default_results_container : public abstract_results_container {
 private:
     VecSimQueryResult *_data;
+    bool owns_data;
 
 public:
     explicit default_results_container(const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_results_container(alloc), _data(array_new<VecSimQueryResult>(0)) {}
+        : abstract_results_container(alloc), _data(array_new<VecSimQueryResult>(0)),
+          owns_data(true) {}
     explicit default_results_container(size_t cap, const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_results_container(alloc), _data(array_new<VecSimQueryResult>(cap)) {}
+        : abstract_results_container(alloc), _data(array_new<VecSimQueryResult>(cap)),
+          owns_data(true) {}
+
+    ~default_results_container() {
+        if (owns_data)
+            array_free(_data);
+    }
 
     inline void emplace(size_t id, double score) override {
         auto res = VecSimQueryResult{id, score};
         _data = array_append(_data, res);
     }
     inline size_t size() const override { return array_len(_data); }
-    inline VecSimQueryResult *get_results() override { return _data; }
+    inline VecSimQueryResult *get_results() override {
+        owns_data = false;
+        return _data;
+    }
 };
 } // namespace vecsim_stl

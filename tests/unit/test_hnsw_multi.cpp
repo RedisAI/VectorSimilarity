@@ -1703,8 +1703,8 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     size_t pivot_id = n_labels / 2; // the id to return vectors around it.
-    TEST_DATA_T query[] = {(TEST_DATA_T)pivot_id, (TEST_DATA_T)pivot_id, (TEST_DATA_T)pivot_id,
-                           (TEST_DATA_T)pivot_id};
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, pivot_id);
 
     auto verify_res_by_score = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(std::abs(int(id - pivot_id)), (index + 1) / 2);
@@ -1713,7 +1713,7 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
     uint expected_num_results = 11;
     // To get 11 results in the range [pivot_id - 5, pivot_id + 5], set the radius as the L2 score
     // in the boundaries.
-    TEST_DATA_T radius = dim * pow(expected_num_results / 2, 2);
+    double radius = dim * pow(expected_num_results / 2, 2);
     runRangeQueryTest(index, query, radius, verify_res_by_score, expected_num_results, BY_SCORE);
 
     // Rerun with a given query params. This high epsilon value will cause the range search main
