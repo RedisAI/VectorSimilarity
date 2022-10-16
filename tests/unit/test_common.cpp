@@ -29,14 +29,18 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     auto *rparams = array_new<VecSimRawParam>(2);
 
     // Empty raw params array, nothing should change in query params.
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_NONE),
-        VecSim_OK);
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSim_OK);
+    }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), nullptr, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_NullParam);
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), nullptr, query_type),
+            VecSimParamResolverErr_NullParam);
+    }
 
     /** Testing with common hybrid query params. **/
     array_append(rparams, (VecSimRawParam){.name = "batch_size",
@@ -106,11 +110,13 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     ASSERT_EQ(qparams.batchSize, 100);
 
     // Trying to set hybrid policy for non-hybrid query.
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_InvalidPolicy_NHybrid);
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, QUERY_TYPE_NONE),
-              VecSimParamResolverErr_InvalidPolicy_NHybrid);
+    for (VecsimQueryType query_type : {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_RANGE}) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimParamResolverErr_InvalidPolicy_NHybrid);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, query_type),
+                  VecSimParamResolverErr_InvalidPolicy_NHybrid);
+    }
 
     // Check for invalid batch sizes params.
     rparams[1].value = "not_a_number";

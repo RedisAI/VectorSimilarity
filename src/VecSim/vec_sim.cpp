@@ -22,9 +22,6 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
     if (index_type != VecSimAlgo_HNSWLIB) {
         return VecSimParamResolverErr_UnknownParam;
     }
-    if (query_type != QUERY_TYPE_KNN) {
-        return VecSimParamResolverErr_InvalidPolicy_NKNN;
-    }
     if (qparams->hnswRuntimeParams.efRuntime != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
@@ -40,9 +37,9 @@ static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQ
                                                   VecsimQueryType query_type) {
     long long num_val;
     if (query_type != QUERY_TYPE_HYBRID) {
-        return VecSimParamResolverErr_InvalidPolicy_NRange;
+        return VecSimParamResolverErr_InvalidPolicy_NHybrid;
     }
-    if (qparams->hnswRuntimeParams.epsilon != 0) {
+    if (qparams->batchSize != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
     if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
@@ -63,7 +60,7 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
     if (query_type != QUERY_TYPE_RANGE) {
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
-    if (qparams->batchSize != 0) {
+    if (qparams->hnswRuntimeParams.epsilon != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
     if (validate_positive_double_param(rparam, &num_val) != VecSimParamResolver_OK) {
