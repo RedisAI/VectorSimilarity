@@ -131,7 +131,7 @@ static dist_func_t<double> L2_dist_funcs_8Ext[] = {
     FP64_L2SqrSIMD8Ext_AVX512};
 static dist_func_t<double> IP_dist_funcs_8Ext[] = {
     FP64_InnerProduct, FP64_InnerProductSIMD8Ext_SSE, FP64_InnerProductSIMD8Ext_AVX,
-    FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD8Ext_AVX512};
+    FP64_InnerProductSIMD8Ext_AVX512, FP64_InnerProductSIMD8Ext_AVX512};
 // Functions for dimension % 2 == 0 for each optimization.
 static dist_func_t<double> L2_dist_funcs_2Ext[] = {
     FP64_L2Sqr, FP64_L2SqrSIMD2Ext_SSE, FP64_L2SqrSIMD2Ext_AVX,
