@@ -114,9 +114,10 @@ typedef enum {
 } VecSearchMode;
 
 typedef enum {
-    KNN,
-    HYBRID,
-    RANGE,
+    QUERY_TYPE_NONE, // Use when no params are given.
+    QUERY_TYPE_KNN,
+    QUERY_TYPE_HYBRID,
+    QUERY_TYPE_RANGE,
 } VecsimQueryType;
 
 /**

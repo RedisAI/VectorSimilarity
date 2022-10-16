@@ -15,13 +15,14 @@ extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callba
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
-                                                  VecSimQueryParams *qparams, VecsimQueryType query_type) {
+                                                  VecSimQueryParams *qparams,
+                                                  VecsimQueryType query_type) {
     long long num_val;
     // EF_RUNTIME is a valid parameter only in HNSW algorithm.
     if (index_type != VecSimAlgo_HNSWLIB) {
         return VecSimParamResolverErr_UnknownParam;
     }
-    if(query_type != KNN) {
+    if (query_type != QUERY_TYPE_KNN) {
         return VecSimParamResolverErr_InvalidPolicy_NKNN;
     }
     if (qparams->hnswRuntimeParams.efRuntime != 0) {
@@ -38,7 +39,7 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
 static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQueryParams *qparams,
                                                   VecsimQueryType query_type) {
     long long num_val;
-    if (query_type != HYBRID) {
+    if (query_type != QUERY_TYPE_HYBRID) {
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
     if (qparams->hnswRuntimeParams.epsilon != 0) {
@@ -51,7 +52,7 @@ static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQ
     return VecSimParamResolver_OK;
 }
 
-static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type,VecSimRawParam rparam,
+static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRawParam rparam,
                                                 VecSimQueryParams *qparams,
                                                 VecsimQueryType query_type) {
     double num_val;
@@ -59,7 +60,7 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type,VecSimRawP
     if (index_type != VecSimAlgo_HNSWLIB) {
         return VecSimParamResolverErr_UnknownParam;
     }
-    if (query_type != RANGE) {
+    if (query_type != QUERY_TYPE_RANGE) {
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
     if (qparams->batchSize != 0) {
@@ -73,8 +74,9 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type,VecSimRawP
 }
 
 static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
-                                                     VecSimQueryParams *qparams, bool hybrid) {
-    if (!hybrid) {
+                                                     VecSimQueryParams *qparams,
+                                                     VecsimQueryType query_type) {
+    if (query_type != QUERY_TYPE_HYBRID) {
         return VecSimParamResolverErr_InvalidPolicy_NHybrid;
     }
     if (qparams->searchMode != 0) {
@@ -160,7 +162,7 @@ extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->inde
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
-                                                        VecsimQueryType query_type) {
+                                                       VecsimQueryType query_type) {
 
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
@@ -174,14 +176,12 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
                 VecSimParamResolver_OK) {
                 return res;
             }
-        }
-        else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
             if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
-        }
-         else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
             if ((res = _ResolveParams_BatchSize(rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;

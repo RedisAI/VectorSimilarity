@@ -99,7 +99,8 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
  */
 VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
-                                            int paramNum, VecSimQueryParams *qparams, VecsimQueryType query_type);
+                                            int paramNum, VecSimQueryParams *qparams,
+                                            VecsimQueryType query_type);
 
 /**
  * @brief Search for the k closest vectors to a given vector in the index. The results can be
