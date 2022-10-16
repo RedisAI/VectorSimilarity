@@ -9,8 +9,9 @@ private:
     vecsim_stl::unordered_map<labelType, idType> label_lookup_;
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
 #include "VecSim/algorithms/hnsw/hnsw_single_tests_friends.h"
+
+    virtual void clearLabelLookup() {label_lookup_.clear();}
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
