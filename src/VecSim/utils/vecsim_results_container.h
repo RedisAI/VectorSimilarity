@@ -11,7 +11,7 @@ struct abstract_results_container : public VecsimBaseObject {
 public:
     abstract_results_container(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc) {}
-    ~abstract_results_container() {}
+    ~abstract_results_container() = default;
 
     // Inserts (or updates) a new result to the container.
     virtual inline void emplace(size_t id, double score) = 0;
@@ -25,29 +25,29 @@ public:
 
 struct unique_results_container : public abstract_results_container {
 private:
-    vecsim_stl::unordered_map<size_t, double> um;
+    vecsim_stl::unordered_map<size_t, double> idToScore;
 
 public:
     explicit unique_results_container(const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_results_container(alloc), um(alloc) {}
+        : abstract_results_container(alloc), idToScore(alloc) {}
     explicit unique_results_container(size_t cap, const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_results_container(alloc), um(cap, alloc) {}
+        : abstract_results_container(alloc), idToScore(cap, alloc) {}
 
     inline void emplace(size_t id, double score) override {
-        auto x = um.find(id);
-        if (x == um.end()) {
-            um.emplace(id, score);
-        } else if (x->second > score) {
-            x->second = score;
+        auto existing = idToScore.find(id);
+        if (existing == idToScore.end()) {
+            idToScore.emplace(id, score);
+        } else if (existing->second > score) {
+            existing->second = score;
         }
     }
 
-    inline size_t size() const override { return um.size(); }
+    inline size_t size() const override { return idToScore.size(); }
 
     inline VecSimQueryResult *get_results() override {
-        auto *data = array_new_len<VecSimQueryResult>(um.size(), um.size());
+        auto *data = array_new_len<VecSimQueryResult>(idToScore.size(), idToScore.size());
         size_t index = 0;
-        for (auto res : um) {
+        for (auto res : idToScore) {
             VecSimQueryResult_SetId(data[index], res.first);
             VecSimQueryResult_SetScore(data[index], res.second);
             index++;
