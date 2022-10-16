@@ -192,7 +192,7 @@ public:
 
 protected:
     // inline label to id setters that need to be implemented by derived class
-    virtual inline vecsim_stl::abstract_results_container *
+    virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const = 0;
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
@@ -1415,8 +1415,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     VecSimQueryResult_Code *rc) const {
 
     *rc = VecSim_QueryResult_OK;
-    std::unique_ptr<vecsim_stl::abstract_results_container> res_container(
-        getNewResultsContainer(10)); // arbitrary initial cap.
+    auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
