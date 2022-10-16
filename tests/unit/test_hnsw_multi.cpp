@@ -6,36 +6,46 @@
 #include <cmath>
 #include <map>
 
+template <typename index_type_t>
 class HNSWMultiTest : public ::testing::Test {
+public:
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
+
 protected:
-    HNSWMultiTest() {}
+    VecSimIndex *CreateNewIndex(HNSWParams &params) {
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), true);
+    }
 
-    ~HNSWMultiTest() override {}
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+    }
 
-    void SetUp() override {}
-
-    void TearDown() override {}
+    HNSWIndex_Multi<data_t, dist_t> *CastToHNSW_Multi(VecSimIndex *index) {
+        return reinterpret_cast<HNSWIndex_Multi<data_t, dist_t> *>(index);
+    }
 };
 
-TEST_F(HNSWMultiTest, vector_add_multiple_test) {
+// DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
+
+TYPED_TEST_SUITE(HNSWMultiTest, DataTypeSet);
+
+TYPED_TEST(HNSWMultiTest, vector_add_multiple_test) {
     size_t dim = 4;
-    int rep = 5;
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_IP,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    size_t rep = 5;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_IP, .initialCapacity = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Adding multiple vectors under the same label
-    for (int j = 0; j < rep; j++) {
-        float a[dim];
+    for (size_t j = 0; j < rep; j++) {
+        TEST_DATA_T a[dim];
         for (size_t i = 0; i < dim; i++) {
-            a[i] = (float)i * j + i;
+            a[i] = (TEST_DATA_T)i * j + i;
         }
-        VecSimIndex_AddVector(index, (const void *)a, 46);
+        VecSimIndex_AddVector(index, a, 46);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);
@@ -51,32 +61,26 @@ TEST_F(HNSWMultiTest, vector_add_multiple_test) {
 }
 
 // Test empty index edge cases.
-TEST_F(HNSWMultiTest, empty_index) {
+TYPED_TEST(HNSWMultiTest, empty_index) {
     size_t dim = 4;
     size_t n = 20;
     size_t bs = 6;
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
     VecSimIndex_DeleteVector(index, 0);
 
     // Add one vector multiple times.
-    float a[dim];
-    for (size_t j = 0; j < dim; j++) {
-        a[j] = (float)1.7;
+    for (size_t i = 0; i < 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.7);
     }
 
-    VecSimIndex_AddVector(index, (const void *)a, 1);
-    VecSimIndex_AddVector(index, (const void *)a, 1);
-    VecSimIndex_AddVector(index, (const void *)a, 1);
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
 
@@ -86,39 +90,33 @@ TEST_F(HNSWMultiTest, empty_index) {
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);
 
-    // Nor the size.
+    // Size should be stiil zero.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, vector_search_test) {
+TYPED_TEST(HNSWMultiTest, vector_search_test) {
     size_t dim = 4;
     size_t n = 1000;
     size_t n_labels = 100;
     size_t k = 11;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, (size_t)i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-    float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](size_t id, float score, size_t index) {
-        size_t diff_id = ((int)(id - 50) > 0) ? (id - 50) : (50 - id);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 50);
+
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
         ASSERT_EQ(diff_id, (index + 1) / 2);
         ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
     };
@@ -126,7 +124,7 @@ TEST_F(HNSWMultiTest, vector_search_test) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, search_more_than_there_is) {
+TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
     size_t dim = 4;
     size_t n = 5;
     size_t perLabel = 3;
@@ -136,23 +134,19 @@ TEST_F(HNSWMultiTest, search_more_than_there_is) {
     // We want to make sure we get only 2 results back (because the results should have unique
     // labels), although the index contains 5 vectors.
 
-    VecSimParams params{
-        .algo = VecSimAlgo_HNSWLIB,
-        .hnswParams = HNSWParams{
-            .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .multi = true}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t x = 0; x < dim; x++) {
-            f[x] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, (size_t)(i / perLabel));
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-    float query[] = {0, 0, 0, 0};
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
     auto it = VecSimQueryResult_List_GetIterator(res);
@@ -161,8 +155,7 @@ TEST_F(HNSWMultiTest, search_more_than_there_is) {
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
-        auto ids = reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.at(
-            element_label);
+        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -174,33 +167,26 @@ TEST_F(HNSWMultiTest, search_more_than_there_is) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, indexing_same_vector) {
+TYPED_TEST(HNSWMultiTest, indexing_same_vector) {
     size_t n = 100;
     size_t k = 10;
     size_t perLabel = 10;
     size_t dim = 4;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n / perLabel; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i);
-        }
         for (size_t j = 0; j < perLabel; j++) {
-            VecSimIndex_AddVector(index, (const void *)f, i);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    float query[] = {0, 0, 0, 0};
-    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, index); };
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0.0);
+    auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, index); };
     runTopKSearchTest(index, query, k, verify_res);
     auto res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
     auto it = VecSimQueryResult_List_GetIterator(res);
@@ -209,8 +195,7 @@ TEST_F(HNSWMultiTest, indexing_same_vector) {
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
         ASSERT_EQ(element_label, i);
-        auto ids = reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.at(
-            element_label);
+        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -222,26 +207,22 @@ TEST_F(HNSWMultiTest, indexing_same_vector) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, find_better_score) {
+TYPED_TEST(HNSWMultiTest, find_better_score) {
     size_t n = 100;
     size_t k = 10;
     size_t n_labels = 10;
     size_t dim = 4;
     size_t initial_capacity = 200;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = initial_capacity}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = initial_capacity};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     // Building the index. Each label gets 10 vectors with decreasing (by insertion order) element
     // value.
-    std::map<size_t, float> scores;
+    std::map<size_t, double> scores;
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
         // For example, with n_labels == 10 and n == 100,
         // label 0 will get vector elements 18 -> 9 (aka (9 -> 0) + 9),
         // label 1 will get vector elements 17 -> 8 (aka (9 -> 0) + 8),
@@ -250,10 +231,7 @@ TEST_F(HNSWMultiTest, find_better_score) {
         // label 9 will get vector elements 9 -> 0 (aka (9 -> 0) + 0),
         // and so on, so each label has some common vectors with all the previous labels.
         size_t el = ((n - i - 1) % n_labels) + ((n - i - 1) / n_labels);
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)el;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i / n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / n_labels, el);
         // This should be the best score for each label.
         if (i % n_labels == n_labels - 1) {
             // `el * el * dim` is the L2-squared value with the 0 vector.
@@ -263,45 +241,40 @@ TEST_F(HNSWMultiTest, find_better_score) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, k - index - 1);
         ASSERT_FLOAT_EQ(score, scores[id]);
     };
 
-    float query[] = {0, 0, 0, 0};
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0.0);
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, find_better_score_after_pop) {
+TYPED_TEST(HNSWMultiTest, find_better_score_after_pop) {
     size_t n = 12;
     size_t n_labels = 3;
     size_t dim = 4;
     size_t initial_capacity = 200;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = initial_capacity}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = initial_capacity};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     // Building the index. Each is better than the previous one.
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
         size_t el = n - i;
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)el;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, el);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-    float query[] = {0, 0, 0, 0};
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, n_labels - index - 1);
     };
 
@@ -310,42 +283,31 @@ TEST_F(HNSWMultiTest, find_better_score_after_pop) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, reindexing_same_vector_different_id) {
+TYPED_TEST(HNSWMultiTest, reindexing_same_vector_different_id) {
     size_t n = 100;
     size_t k = 10;
     size_t dim = 4;
     size_t perLabel = 3;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        // i / 10 is in integer (take the "floor" value)
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
     }
     // Add more vectors under the same labels. their scores should be worst.
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i / 10) + n;
-        }
         for (size_t j = 0; j < perLabel - 1; j++) {
-            VecSimIndex_AddVector(index, (const void *)f, i);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, TEST_DATA_T(i / 10) + n);
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
     // Run a query where all the results are supposed to be {5,5,5,5} (different ids).
-    float query[] = {4.9, 4.95, 5.05, 5.1};
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    TEST_DATA_T query[] = {4.9, 4.95, 5.05, 5.1};
+    auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_TRUE(id >= 50 && id < 60 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res);
@@ -357,26 +319,18 @@ TEST_F(HNSWMultiTest, reindexing_same_vector_different_id) {
 
     // Reinsert the same vectors under different ids than before.
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i / 10); // i / 10 is in integer (take the "floor" value)
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i + 10);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + 10, i / 10);
     }
     // Add more vectors under the same labels. their scores should be worst.
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)(i / 10) + n;
-        }
         for (size_t j = 0; j < perLabel - 1; j++) {
-            VecSimIndex_AddVector(index, (const void *)f, i + 10);
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i + 10, TEST_DATA_T(i / 10) + n);
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n * perLabel);
 
     // Run the same query again.
-    auto verify_res_different_id = [&](int id, float score, size_t index) {
+    auto verify_res_different_id = [&](int id, double score, size_t index) {
         ASSERT_TRUE(id >= 60 && id < 70 && score <= 1);
     };
     runTopKSearchTest(index, query, k, verify_res_different_id);
@@ -384,21 +338,16 @@ TEST_F(HNSWMultiTest, reindexing_same_vector_different_id) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, test_hnsw_info) {
+TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
     // Build with default args.
     size_t n = 100;
     size_t d = 128;
-
     // Build with default args
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = d,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = 16,
-                                                 .efConstruction = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+
+    HNSWParams params = {.dim = d, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
@@ -413,45 +362,41 @@ TEST_F(HNSWMultiTest, test_hnsw_info) {
 
     d = 1280;
     size_t bs = 42;
-    params = {.algo = VecSimAlgo_HNSWLIB,
-              .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                       .dim = d,
-                                       .metric = VecSimMetric_L2,
-                                       .multi = true,
-                                       .initialCapacity = n,
-                                       .blockSize = bs,
-                                       .M = 200,
-                                       .efConstruction = 1000,
-                                       .efRuntime = 500,
-                                       .epsilon = 0.005}};
-    index = VecSimIndex_New(&params);
+    size_t M = 16;
+    size_t ef_C = 200;
+    size_t ef_RT = 500;
+    double epsilon = 0.005;
+    params.dim = d;
+    params.blockSize = bs;
+    params.M = M;
+    params.efConstruction = ef_C;
+    params.efRuntime = ef_RT;
+    params.epsilon = epsilon;
+
+    index = this->CreateNewIndex(params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
     ASSERT_EQ(info.hnswInfo.dim, d);
     ASSERT_TRUE(info.hnswInfo.isMulti);
     // User args.
     ASSERT_EQ(info.hnswInfo.blockSize, bs);
-    ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
-    ASSERT_EQ(info.hnswInfo.M, 200);
-    ASSERT_EQ(info.hnswInfo.efRuntime, 500);
-    ASSERT_EQ(info.hnswInfo.epsilon, 0.005);
+    ASSERT_EQ(info.hnswInfo.M, M);
+    ASSERT_EQ(info.hnswInfo.efConstruction, ef_C);
+    ASSERT_EQ(info.hnswInfo.efRuntime, ef_RT);
+    ASSERT_EQ(info.hnswInfo.epsilon, epsilon);
     VecSimIndex_Free(index);
 }
-
-TEST_F(HNSWMultiTest, test_basic_hnsw_info_iterator) {
+TYPED_TEST(HNSWMultiTest, test_basic_hnsw_info_iterator) {
     size_t n = 100;
     size_t d = 128;
     VecSimMetric metrics[3] = {VecSimMetric_Cosine, VecSimMetric_IP, VecSimMetric_L2};
 
     for (size_t i = 0; i < 3; i++) {
+
         // Build with default args.
-        VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                            .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                     .dim = d,
-                                                     .metric = metrics[i],
-                                                     .multi = true,
-                                                     .initialCapacity = n}};
-        VecSimIndex *index = VecSimIndex_New(&params);
+        HNSWParams params = {.dim = d, .metric = metrics[i], .initialCapacity = n};
+        VecSimIndex *index = this->CreateNewIndex(params);
+
         VecSimIndexInfo info = VecSimIndex_Info(index);
         VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
         compareHNSWIndexInfoToIterator(info, infoIter);
@@ -460,24 +405,20 @@ TEST_F(HNSWMultiTest, test_basic_hnsw_info_iterator) {
     }
 }
 
-TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
+TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     size_t n = 100;
     size_t d = 128;
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = d,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = 100,
-                                                 .efConstruction = 250,
-                                                 .efRuntime = 400,
-                                                 .epsilon = 0.004}};
-    float v[d];
-    for (size_t i = 0; i < d; i++) {
-        v[i] = (float)i;
-    }
-    VecSimIndex *index = VecSimIndex_New(&params);
+
+    HNSWParams params = {.dim = d,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = 100,
+                         .efConstruction = 250,
+                         .efRuntime = 400,
+                         .epsilon = 0.004};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(100, info.hnswInfo.M);
@@ -491,6 +432,10 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Add vectors.
+    TEST_DATA_T v[d];
+    for (size_t i = 0; i < d; i++) {
+        v[i] = (TEST_DATA_T)i;
+    }
     VecSimIndex_AddVector(index, v, 0);
     VecSimIndex_AddVector(index, v, 0);
     VecSimIndex_AddVector(index, v, 1);
@@ -539,10 +484,10 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = 1e6;
+    this->CastToHNSW(index)->cur_element_count = 1e6;
     vecsim_stl::vector<idType> vec(index->getAllocator());
     for (size_t i = 0; i < 1e5; i++) {
-        reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.emplace(i, vec);
+        this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
@@ -563,7 +508,7 @@ TEST_F(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, preferAdHocOptimization) {
+TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
     // Save the expected result for every combination that represent a different leaf in the tree.
     // map: [k, label_count, vectors per label, dim, M, r] -> res
     std::map<std::vector<float>, bool> combinations;
@@ -639,33 +584,38 @@ TEST_F(HNSWMultiTest, preferAdHocOptimization) {
         auto index_size = label_count * perLabel;
 
         // Create index and check for the expected output of "prefer ad-hoc" heuristics.
-        VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                            .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                     .dim = dim,
-                                                     .metric = VecSimMetric_L2,
-                                                     .multi = true,
-                                                     .initialCapacity = index_size,
-                                                     .M = M,
-                                                     .efConstruction = 1,
-                                                     .efRuntime = 1}};
-        VecSimIndex *index = VecSimIndex_New(&params);
+
+        HNSWParams params = {.dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .initialCapacity = index_size,
+                             .M = M,
+                             .efConstruction = 1,
+                             .efRuntime = 1};
+
+        VecSimIndex *index = this->CreateNewIndex(params);
 
         // Set the index size artificially to be the required one.
-        reinterpret_cast<HNSWIndex<float, float> *>(index)->cur_element_count = index_size;
+        this->CastToHNSW(index)->cur_element_count = index_size;
         vecsim_stl::vector<idType> vec(index->getAllocator());
         for (size_t i = 0; i < label_count; i++) {
-            reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.emplace(i, vec);
+            this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
         VecSimIndex_Free(index);
     }
+
     // Corner cases - empty index.
-    VecSimParams params{
-        .algo = VecSimAlgo_HNSWLIB,
-        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = 0,
+                         .M = 0,
+                         .efConstruction = 0,
+                         .efRuntime = 0};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
@@ -678,26 +628,21 @@ TEST_F(HNSWMultiTest, preferAdHocOptimization) {
     }
     VecSimIndex_Free(index);
 }
-
-TEST_F(HNSWMultiTest, search_empty_index) {
+TYPED_TEST(HNSWMultiTest, search_empty_index) {
     size_t dim = 4;
     size_t n = 100;
     size_t k = 11;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    float query[] = {50, 50, 50, 50};
-
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 50);
     // We do not expect any results.
-    VecSimQueryResult_List res =
-        VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
+    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
@@ -705,24 +650,20 @@ TEST_F(HNSWMultiTest, search_empty_index) {
     VecSimQueryResult_Free(res);
 
     // TODO: uncomment when support for HNSW Multi range is enabled
-    // res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    // res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
     // ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     // VecSimQueryResult_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, 46);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 46, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     VecSimIndex_DeleteVector(index, 46);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Again - we do not expect any results.
-    res = VecSimIndex_TopKQuery(index, (const void *)query, k, NULL, BY_SCORE);
+    res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
@@ -730,46 +671,43 @@ TEST_F(HNSWMultiTest, search_empty_index) {
     VecSimQueryResult_Free(res);
 
     // TODO: uncomment when support for HNSW Multi range is enabled
-    // res = VecSimIndex_RangeQuery(index, (const void *)query, 1.0f, NULL, BY_SCORE);
+    // res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
     // ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     // VecSimQueryResult_Free(res);
 
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, remove_vector_after_replacing_block) {
+TYPED_TEST(HNSWMultiTest, remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t bs = 2;
     size_t n = 6;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = bs};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Setting up vectors
-    float f[n][dim];
+    TEST_DATA_T f[n][dim];
     for (size_t i = 0; i < n; i++) {
         for (size_t j = 0; j < dim; j++) {
             f[i][j] = i;
         }
     }
     // Add 1 vector with label 1
-    VecSimIndex_AddVector(index, (const void *)f[0], 1);
+    VecSimIndex_AddVector(index, f[0], 1);
 
     // Add 3 vectors with label 3
-    VecSimIndex_AddVector(index, (const void *)f[1], 3);
-    VecSimIndex_AddVector(index, (const void *)f[2], 3);
-    VecSimIndex_AddVector(index, (const void *)f[3], 3);
+    VecSimIndex_AddVector(index, f[1], 3);
+    VecSimIndex_AddVector(index, f[2], 3);
+    VecSimIndex_AddVector(index, f[3], 3);
 
     // Add 2 vectors with label 2
-    VecSimIndex_AddVector(index, (const void *)f[4], 2);
-    VecSimIndex_AddVector(index, (const void *)f[5], 2);
+    VecSimIndex_AddVector(index, f[4], 2);
+    VecSimIndex_AddVector(index, f[5], 2);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
@@ -780,14 +718,14 @@ TEST_F(HNSWMultiTest, remove_vector_after_replacing_block) {
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
     ASSERT_EQ(index->indexLabelCount(), 2);
-    auto hnsw_index = reinterpret_cast<HNSWIndex_Multi<float, float> *>(index);
+    auto hnsw_index = this->CastToHNSW_Multi(index);
     ASSERT_EQ(hnsw_index->getExternalLabel(0), 1);
     ASSERT_EQ(hnsw_index->getExternalLabel(1), 2);
     ASSERT_EQ(hnsw_index->getExternalLabel(2), 2);
     // checking the blob swaps.
-    ASSERT_EQ(*(float *)(hnsw_index->getDataByInternalId(0)), 0);
-    ASSERT_EQ(*(float *)(hnsw_index->getDataByInternalId(1)), 5);
-    ASSERT_EQ(*(float *)(hnsw_index->getDataByInternalId(2)), 4);
+    ASSERT_EQ(*(TEST_DATA_T *)(hnsw_index->getDataByInternalId(0)), 0);
+    ASSERT_EQ(*(TEST_DATA_T *)(hnsw_index->getDataByInternalId(1)), 5);
+    ASSERT_EQ(*(TEST_DATA_T *)(hnsw_index->getDataByInternalId(2)), 4);
 
     VecSimIndex_DeleteVector(index, 1);
     VecSimIndex_DeleteVector(index, 2);
@@ -796,26 +734,23 @@ TEST_F(HNSWMultiTest, remove_vector_after_replacing_block) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_get_distance) {
+TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
     size_t n_labels = 2;
     size_t dim = 2;
     size_t numIndex = 3;
     VecSimIndex *index[numIndex];
     std::vector<double> distances;
 
-    float v1_0[] = {M_PI, M_PI};
-    float v2_0[] = {M_E, M_E};
-    float v3_1[] = {M_PI, M_E};
-    float v4_1[] = {M_SQRT2, -M_SQRT2};
+    TEST_DATA_T v1_0[] = {M_PI, M_PI};
+    TEST_DATA_T v2_0[] = {M_E, M_E};
+    TEST_DATA_T v3_1[] = {M_PI, M_E};
+    TEST_DATA_T v4_1[] = {M_SQRT2, -M_SQRT2};
 
-    VecSimParams params{
-        .algo = VecSimAlgo_HNSWLIB,
-        .hnswParams = HNSWParams{
-            .type = VecSimType_FLOAT32, .dim = dim, .multi = true, .initialCapacity = 4}};
+    HNSWParams params = {.dim = dim, .initialCapacity = 4};
 
     for (size_t i = 0; i < numIndex; i++) {
-        params.hnswParams.metric = (VecSimMetric)i;
-        index[i] = VecSimIndex_New(&params);
+        params.metric = (VecSimMetric)i;
+        index[i] = this->CreateNewIndex(params);
         VecSimIndex_AddVector(index[i], v1_0, 0);
         VecSimIndex_AddVector(index[i], v2_0, 0);
         VecSimIndex_AddVector(index[i], v3_1, 1);
@@ -823,11 +758,11 @@ TEST_F(HNSWMultiTest, hnsw_get_distance) {
         ASSERT_EQ(VecSimIndex_IndexSize(index[i]), 4);
     }
 
-    void *query = v1_0;
-    void *norm = v2_0;                               // {e, e}
-    VecSim_Normalize(norm, dim, VecSimType_FLOAT32); // now {1/sqrt(2), 1/sqrt(2)}
-    ASSERT_FLOAT_EQ(((float *)norm)[0], 1.0f / sqrt(2.0f));
-    ASSERT_FLOAT_EQ(((float *)norm)[1], 1.0f / sqrt(2.0f));
+    TEST_DATA_T *query = v1_0;
+    TEST_DATA_T *norm = v2_0;                 // {e, e}
+    VecSim_Normalize(norm, dim, params.type); // now {1/sqrt(2), 1/sqrt(2)}
+    ASSERT_FLOAT_EQ(norm[0], 1.0f / sqrt(2.0));
+    ASSERT_FLOAT_EQ(norm[1], 1.0f / sqrt(2.0));
     double dist;
 
     // VecSimMetric_L2
@@ -836,7 +771,7 @@ TEST_F(HNSWMultiTest, hnsw_get_distance) {
     distances = {0, 0.1791922003030777};
     for (size_t i = 0; i < n_labels; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_L2], i, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_IP
@@ -845,7 +780,7 @@ TEST_F(HNSWMultiTest, hnsw_get_distance) {
     distances = {-18.73921012878418, -17.409339904785156};
     for (size_t i = 0; i < n_labels; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_IP], i, query);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // VecSimMetric_Cosine
@@ -854,7 +789,7 @@ TEST_F(HNSWMultiTest, hnsw_get_distance) {
     distances = {5.9604644775390625e-08, 0.0025991201400756836};
     for (size_t i = 0; i < n_labels; i++) {
         dist = VecSimIndex_GetDistanceFrom(index[VecSimMetric_Cosine], i, norm);
-        ASSERT_DOUBLE_EQ(dist, distances[i]);
+        ASSERT_NEAR(dist, distances[i], 1e-5);
     }
 
     // Bad values
@@ -869,7 +804,7 @@ TEST_F(HNSWMultiTest, hnsw_get_distance) {
     }
 }
 
-TEST_F(HNSWMultiTest, testSizeEstimation) {
+TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     size_t dim = 128;
     size_t n_labels = 1000;
     size_t perLabel = 1;
@@ -878,46 +813,33 @@ TEST_F(HNSWMultiTest, testSizeEstimation) {
 
     size_t n = n_labels * perLabel;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs,
-                                                 .M = M}};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs, .M = M};
 
-    size_t estimation = VecSimIndex_EstimateInitialSize(&params);
-    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // EstimateInitialSize is called after CreateNewIndex because params struct is
+    // changed in CreateNewIndex.
+    size_t estimation = EstimateInitialSize(params);
 
     size_t actual = index->getAllocator()->getAllocationSize();
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
     estimation +=
-        (reinterpret_cast<HNSWIndex_Multi<float, float> *>(index)->label_lookup_.bucket_count() -
-         n) *
-        sizeof(size_t);
+        (this->CastToHNSW_Multi(index)->label_lookup_.bucket_count() - n) * sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 
-    float vec[dim];
     for (size_t i = 0; i < n; i++) {
-        for (size_t j = 0; j < dim; j++) {
-            vec[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, vec, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = VecSimIndex_EstimateElementSize(&params) * (bs % n + bs);
+    estimation = EstimateElementSize(params) * (bs % n + bs);
 
     actual = 0;
     for (size_t i = 0; i < bs; i++) {
-        for (size_t j = 0; j < dim; j++) {
-            vec[j] = (float)i;
-        }
-        actual += VecSimIndex_AddVector(index, vec, n + i);
+        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
     }
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
@@ -928,39 +850,31 @@ TEST_F(HNSWMultiTest, testSizeEstimation) {
 /**** resizing cases ****/
 
 // Add up to capacity.
-TEST_F(HNSWMultiTest, resize_and_align_index) {
+TYPED_TEST(HNSWMultiTest, resize_and_align_index) {
     size_t dim = 4;
     size_t n = 10;
     size_t bs = 3;
     size_t n_labels = 3;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
 
-    float a[dim];
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Add up to n.
     for (size_t i = 0; i < n; i++) {
-        for (size_t j = 0; j < dim; j++) {
-            a[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)a, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     // The size and the capacity should be equal.
-    HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), VecSimIndex_IndexSize(index));
     // The capacity shouldn't be changed.
     ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
     // Add another vector to exceed the initial capacity.
-    VecSimIndex_AddVector(index, (const void *)a, n);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
 
     // The capacity should be now aligned with the block size.
     // bs = 3, size = 11 -> capacity = 12
@@ -970,35 +884,27 @@ TEST_F(HNSWMultiTest, resize_and_align_index) {
 }
 
 // Case 1: initial capacity is larger than block size, and it is not aligned.
-TEST_F(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
+TYPED_TEST(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
     size_t dim = 4;
     size_t n = 10;
     size_t bs = 3;
     size_t n_labels = 3;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
 
-    float a[dim];
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // add up to blocksize + 1 = 3 + 1 = 4
     for (size_t i = 0; i < bs; i++) {
-        for (size_t j = 0; j < dim; j++) {
-            a[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)a, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
-    VecSimIndex_AddVector(index, (const void *)a, n_labels);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n_labels);
 
     // The capacity shouldn't change, should remain n.
-    HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
     // Delete last vector, to get size % block_size == 0. size = 3
@@ -1022,13 +928,13 @@ TEST_F(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
     // Add and delete a vector to achieve:
     // size % block_size == 0 && size + bs <= capacity(3).
     // the capacity should be resized to zero
-    VecSimIndex_AddVector(index, (const void *)a, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     VecSimIndex_DeleteVector(index, 0);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
 
     // Do it again. This time after adding a vector the capacity is increased by bs.
     // Upon deletion it will be resized to zero again.
-    VecSimIndex_AddVector(index, (const void *)a, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
     VecSimIndex_DeleteVector(index, 0);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
@@ -1037,33 +943,25 @@ TEST_F(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
 }
 
 // Case 2: initial capacity is smaller than block_size.
-TEST_F(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
+TYPED_TEST(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
     size_t dim = 4;
     size_t n = 4;
     size_t bs = 6;
     size_t n_labels = 3;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
 
-    float a[dim];
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Add up to initial capacity.
     for (size_t i = 0; i < n; i++) {
-        for (size_t j = 0; j < dim; j++) {
-            a[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)a, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
 
-    HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
     // The capacity shouldn't change.
     ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
 
@@ -1071,7 +969,8 @@ TEST_F(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     // Add another vector - > the capacity is increased to a multiplication of block_size.
-    VecSimIndex_AddVector(index, (const void *)a, n);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
+
     ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
 
     // Size increased by 1.
@@ -1085,38 +984,30 @@ TEST_F(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
 
     VecSimIndex_Free(index);
 }
-
 // Test empty index edge cases.
-TEST_F(HNSWMultiTest, emptyIndex) {
+TYPED_TEST(HNSWMultiTest, emptyIndex) {
     size_t dim = 4;
     size_t n = 20;
     size_t bs = 6;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .blockSize = bs}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
     VecSimIndex_DeleteVector(index, 0);
 
     // Add one vector.
-    float a[dim];
-    for (size_t j = 0; j < dim; j++) {
-        a[j] = (float)1.7;
-    }
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.7);
 
-    VecSimIndex_AddVector(index, (const void *)a, 1);
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
     // The capacity should change to be aligned with the block size.
 
-    HNSWIndex<float, float> *hnswIndex = reinterpret_cast<HNSWIndex<float, float> *>(index);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
     size_t new_capacity = hnswIndex->getIndexCapacity();
     ASSERT_EQ(new_capacity, n - n % bs - bs);
 
@@ -1133,40 +1024,35 @@ TEST_F(HNSWMultiTest, emptyIndex) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_vector_search_by_id_test) {
+TYPED_TEST(HNSWMultiTest, hnsw_vector_search_by_id_test) {
     size_t n = 100;
     size_t dim = 4;
     size_t k = 11;
     size_t per_label = 5;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = 200,
-                                                 .M = 16,
-                                                 .efConstruction = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = 200,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i / per_label);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / per_label, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n / per_label);
 
-    float query[] = {50, 50, 50, 50};
-    auto verify_res = [&](size_t id, float score, size_t index) { ASSERT_EQ(id, (index + 5)); };
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 50);
+    auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, (index + 5)); };
     runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
 
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, sanity_reinsert_1280) {
+TYPED_TEST(HNSWMultiTest, sanity_reinsert_1280) {
     size_t n_labels = 5;
     size_t per_label = 3;
     size_t d = 1280;
@@ -1174,49 +1060,44 @@ TEST_F(HNSWMultiTest, sanity_reinsert_1280) {
 
     size_t n = n_labels * per_label;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = d,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = 16,
-                                                 .efConstruction = 200}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {
+        .dim = d, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 16, .efConstruction = 200};
 
-    auto *vectors = (float *)malloc(n * d * sizeof(float));
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    auto *vectors = new TEST_DATA_T[n * d];
 
     // Generate random vectors in every iteration and inert them under different ids.
     for (size_t iter = 1; iter <= 3; iter++) {
         for (size_t i = 0; i < n; i++) {
             for (size_t j = 0; j < d; j++) {
-                (vectors + i * d)[j] = (float)rand() / (float)(RAND_MAX) / 100;
+                (vectors + i * d)[j] = (TEST_DATA_T)rand() / (TEST_DATA_T)(RAND_MAX) / 100;
             }
         }
         auto expected_ids = std::set<size_t>();
         for (size_t i = 0; i < n; i++) {
-            VecSimIndex_AddVector(index, (const void *)(vectors + i * d), (i % n_labels) * iter);
+            VecSimIndex_AddVector(index, (vectors + i * d), (i % n_labels) * iter);
             expected_ids.insert((i % n_labels) * iter);
         }
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_TRUE(expected_ids.find(id) != expected_ids.end());
             expected_ids.erase(id);
         };
 
         // Send arbitrary vector (the first) and search for top k. This should return all the
         // vectors that were inserted in this iteration - verify their ids.
-        runTopKSearchTest(index, (const void *)vectors, k, verify_res);
+        runTopKSearchTest(index, vectors, k, verify_res);
 
         // Remove vectors form current iteration.
         for (size_t i = 0; i < n_labels; i++) {
             VecSimIndex_DeleteVector(index, i * iter);
         }
     }
-    free(vectors);
+    delete[] vectors;
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, test_query_runtime_params_user_build_args) {
+TYPED_TEST(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     size_t n = 100;
     size_t n_labels = 25;
     size_t per_label = 4;
@@ -1224,39 +1105,34 @@ TEST_F(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     size_t M = 100;
     size_t efConstruction = 300;
     size_t efRuntime = 500;
-    // Build with user args.
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = d,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = M,
-                                                 .efConstruction = efConstruction,
-                                                 .efRuntime = efRuntime}};
 
-    size_t k = 11;
-    VecSimIndex *index = VecSimIndex_New(&params);
+    // Build with user args.
+
+    HNSWParams params = {.dim = d,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = M,
+                         .efConstruction = efConstruction,
+                         .efRuntime = efRuntime};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
-        float f[d];
-        for (size_t j = 0; j < d; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i / per_label);
+        GenerateAndAddVector<TEST_DATA_T>(index, d, i / per_label, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-    float query_element = (n_labels / 2) * per_label;
-    auto verify_res = [&](size_t id, float score, size_t index) {
+    TEST_DATA_T query_element = (n_labels / 2) * per_label;
+    auto verify_res = [&](size_t id, double score, size_t index) {
         size_t diff_id = (id < n_labels / 2) ? (n_labels / 2) - id : id - (n_labels / 2);
-        float exp_elem = (id < n_labels / 2) ? id * per_label + per_label - 1 : id * per_label;
-        float exp_score = d * (exp_elem - query_element) * (exp_elem - query_element);
+        double exp_elem = (id < n_labels / 2) ? id * per_label + per_label - 1 : id * per_label;
+        double exp_score = d * (exp_elem - query_element) * (exp_elem - query_element);
         ASSERT_EQ(diff_id, (index + 1) / 2);
         ASSERT_EQ(score, exp_score);
     };
-    float query[] = {query_element, query_element, query_element, query_element};
+    size_t k = 11;
+    TEST_DATA_T query[] = {query_element, query_element, query_element, query_element};
     runTopKSearchTest(index, query, k, verify_res);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
@@ -1266,7 +1142,8 @@ TEST_F(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     ASSERT_EQ(info.hnswInfo.efRuntime, efRuntime);
 
     // Run same query again, set efRuntime to 300.
-    VecSimQueryParams queryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = 300}};
+    HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = 300};
+    VecSimQueryParams queryParams = CreateQueryParams(hnswRuntimeParams);
     runTopKSearchTest(index, query, k, verify_res, &queryParams);
 
     info = VecSimIndex_Info(index);
@@ -1289,26 +1166,24 @@ TEST_F(HNSWMultiTest, test_query_runtime_params_user_build_args) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_delete_entry_point) {
+TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
     size_t n = 10000;
     size_t per_label = 5;
     size_t dim = 4;
     size_t M = 2;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = M,
-                                                 .efConstruction = 0,
-                                                 .efRuntime = 0}};
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = M,
+                         .efConstruction = 0,
+                         .efRuntime = 0};
 
-    VecSimIndex *index = VecSimIndex_New(&params);
+    VecSimIndex *index = this->CreateNewIndex(params);
+
     ASSERT_TRUE(index != NULL);
 
-    int64_t vec[dim];
+    TEST_DATA_T vec[dim];
     for (size_t i = 0; i < dim; i++)
         vec[i] = i;
     for (size_t j = 0; j < n; j++)
@@ -1323,7 +1198,7 @@ TEST_F(HNSWMultiTest, hnsw_delete_entry_point) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_batch_iterator_basic) {
+TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_basic) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 20;
@@ -1332,33 +1207,26 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_basic) {
 
     size_t n = n_labels * perLabel;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = M,
-                                                 .efConstruction = ef,
-                                                 .efRuntime = ef}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = M,
+                         .efConstruction = ef,
+                         .efRuntime = ef};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     // For every i, add the vector (i,i,i,i) under the label i.
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i / perLabel);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
-    float query[dim];
-    for (size_t j = 0; j < dim; j++) {
-        query[j] = (float)n;
-    }
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n);
+
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     size_t iteration_num = 0;
 
@@ -1371,7 +1239,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_basic) {
         for (size_t i = 0; i < n_res; i++) {
             expected_ids[i] = (n_labels - iteration_num * n_res - i - 1);
         }
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_EQ(expected_ids[index], id);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
@@ -1383,7 +1251,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_basic) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_batch_iterator_reset) {
+TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_reset) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 20;
@@ -1392,32 +1260,24 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_reset) {
 
     size_t n = n_labels * perLabel;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = M,
-                                                 .efConstruction = ef,
-                                                 .efRuntime = ef}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = M,
+                         .efConstruction = ef,
+                         .efRuntime = ef};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
     // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
-    float query[dim];
-    for (size_t j = 0; j < dim; j++) {
-        query[j] = (float)n;
-    }
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet, in
@@ -1432,7 +1292,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_reset) {
             for (size_t i = 0; i < n_res; i++) {
                 expected_ids[i] = (n_labels - iteration_num * n_res - i - 1);
             }
-            auto verify_res = [&](size_t id, float score, size_t index) {
+            auto verify_res = [&](size_t id, double score, size_t index) {
                 ASSERT_EQ(expected_ids[index], id);
             };
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
@@ -1445,7 +1305,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_reset) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
+TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 2;
@@ -1454,26 +1314,21 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
 
     size_t n = n_labels * perLabel;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = M,
-                                                 .efConstruction = ef,
-                                                 .efRuntime = ef}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = M,
+                         .efConstruction = ef,
+                         .efRuntime = ef};
 
-    float query[] = {(float)n, (float)n, (float)n, (float)n};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n);
 
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
         // Set labels to be different than the internal ids.
-        VecSimIndex_AddVector(index, (const void *)f, (n - i - 1) / perLabel);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, (n - i - 1) / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
@@ -1484,7 +1339,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         // Expect to get results in the reverse order of labels - which is the order of the distance
         // from the query vector. Get one result in every iteration.
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_EQ(id, iteration_num);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
@@ -1496,7 +1351,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, hnsw_batch_iterator_advanced) {
+TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     size_t dim = 4;
     size_t M = 8;
     size_t ef = 1000;
@@ -1505,18 +1360,17 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_advanced) {
 
     size_t n = n_labels * perLabel;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = M,
-                                                 .efConstruction = ef,
-                                                 .efRuntime = ef}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = M,
+                         .efConstruction = ef,
+                         .efRuntime = ef};
 
-    float query[] = {(float)n, (float)n, (float)n, (float)n};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
@@ -1534,11 +1388,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     for (size_t i = 0; i < n - 1; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = (float)i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i / perLabel);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
@@ -1564,7 +1414,7 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_advanced) {
         for (size_t i = 0; i < n_res; i++) {
             expected_ids.push_back(n_labels - iteration_num * n_res + i);
         }
-        auto verify_res = [&](size_t id, float score, size_t index) {
+        auto verify_res = [&](size_t id, double score, size_t index) {
             ASSERT_EQ(expected_ids[index], id);
         };
         if (iteration_num <= n_labels / n_res) {
@@ -1584,36 +1434,27 @@ TEST_F(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
-
-TEST_F(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
+TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     size_t n = 4;
     size_t n_labels = 3;
     size_t dim = 4;
     size_t n_res;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_L2,
-                                                 .multi = true,
-                                                 .initialCapacity = n,
-                                                 .M = 2,
-                                                 .efRuntime = 1}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 2, .efRuntime = 1};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     // enforce max level to be 0
-    reinterpret_cast<HNSWIndex<float, float> *>(index)->mult_ = 0;
+    this->CastToHNSW(index)->mult_ = 0;
     for (size_t i = 0; i < n; i++) {
-        float f[dim];
-        for (size_t j = 0; j < dim; j++) {
-            f[j] = i;
-        }
-        VecSimIndex_AddVector(index, (const void *)f, i % n_labels);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     // enforce entry point to be 0
-    reinterpret_cast<HNSWIndex<float, float> *>(index)->entrypoint_node_ = 0;
+    this->CastToHNSW(index)->entrypoint_node_ = 0;
 
-    float query[] = {(float)n, (float)n, (float)n, (float)n};
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // We expect to scan the graph by order of insertion, and to find the last k vectors.
@@ -1740,91 +1581,87 @@ TEST_F(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
 //     serializer.reset();
 // }
 
-TEST_F(HNSWMultiTest, testCosine) {
+TYPED_TEST(HNSWMultiTest, testCosine) {
     size_t dim = 4;
     size_t n = 100;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_Cosine,
-                                                 .multi = true,
-                                                 .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 1; i <= n; i++) {
-        float f[dim];
-        f[0] = (float)i / n;
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
         for (size_t j = 1; j < dim; j++) {
-            f[j] = 1.0f;
+            f[j] = 1.0;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, f, i);
     }
     // Add more worst vector for each label
     for (size_t i = 1; i <= n; i++) {
-        float f[dim];
-        f[0] = (float)i + n;
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i + n;
         for (size_t j = 1; j < dim; j++) {
-            f[j] = 1.0f;
+            f[j] = 1.0;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
-    float query[dim];
-    for (size_t i = 0; i < dim; i++) {
-        query[i] = 1.0f;
-    }
-    auto verify_res = [&](size_t id, float score, size_t index) {
-        ASSERT_EQ(id, (n - index));
-        float first_coordinate = (float)id / n;
-        // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query vector
-        // and B is the current result vector.
-        float expected_score =
-            1.0f -
-            ((first_coordinate + (float)dim - 1.0f) /
-             (sqrtf((float)dim) * sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
-        // Verify that abs difference between the actual and expected score is at most 1/10^6.
-        ASSERT_NEAR(score, expected_score, 1e-5);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
+
+    auto verify_res = [&](size_t id, double score, size_t result_rank) {
+        ASSERT_EQ(id, (n - result_rank));
+        TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
+        ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
     };
     runTopKSearchTest(index, query, 10, verify_res);
 
     VecSimIndex_Free(index);
 }
 
-TEST_F(HNSWMultiTest, testCosineBatchIterator) {
+TYPED_TEST(HNSWMultiTest, testCosineBatchIterator) {
     size_t dim = 4;
     size_t n = 100;
 
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-                        .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                 .dim = dim,
-                                                 .metric = VecSimMetric_Cosine,
-                                                 .multi = true,
-                                                 .initialCapacity = n}};
-    VecSimIndex *index = VecSimIndex_New(&params);
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 1; i <= n; i++) {
-        float f[dim];
-        f[0] = (float)i / n;
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i / n;
         for (size_t j = 1; j < dim; j++) {
-            f[j] = 1.0f;
+            f[j] = 1.0;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, f, i);
     }
     // Add more worst vector for each label
     for (size_t i = 1; i <= n; i++) {
-        float f[dim];
-        f[0] = (float)i + n;
+        TEST_DATA_T f[dim];
+        f[0] = (TEST_DATA_T)i + n;
         for (size_t j = 1; j < dim; j++) {
-            f[j] = 1.0f;
+            f[j] = 1.0;
         }
-        VecSimIndex_AddVector(index, (const void *)f, i);
+        VecSimIndex_AddVector(index, f, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
-    float query[dim];
-    for (size_t i = 0; i < dim; i++) {
-        query[i] = 1.0f;
-    }
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1.0);
+
+    // topK search will normalize the query so we keep the original data to
+    // avoid normalizing twice.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, dim * sizeof(TEST_DATA_T));
+    VecSim_Normalize(normalized_query, dim, params.type);
 
     // Test with batch iterator.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
@@ -1835,17 +1672,10 @@ TEST_F(HNSWMultiTest, testCosineBatchIterator) {
     size_t n_res = 10;
     while (VecSimBatchIterator_HasNext(batchIterator)) {
         std::vector<size_t> expected_ids(n_res);
-        auto verify_res_batch = [&](size_t id, float score, size_t index) {
-            ASSERT_EQ(id, (n - n_res * iteration_num - index));
-            float first_coordinate = (float)id / n;
-            // By cosine definition: 1 - ((A \dot B) / (norm(A)*norm(B))), where A is the query
-            // vector and B is the current result vector.
-            float expected_score =
-                1.0f - ((first_coordinate + (float)dim - 1.0f) /
-                        (sqrtf((float)dim) *
-                         sqrtf((float)(dim - 1) + first_coordinate * first_coordinate)));
-            // Verify that abs difference between the actual and expected score is at most 1/10^6.
-            ASSERT_NEAR(score, expected_score, 1e-5);
+        auto verify_res_batch = [&](size_t id, double score, size_t result_rank) {
+            ASSERT_EQ(id, (n - n_res * iteration_num - result_rank));
+            TEST_DATA_T expected_score = index->getDistanceFrom(id, normalized_query);
+            ASSERT_TYPE_EQ(TEST_DATA_T(score), expected_score);
         };
         runBatchIteratorSearchTest(batchIterator, n_res, verify_res_batch);
         iteration_num++;

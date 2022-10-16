@@ -11,15 +11,7 @@ private:
 
 #ifdef BUILD_TESTS
     friend class HNSWIndexSerializer;
-    // Allow the following test to access the index size private member.
-    friend class HNSWMultiTest_testSizeEstimation_Test;
-    friend class HNSWMultiTest_testInitialSizeEstimation_No_InitialCapacity_Test;
-    friend class HNSWMultiTest_empty_index_Test;
-    friend class HNSWMultiTest_indexing_same_vector_Test;
-    friend class HNSWMultiTest_search_more_than_there_is_Test;
-    friend class HNSWMultiTest_preferAdHocOptimization_Test;
-    friend class HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test;
-
+#include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
@@ -145,9 +137,6 @@ template <typename DataType, typename DistType>
 VecSimBatchIterator *
 HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
-    // As this is the only supported type, we always allocate 4 bytes for every element in the
-    // vector.
-    assert(this->vecType == VecSimType_FLOAT32);
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
