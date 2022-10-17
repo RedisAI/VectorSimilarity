@@ -19,13 +19,13 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType labelType) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
-
-    inline vecsim_stl::abstract_results_container *
-    getNewResultsContainer(size_t cap) const override {
-        return new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator);
-    }
-
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
+
+    inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const override {
+        return std::unique_ptr<vecsim_stl::abstract_results_container>(
+            new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
+    }
 
 private:
     // inline definitions
