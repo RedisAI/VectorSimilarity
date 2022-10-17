@@ -6,12 +6,15 @@
 #include "VecSim/spaces/IP/IP_SSE.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
+#include "VecSim/spaces/IP/IP_AVX512DQ.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_AVX512.h"
-#include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/L2/L2_AVX512DQ.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/L2_space.h"
 
 class SpacesTest : public ::testing::Test {
 
@@ -123,27 +126,35 @@ static dist_func_t<float> IP_dist_funcs_4ExtResiduals[] = {
     FP32_InnerProductSIMD4ExtResiduals_AVX, FP32_InnerProductSIMD4ExtResiduals_AVX512};
 
 // Functions for dimension % 8 == 0 for each optimization.
-static dist_func_t<double> L2_dist_funcs_8Ext[] = {FP64_L2Sqr, FP64_L2SqrSIMD8Ext_SSE,
-                                                   FP64_L2SqrSIMD8Ext_AVX, NULL};
-static dist_func_t<double> IP_dist_funcs_8Ext[] = {FP64_InnerProduct, FP64_InnerProductSIMD8Ext_SSE,
-                                                   FP64_InnerProductSIMD8Ext_AVX, NULL};
+static dist_func_t<double> L2_dist_funcs_8Ext[] = {
+    FP64_L2Sqr, FP64_L2SqrSIMD8Ext_SSE, FP64_L2SqrSIMD8Ext_AVX, FP64_L2SqrSIMD8Ext_AVX512,
+    FP64_L2SqrSIMD8Ext_AVX512};
+static dist_func_t<double> IP_dist_funcs_8Ext[] = {
+    FP64_InnerProduct, FP64_InnerProductSIMD8Ext_SSE, FP64_InnerProductSIMD8Ext_AVX,
+    FP64_InnerProductSIMD8Ext_AVX512, FP64_InnerProductSIMD8Ext_AVX512};
 // Functions for dimension % 2 == 0 for each optimization.
-static dist_func_t<double> L2_dist_funcs_2Ext[] = {FP64_L2Sqr, FP64_L2SqrSIMD2Ext_SSE,
-                                                   FP64_L2SqrSIMD2Ext_AVX, NULL};
-static dist_func_t<double> IP_dist_funcs_2Ext[] = {FP64_InnerProduct, FP64_InnerProductSIMD2Ext_SSE,
-                                                   FP64_InnerProductSIMD2Ext_AVX, NULL};
+static dist_func_t<double> L2_dist_funcs_2Ext[] = {
+    FP64_L2Sqr, FP64_L2SqrSIMD2Ext_SSE, FP64_L2SqrSIMD2Ext_AVX, FP64_L2SqrSIMD2Ext_AVX512_noDQ,
+    FP64_L2SqrSIMD2Ext_AVX512};
+static dist_func_t<double> IP_dist_funcs_2Ext[] = {
+    FP64_InnerProduct, FP64_InnerProductSIMD2Ext_SSE, FP64_InnerProductSIMD2Ext_AVX,
+    FP64_InnerProductSIMD2Ext_AVX512_noDQ, FP64_InnerProductSIMD2Ext_AVX512};
 // Function for dim > 8  && dim % 8 < 2, for each optimization.
 static dist_func_t<double> L2_dist_funcs_8ExtResiduals[] = {
-    FP64_L2Sqr, FP64_L2SqrSIMD8ExtResiduals_SSE, FP64_L2SqrSIMD8ExtResiduals_AVX, NULL};
+    FP64_L2Sqr, FP64_L2SqrSIMD8ExtResiduals_SSE, FP64_L2SqrSIMD8ExtResiduals_AVX,
+    FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512};
 static dist_func_t<double> IP_dist_funcs_8ExtResiduals[] = {
     FP64_InnerProduct, FP64_InnerProductSIMD8ExtResiduals_SSE,
-    FP64_InnerProductSIMD8ExtResiduals_AVX, NULL};
+    FP64_InnerProductSIMD8ExtResiduals_AVX, FP64_InnerProductSIMD8ExtResiduals_AVX512,
+    FP64_InnerProductSIMD8ExtResiduals_AVX512};
 // Function for 2 < dimension < 8, dim %2 != 0 for each optimization.
 static dist_func_t<double> L2_dist_funcs_2ExtResiduals[] = {
-    FP64_L2Sqr, FP64_L2SqrSIMD2ExtResiduals_SSE, FP64_L2SqrSIMD2ExtResiduals_AVX, NULL};
+    FP64_L2Sqr, FP64_L2SqrSIMD2ExtResiduals_SSE, FP64_L2SqrSIMD2ExtResiduals_AVX,
+    FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ, FP64_L2SqrSIMD2ExtResiduals_AVX512};
 static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
     FP64_InnerProduct, FP64_InnerProductSIMD2ExtResiduals_SSE,
-    FP64_InnerProductSIMD2ExtResiduals_AVX, NULL};
+    FP64_InnerProductSIMD2ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ,
+    FP64_InnerProductSIMD2ExtResiduals_AVX512};
 } // namespace spaces_test
 
 class FP32SpacesOptimizationTest
@@ -162,8 +173,9 @@ TEST_P(FP32SpacesOptimizationTest, FP32DistanceFunctionTest) {
     dist_func_t<float> *arch_opt_funcs = GetParam().second;
     float baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512:
-        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512](v, v2, dim));
+    case ARCH_OPT_AVX512_DQ:
+    case ARCH_OPT_AVX512_F:
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512_F](v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX](v, v2, dim));
     case ARCH_OPT_SSE:
@@ -200,10 +212,10 @@ TEST_P(FP64SpacesOptimizationTest, FP64DistanceFunctionTest) {
     dist_func_t<double> *arch_opt_funcs = GetParam().second;
     double baseline = arch_opt_funcs[ARCH_OPT_NONE](v, v2, dim);
     switch (optimization) {
-    case ARCH_OPT_AVX512: // TODO remove condition when all optimization are implemented
-        if (arch_opt_funcs[ARCH_OPT_AVX512]) {
-            ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512](v, v2, dim));
-        }
+    case ARCH_OPT_AVX512_DQ:
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512_DQ](v, v2, dim));
+    case ARCH_OPT_AVX512_F:
+        ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX512_F](v, v2, dim));
     case ARCH_OPT_AVX:
         ASSERT_EQ(baseline, arch_opt_funcs[ARCH_OPT_AVX](v, v2, dim));
     case ARCH_OPT_SSE:
