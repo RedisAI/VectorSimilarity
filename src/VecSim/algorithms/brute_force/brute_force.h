@@ -69,7 +69,7 @@ protected:
     getNewMaxPriorityQueue() = 0;
 
     // inline label to id setters that need to be implemented by derived class
-    virtual inline vecsim_stl::abstract_results_container *
+    virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const = 0;
 
     // inline label to id setters that need to be implemented by derived class
@@ -296,7 +296,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     }
 
     // Compute scores in every block and save results that are within the range.
-    auto *res_container =
+    auto res_container =
         getNewResultsContainer(10); // Use 10 as the initial capacity for the dynamic array.
 
     DistType radius_ = DistType(radius);
@@ -304,7 +304,6 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
-            delete res_container;
             return rl;
         }
         for (size_t i = 0; i < scores.size(); i++) {
@@ -317,7 +316,6 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     assert(curr_id == this->count);
     rl.code = VecSim_QueryResult_OK;
     rl.results = res_container->get_results();
-    delete res_container;
     return rl;
 }
 
