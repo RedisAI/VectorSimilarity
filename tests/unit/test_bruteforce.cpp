@@ -1078,27 +1078,44 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
 
     auto *rparams = array_new<VecSimRawParam>(2);
 
-    // EF_RUNTIME is not a valid parameter for BF index.
-    array_append(rparams, (VecSimRawParam){.name = "ef_runtime",
-                                           .nameLen = strlen("ef_runtime"),
-                                           .value = "200",
-                                           .valLen = strlen("200")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, false),
-              VecSimParamResolverErr_UnknownParam);
+    // EPSILON is not a valid parameter for BF index.
+    array_append(rparams, (VecSimRawParam){.name = "epsilon",
+                                           .nameLen = strlen("epsilon"),
+                                           .value = "0.1",
+                                           .valLen = strlen("0.1")});
 
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimParamResolverErr_UnknownParam);
+    }
+    // EF_RUNTIME is not a valid parameter for BF index.
+    rparams[0] = {.name = "ef_runtime",
+                  .nameLen = strlen("ef_runtime"),
+                  .value = "200",
+                  .valLen = strlen("200")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimParamResolverErr_UnknownParam);
+    }
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
     // Sending only "batch_size" param is valid.
     array_append(rparams, (VecSimRawParam){.name = "batch_size",
                                            .nameLen = strlen("batch_size"),
                                            .value = "100",
                                            .valLen = strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, true), VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, QUERY_TYPE_HYBRID),
+              VecSim_OK);
     ASSERT_EQ(qparams.batchSize, 100);
 
     // With EF_RUNTIME, its again invalid (for hybrid queries as well).
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, true),
-              VecSimParamResolverErr_UnknownParam);
-
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimParamResolverErr_UnknownParam);
+    }
     VecSimIndex_Free(index);
     array_free(rparams);
 }

@@ -55,6 +55,8 @@ inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
     return VecSimIndex_New(&params);
 }
 
+extern VecsimQueryType query_types[4];
+
 } // namespace test_utils
 template <typename IndexParams>
 size_t EstimateInitialSize(const IndexParams &index_params) {
