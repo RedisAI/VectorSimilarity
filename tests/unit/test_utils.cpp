@@ -4,6 +4,9 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 
+VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
+                                              QUERY_TYPE_RANGE};
+
 static bool allUniqueResults(VecSimQueryResult_List res) {
     size_t len = VecSimQueryResult_Len(res);
     auto it1 = VecSimQueryResult_List_GetIterator(res);
