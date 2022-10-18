@@ -448,3 +448,78 @@ def test_recall_for_hnsw_multi_value():
     recall = float(correct)/(k*num_queries)
     print("\nrecall is: \n", recall)
     assert(recall > 0.9)
+
+
+def test_multi_range_query():
+    dim = 100
+    num_labels = 20000
+    per_label = 5
+
+    epsilon = 0.01
+
+    num_elements = num_labels * per_label
+
+    params = VecSimParams()
+    hnswparams = HNSWParams()
+
+    params.algo = VecSimAlgo_HNSWLIB
+
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_L2
+    hnswparams.multi = True
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.M = 32
+    hnswparams.efConstruction = 200
+    hnswparams.initialCapacity = num_elements
+    hnswparams.epsilon = epsilon
+
+    params.hnswParams = hnswparams
+    index = VecSimIndex(params)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    vectors = []
+    for label, vecs in enumerate(data):
+        for vector in vecs:
+            index.add_vector(vector, label)
+            vectors.append((label, vector))
+
+    query_data = np.float32(np.random.random((1, dim)))
+
+    radius = 13.0
+    recalls = {}
+    # calculate distances of the labels in the index
+    dists = {}
+    for key, vec in vectors:
+        dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
+
+    dists = list(dists.items())
+    dists = sorted(dists, key=lambda pair: pair[1])
+    keys = [key for key, dist in dists if dist <= radius]
+
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+        end = time.time()
+        res_num = len(hnsw_labels[0])
+
+        print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+              f' got {res_num} results, which are {res_num/len(keys)} of the entire results in the range.')
+
+        # Compare the number of vectors that are actually within the range to the returned results.
+        assert np.all(np.isin(hnsw_labels, np.array(keys)))
+
+        # Asserts that all the results are unique
+        assert len(hnsw_labels[0]) == len(np.unique(hnsw_labels[0]))
+
+        assert max(hnsw_distances[0]) <= radius
+        recalls[epsilon_rt] = res_num/len(keys)
+
+    # Expect higher recalls for higher epsilon values.
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
+
+    # Expect zero results for radius==0
+    hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
+    assert len(hnsw_labels[0]) == 0

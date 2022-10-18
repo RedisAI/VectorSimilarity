@@ -4,6 +4,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
@@ -66,6 +67,10 @@ protected:
     // inline priority queue getter that need to be implemented by derived class
     virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() = 0;
+
+    // inline label to id setters that need to be implemented by derived class
+    virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
@@ -291,26 +296,27 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     }
 
     // Compute scores in every block and save results that are within the range.
-    rl.results =
-        array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
+    auto res_container =
+        getNewResultsContainer(10); // Use 10 as the initial capacity for the dynamic array.
 
     DistType radius_ = DistType(radius);
     idType curr_id = 0;
+    rl.code = VecSim_QueryResult_OK;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
-            return rl;
+            break;
         }
         for (size_t i = 0; i < scores.size(); i++) {
             if (scores[i] <= radius_) {
-                auto res = VecSimQueryResult{getVectorLabel(curr_id), scores[i]};
-                rl.results = array_append(rl.results, res);
+                res_container->emplace(getVectorLabel(curr_id), scores[i]);
             }
             ++curr_id;
         }
     }
-    assert(curr_id == this->count);
-    rl.code = VecSim_QueryResult_OK;
+    // assert only if the loop finished iterating all the ids (we didn't get rl.code != VecSim_OK).
+    assert((rl.code != VecSim_OK || curr_id == this->count));
+    rl.results = res_container->get_results();
     return rl;
 }
 
