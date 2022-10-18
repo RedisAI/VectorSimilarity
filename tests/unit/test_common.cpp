@@ -287,27 +287,24 @@ TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
 
     VecSimQueryResult_List res_list = {.results = res_array, .code = VecSim_QueryResult_OK};
     VecSimQueryResult *res_inner_array = VecSimQueryResult_GetArray(res_list);
+    ASSERT_EQ(res_list.results, res_inner_array);
 
     ASSERT_EQ(3, VecSimQueryResult_Len(res_list));
     ASSERT_EQ(3, VecSimQueryResult_ArrayLen(res_inner_array));
 
-    // Go over the list result with the iterator.
+    // Go over the list result with the iterator. Reset the iterator and re-iterate several times.
     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res_list);
-    for (size_t i = 0; i < 3; i++) {
-        ASSERT_TRUE(VecSimQueryResult_IteratorHasNext(it));
-        VecSimQueryResult *res = VecSimQueryResult_IteratorNext(it);
-        ASSERT_EQ(res, res_inner_array + i);
-        ASSERT_EQ(i, VecSimQueryResult_GetId(res));
-        ASSERT_EQ((double)i, VecSimQueryResult_GetScore(res));
+    for (size_t rep = 0; rep < 3; rep++) {
+        for (size_t i = 0; i < VecSimQueryResult_Len(res_list); i++) {
+            ASSERT_TRUE(VecSimQueryResult_IteratorHasNext(it));
+            VecSimQueryResult *res = VecSimQueryResult_IteratorNext(it);
+            ASSERT_EQ(res, res_inner_array + i);
+            ASSERT_EQ(i, VecSimQueryResult_GetId(res));
+            ASSERT_EQ((double)i, VecSimQueryResult_GetScore(res));
+        }
+        ASSERT_FALSE(VecSimQueryResult_IteratorHasNext(it));
+        VecSimQueryResult_IteratorReset(it);
     }
-    ASSERT_FALSE(VecSimQueryResult_IteratorHasNext(it));
-
-    // Reset the iterator and get the first result again.
-    VecSimQueryResult_IteratorReset(it);
-    ASSERT_TRUE(VecSimQueryResult_IteratorHasNext(it));
-    VecSimQueryResult *res = VecSimQueryResult_IteratorNext(it);
-    ASSERT_EQ(0, VecSimQueryResult_GetId(res));
-    ASSERT_EQ(0.0, VecSimQueryResult_GetScore(res));
 
     // Destroying the iterator without destroying the list.
     VecSimQueryResult_IteratorFree(it);

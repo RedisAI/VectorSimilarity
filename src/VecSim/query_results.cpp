@@ -31,7 +31,6 @@ extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
 extern "C" void VecSimQueryResult_FreeArray(VecSimQueryResult *rl) {
     if (rl) {
         array_free(rl);
-        rl = nullptr;
     }
 }
 
