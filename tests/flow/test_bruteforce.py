@@ -211,3 +211,61 @@ def test_bf_multivalue():
 
     assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+
+def test_multi_range_query():
+    dim = 128
+    num_labels = 20000
+    per_label = 5
+
+    num_elements = num_labels * per_label
+
+    bfparams = BFParams()
+    bfparams.initialCapacity = num_elements
+    bfparams.dim = dim
+    bfparams.metric = VecSimMetric_L2
+    bfparams.multi = True
+    bfparams.type = VecSimType_FLOAT32
+
+    bfindex = BFIndex(bfparams)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    vectors = []
+    for label, vecs in enumerate(data):
+        for vector in vecs:
+            bfindex.add_vector(vector, label)
+            vectors.append((label, vector))
+
+    query_data = np.float32(np.random.random((1, dim)))
+
+    radius = 13.0
+    # calculate distances of the labels in the index
+    dists = {}
+    for key, vec in vectors:
+        dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
+
+    dists = list(dists.items())
+    dists = sorted(dists, key=lambda pair: pair[1])
+    keys = [key for key, dist in dists if dist <= radius]
+
+    start = time.time()
+    bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
+    end = time.time()
+    res_num = len(bf_labels[0])
+
+    print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds')
+    
+    # Recall should be 100%.
+    assert res_num == len(keys)
+
+    # Compare the number of vectors that are actually within the range to the returned results.
+    assert np.all(np.isin(bf_labels, np.array(keys)))
+
+    # Asserts that all the results are unique
+    assert len(bf_labels[0]) == len(np.unique(bf_labels[0]))
+
+    assert max(bf_distances[0]) <= radius
+
+    # Expect zero results for radius==0
+    bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
+    assert len(bf_labels[0]) == 0
