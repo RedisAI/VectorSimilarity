@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/query_result_struct.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
@@ -253,4 +254,44 @@ TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
 
     TypeParam one = 1.0;
     ASSERT_NEAR(one, norm, 0.0000001);
+}
+
+class CommonAPITest : public ::testing::Test {};
+
+TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
+    auto *res_array = array_new<VecSimQueryResult>(3);
+    array_append(res_array, VecSimQueryResult{.id = 0, .score = 0.0});
+    array_append(res_array, VecSimQueryResugit pult{.id = 1, .score = 1.0});
+    array_append(res_array, VecSimQueryResult{.id = 2, .score = 2.0});
+
+    VecSimQueryResult_List res_list = {.results = res_array, .code = VecSim_QueryResult_OK};
+    VecSimQueryResult *res_inner_array = VecSimQueryResult_GetArray(res_list);
+
+    ASSERT_EQ(3, VecSimQueryResult_Len(res_list));
+    ASSERT_EQ(3, VecSimQueryResult_ArrayLen(res_inner_array));
+
+    // Go over the list result with the iterator.
+    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res_list);
+    for (size_t i = 0; i < 3; i++) {
+        ASSERT_TRUE(VecSimQueryResult_IteratorHasNext(it));
+        VecSimQueryResult *res = VecSimQueryResult_IteratorNext(it);
+        ASSERT_EQ(res, res_inner_array + i);
+        ASSERT_EQ(i, VecSimQueryResult_GetId(res));
+        ASSERT_EQ((double)i, VecSimQueryResult_GetScore(res));
+    }
+    ASSERT_FALSE(VecSimQueryResult_IteratorHasNext(it));
+
+    // Reset the iterator and get the first result again.
+    VecSimQueryResult_IteratorReset(it);
+    ASSERT_TRUE(VecSimQueryResult_IteratorHasNext(it));
+    VecSimQueryResult *res = VecSimQueryResult_IteratorNext(it);
+    ASSERT_EQ(0, VecSimQueryResult_GetId(res));
+    ASSERT_EQ(0.0, VecSimQueryResult_GetScore(res));
+
+    // Destroying the iterator without destroying the list.
+    VecSimQueryResult_IteratorFree(it);
+    ASSERT_EQ(3, VecSimQueryResult_Len(res_list));
+
+    // Free the internal array pointer - the validation for success is by having no leaks.
+    VecSimQueryResult_FreeArray(res_inner_array);
 }
