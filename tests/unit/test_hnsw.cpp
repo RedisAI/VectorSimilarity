@@ -1304,6 +1304,13 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
                                            .nameLen = strlen("epsilon"),
                                            .value = "0.001",
                                            .valLen = strlen("0.001")});
+
+    for (VecsimQueryType query_type : {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID}) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimParamResolverErr_InvalidPolicy_NRange);
+    }
+
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
         VecSim_OK);

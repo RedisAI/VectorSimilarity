@@ -53,7 +53,7 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
                                                 VecSimQueryParams *qparams,
                                                 VecsimQueryType query_type) {
     double num_val;
-    // EF_RUNTIME is a valid parameter only in HNSW algorithm.
+    // EPSILON is a valid parameter only in HNSW algorithm.
     if (index_type != VecSimAlgo_HNSWLIB) {
         return VecSimParamResolverErr_UnknownParam;
     }
