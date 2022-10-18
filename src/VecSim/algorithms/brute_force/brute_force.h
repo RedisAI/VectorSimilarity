@@ -315,7 +315,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
         }
     }
     // assert only if the loop finished iterating all the ids (we didn't get rl.code != VecSim_OK).
-    assert((rl.code == VecSim_OK ? curr_id == this->count : true));
+    assert((rl.code != VecSim_OK || curr_id == this->count));
     rl.results = res_container->get_results();
     return rl;
 }

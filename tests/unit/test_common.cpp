@@ -323,7 +323,6 @@ TYPED_TEST(UtilsTests, results_containers) {
     VecSimQueryResult_Free(res2);
 }
 
-
 class CommonAPITest : public ::testing::Test {};
 
 TEST(CommonAPITest, VecSim_QueryResult_Iterator) {

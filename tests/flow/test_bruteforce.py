@@ -256,7 +256,7 @@ def test_multi_range_query():
     print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds')
     
     # Recall should be 100%.
-    assert res_num/len(keys) == 1
+    assert res_num == len(keys)
 
     # Compare the number of vectors that are actually within the range to the returned results.
     assert np.all(np.isin(bf_labels, np.array(keys)))
