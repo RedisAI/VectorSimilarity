@@ -5,22 +5,44 @@
 
 namespace HNSWFactory {
 
-VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+template <typename DataType, typename DistType = DataType>
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
+                                                 std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     if (params->multi)
-        return new (allocator) HNSWIndex_Multi<float, float>(params, allocator);
+        return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
     else
-        return new (allocator) HNSWIndex_Single<float, float>(params, allocator);
+        return new (allocator) HNSWIndex_Single<DataType, DistType>(params, allocator);
+}
+
+VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+    if (params->type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
+    } else if (params->type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(params, allocator);
+    }
+
+    // If we got here something is wrong.
+    return NULL;
+}
+
+template <typename DataType, typename DistType = DataType>
+inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
+    // check if single and return new bf_index
+    if (is_multi)
+        return sizeof(HNSWIndex_Multi<DataType, DistType>);
+    else
+        return sizeof(HNSWIndex_Single<DataType, DistType>);
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
-    if (params->multi) {
-        est += sizeof(HNSWIndex_Multi<float, float>);
-    } else {
-        est += sizeof(HNSWIndex_Single<float, float>);
+    if (params->type == VecSimType_FLOAT32) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
+    } else if (params->type == VecSimType_FLOAT64) {
+        est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     }
 
 #ifdef ENABLE_PARALLELIZATION

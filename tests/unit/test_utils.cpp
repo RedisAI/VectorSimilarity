@@ -28,11 +28,16 @@ static bool allUniqueResults(VecSimQueryResult_List res) {
  * helper function to run Top K search and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
  */
+
+VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
+    VecSimQueryParams QueryParams = {.hnswRuntimeParams = RuntimeParams};
+    return QueryParams;
+}
+
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
-    VecSimQueryResult_List res =
-        VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
+    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);

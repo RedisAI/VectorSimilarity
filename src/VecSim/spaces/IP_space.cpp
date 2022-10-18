@@ -2,6 +2,7 @@
 #include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/IP/IP_AVX512DQ.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
@@ -17,7 +18,8 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
 #ifdef __AVX512F__
     {
         static dist_func_t<float> dist_funcs[] = {
@@ -63,8 +65,43 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
-    case ARCH_OPT_AVX512:
+    case ARCH_OPT_AVX512_DQ:
+#ifdef __AVX512DQ__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX512, FP64_InnerProductSIMD2Ext_AVX512,
+            FP64_InnerProductSIMD8ExtResiduals_AVX512, FP64_InnerProductSIMD2ExtResiduals_AVX512};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    case ARCH_OPT_AVX512_F:
+#ifdef __AVX512F__
+    {
+        // If AVX512 foundation flag is supported, but AVX512DQ isn't supported, we cannot extract
+        // 2X64-bit elements from the 512bit register, which is required when dim%8 != 0, so we can
+        // continue the vector computations by using 128 register optimization on the vectors'
+        // tails. Then, we use modified versions that split both part of the computation without
+        // using the unsupported extraction operation.
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX512,
+            FP64_InnerProductSIMD8ExtResiduals_AVX512, FP64_InnerProductSIMD2Ext_AVX512_noDQ,
+            FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
     case ARCH_OPT_AVX:
+#ifdef __AVX__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX, FP64_InnerProductSIMD2Ext_AVX,
+            FP64_InnerProductSIMD8ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+
+#endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
     {
