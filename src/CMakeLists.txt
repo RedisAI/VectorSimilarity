@@ -65,6 +65,11 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     VecSim/memory/vecsim_base.cpp
   )
 
+if(VECSIM_BUILD_TESTS)
+	add_library(VectorSimilaritySerializer VecSim/utils/serializer.cpp)
+	target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
+endif()
+
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 # Needed for build as ExternalProject (like RediSearch does)
