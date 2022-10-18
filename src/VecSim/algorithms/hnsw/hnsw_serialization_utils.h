@@ -1,6 +1,6 @@
 #pragma once
 
-#include "serialization_utils.h"
+#include <cstddef>
 
 #define HNSW_INVALID_META_DATA SIZE_MAX
 

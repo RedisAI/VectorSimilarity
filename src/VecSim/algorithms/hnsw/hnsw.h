@@ -19,6 +19,7 @@
 
 #ifdef BUILD_TESTS
 #include "hnsw_serialization_utils.h"
+#include "VecSim/utils/serializer.h"
 #endif
 
 #include <deque>
@@ -54,7 +55,12 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
 template <typename DataType, typename DistType>
-class HNSWIndex : public VecSimIndexAbstract<DistType> {
+#ifdef BUILD_TESTS
+class HNSWIndex : public VecSimIndexAbstract<DistType>, public Serializer 
+#else
+class HNSWIndex : public VecSimIndexAbstract<DistType> 
+#endif
+{
 protected:
     // Index build parameters
     size_t max_elements_;
@@ -111,17 +117,17 @@ protected:
 
     //Serializing functions.
 public:
-    HNSWIndexMetaData checkIntegrity();
-    virtual void saveIndexIMP(std::ofstream &output) const;
-    virtual void loadIndexIMP(const std::ifstream &input);
-    virtual inline bool serializingIsValid() const {return checkIntegrity.valid_state;}
+    HNSWIndexMetaData checkIntegrity() const;
+    virtual void saveIndexIMP(std::ofstream &output) const override;
+    virtual void loadIndexIMP(std::ifstream &input) override;
+    virtual inline bool serializingIsValid() const {return this->checkIntegrity().valid_state;}
 protected:
     virtual void clearLabelLookup() = 0;
 private:
     void saveIndexFields(std::ofstream &output) const;
     void saveGraph(std::ofstream &output) const;
-    void restoreIndexFields(const std::ifstream &input);
-    void restoreGraph(const std::ifstream &input);
+    void restoreIndexFields(std::ifstream &input);
+    void restoreGraph(std::ifstream &input);
 #endif
 
 protected:
@@ -1562,7 +1568,7 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
     info.hnswInfo.indexLabelCount = this->indexLabelCount();
     info.hnswInfo.max_level = this->getMaxLevel();
     info.hnswInfo.entrypoint = this->getEntryPointLabel();
-    info.hnswInfo.memory = this->allocator->getAllocationSize();
+    info.hnswInfo.memory = this->getAllocationSize();
     info.hnswInfo.last_mode = this->last_mode;
     return info;
 }
@@ -1784,13 +1790,13 @@ void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) const {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::loadIndexIMP(const std::ifstream &input) {
+void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input) {
     this->restoreIndexFields(input);
     this->restoreGraph(input);
 }
 
 template <typename DataType, typename DistType>
-HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() {
+HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const{
     HNSWIndexMetaData res = {.valid_state = false,
                              .memory_usage = -1,
                              .double_connections = HNSW_INVALID_META_DATA,
@@ -1799,7 +1805,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() {
                              .max_in_degree = HNSW_INVALID_META_DATA};
 
     // Save the current memory usage (before we use additional memory for the integrity check).
-    res.memory_usage = this->getAllocator()->getAllocationSize();
+    res.memory_usage = this->getAllocationSize();
     size_t connections_checked = 0, double_connections = 0;
     std::vector<int> inbound_connections_num(this->max_id + 1, 0);
     size_t incoming_edges_sets_sizes = 0;
@@ -1859,7 +1865,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreIndexFields(const std::ifstream &input) {
+void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
     readBinaryPOD(input, this->max_elements_);
     readBinaryPOD(input, this->M_);
@@ -1893,7 +1899,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(const std::ifstream &inpu
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreGraph(const std::ifstream &input) {
+void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
     this->data_level0_memory_ = (char *)this->allocator->reallocate(
         this->data_level0_memory_,
@@ -1968,7 +1974,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(const std::ifstream &input) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) {
+void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
         // Save index build parameters
     writeBinaryPOD(output, this->max_elements_);
     writeBinaryPOD(output, this->M_);
@@ -2002,7 +2008,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) {
 
 }
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) {
+void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // Save level 0 data (graph layer 0 + labels + vectors data)
     output.write(this->data_level0_memory_,
                  this->max_elements_ * this->size_data_per_element_);

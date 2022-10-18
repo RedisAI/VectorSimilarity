@@ -340,7 +340,7 @@ VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
     info.bfInfo.indexSize = this->count;
     info.bfInfo.indexLabelCount = this->indexLabelCount();
     info.bfInfo.blockSize = this->blockSize;
-    info.bfInfo.memory = this->allocator->getAllocationSize();
+    info.bfInfo.memory = this->getAllocationSize();
     info.bfInfo.isMulti = this->isMulti;
     info.bfInfo.last_mode = this->last_mode;
     return info;
