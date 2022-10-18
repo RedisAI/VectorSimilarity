@@ -301,10 +301,11 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 
     DistType radius_ = DistType(radius);
     idType curr_id = 0;
+    rl.code = VecSim_QueryResult_OK;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
-            return rl;
+            break;
         }
         for (size_t i = 0; i < scores.size(); i++) {
             if (scores[i] <= radius_) {
@@ -313,8 +314,8 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
             ++curr_id;
         }
     }
-    assert(curr_id == this->count);
-    rl.code = VecSim_QueryResult_OK;
+    // assert only if the loop finished iterating all the ids (we didn't get rl.code != VecSim_OK).
+    assert((rl.code == VecSim_OK ? curr_id == this->count : true));
     rl.results = res_container->get_results();
     return rl;
 }

@@ -213,14 +213,14 @@ def test_bf_multivalue():
     assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
 
 def test_multi_range_query():
-    dim = 100
+    dim = 128
     num_labels = 20000
     per_label = 5
 
     num_elements = num_labels * per_label
 
     bfparams = BFParams()
-
+    bfparams.initialCapacity = num_elements
     bfparams.dim = dim
     bfparams.metric = VecSimMetric_L2
     bfparams.multi = True
@@ -239,7 +239,6 @@ def test_multi_range_query():
     query_data = np.float32(np.random.random((1, dim)))
 
     radius = 13.0
-    recalls = {}
     # calculate distances of the labels in the index
     dists = {}
     for key, vec in vectors:
@@ -249,23 +248,23 @@ def test_multi_range_query():
     dists = sorted(dists, key=lambda pair: pair[1])
     keys = [key for key, dist in dists if dist <= radius]
 
-    for epsilon_rt in [0.001, 0.01, 0.1]:
+    start = time.time()
+    bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
+    end = time.time()
+    res_num = len(bf_labels[0])
 
-        start = time.time()
-        bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
-        end = time.time()
-        res_num = len(bf_labels[0])
+    print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds')
+    
+    # Recall should be 100%.
+    assert res_num/len(keys) == 1
 
-        print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds'
-              f' got {res_num} results, which are {res_num/len(keys)} of the entire results in the range.')
+    # Compare the number of vectors that are actually within the range to the returned results.
+    assert np.all(np.isin(bf_labels, np.array(keys)))
 
-        # Compare the number of vectors that are actually within the range to the returned results.
-        assert np.all(np.isin(bf_labels, np.array(keys)))
+    # Asserts that all the results are unique
+    assert len(bf_labels[0]) == len(np.unique(bf_labels[0]))
 
-        # Asserts that all the results are unique
-        assert len(bf_labels[0]) == len(np.unique(bf_labels[0]))
-
-        assert max(bf_distances[0]) <= radius
+    assert max(bf_distances[0]) <= radius
 
     # Expect zero results for radius==0
     bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
