@@ -261,7 +261,7 @@ class CommonAPITest : public ::testing::Test {};
 TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
     auto *res_array = array_new<VecSimQueryResult>(3);
     array_append(res_array, VecSimQueryResult{.id = 0, .score = 0.0});
-    array_append(res_array, VecSimQueryResugit pult{.id = 1, .score = 1.0});
+    array_append(res_array, VecSimQueryResult{.id = 1, .score = 1.0});
     array_append(res_array, VecSimQueryResult{.id = 2, .score = 2.0});
 
     VecSimQueryResult_List res_list = {.results = res_array, .code = VecSim_QueryResult_OK};
