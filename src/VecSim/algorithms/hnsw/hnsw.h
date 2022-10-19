@@ -114,7 +114,9 @@ public:
     HNSWIndexMetaData checkIntegrity() const;
     virtual void saveIndexIMP(std::ofstream &output) const override;
     virtual void loadIndexIMP(std::ifstream &input) override;
-    virtual inline bool serializingIsValid() const { return this->checkIntegrity().valid_state; }
+    virtual inline bool serializingIsValid() const override {
+        return this->checkIntegrity().valid_state;
+    }
 
 protected:
     virtual void clearLabelLookup() = 0;
