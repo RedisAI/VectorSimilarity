@@ -7,9 +7,11 @@
 #pragma once
 #include "vec_sim_common.h"
 #include "query_results.h"
-#include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
 #include "info_iterator_struct.h"
+
+#include <stddef.h>
+#include <stdexcept>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
