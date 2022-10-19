@@ -7,22 +7,6 @@
 
 #include "bm_utils.h"
 
-void load_index(const char *path, VecSimIndex *index) {
-
-    // Load the index file, if it exists in the expected path.
-    auto location = std::string(getenv("ROOT"));
-    auto file_name = location + "/" + path;
-    std::ifstream input(file_name, std::ios::binary);
-    if (input.is_open()) {
-        index->loadIndex(file_name);
-        if (!index->checkIntegrity().valid_state) {
-            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
-        }
-    } else {
-        throw std::runtime_error("HNSW index file was not found in path. Exiting...");
-    }
-}
-
 void load_test_vectors(const char *path, std::vector<std::vector<float>> &queries, size_t n_queries,
                        size_t dim) {
     auto location = std::string(std::string(getenv("ROOT")));
@@ -54,20 +38,23 @@ BM_VecSimBasics::BM_VecSimBasics() {
 void BM_VecSimBasics::Initialize() {
 
     // Initialize and load HNSW index for DBPedia data set.
-    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                           .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                    .dim = BM_VecSimBasics::dim,
-                                                    .metric = VecSimMetric_Cosine,
-                                                    .initialCapacity = BM_VecSimBasics::n_vectors,
-                                                    .blockSize = BM_VecSimBasics::block_size,
-                                                    .M = BM_VecSimBasics::M,
-                                                    .efConstruction = BM_VecSimBasics::EF_C}};
-    BM_VecSimBasics::hnsw_index = VecSimIndex_New(&params);
+    HNSWParams params = {.type = VecSimType_FLOAT32,
+                         .dim = BM_VecSimBasics::dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false,
+                         .initialCapacity = BM_VecSimBasics::n_vectors,
+                         .blockSize = BM_VecSimBasics::block_size,
+                         .M = BM_VecSimBasics::M,
+                         .efConstruction = BM_VecSimBasics::EF_C};
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    BM_VecSimBasics::hnsw_index =
+        new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
     // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    load_index(hnsw_index_file, hnsw_index);
+    hnsw_index->loadIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
     size_t ef_r = 10;
-    reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->setEf(ef_r);
+    hnsw_index->setEf(ef_r);
 
     VecSimParams bf_params = {.algo = VecSimAlgo_BF,
                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -79,8 +66,7 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob =
-            reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
+        char *blob = hnsw_index->getDataByInternalId(i);
         VecSimIndex_AddVector(bf_index, blob, i);
     }
 
@@ -94,7 +80,7 @@ void BM_VecSimBasics::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                    size_t &correct, VecSimIndex *hnsw_index_,
                                    VecSimIndex *bf_index_) {
     auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index_, (*queries)[iter % n_queries].data(), k,
+    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, (*queries)[iter % n_queries].data(), k,
                                               &query_params, BY_SCORE);
     st.PauseTiming();
 

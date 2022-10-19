@@ -4,7 +4,7 @@
 
 #define HNSW_INVALID_META_DATA SIZE_MAX
 
-typedef struct { 
+typedef struct {
     bool valid_state;
     long memory_usage; // in bytes
     size_t double_connections;

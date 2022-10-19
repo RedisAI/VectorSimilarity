@@ -160,5 +160,5 @@ public:
         VecSimIndexInterface::timeoutCallback = callback;
     }
 
-    inline int64_t getAllocationSize() const {return this->allocator->getAllocationSize();}
+    inline int64_t getAllocationSize() const { return this->allocator->getAllocationSize(); }
 };

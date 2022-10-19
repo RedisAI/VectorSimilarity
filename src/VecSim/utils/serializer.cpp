@@ -27,5 +27,4 @@ void Serializer::loadIndex(const std::string &location) {
     }
     loadIndexIMP(input);
     input.close();
-
 }

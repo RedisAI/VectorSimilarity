@@ -12,17 +12,17 @@
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/algorithms/hnsw/hnsw_single.h"
 
 class BM_VecSimBasics : public benchmark::Fixture {
 public:
     static VecSimIndex *bf_index;
-    static VecSimIndex *hnsw_index;
+    static HNSWIndex<float, float> *hnsw_index;
     static size_t dim;
     static size_t n_vectors;
     static size_t M;
     static size_t EF_C;
     static size_t block_size;
-    static const char *hnsw_index_file;
 
     static const char *test_vectors_file;
     static std::vector<std::vector<float>> *queries;
@@ -38,13 +38,12 @@ public:
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
                              size_t &correct, VecSimIndex *hnsw_index_, VecSimIndex *bf_index_);
     virtual ~BM_VecSimBasics();
-};
 
-/*
- *  Populate the given hnsw_index with the serialized index data in the file
- *  which is located in the given path.
- */
-void load_index(const char *path, VecSimIndex *hnsw_index);
+    static const char *hnsw_index_file;
+    static inline std::string GetSerializedIndexLocation(const char *file_name) {
+        return std::string(getenv("ROOT")) + "/" + file_name;
+    }
+};
 
 /*
  *  Populate the given queries vector with the serialized raw vectors data in

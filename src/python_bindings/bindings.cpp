@@ -6,7 +6,6 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
@@ -128,13 +127,13 @@ public:
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.saveIndex(location);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        hnsw->saveIndex(location);
     }
 
     void loadIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.loadIndex(location);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        hnsw->loadIndex(location);
     }
 };
 
