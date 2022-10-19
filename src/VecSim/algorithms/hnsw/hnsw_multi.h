@@ -17,7 +17,7 @@ private:
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
-    virtual void clearLabelLookup() { label_lookup_.clear(); }
+    virtual void clearLabelLookup() override { label_lookup_.clear(); }
 
 #endif
 
