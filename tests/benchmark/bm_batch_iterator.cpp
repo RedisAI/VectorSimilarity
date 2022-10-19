@@ -10,7 +10,7 @@ size_t BM_VecSimBasics::n_vectors = 1000000;
 size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
 VecSimIndex *BM_VecSimBasics::bf_index;
-VecSimIndex *BM_VecSimBasics::hnsw_index;
+HNSWIndex<float, float> *BM_VecSimBasics::hnsw_index;
 std::vector<std::vector<float>> *BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 64;
 size_t BM_VecSimBasics::EF_C = 512;

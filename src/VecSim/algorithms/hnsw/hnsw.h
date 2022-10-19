@@ -33,7 +33,6 @@ using std::pair;
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
 
-
 // This type is strongly bounded to `idType` because of the way we get the link list:
 //
 // linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
@@ -50,9 +49,10 @@ using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, la
 
 template <typename DataType, typename DistType>
 #ifdef BUILD_TESTS
-class HNSWIndex : public VecSimIndexAbstract<DistType>, public Serializer 
+class HNSWIndex : public VecSimIndexAbstract<DistType>,
+                  public Serializer
 #else
-class HNSWIndex : public VecSimIndexAbstract<DistType> 
+class HNSWIndex : public VecSimIndexAbstract<DistType>
 #endif
 {
 protected:
@@ -109,14 +109,16 @@ protected:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
-    //Serializing functions.
+    // Serializing functions.
 public:
     HNSWIndexMetaData checkIntegrity() const;
     virtual void saveIndexIMP(std::ofstream &output) const override;
     virtual void loadIndexIMP(std::ifstream &input) override;
-    virtual inline bool serializingIsValid() const {return this->checkIntegrity().valid_state;}
+    virtual inline bool serializingIsValid() const { return this->checkIntegrity().valid_state; }
+
 protected:
     virtual void clearLabelLookup() = 0;
+
 private:
     void saveIndexFields(std::ofstream &output) const;
     void saveGraph(std::ofstream &output) const;
@@ -1789,7 +1791,7 @@ void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input) {
 }
 
 template <typename DataType, typename DistType>
-HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const{
+HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     HNSWIndexMetaData res = {.valid_state = false,
                              .memory_usage = -1,
                              .double_connections = HNSW_INVALID_META_DATA,
@@ -1895,16 +1897,13 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
     this->data_level0_memory_ = (char *)this->allocator->reallocate(
-        this->data_level0_memory_,
-        this->max_elements_ * this->size_data_per_element_);
-    input.read(this->data_level0_memory_,
-               this->max_elements_ * this->size_data_per_element_);
+        this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
+    input.read(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
     if (this->max_id == HNSW_INVALID_ID) {
         return; // Index is empty.
     }
     for (size_t i = 0; i <= this->max_id; i++) {
-        auto *incoming_edges =
-            new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
         unsigned int incoming_edges_len;
         readBinaryPOD(input, incoming_edges_len);
         for (size_t j = 0; j < incoming_edges_len; j++) {
@@ -1922,15 +1921,13 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
 #else
     this->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
-        new (this->allocator)
-            VisitedNodesHandler(this->max_elements_, this->allocator));
+        new (this->allocator) VisitedNodesHandler(this->max_elements_, this->allocator));
 #endif
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    this->linkLists_ = (char **)this->allocator->reallocate(
-        this->linkLists_, sizeof(void *) * this->max_elements_);
-    this->element_levels_ =
-        vecsim_stl::vector<size_t>(this->max_elements_, this->allocator);
+    this->linkLists_ = (char **)this->allocator->reallocate(this->linkLists_,
+                                                            sizeof(void *) * this->max_elements_);
+    this->element_levels_ = vecsim_stl::vector<size_t>(this->max_elements_, this->allocator);
 
     clearLabelLookup();
 
@@ -1968,7 +1965,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
-        // Save index build parameters
+    // Save index build parameters
     writeBinaryPOD(output, this->max_elements_);
     writeBinaryPOD(output, this->M_);
     writeBinaryPOD(output, this->maxM_);
@@ -1998,13 +1995,11 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->max_id);
     writeBinaryPOD(output, this->maxlevel_);
     writeBinaryPOD(output, this->entrypoint_node_);
-
 }
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // Save level 0 data (graph layer 0 + labels + vectors data)
-    output.write(this->data_level0_memory_,
-                 this->max_elements_ * this->size_data_per_element_);
+    output.write(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
     if (this->max_id == HNSW_INVALID_ID) {
         return; // Index is empty.
     }
@@ -2022,10 +2017,9 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // store (<size>, data), where <size> is the data size, and the data is the concatenated
     // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
     for (size_t i = 0; i <= this->max_id; i++) {
-        unsigned int linkListSize =
-            this->element_levels_[i] > 0
-                ? this->size_links_per_element_ * this->element_levels_[i]
-                : 0;
+        unsigned int linkListSize = this->element_levels_[i] > 0
+                                        ? this->size_links_per_element_ * this->element_levels_[i]
+                                        : 0;
         writeBinaryPOD(output, linkListSize);
         if (linkListSize)
             output.write(this->linkLists_[i], linkListSize);

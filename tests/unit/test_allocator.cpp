@@ -3,9 +3,9 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
-#include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "test_utils.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/utils/serializer.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 const size_t vecsimAllocationOverhead = sizeof(size_t);
@@ -360,8 +360,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
     // Also validate that there are no unidirectional connections (these add memory to the incoming
     // edges sets).
-    // auto serializer = HNSWIndexSerializer(hnswIndex);
-    // ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    // ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Add another vector, expect resizing of the index to contain two blocks.
     size_t prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
@@ -369,7 +368,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
 
     ASSERT_EQ(hnswIndex->indexSize(), block_size + 1);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), 2 * block_size);
-    //  ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    //  ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Compute the expected memory allocation due to the last vector insertion.
     size_t vec_max_level = hnswIndex->element_levels_[block_size];
@@ -396,7 +395,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     VecSimIndex_DeleteVector(hnswIndex, block_size);
     ASSERT_EQ(hnswIndex->indexSize(), block_size);
     ASSERT_EQ(hnswIndex->getIndexCapacity(), block_size);
-    // ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    // ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
     ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
 
     // Remove the rest of the vectors, and validate that the memory returns to its initial state.
@@ -440,8 +439,7 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory_serializer_info) {
     }
     // Also validate that there are no unidirectional connections (these add memory to the incoming
     // edges sets).
-    auto serializer = HNSWIndexSerializer(hnswIndex);
-    ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Add another vector, expect resizing of the index to contain two blocks.
     for (size_t j = 0; j < d; j++) {
@@ -450,12 +448,12 @@ TEST_F(AllocatorTest, test_hnsw_reclaim_memory_serializer_info) {
 
     VecSimIndex_AddVector(hnswIndex, vec, block_size);
 
-    ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Remove the last vector, expect resizing back to a single block, and return to the previous
     // memory consumption.
     VecSimIndex_DeleteVector(hnswIndex, block_size);
-    ASSERT_EQ(serializer.checkIntegrity().unidirectional_connections, 0);
+    ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     VecSimIndex_Free(hnswIndex);
 }

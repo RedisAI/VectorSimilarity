@@ -3,15 +3,15 @@
 #include <unistd.h>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/utils/serializer.h"
 #include "bm_utils.h"
 
 // Global benchmark data
 size_t BM_VecSimBasics::n_vectors = 500000;
 size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
+HNSWIndex<float, float> *BM_VecSimBasics::hnsw_index;
 VecSimIndex *BM_VecSimBasics::bf_index;
-VecSimIndex *BM_VecSimBasics::hnsw_index;
 std::vector<std::vector<float>> *BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 65;
 size_t BM_VecSimBasics::EF_C = 512;
@@ -29,7 +29,7 @@ const char *updated_hnsw_index_file =
 class BM_VecSimUpdatedIndex : public BM_VecSimBasics {
 protected:
     static VecSimIndex *bf_index_updated;
-    static VecSimIndex *hnsw_index_updated;
+    static HNSWIndex<float, float> *hnsw_index_updated;
 
     BM_VecSimUpdatedIndex() : BM_VecSimBasics() {
         if (ref_count == 1) {
@@ -49,31 +49,32 @@ protected:
 
         // Initially, load all the vectors to the updated bf index (before we override it).
         for (size_t i = 0; i < BM_VecSimBasics::n_vectors; ++i) {
-            char *blob =
-                reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
-            size_t label =
-                reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getExternalLabel(i);
+            char *blob = hnsw_index->getDataByInternalId(i);
+            size_t label = hnsw_index->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
 
         // Initialize and populate an HNSW index where all vectors have been updated.
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                               .hnswParams =
-                                   HNSWParams{.type = VecSimType_FLOAT32,
-                                              .dim = BM_VecSimBasics::dim,
-                                              .metric = VecSimMetric_Cosine,
-                                              .initialCapacity = BM_VecSimBasics::n_vectors,
-                                              .M = BM_VecSimBasics::M,
-                                              .efConstruction = BM_VecSimBasics::EF_C}};
-        BM_VecSimUpdatedIndex::hnsw_index_updated = VecSimIndex_New(&params);
-        load_index(updated_hnsw_index_file, hnsw_index_updated);
+        HNSWParams params = {.type = VecSimType_FLOAT32,
+                             .dim = BM_VecSimBasics::dim,
+                             .metric = VecSimMetric_Cosine,
+                             .multi = false,
+                             .initialCapacity = BM_VecSimBasics::n_vectors,
+                             .M = BM_VecSimBasics::M,
+                             .efConstruction = BM_VecSimBasics::EF_C};
+        std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+        BM_VecSimUpdatedIndex::hnsw_index_updated =
+            new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
+        // Load pre-generated HNSW index. Index file path is relative to repository root dir.
+        hnsw_index_updated->loadIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
+        if (!hnsw_index_updated->serializingIsValid()) {
+            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
+        }
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
-                             ->getDataByInternalId(i);
-            size_t label = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
-                               ->getExternalLabel(i);
+            char *blob = hnsw_index_updated->getDataByInternalId(i);
+            size_t label = hnsw_index_updated->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
     }
@@ -88,7 +89,7 @@ public:
 };
 
 VecSimIndex *BM_VecSimUpdatedIndex::bf_index_updated;
-VecSimIndex *BM_VecSimUpdatedIndex::hnsw_index_updated;
+HNSWIndex<float, float> *BM_VecSimUpdatedIndex::hnsw_index_updated;
 
 BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
