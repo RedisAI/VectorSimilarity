@@ -1234,6 +1234,11 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
         VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
+        VecSimParamResolverErr_UnknownParam);
+
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
