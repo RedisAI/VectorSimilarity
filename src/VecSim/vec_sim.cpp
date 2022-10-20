@@ -22,6 +22,10 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
     if (index_type != VecSimAlgo_HNSWLIB) {
         return VecSimParamResolverErr_UnknownParam;
     }
+    // EF_RUNTIME is invalid for range query
+    if (query_type == QUERY_TYPE_RANGE) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
     if (qparams->hnswRuntimeParams.efRuntime != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }
