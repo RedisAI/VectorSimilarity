@@ -6,7 +6,10 @@
 
 class Serializer {
 public:
-    typedef enum EncodingVersion { EncodingVersion_V1 = 1 } EncodingVersion;
+    typedef enum EncodingVersion {
+        EncodingVersion_V1 = 1,
+        EncodingVersion_V2 = 2,
+    } EncodingVersion;
 
     // Persist index into a file in the specified location.
     void saveIndex(const std::string &location, EncodingVersion version = EncodingVersion_V1);
@@ -27,6 +30,6 @@ public:
     }
 
 protected:
-    virtual void saveIndexIMP(std::ofstream &output) const = 0;
-    virtual void loadIndexIMP(std::ifstream &input) = 0;
+    virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) const = 0;
+    virtual void loadIndexIMP(std::ifstream &input, EncodingVersion version) = 0;
 };

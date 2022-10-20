@@ -118,8 +118,8 @@ protected:
     // Serializing functions.
 public:
     HNSWIndexMetaData checkIntegrity() const;
-    virtual void saveIndexIMP(std::ofstream &output) const override;
-    virtual void loadIndexIMP(std::ifstream &input) override;
+    virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) const override;
+    virtual void loadIndexIMP(std::ifstream &input, EncodingVersion version) override;
     virtual inline bool serializingIsValid() const override {
         return this->checkIntegrity().valid_state;
     }
@@ -1788,13 +1788,32 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
 
 #ifdef BUILD_TESTS
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) const {
+void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output,
+                                                 EncodingVersion version) const {
+    if (version != EncodingVersion_V1) {
+        // This data is only serialized from V2 up.
+        writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
+        writeBinaryPOD(output, this->vecType);
+        writeBinaryPOD(output, this->isMulti);
+    }
+
     this->saveIndexFields(output);
     this->saveGraph(output);
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input) {
+void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input, EncodingVersion version) {
+    if (version != EncodingVersion_V1) {
+        // This data is only serialized from V2 up.
+        VecSimAlgo algo;
+        readBinaryPOD(input, algo);
+        if (algo != VecSimAlgo_HNSWLIB) {
+            throw std::runtime_error("Cannot load index: bad algorithm type");
+        }
+        readBinaryPOD(input, this->vecType);
+        readBinaryPOD(input, this->isMulti);
+    }
+
     this->restoreIndexFields(input);
     this->restoreGraph(input);
 }
