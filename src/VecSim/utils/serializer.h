@@ -9,6 +9,7 @@ public:
     typedef enum EncodingVersion {
         EncodingVersion_V1 = 1,
         EncodingVersion_V2 = 2,
+        EncodingVersion_NOT_VALID, // This should always be last.
     } EncodingVersion;
 
     // Persist index into a file in the specified location.

@@ -1860,6 +1860,8 @@ TEST_F(HNSWGeneralTest, hnsw_serialization_v1) {
 
     auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
     // Save and load an empty index.
+    EXPECT_THROW(hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_NOT_VALID),
+                 std::runtime_error);
     hnsw_index->saveIndex(file_name);
     hnsw_index->loadIndex(file_name);
     ASSERT_TRUE(hnsw_index->serializingIsValid());
