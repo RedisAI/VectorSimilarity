@@ -5,7 +5,9 @@
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
+#include "VecSim/utils/serializer.h"
 #include "VecSim/utils/vecsim_results_container.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"
 
 #include <cstdlib>
 #include <limits>
@@ -358,4 +360,58 @@ TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
 
     // Free the internal array pointer - the validation for success is by having no leaks.
     VecSimQueryResult_FreeArray(res_inner_array);
+}
+
+class SerializerTest : public ::testing::Test {
+protected:
+    std::streampos GetFileSize(const std::string file_name) {
+        std::ifstream file(file_name, std::ios::binary);
+        const auto begin = file.tellg();
+        file.seekg(0, std::ios::end);
+        const auto end = file.tellg();
+        file.close();
+
+        return end - begin;
+    }
+};
+TEST_F(SerializerTest, HNSWSerialzer) {
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t M = 8;
+    size_t ef = 8;
+
+    HNSWParams params{.type = VecSimType_FLOAT32,
+                      .dim = dim,
+                      .metric = VecSimMetric_L2,
+                      .initialCapacity = n,
+                      .blockSize = 1,
+                      .M = M,
+                      .efConstruction = ef,
+                      .efRuntime = ef};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
+    HNSWIndex<float, float> *hnsw_index = reinterpret_cast<HNSWIndex<float, float> *>(index);
+
+    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/test_common_hnsw";
+    ASSERT_EQ(this->GetFileSize(file_name), 0);
+    // Save index.
+    EXPECT_THROW(hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_NOT_VALID),
+                 std::runtime_error);
+
+    // nothing should happen to the file.
+    ASSERT_EQ(this->GetFileSize(file_name), 0);
+
+    // write WRONG index algorithm
+    std::ofstream output(file_name, std::ios::binary);
+    Serializer::writeBinaryPOD(output, VecSimAlgo_BF);
+    output.close();
+
+    std::ifstream input(file_name, std::ios::binary);
+    EXPECT_THROW(hnsw_index->loadIndexIMP(input, Serializer::EncodingVersion_V2),
+                 std::runtime_error);
+    // Check that the file stream was closed
+    ASSERT_FALSE(output.is_open());
+
+    // Clean-up.
+    remove(file_name.c_str());
+    VecSimIndex_Free(index);
 }

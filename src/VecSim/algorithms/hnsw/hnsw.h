@@ -122,9 +122,14 @@ protected:
     virtual void clearLabelLookup() = 0;
 
 private:
+    // Functions for index saving.
     void saveIndexFields(std::ofstream &output) const;
+    void saveIndexFields_v2(std::ofstream &output) const;
     void saveGraph(std::ofstream &output) const;
+
+    // Functions for index loading.
     void restoreIndexFields(std::ifstream &input);
+    void restoreIndexFields_v2(std::ifstream &input);
     void restoreGraph(std::ifstream &input);
 #endif
 
@@ -1783,11 +1788,10 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output,
                                                  EncodingVersion version) const {
+    // We already checked in the serializer that this is a valid version number.
+    // Now checking the version number to decide which data to write.
     if (version != EncodingVersion_V1) {
-        // This data is only serialized from V2 up.
-        writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
-        writeBinaryPOD(output, this->vecType);
-        writeBinaryPOD(output, this->isMulti);
+        saveIndexFields_v2(output);
     }
 
     this->saveIndexFields(output);
@@ -1796,16 +1800,22 @@ void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output,
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input, EncodingVersion version) {
+    // We already checked in the serializer that this is a valid version number.
     if (version != EncodingVersion_V1) {
         // This data is only serialized from V2 up.
         VecSimAlgo algo;
         readBinaryPOD(input, algo);
         if (algo != VecSimAlgo_HNSWLIB) {
+            input.close();
             throw std::runtime_error("Cannot load index: bad algorithm type");
         }
-        readBinaryPOD(input, this->vecType);
-        readBinaryPOD(input, this->isMulti);
+        restoreIndexFields_v2(input);
     }
+
+    // Resize all data structure to the serialized index memory sizes.
+    size_t max_elements;
+    readBinaryPOD(input, max_elements);
+    resizeIndex(max_elements);
 
     this->restoreIndexFields(input);
     this->restoreGraph(input);
@@ -1879,11 +1889,19 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     res.valid_state = true;
     return res;
 }
-
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::restoreIndexFields_v2(std::ifstream &input) {
+    readBinaryPOD(input, this->dim);
+    readBinaryPOD(input, this->vecType);
+    readBinaryPOD(input, this->metric);
+    readBinaryPOD(input, this->blockSize);
+    readBinaryPOD(input, this->dist_func);
+    readBinaryPOD(input, this->isMulti);
+    readBinaryPOD(input, this->epsilon_);
+}
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
-    readBinaryPOD(input, this->max_elements_);
     readBinaryPOD(input, this->M_);
     readBinaryPOD(input, this->maxM_);
     readBinaryPOD(input, this->maxM0_);
@@ -1891,6 +1909,8 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 
     // Restore index search parameter
     readBinaryPOD(input, this->ef_);
+
+    // epsilon is only restored from v2 up.
 
     // Restore index meta-data
     readBinaryPOD(input, this->data_size_);
@@ -1917,8 +1937,6 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
-    this->data_level0_memory_ = (char *)this->allocator->reallocate(
-        this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
     input.read(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
     if (this->max_id == HNSW_INVALID_ID) {
         return; // Index is empty.
@@ -1935,21 +1953,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         this->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
     }
 
-#ifdef ENABLE_PARALLELIZATION
-    pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
-        new (this->allocator)
-            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
-#else
-    this->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
-        new (this->allocator) VisitedNodesHandler(this->max_elements_, this->allocator));
-#endif
-
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    this->linkLists_ = (char **)this->allocator->reallocate(this->linkLists_,
-                                                            sizeof(void *) * this->max_elements_);
-    this->element_levels_ = vecsim_stl::vector<size_t>(this->max_elements_, this->allocator);
-
     clearLabelLookup();
 
     for (size_t i = 0; i <= this->max_id; i++) {
@@ -1982,6 +1986,19 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             }
         }
     }
+}
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::saveIndexFields_v2(std::ofstream &output) const {
+    // From v2 and up write also algorithm type and vec_sim_index data members.
+    writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
+
+    writeBinaryPOD(output, this->dim);
+    writeBinaryPOD(output, this->vecType);
+    writeBinaryPOD(output, this->metric);
+    writeBinaryPOD(output, this->blockSize);
+    writeBinaryPOD(output, this->dist_func);
+    writeBinaryPOD(output, this->isMulti);
+    writeBinaryPOD(output, this->epsilon_);
 }
 
 template <typename DataType, typename DistType>
