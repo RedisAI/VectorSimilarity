@@ -16,6 +16,7 @@ public:
 
 protected:
     VecSimIndex *CreateNewIndex(HNSWParams &params) {
+        // is_multi = false by default.
         return test_utils::CreateNewIndex(params, index_type_t::get_index_type());
     }
     HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
@@ -1863,6 +1864,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
 
     // Get index info and copy it, so it will be available after the index is freed.
     VecSimIndexInfo serialized_index_info = VecSimIndex_Info(index);
+    size_t serialized_allocation_size = hnsw_index->getAllocationSize();
     // Free the index and initialize a new one with different parameters.
     VecSimIndex_Free(index);
 
@@ -1896,6 +1898,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
     ASSERT_EQ(serialized_index_info.hnswInfo.efRuntime, loaded_index_info.hnswInfo.efRuntime);
     ASSERT_EQ(serialized_index_info.hnswInfo.epsilon, loaded_index_info.hnswInfo.epsilon);
     ASSERT_EQ(loaded_index_info.hnswInfo.type, TypeParam::get_index_type());
+    ASSERT_EQ(serialized_allocation_size, hnsw_index->getAllocationSize());
 
     // Add vectors to the loaded index.
     for (size_t i = 0; i < n; i++) {

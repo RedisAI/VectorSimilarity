@@ -1812,12 +1812,10 @@ void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input, EncodingV
         restoreIndexFields_v2(input);
     }
 
-    // Resize all data structure to the serialized index memory sizes.
-    size_t max_elements;
-    readBinaryPOD(input, max_elements);
-    resizeIndex(max_elements);
-
     this->restoreIndexFields(input);
+
+    // Resize all data structure to the serialized index memory sizes.
+    resizeIndex(this->max_elements_);
     this->restoreGraph(input);
 }
 
@@ -1891,6 +1889,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
 }
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreIndexFields_v2(std::ifstream &input) {
+
     readBinaryPOD(input, this->dim);
     readBinaryPOD(input, this->vecType);
     readBinaryPOD(input, this->metric);
@@ -1902,6 +1901,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields_v2(std::ifstream &input) 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
+    readBinaryPOD(input, this->max_elements_);
     readBinaryPOD(input, this->M_);
     readBinaryPOD(input, this->maxM_);
     readBinaryPOD(input, this->maxM0_);
