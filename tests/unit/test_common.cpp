@@ -370,7 +370,9 @@ TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
 
 class SerializerTest : public ::testing::Test {
 protected:
-    std::streampos GetFileSize(const std::string file_name) {
+    ~SerializerTest() { remove(file_name.c_str()); }
+
+    std::streampos GetFileSize() {
         std::ifstream file(file_name, std::ios::binary);
         const auto begin = file.tellg();
         file.seekg(0, std::ios::end);
@@ -379,6 +381,8 @@ protected:
 
         return end - begin;
     }
+
+    std::string file_name;
 };
 TEST_F(SerializerTest, HNSWSerialzer) {
     size_t dim = 4;
@@ -397,27 +401,32 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
     HNSWIndex<float, float> *hnsw_index = reinterpret_cast<HNSWIndex<float, float> *>(index);
 
-    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/test_common_hnsw";
-    ASSERT_EQ(this->GetFileSize(file_name), 0);
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/test_common_hnsw";
+    ASSERT_EQ(this->GetFileSize(), 0);
     // Save index.
-    EXPECT_THROW(hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_NOT_VALID),
+    EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_NOT_VALID),
                  std::runtime_error);
 
     // nothing should happen to the file.
-    ASSERT_EQ(this->GetFileSize(file_name), 0);
+    ASSERT_EQ(this->GetFileSize(), 0);
+
+    std::ofstream output(this->file_name, std::ios::binary);
+    // Write invalide encoding version
+    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_NOT_VALID);
+
+    EXPECT_THROW(hnsw_index->loadIndex(this->file_name), std::runtime_error);
 
     // write WRONG index algorithm
-    std::ofstream output(file_name, std::ios::binary);
+    output.seekp(0);
     Serializer::writeBinaryPOD(output, VecSimAlgo_BF);
-    output.close();
 
-    std::ifstream input(file_name, std::ios::binary);
+    std::ifstream input(this->file_name, std::ios::binary);
     EXPECT_THROW(hnsw_index->loadIndexIMP(input, Serializer::EncodingVersion_V2),
                  std::runtime_error);
+
     // Check that the file stream was closed
-    ASSERT_FALSE(output.is_open());
+    ASSERT_FALSE(input.is_open());
 
     // Clean-up.
-    remove(file_name.c_str());
     VecSimIndex_Free(index);
 }
