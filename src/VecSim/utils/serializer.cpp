@@ -24,7 +24,7 @@ void Serializer::loadIndex(const std::string &location) {
     input.seekg(0, std::ifstream::beg);
 
     // The version number is the first field that is serialized.
-    EncodingVersion version;
+    EncodingVersion version = EncodingVersion_NOT_VALID;
     readBinaryPOD(input, version);
     // Only V1 and V2 are supported
     if (version >= EncodingVersion_NOT_VALID) {

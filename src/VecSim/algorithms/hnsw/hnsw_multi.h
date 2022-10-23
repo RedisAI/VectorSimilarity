@@ -12,6 +12,12 @@ private:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
     virtual void clearLabelLookup() override { label_lookup_.clear(); }
+    virtual void AddToLabelLookup(labelType label, idType id) override {
+        if (label_lookup_.find(label) == label_lookup_.end()) {
+            label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
+        }
+        setVectorId(label, id);
+    }
 
 #endif
 

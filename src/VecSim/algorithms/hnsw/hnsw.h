@@ -120,6 +120,7 @@ public:
 
 protected:
     virtual void clearLabelLookup() = 0;
+    virtual void AddToLabelLookup(labelType label, idType id) = 0;
 
 private:
     // Functions for index saving.
@@ -1803,7 +1804,7 @@ void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input, EncodingV
     // We already checked in the serializer that this is a valid version number.
     if (version != EncodingVersion_V1) {
         // This data is only serialized from V2 up.
-        VecSimAlgo algo;
+        VecSimAlgo algo = VecSimAlgo_BF;
         readBinaryPOD(input, algo);
         if (algo != VecSimAlgo_HNSWLIB) {
             input.close();
@@ -1815,6 +1816,8 @@ void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input, EncodingV
     this->restoreIndexFields(input);
 
     // Resize all data structure to the serialized index memory sizes.
+    clearLabelLookup();
+
     resizeIndex(this->max_elements_);
     this->restoreGraph(input);
 }
@@ -1954,11 +1957,9 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     }
 
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    clearLabelLookup();
-
     for (size_t i = 0; i <= this->max_id; i++) {
         // Restore label lookup by getting the label from data_level0_memory_
-        setVectorId(getExternalLabel(i), i);
+        AddToLabelLookup(getExternalLabel(i), i);
 
         unsigned int linkListSize;
         readBinaryPOD(input, linkListSize);
