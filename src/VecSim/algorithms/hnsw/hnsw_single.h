@@ -17,6 +17,7 @@ private:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_single_tests_friends.h"
     virtual void clearLabelLookup() override { label_lookup_.clear(); }
+    virtual void AddToLabelLookup(labelType label, idType id) override { setVectorId(label, id); }
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;

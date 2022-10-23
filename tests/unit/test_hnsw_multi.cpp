@@ -1484,107 +1484,6 @@ TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     VecSimIndex_Free(index);
 }
 
-// TEST_F(HNSWMultiTest, hnsw_multi_serialization_v1) {
-//     size_t dim = 4;
-//     size_t n = 1000;
-//     size_t M = 8;
-//     size_t ef = 10;
-
-//     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-//                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-//                                                  .dim = dim,
-//                                                  .metric = VecSimMetric_L2,
-//                                                  .initialCapacity = n,
-//                                                  .blockSize = 1,
-//                                                  .M = M,
-//                                                  .efConstruction = ef,
-//                                                  .efRuntime = ef}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-
-//     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-
-//     auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
-//     // Save and load an empty index.
-//     serializer.saveIndex(file_name);
-//     serializer.loadIndex(file_name);
-//     auto res = serializer.checkIntegrity();
-//     ASSERT_TRUE(res.valid_state);
-
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     // Get index info and copy it, so it will be available after the index is deleted.
-//     VecSimIndexInfo info = VecSimIndex_Info(index);
-
-//     // Persist index with the serializer, and delete it.
-//     serializer.saveIndex(file_name);
-//     VecSimIndex_Free(index);
-
-//     // Create new index, set it into the serializer and extract the data to it.
-//     auto new_index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
-
-//     serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(new_index));
-//     serializer.loadIndex(file_name);
-
-//     // Validate that the new loaded index has the same meta-data as the original.
-//     VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
-//     ASSERT_EQ(info.algo, new_info.algo);
-//     ASSERT_EQ(info.hnswInfo.M, new_info.hnswInfo.M);
-//     ASSERT_EQ(info.hnswInfo.efConstruction, new_info.hnswInfo.efConstruction);
-//     ASSERT_EQ(info.hnswInfo.efRuntime, new_info.hnswInfo.efRuntime);
-//     ASSERT_EQ(info.hnswInfo.indexSize, new_info.hnswInfo.indexSize);
-//     ASSERT_EQ(info.hnswInfo.max_level, new_info.hnswInfo.max_level);
-//     ASSERT_EQ(info.hnswInfo.entrypoint, new_info.hnswInfo.entrypoint);
-//     ASSERT_EQ(info.hnswInfo.metric, new_info.hnswInfo.metric);
-//     ASSERT_EQ(info.hnswInfo.type, new_info.hnswInfo.type);
-//     ASSERT_EQ(info.hnswInfo.dim, new_info.hnswInfo.dim);
-
-//     res = serializer.checkIntegrity();
-//     ASSERT_TRUE(res.valid_state);
-
-//     // Add 1000 random vectors, override the existing ones to trigger deletions.
-//     std::vector<float> data((n + 1) * dim);
-//     std::mt19937 rng;
-//     rng.seed(47);
-//     std::uniform_real_distribution<> distrib;
-//     for (size_t i = 0; i < (n + 1) * dim; ++i) {
-//         data[i] = (float)distrib(rng);
-//     }
-//     for (size_t i = 0; i < n + 1; ++i) {
-//         VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
-//     }
-
-//     // Delete arbitrary vector (trigger removal of a block).
-//     VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * (n + 1)));
-
-//     HNSWIndex<float, float> *hnswNewIndex = reinterpret_cast<HNSWIndex<float, float>
-//     *>(new_index); ASSERT_EQ(hnswNewIndex->getIndexCapacity(), n);
-
-//     // Persist index, delete it from memory and restore.
-//     serializer.saveIndex(file_name);
-//     VecSimIndex_Free(new_index);
-
-//     params.hnswParams.initialCapacity = n / 2; // to ensure that we resize in load time.
-//     auto restored_index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
-
-//     serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(restored_index));
-//     serializer.loadIndex(file_name);
-//     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
-//     res = serializer.checkIntegrity();
-//     ASSERT_TRUE(res.valid_state);
-
-//     // Clean-up.
-//     remove(file_name.c_str());
-//     VecSimIndex_Free(restored_index);
-//     serializer.reset();
-// }
-
 TYPED_TEST(HNSWMultiTest, testCosine) {
     size_t dim = 4;
     size_t n = 100;
@@ -1736,6 +1635,101 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
         ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
     };
     runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
+
+    VecSimIndex_Free(index);
+}
+
+template <typename index_type_t>
+class HNSWMultiSerializerTest : public HNSWMultiTest<index_type_t> {
+protected:
+    ~HNSWMultiSerializerTest() { remove(file_name.c_str()); }
+
+    void GenerateFileName(std::string base_name) {
+        file_name = base_name + VecSimType_ToString(index_type_t::get_index_type());
+    }
+
+    std::string file_name;
+};
+
+TYPED_TEST_SUITE(HNSWMultiSerializerTest, DataTypeSet);
+
+TYPED_TEST(HNSWMultiSerializerTest, hnswMulti_serialization_v2) {
+    size_t dim = 4;
+    size_t n = 1000;
+    size_t n_labels = 100;
+    size_t M = 8;
+    size_t ef = 8;
+
+    HNSWParams params{.dim = dim,
+                      .metric = VecSimMetric_L2,
+                      .initialCapacity = n,
+                      .blockSize = 1,
+                      .M = M,
+                      .efConstruction = ef,
+                      .efRuntime = ef};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnsw_index = this->CastToHNSW(index);
+
+    this->GenerateFileName(std::string(getenv("ROOT")) +
+                           "/tests/unit/data/1k-d4-L2-M8-ef8.hnsw_multi_v2");
+    // Save index.
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
+
+    // Free the index and initialize a new one with different parameters.
+    VecSimIndex_Free(index);
+
+    // bs, M, ef_c and ef_rt will be set to default
+    HNSWParams other_params{
+        .dim = dim / 2, .metric = VecSimMetric_Cosine, .initialCapacity = n / 2, .epsilon = 0.004};
+
+    index = this->CreateNewIndex(other_params);
+
+    hnsw_index = this->CastToHNSW(index);
+    hnsw_index->loadIndex(this->file_name);
+
+    ASSERT_TRUE(hnsw_index->serializingIsValid());
+
+    // Add vectors to the loaded index.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
+    }
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+    // Persist index with the serializer, and delete it.
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
+
+    VecSimIndex_Free(index);
+
+    // Create new index, set it into the serializer and extract the data to it.
+    index = this->CreateNewIndex(other_params);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    hnsw_index = this->CastToHNSW(index);
+    hnsw_index->loadIndex(this->file_name);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    ASSERT_TRUE(hnsw_index->serializingIsValid());
+
+    // Delete arbitrary capacity and number of label shouldn't change
+    VecSimIndex_DeleteVector(index, 7);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - n / n_labels);
+
+    // Persist index, delete it from memory and restore.
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
+    VecSimIndex_Free(index);
+
+    index = this->CreateNewIndex(other_params);
+    hnsw_index = this->CastToHNSW(index);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    hnsw_index->loadIndex(this->file_name);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - n / n_labels);
+    ASSERT_TRUE(hnsw_index->serializingIsValid());
 
     VecSimIndex_Free(index);
 }
