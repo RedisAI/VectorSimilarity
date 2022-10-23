@@ -1840,7 +1840,16 @@ TYPED_TEST(HNSWTest, rangeQueryCosine) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
+template <typename index_type_t>
+class HNSWSerializerTest : public HNSWTest<index_type_t> {
+protected:
+    ~HNSWSerializerTest() { remove(file_name.c_str()); }
+
+    std::string file_name;
+};
+
+TYPED_TEST_SUITE(HNSWSerializerTest, DataTypeSet);
+TYPED_TEST(HNSWSerializerTest, hnsw_serialization_v2_info) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1856,11 +1865,13 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
     VecSimIndex *index = this->CreateNewIndex(params);
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnsw_index = this->CastToHNSW(index);
 
-    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef8.hnsw_v2";
+    this->file_name = std::string(getenv("ROOT")) +
+                      "/tests/unit/data/1k-d4-L2-M8-ef8_info.hnsw_v2" +
+                      VecSimType_ToString(TypeParam::get_index_type());
     // Save index.
-    EXPECT_THROW(hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_NOT_VALID),
+    EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_NOT_VALID),
                  std::runtime_error);
-    hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_V2);
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
 
     // Get index info and copy it, so it will be available after the index is freed.
     VecSimIndexInfo serialized_index_info = VecSimIndex_Info(index);
@@ -1885,7 +1896,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
     ASSERT_NE(serialized_index_info.hnswInfo.epsilon, other_index_info.hnswInfo.epsilon);
 
     hnsw_index = this->CastToHNSW(index);
-    hnsw_index->loadIndex(file_name);
+    hnsw_index->loadIndex(this->file_name);
 
     VecSimIndexInfo loaded_index_info = VecSimIndex_Info(index);
     // Make sure that this index was loaded correctly.
@@ -1906,7 +1917,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
     }
 
     // Persist index with the serializer, and delete it.
-    hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_V2);
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
     // Get index info and copy it, so it will be available after the index is freed.
     serialized_index_info = VecSimIndex_Info(index);
 
@@ -1918,7 +1929,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     hnsw_index = this->CastToHNSW(index);
-    hnsw_index->loadIndex(file_name);
+    hnsw_index->loadIndex(this->file_name);
 
     // Validate that the new loaded index has the same meta-data as the original.
     VecSimIndexInfo new_info = VecSimIndex_Info(index);
@@ -1926,12 +1937,10 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2_info) {
     ASSERT_EQ(serialized_index_info.hnswInfo.max_level, new_info.hnswInfo.max_level);
     ASSERT_EQ(serialized_index_info.hnswInfo.entrypoint, new_info.hnswInfo.entrypoint);
 
-    // Clean-up.
-    remove(file_name.c_str());
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(HNSWTest, hnsw_serialization_v2) {
+TYPED_TEST(HNSWSerializerTest, hnsw_serialization_v2) {
     size_t dim = 4;
     size_t n = 1000;
     size_t M = 8;
@@ -1947,11 +1956,11 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2) {
     VecSimIndex *index = this->CreateNewIndex(params);
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnsw_index = this->CastToHNSW(index);
 
-    auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef8.hnsw_v2";
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef8.hnsw_v2";
     // Save index.
-    EXPECT_THROW(hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_NOT_VALID),
+    EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_NOT_VALID),
                  std::runtime_error);
-    hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_V2);
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
 
     // Free the index and initialize a new one with different parameters.
     VecSimIndex_Free(index);
@@ -1963,7 +1972,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2) {
     index = this->CreateNewIndex(other_params);
 
     hnsw_index = this->CastToHNSW(index);
-    hnsw_index->loadIndex(file_name);
+    hnsw_index->loadIndex(this->file_name);
 
     ASSERT_TRUE(hnsw_index->serializingIsValid());
 
@@ -1973,7 +1982,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2) {
     }
 
     // Persist index with the serializer, and delete it.
-    hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_V2);
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
 
     VecSimIndex_Free(index);
 
@@ -1983,7 +1992,7 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     hnsw_index = this->CastToHNSW(index);
-    hnsw_index->loadIndex(file_name);
+    hnsw_index->loadIndex(this->file_name);
 
     ASSERT_TRUE(hnsw_index->serializingIsValid());
 
@@ -2005,19 +2014,17 @@ TYPED_TEST(HNSWTest, hnsw_serialization_v2) {
     ASSERT_EQ(hnsw_index->getIndexCapacity(), n);
 
     // Persist index, delete it from memory and restore.
-    hnsw_index->saveIndex(file_name, Serializer::EncodingVersion_V2);
+    hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_V2);
     VecSimIndex_Free(index);
 
     index = this->CreateNewIndex(other_params);
     hnsw_index = this->CastToHNSW(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    hnsw_index->loadIndex(file_name);
+    hnsw_index->loadIndex(this->file_name);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_TRUE(hnsw_index->serializingIsValid());
 
-    // Clean-up.
-    remove(file_name.c_str());
     VecSimIndex_Free(index);
 }
 
