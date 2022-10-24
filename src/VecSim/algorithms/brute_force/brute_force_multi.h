@@ -19,8 +19,13 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType labelType) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
-
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
+
+    inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const override {
+        return std::unique_ptr<vecsim_stl::abstract_results_container>(
+            new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
+    }
 
 private:
     // inline definitions
@@ -30,26 +35,19 @@ private:
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewPriorityQueue() override {
+    getNewMaxPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }
 
     inline BF_BatchIterator<DataType, DistType> *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
         return new (this->allocator)
             BFM_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
-    // Allow the following tests to access the index private members.
-    friend class BruteForceMultiTest_resize_and_align_index_Test;
-    friend class BruteForceMultiTest_empty_index_Test;
-    friend class BruteForceMultiTest_test_delete_swap_block_Test;
-    friend class BruteForceMultiTest_remove_vector_after_replacing_block_Test;
-    friend class BruteForceMultiTest_search_more_then_there_is_Test;
-    friend class BruteForceMultiTest_indexing_same_vector_Test;
-    friend class BruteForceMultiTest_test_dynamic_bf_info_iterator_Test;
+#include "VecSim/algorithms/brute_force/brute_force_multi_tests_friends.h"
 #endif
 };
 

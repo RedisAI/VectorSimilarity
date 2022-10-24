@@ -4,6 +4,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
@@ -39,7 +40,7 @@ public:
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                                  VecSimQueryParams *queryParams) override;
+                                                  VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
@@ -65,27 +66,21 @@ protected:
     }
     // inline priority queue getter that need to be implemented by derived class
     virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewPriorityQueue() = 0;
+    getNewMaxPriorityQueue() = 0;
+
+    // inline label to id setters that need to be implemented by derived class
+    virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
 
     virtual inline VecSimBatchIterator *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) = 0;
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
 
 #ifdef BUILD_TESTS
-    // Allow the following tests to access the index private members.
-    friend class BruteForceTest_preferAdHocOptimization_Test;
-    friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
-    friend class BruteForceTest_resize_and_align_index_Test;
-    friend class BruteForceTest_brute_force_vector_update_test_Test;
-    friend class BruteForceTest_brute_force_reindexing_same_vector_Test;
-    friend class BruteForceTest_test_delete_swap_block_Test;
-    friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
-    friend class BruteForceTest_resize_and_align_index_largeInitialCapacity_Test;
-    friend class BruteForceTest_brute_force_empty_index_Test;
-    friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
+#include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
 #endif
 };
 
@@ -233,8 +228,12 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
-
     this->last_mode = STANDARD_KNN;
+
+    if (0 == k) {
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
+    }
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
@@ -245,7 +244,8 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
-    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates = getNewPriorityQueue();
+    vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
+        getNewMaxPriorityQueue();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto vectorBlock : this->vectorBlocks) {
@@ -296,26 +296,27 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     }
 
     // Compute scores in every block and save results that are within the range.
-    rl.results =
-        array_new<VecSimQueryResult>(10); // Use 10 as the initial capacity for the dynamic array.
+    auto res_container =
+        getNewResultsContainer(10); // Use 10 as the initial capacity for the dynamic array.
 
     DistType radius_ = DistType(radius);
     idType curr_id = 0;
+    rl.code = VecSim_QueryResult_OK;
     for (auto vectorBlock : this->vectorBlocks) {
         auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
         if (VecSim_OK != rl.code) {
-            return rl;
+            break;
         }
         for (size_t i = 0; i < scores.size(); i++) {
             if (scores[i] <= radius_) {
-                auto res = VecSimQueryResult{getVectorLabel(curr_id), scores[i]};
-                rl.results = array_append(rl.results, res);
+                res_container->emplace(getVectorLabel(curr_id), scores[i]);
             }
             ++curr_id;
         }
     }
-    assert(curr_id == this->count);
-    rl.code = VecSim_QueryResult_OK;
+    // assert only if the loop finished iterating all the ids (we didn't get rl.code != VecSim_OK).
+    assert((rl.code != VecSim_OK || curr_id == this->count));
+    rl.results = res_container->get_results();
     return rl;
 }
 
@@ -391,8 +392,7 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
 template <typename DataType, typename DistType>
 VecSimBatchIterator *
 BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) {
-    assert(this->vecType == VecSimType_FLOAT32);
+                                                      VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {

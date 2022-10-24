@@ -56,6 +56,8 @@ void sort_results_by_score(VecSimQueryResult_List results);
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 
+VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
+
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 
 const char *VecSimType_ToString(VecSimType vecsimType);
