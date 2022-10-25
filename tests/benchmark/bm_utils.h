@@ -23,6 +23,10 @@ public:
 protected:
     static size_t dim;
     static size_t n_vectors;
+    static size_t M;
+    static size_t EF_C;
+    static size_t block_size;
+    
 
     static const char *test_vectors_file;
     static size_t n_queries;
@@ -60,6 +64,67 @@ private:
         return params;
     }
 };
+
+
+template <bool is_multi>
+BM_VecSimBasics<is_multi>::BM_VecSimBasics(VecSimType type) {
+    if (ref_count == 0) {
+        // Initialize the static members.
+        Initialize(type);
+    }
+    ref_count++;
+}
+
+template <bool is_multi>
+void BM_VecSimBasics<is_multi>::Initialize(VecSimType type) {
+
+    // Initialize and load HNSW index for DBPedia data set.
+    HNSWParams hnsw_params = {.type = type,
+                         .dim = BM_VecSimBasics::dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = is_multi,
+                         .initialCapacity = BM_VecSimBasics::n_vectors,
+                         .blockSize = BM_VecSimBasics::block_size,
+                         .M = BM_VecSimBasics::M,
+                         .efConstruction = BM_VecSimBasics::EF_C};
+
+    BFParams bf_params ={.type = type,
+                        .dim = BM_VecSimBasics::dim,
+                        .metric = VecSimMetric_Cosine,
+                        .initialCapacity = BM_VecSimBasics::n_vectors,
+                        .blockSize = BM_VecSimBasics::block_size};
+
+    InitializeIndicesVector(CreateNewIndex(bf_params), CreateNewIndex(hnsw_params));
+
+    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
+    LoadHNSWIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
+
+    // Add the same vectors to Flat index.
+    for (size_t i = 0; i < n_vectors; ++i) {
+        char *blob = GetHNSWDataByInternalId(i);
+        VecSimIndex_AddVector(GetBF(), blob, i);
+    }
+
+    // Load the test query vectors form file. Index file path is relative to repository root dir.
+    load_test_vectors();
+}
+
+
+template <bool is_multi>
+void BM_VecSimBasics<is_multi>::load_test_vectors() {
+    auto location = std::string(std::string(getenv("ROOT")));
+    auto file_name = location + "/" + BM_VecSimBasics::test_vectors_file;
+
+    std::ifstream input(file_name, std::ios::binary);
+
+    if (!input.is_open()) {
+        throw std::runtime_error("Test vectors file was not found in path. Exiting...");
+    }
+    input.seekg(0, std::ifstream::beg);
+    InsertToQueries(input);
+
+   
+}
 
 /*
  *  Populate the given queries vector with the serialized raw vectors data in
