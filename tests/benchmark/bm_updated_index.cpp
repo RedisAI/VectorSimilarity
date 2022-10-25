@@ -73,7 +73,7 @@ protected:
             new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
 
         // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-        hnsw_index_updated->loadIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
+        hnsw_index_updated->loadIndex(GetSerializedIndexLocation(updated_hnsw_index_file));
         if (!hnsw_index_updated->serializingIsValid()) {
             throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
