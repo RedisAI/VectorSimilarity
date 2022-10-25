@@ -42,8 +42,8 @@ public:
     static std::vector<std::vector<data_t>> queries;
 
     void AddVector(benchmark::State &st);
-    template <typename algo_t>
-    void DeleteVector(algo_t index, benchmark::State &st);
+
+    void DeleteVector(VecSimAlgo algo, benchmark::State &st);
     static std::vector<VecSimIndex *> indices;
 
     virtual void InitializeIndicesVector(VecSimIndex *bf_index, VecSimIndex *hnsw_index) override;
@@ -87,6 +87,10 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics_Single, AddVector_fp64, fp64_index_t
     AddVector(st);
 }
 
+
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics_Single, DeleteVector_fp64, fp64_index_t)(benchmark::State &st) {
+    DeleteVector(static_cast<VecSimAlgo>(st.range(0)), st);
+}
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond) \
     ->Iterations((long)BM_VecSimBasics<false>::block_size)
 
@@ -139,14 +143,16 @@ void BM_VecSimBasics_Single<index_type_t>::AddVector(benchmark::State &st) {
 }
 
 template <typename index_type_t>
-template <typename algo_t>
-void BM_VecSimBasics_Single<index_type_t>::DeleteVector(algo_t index, benchmark::State &st) {
+void BM_VecSimBasics_Single<index_type_t>::DeleteVector(VecSimAlgo algo, benchmark::State &st) {
      // Remove a different vector in every execution.
     std::vector<std::vector<data_t>> blobs;
     size_t id_to_remove = 0;
     double memory_delta = 0;
     size_t iter = 0;
+    
+    if(algo == VecSimAlgo_BF) {
 
+    }
 
     for (auto _ : st) {
         st.PauseTiming();
