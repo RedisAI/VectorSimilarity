@@ -11,11 +11,11 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 enable_testing()
 
-add_executable(bm_batch_iterator bm_batch_iterator.cpp bm_utils.cpp)
+add_executable(bm_batch_iterator bm_batch_iterator.cpp)
 target_link_libraries(bm_batch_iterator VectorSimilarity benchmark::benchmark)
-add_executable(bm_basics bm_basics.cpp bm_utils.cpp)
-target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
-add_executable(bm_updated_index bm_updated_index.cpp bm_utils.cpp)
+add_executable(bm_basics_single bm_basics_single.cpp)
+target_link_libraries(bm_basics_single VectorSimilarity benchmark::benchmark)
+add_executable(bm_updated_index bm_updated_index.cpp)
 target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
 
 #########################################################################################

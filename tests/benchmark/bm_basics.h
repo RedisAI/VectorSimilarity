@@ -1,9 +1,3 @@
-/*
- *Copyright Redis Ltd. 2021 - present
- *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
- *the Server Side Public License v1 (SSPLv1).
- */
-
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
@@ -17,9 +11,8 @@
 size_t BM_VecSimBasics::n_vectors = 1000000;
 size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
-std::vector<VecSimIndex *> BM_VecSimBasics::indices;
-/* VecSimIndex *BM_VecSimBasics::bf_index;
-HNSWIndex<float, float> *BM_VecSimBasics::hnsw_index; */
+VecSimIndex *BM_VecSimBasics::bf_index;
+HNSWIndex<float, float> *BM_VecSimBasics::hnsw_index;
 std::vector<std::vector<float>> *BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 64;
 size_t BM_VecSimBasics::EF_C = 512;
@@ -31,8 +24,7 @@ const char *BM_VecSimBasics::test_vectors_file =
 
 size_t BM_VecSimBasics::ref_count = 0;
 
-BENCHMARK_TEMPLATE_F(BM_VecSimBasics, AddVector, float)(benchmark::State &st) {
-    VecSimType type = VecSimType_FLOAT32;
+BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVector)(benchmark::State &st) {
     // Add a new vector from the test vectors in every iteration.
     size_t iter = 0;
     size_t new_id = VecSimIndex_IndexSize(index);
@@ -50,8 +42,6 @@ BENCHMARK_TEMPLATE_F(BM_VecSimBasics, AddVector, float)(benchmark::State &st) {
         VecSimIndex_DeleteVector(index, id);
     }
 }
-
-
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVector)->Args({0, })->Args({1, 20})
 BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
@@ -98,11 +88,10 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     size_t id_to_remove = 0;
     double memory_delta = 0;
     size_t iter = 0;
-    auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     for (auto _ : st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
-        memcpy(removed_vec.data(), hnsw_index_casted->getDataByInternalId(id_to_remove),
+        memcpy(removed_vec.data(), hnsw_index->getDataByInternalId(id_to_remove),
                dim * sizeof(float));
         blobs.push_back(removed_vec);
         st.ResumeTiming();
