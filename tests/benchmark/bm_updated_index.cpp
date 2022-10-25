@@ -49,7 +49,7 @@ protected:
 
         // Initially, load all the vectors to the updated bf index (before we override it).
         for (size_t i = 0; i < BM_VecSimBasics::n_vectors; ++i) {
-            char *blob =
+            float *blob =
                 reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
             size_t label =
                 reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getExternalLabel(i);
@@ -70,8 +70,8 @@ protected:
 
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
-                             ->getDataByInternalId(i);
+            float *blob = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
+                              ->getDataByInternalId(i);
             size_t label = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
                                ->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);

@@ -176,7 +176,7 @@ public:
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
-    char *getDataByInternalId(idType internal_id) const;
+    DataType *getDataByInternalId(idType internal_id) const;
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
     inline unsigned short int getListCount(const linklistsizeint *ptr) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
@@ -277,8 +277,8 @@ labelType *HNSWIndex<DataType, DistType>::getExternalLabelPtr(idType internal_id
 }
 
 template <typename DataType, typename DistType>
-char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
+DataType *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
+    return (DataType *)(data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
 template <typename DataType, typename DistType>
@@ -431,7 +431,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             continue;
 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *currObj1 = (getDataByInternalId(candidate_id));
+        DataType *currObj1 = (getDataByInternalId(candidate_id));
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
         if (lowerBound > dist1 || top_candidates.size() < ef) {
@@ -482,7 +482,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *candidate_data = getDataByInternalId(candidate_id);
+        DataType *candidate_data = getDataByInternalId(candidate_id);
 
         DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
         if (candidate_dist < dyn_range) {

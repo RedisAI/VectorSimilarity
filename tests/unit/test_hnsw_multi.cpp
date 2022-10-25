@@ -721,9 +721,9 @@ TYPED_TEST(HNSWMultiTest, remove_vector_after_replacing_block) {
     ASSERT_EQ(hnsw_index->getExternalLabel(1), 2);
     ASSERT_EQ(hnsw_index->getExternalLabel(2), 2);
     // checking the blob swaps.
-    ASSERT_EQ(*(TEST_DATA_T *)(hnsw_index->getDataByInternalId(0)), 0);
-    ASSERT_EQ(*(TEST_DATA_T *)(hnsw_index->getDataByInternalId(1)), 5);
-    ASSERT_EQ(*(TEST_DATA_T *)(hnsw_index->getDataByInternalId(2)), 4);
+    ASSERT_EQ(*(hnsw_index->getDataByInternalId(0)), 0);
+    ASSERT_EQ(*(hnsw_index->getDataByInternalId(1)), 5);
+    ASSERT_EQ(*(hnsw_index->getDataByInternalId(2)), 4);
 
     VecSimIndex_DeleteVector(index, 1);
     VecSimIndex_DeleteVector(index, 2);

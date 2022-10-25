@@ -152,9 +152,8 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
             __builtin_prefetch(index->getDataByInternalId(*(node_links + j + 1)));
 
             this->visitNode(candidate_id);
-            char *candidate_data = this->index->getDataByInternalId(candidate_id);
-            DistType candidate_dist =
-                dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
+            DataType *candidate_data = this->index->getDataByInternalId(candidate_id);
+            DistType candidate_dist = dist_func(this->getQueryBlob(), candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
             __builtin_prefetch(index->get_linklist_at_level(candidates.top().second, 0));
         }

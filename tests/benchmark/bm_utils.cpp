@@ -73,7 +73,7 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob =
+        float *blob =
             reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
         VecSimIndex_AddVector(bf_index, blob, i);
     }

@@ -53,7 +53,7 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     size_t bs = 1;
 #define ASSERT_HNSW_BLOB_EQ(id, blob)                                                              \
     do {                                                                                           \
-        void *v = hnsw_index->getDataByInternalId(id);                                             \
+        TEST_DATA_T *v = hnsw_index->getDataByInternalId(id);                                      \
         ASSERT_FALSE(memcmp(v, blob, sizeof(blob)));                                               \
     } while (0)
 
