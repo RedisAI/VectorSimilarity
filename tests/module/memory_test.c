@@ -33,7 +33,7 @@ void _add_vectors(VecSimIndex *index, long long amount) {
     default:
         break;
     }
-    int64_t vec[dim];
+    double vec[dim];
     for (int i = 0; i < dim; i++)
         vec[i] = i;
     for (long long j = 0; j < amount; j++)
@@ -56,9 +56,10 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
     case VecSimAlgo_BF:
         param.bfParams.blockSize = 1;
         param.bfParams.initialCapacity = 1;
-        param.bfParams.type = VecSimType_INT64;
+        param.bfParams.type = VecSimType_FLOAT64;
         param.bfParams.dim = DIMENSION;
         param.bfParams.metric = VecSimMetric_L2;
+        param.bfParams.multi = false;
         break;
 
     case VecSimAlgo_HNSWLIB:
@@ -66,9 +67,10 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
         param.hnswParams.initialCapacity = 1;
         param.hnswParams.efConstruction = 0;
         param.hnswParams.efRuntime = 0;
-        param.hnswParams.type = VecSimType_INT64;
+        param.hnswParams.type = VecSimType_FLOAT64;
         param.hnswParams.dim = DIMENSION;
         param.hnswParams.metric = VecSimMetric_L2;
+        param.hnswParams.multi = false;
         break;
     }
 
