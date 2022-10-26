@@ -167,6 +167,10 @@ commands:
             - ~/.cache/pip
             - ~/.cache/pypoetry
           key: v2-dependencies-{{ checksum "pyproject.toml" }}-{{ .Environment.CIRCLE_STAGE }}
+      # TODO: REMOVE BEFORE MERGE
+      - run:
+          name: Redis tests
+          command: python3 -m tox -e modtest
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
