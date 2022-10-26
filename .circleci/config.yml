@@ -167,10 +167,6 @@ commands:
             - ~/.cache/pip
             - ~/.cache/pypoetry
           key: v2-dependencies-{{ checksum "pyproject.toml" }}-{{ .Environment.CIRCLE_STAGE }}
-      # TODO: REMOVE BEFORE MERGE
-      - run:
-          name: Redis tests
-          command: python3 -m tox -e modtest
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -424,6 +420,9 @@ workflows:
       - run-benchmarks:
           context: common
           <<: *on-perf-and-version-tags
+      # TODO: REMOVE BEFORE MERGE
+      - nightly_flow
+
 
   benchmark_flow_label:
     when:
