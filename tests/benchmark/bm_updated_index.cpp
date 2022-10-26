@@ -10,205 +10,125 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/utils/serializer.h"
-#include "bm_utils.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "bm_basics.h"
 
 // Global benchmark data
-size_t BM_VecSimBasics::n_vectors = 500000;
-size_t BM_VecSimBasics::n_queries = 10000;
-size_t BM_VecSimBasics::dim = 768;
-VecSimIndex *BM_VecSimBasics::hnsw_index;
-VecSimIndex *BM_VecSimBasics::bf_index;
-std::vector<std::vector<float>> *BM_VecSimBasics::queries;
-size_t BM_VecSimBasics::M = 65;
-size_t BM_VecSimBasics::EF_C = 512;
-size_t BM_VecSimBasics::block_size = 1024;
-const char *BM_VecSimBasics::hnsw_index_file =
-    "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512.hnsw";
-const char *BM_VecSimBasics::test_vectors_file =
-    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+size_t BM_VecSimUtils::n_vectors = 500000;
 
-size_t BM_VecSimBasics::ref_count = 0;
+const char *BM_VecSimUtils::hnsw_index_file =
+    "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512.hnsw";
 
 const char *updated_hnsw_index_file =
     "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw";
+template <typename index_type_t>
+class BM_VecSimUpdatedIndex : public BM_VecSimBasics<index_type_t> {
+public:
+    const static Offset_t updated_index_offset = 2;
+    using BM_BASICS = BM_VecSimBasics<index_type_t>;
 
-class BM_VecSimUpdatedIndex : public BM_VecSimBasics {
-protected:
-    static VecSimIndex *bf_index_updated;
-    static VecSimIndex *hnsw_index_updated;
-
-    BM_VecSimUpdatedIndex() : BM_VecSimBasics() {
-        if (ref_count == 1) {
+    BM_VecSimUpdatedIndex() {
+        if (BM_VecSimUtils::ref_count == 1) {
             // Initialize the updated indexes as well, if this is the first instance.
             Initialize();
         }
     }
-    static void Initialize() {
 
-        VecSimParams bf_params = {.algo = VecSimAlgo_BF,
-                                  .bfParams =
-                                      BFParams{.type = VecSimType_FLOAT32,
-                                               .dim = BM_VecSimBasics::dim,
-                                               .metric = VecSimMetric_Cosine,
-                                               .initialCapacity = BM_VecSimBasics::n_vectors}};
-        BM_VecSimUpdatedIndex::bf_index_updated = VecSimIndex_New(&bf_params);
-
-        auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
-        // Initially, load all the vectors to the updated bf index (before we override it).
-        for (size_t i = 0; i < BM_VecSimBasics::n_vectors; ++i) {
-            char *blob = hnsw_index_casted->getDataByInternalId(i);
-            size_t label = hnsw_index_casted->getExternalLabel(i);
-            VecSimIndex_AddVector(bf_index_updated, blob, label);
-        }
-
-        // Generate the updated index from file.
-        // HNSWParams is required to load v1 index
-        HNSWParams params = {.type = VecSimType_FLOAT32,
-                             .dim = BM_VecSimBasics::dim,
-                             .metric = VecSimMetric_Cosine,
-                             .multi = false,
-                             .blockSize = BM_VecSimBasics::block_size};
-
-        // Generate index from file.
-        hnsw_index_updated = HNSWFactory::NewIndex(
-            BM_VecSimBasics::GetSerializedIndexLocation(updated_hnsw_index_file), &params);
-
-        auto hnsw_index_updated_casted =
-            reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated);
-
-        if (!hnsw_index_updated_casted->checkIntegrity().valid_state) {
-            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
-        }
-        // Add the same vectors to the *updated* FLAT index (override the previous vectors).
-        for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob = hnsw_index_updated_casted->getDataByInternalId(i);
-            size_t label = hnsw_index_updated_casted->getExternalLabel(i);
-            VecSimIndex_AddVector(bf_index_updated, blob, label);
-        }
-    }
+    void Initialize();
 
 public:
     ~BM_VecSimUpdatedIndex() {
-        if (ref_count == 1) {
-            VecSimIndex_Free(hnsw_index_updated);
-            VecSimIndex_Free(bf_index_updated);
+        if (BM_VecSimUtils::ref_count == 1) {
+            VecSimIndex_Free(INDICES[VecSimAlgo_BF + updated_index_offset]);
+            VecSimIndex_Free(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset]);
         }
     }
 };
 
-VecSimIndex *BM_VecSimUpdatedIndex::bf_index_updated;
-VecSimIndex *BM_VecSimUpdatedIndex::hnsw_index_updated;
+template <typename index_type_t>
+void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
+    BFParams bf_params = {.type = index_type_t::get_index_type(),
+                          .dim = DIM,
+                          .metric = VecSimMetric_Cosine,
+                          .initialCapacity = N_VECTORS};
+    // this index will be inserted after the basic indices at indices[VecSimAlfo_BF + update_offset]
+    INDICES.push_back(BM_VecSimUtils::CreateNewIndex(bf_params));
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF)(benchmark::State &st) {
-    size_t k = st.range(0);
-    size_t iter = 0;
-    for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
-        iter++;
+    // Initially, load all the vectors to the updated bf index (before we override it).
+    for (size_t i = 0; i < N_VECTORS; ++i) {
+        char *blob = BM_BASICS::GetHNSWDataByInternalId(i);
+        size_t label = BM_BASICS::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
+        VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + updated_index_offset], blob, label);
+    }
+
+    // Initialize and populate an HNSW index where all vectors have been updated.
+    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
+                              .dim = DIM,
+                              .metric = VecSimMetric_Cosine,
+                              .initialCapacity = N_VECTORS};
+    INDICES.push_back(BM_VecSimUtils::CreateNewIndex(hnsw_params));
+
+    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
+    BM_BASICS::LoadHNSWIndex(BM_VecSimUtils::AttachRootPath(BM_VecSimUtils::hnsw_index_file),
+                             updated_index_offset);
+
+    if (!BM_BASICS::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
+             ->serializingIsValid()) {
+        throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
+    }
+    // Add the same vectors to the *updated* FLAT index (override the previous vectors).
+    for (size_t i = 0; i < N_VECTORS; ++i) {
+        char *blob = BM_BASICS::GetHNSWDataByInternalId(i, updated_index_offset);
+        size_t label = BM_BASICS::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
+                           ->getExternalLabel(i);
+        VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + updated_index_offset], blob, label);
     }
 }
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)(benchmark::State &st) {
+// TopK search BM
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF_Updated_fp32, fp32_index_t)
+(benchmark::State &st) {
     size_t k = st.range(0);
-    size_t iter = 0;
-    for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index_updated, (*queries)[iter % n_queries].data(), k, nullptr,
-                              BY_SCORE);
-        iter++;
-    }
+    TopK_BF(k, st, updated_index_offset);
+}
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF_Updated_fp64, fp64_index_t)
+(benchmark::State &st) {
+    size_t k = st.range(0);
+    TopK_BF(k, st, updated_index_offset);
 }
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW)(benchmark::State &st) {
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated_fp32, fp32_index_t)
+(benchmark::State &st) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
-    size_t correct = 0;
-    size_t iter = 0;
-    for (auto _ : st) {
-        RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index, bf_index);
-        iter++;
-    }
-    st.counters["Recall"] = (float)correct / (float)(k * iter);
+    TopK_HNSW(ef, k, st, updated_index_offset);
 }
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)(benchmark::State &st) {
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated_fp64, fp64_index_t)
+(benchmark::State &st) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
-    size_t correct = 0;
-    size_t iter = 0;
-    for (auto _ : st) {
-        RunTopK_HNSW(st, ef, iter, k, correct, hnsw_index_updated, bf_index_updated);
-        iter++;
-    }
-    st.counters["Recall"] = (float)correct / (float)(k * iter);
+    TopK_HNSW(ef, k, st, updated_index_offset);
 }
 
 // Index memory metrics - run only once.
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT_before)(benchmark::State &st) {
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_Info(bf_index).bfInfo.memory;
-}
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated_fp32, fp32_index_t)
+(benchmark::State &st) { Memory_FLAT(st, updated_index_offset); }
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated_fp64, fp64_index_t)
+(benchmark::State &st) { Memory_FLAT(st, updated_index_offset); }
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW_updated_fp32, fp32_index_t)
+(benchmark::State &st) { Memory_HNSW(st, updated_index_offset); }
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW_updated_fp64, fp64_index_t)
+(benchmark::State &st) { Memory_HNSW(st, updated_index_offset); }
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated)(benchmark::State &st) {
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_Info(bf_index_updated).bfInfo.memory;
-}
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated_fp32)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated_fp64)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_HNSW_updated_fp32)->Iterations(1);
+BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_HNSW_updated_fp64)->Iterations(1);
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW_before)(benchmark::State &st) {
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index).hnswInfo.memory;
-}
+REGISTER_TopK_BF(BM_VecSimUpdatedIndex, TopK_BF_Updated_fp32);
+REGISTER_TopK_BF(BM_VecSimUpdatedIndex, TopK_BF_Updated_fp64);
 
-BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, Memory_HNSW_updated)(benchmark::State &st) {
-    for (auto _ : st) {
-        // Do nothing...
-    }
-    st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index_updated).hnswInfo.memory;
-}
-
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_before)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_HNSW_before)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, Memory_FLAT_updated)->Iterations(1);
-
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF)
-    ->Arg(10)
-    ->ArgName("k")
-    ->Arg(100)
-    ->ArgName("k")
-    ->Arg(500)
-    ->ArgName("k")
-    ->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_HNSW)
-// {ef_runtime, k} (recall that always ef_runtime >= k)
-HNSW_TOP_K_ARGS(10, 10)
-HNSW_TOP_K_ARGS(200, 10)
-HNSW_TOP_K_ARGS(100, 100)
-HNSW_TOP_K_ARGS(200, 100)
-HNSW_TOP_K_ARGS(500, 500)->Iterations(100)->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)
-    ->Arg(10)
-    ->ArgName("k")
-    ->Arg(100)
-    ->ArgName("k")
-    ->Arg(500)
-    ->ArgName("k")
-    ->Unit(benchmark::kMillisecond);
-
-BENCHMARK_REGISTER_F(BM_VecSimUpdatedIndex, TopK_HNSW_Updated)
-// {ef_runtime, k} (recall that always ef_runtime >= k)
-HNSW_TOP_K_ARGS(10, 10)
-HNSW_TOP_K_ARGS(200, 10)
-HNSW_TOP_K_ARGS(100, 100)
-HNSW_TOP_K_ARGS(200, 100)
-HNSW_TOP_K_ARGS(500, 500)->Iterations(100)->Unit(benchmark::kMillisecond);
+REGISTER_TopK_HNSW(BM_VecSimUpdatedIndex, TopK_HNSW_Updated_fp32);
+REGISTER_TopK_HNSW(BM_VecSimUpdatedIndex, TopK_HNSW_Updated_fp64);
 
 BENCHMARK_MAIN();
