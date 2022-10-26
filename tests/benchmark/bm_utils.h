@@ -23,8 +23,6 @@ public:
 protected:
     static size_t dim;
     static size_t n_vectors;
-    static size_t M;
-    static size_t EF_C;
     static size_t block_size;
 
     static const char *test_vectors_file;
@@ -52,6 +50,12 @@ protected:
         return std::string(getenv("ROOT")) + "/" + file_name;
     }
 
+    template <typename IndexParams>
+    static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
+        VecSimParams params = CreateParams(index_params);
+        return VecSimIndex_New(&params);
+    }
+
 private:
     static inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
         VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
@@ -62,55 +66,66 @@ private:
         VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
         return params;
     }
+
+    void loadTestVectors();
+
+protected:
+    virtual void InsertToQueries(std::ifstream &input) = 0;
+    virtual void LoadHNSWIndex(std::string location, Offset_t index_offset = 0) = 0;
+    virtual char *GetHNSWDataByInternalId(size_t id, Offset_t index_offset = 0) const = 0;
 };
 
-template <bool is_multi>
-BM_VecSimBasics<is_multi>::BM_VecSimBasics(VecSimType type) {
+BM_VecSimUtils::~BM_VecSimUtils() {
+    ref_count--;
+    if (ref_count == 0) {
+        VecSimIndex_Free(indices[VecSimAlgo_BF]);
+        VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
+    }
+}
+
+BM_VecSimUtils::BM_VecSimUtils(VecSimType type, bool is_multi) {
     if (ref_count == 0) {
         // Initialize the static members.
-        Initialize(type);
+        Initialize(type, is_multi);
     }
     ref_count++;
 }
 
-template <bool is_multi>
-void BM_VecSimBasics<is_multi>::Initialize(VecSimType type) {
+void BM_VecSimUtils::Initialize(VecSimType type, bool is_multi) {
 
     // Initialize and load HNSW index for DBPedia data set.
     HNSWParams hnsw_params = {.type = type,
-                              .dim = BM_VecSimBasics::dim,
+                              .dim = dim,
                               .metric = VecSimMetric_Cosine,
                               .multi = is_multi,
-                              .initialCapacity = BM_VecSimBasics::n_vectors,
-                              .blockSize = BM_VecSimBasics::block_size,
-                              .M = BM_VecSimBasics::M,
-                              .efConstruction = BM_VecSimBasics::EF_C};
+                              .initialCapacity = n_vectors,
+                              .blockSize = block_size};
 
     BFParams bf_params = {.type = type,
-                          .dim = BM_VecSimBasics::dim,
+                          .dim = dim,
                           .metric = VecSimMetric_Cosine,
-                          .initialCapacity = BM_VecSimBasics::n_vectors,
-                          .blockSize = BM_VecSimBasics::block_size};
+                          .initialCapacity = n_vectors,
+                          .blockSize = block_size};
 
-    InitializeIndicesVector(CreateNewIndex(bf_params), CreateNewIndex(hnsw_params));
+    indices.push_back(CreateNewIndex(bf_params));
+    indices.push_back(CreateNewIndex(hnsw_params));
 
     // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    LoadHNSWIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
+    LoadHNSWIndex(AttachRootPath(hnsw_index_file));
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         char *blob = GetHNSWDataByInternalId(i);
-        VecSimIndex_AddVector(GetBF(), blob, i);
+        VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, i);
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
-    load_test_vectors();
+    loadTestVectors();
 }
 
-template <bool is_multi>
-void BM_VecSimBasics<is_multi>::load_test_vectors() {
+void BM_VecSimUtils::loadTestVectors() {
     auto location = std::string(std::string(getenv("ROOT")));
-    auto file_name = location + "/" + BM_VecSimBasics::test_vectors_file;
+    auto file_name = location + "/" + test_vectors_file;
 
     std::ifstream input(file_name, std::ios::binary);
 
@@ -121,20 +136,19 @@ void BM_VecSimBasics<is_multi>::load_test_vectors() {
     InsertToQueries(input);
 }
 
-template <bool is_multi>
 template <typename data_t>
-void BM_VecSimBasics<is_multi>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                                             size_t &correct, VecSimIndex *hnsw_index_,
-                                             VecSimIndex *bf_index_,
-                                             const std::vector<std::vector<data_t>> &queries) {
+void BM_VecSimUtils::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
+                                  size_t &correct, const std::vector<std::vector<data_t>> &queries,
+                                  Offset_t index_offset) {
     auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index_, queries[iter % n_queries].data(), k,
-                                              &query_params, BY_SCORE);
+    auto hnsw_results =
+        VecSimIndex_TopKQuery(indices[VecSimAlgo_HNSWLIB + index_offset],
+                              queries[iter % n_queries].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
     // Measure recall:
-    auto bf_results =
-        VecSimIndex_TopKQuery(bf_index_, queries[iter % n_queries].data(), k, nullptr, BY_SCORE);
+    auto bf_results = VecSimIndex_TopKQuery(indices[VecSimAlgo_BF + index_offset],
+                                            queries[iter % n_queries].data(), k, nullptr, BY_SCORE);
     auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
     while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
         auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
