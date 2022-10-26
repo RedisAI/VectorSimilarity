@@ -420,8 +420,6 @@ workflows:
       - run-benchmarks:
           context: common
           <<: *on-perf-and-version-tags
-      # TODO: REMOVE BEFORE MERGE
-      - nightly_flow
 
 
   benchmark_flow_label:
