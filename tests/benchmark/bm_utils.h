@@ -16,33 +16,28 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "bm_common.h"
 
-class BM_VecSimUtils : public benchmark::Fixture {
+class BM_VecSimGeneral : public benchmark::Fixture {
 public:
+    static size_t block_size;
+
+protected:
     static size_t dim;
     static size_t n_vectors;
-    static size_t block_size;
 
     static const char *test_vectors_file;
     static size_t n_queries;
 
-    // We use this class as a singleton for every test case, so we won't hold several indices (to
-    // reduce memory consumption).
     static size_t ref_count;
 
     static std::vector<VecSimIndex *> indices;
 
-    BM_VecSimUtils(VecSimType type, bool is_multi);
-    virtual ~BM_VecSimUtils();
-
-    template <typename data_t>
-    static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                             size_t &correct, const std::vector<std::vector<data_t>> &queries,
-                             Offset_t index_offset = 0);
-
     static const char *hnsw_index_file;
-    static inline std::string AttachRootPath(const char *file_name) {
-        return std::string(getenv("ROOT")) + "/" + file_name;
-    }
+
+    BM_VecSimGeneral() = default;
+    virtual ~BM_VecSimGeneral();
+
+    static void MeasureRecall(VecSimQueryResult_List hnsw_results,
+                              VecSimQueryResult_List bf_results, size_t &correct);
 
     template <typename IndexParams>
     static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
@@ -50,9 +45,11 @@ public:
         return VecSimIndex_New(&params);
     }
 
-private:
-    void Initialize(VecSimType type, bool is_multi);
+    static inline std::string AttachRootPath(const char *file_name) {
+        return std::string(getenv("ROOT")) + "/" + file_name;
+    }
 
+private:
     static inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
         VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         return params;
@@ -62,16 +59,9 @@ private:
         VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
         return params;
     }
-
-    void loadTestVectors();
-
-protected:
-    virtual void InsertToQueries(std::ifstream &input) = 0;
-    virtual void LoadHNSWIndex(std::string location, Offset_t index_offset = 0) = 0;
-    virtual char *GetHNSWDataByInternalId(size_t id, Offset_t index_offset = 0) const = 0;
 };
 
-BM_VecSimUtils::~BM_VecSimUtils() {
+BM_VecSimGeneral::~BM_VecSimGeneral() {
     ref_count--;
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
@@ -79,72 +69,8 @@ BM_VecSimUtils::~BM_VecSimUtils() {
     }
 }
 
-BM_VecSimUtils::BM_VecSimUtils(VecSimType type, bool is_multi) {
-    if (ref_count == 0) {
-        // Initialize the static members.
-        Initialize(type, is_multi);
-    }
-    ref_count++;
-}
-
-void BM_VecSimUtils::Initialize(VecSimType type, bool is_multi) {
-
-    // Initialize and load HNSW index for DBPedia data set.
-    HNSWParams hnsw_params = {.type = type,
-                              .dim = dim,
-                              .metric = VecSimMetric_Cosine,
-                              .multi = is_multi,
-                              .initialCapacity = n_vectors,
-                              .blockSize = block_size};
-
-    BFParams bf_params = {.type = type,
-                          .dim = dim,
-                          .metric = VecSimMetric_Cosine,
-                          .initialCapacity = n_vectors,
-                          .blockSize = block_size};
-
-    indices.push_back(CreateNewIndex(bf_params));
-    indices.push_back(CreateNewIndex(hnsw_params));
-
-    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    LoadHNSWIndex(AttachRootPath(hnsw_index_file));
-
-    // Add the same vectors to Flat index.
-    for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob = GetHNSWDataByInternalId(i);
-        VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, i);
-    }
-
-    // Load the test query vectors form file. Index file path is relative to repository root dir.
-    loadTestVectors();
-}
-
-void BM_VecSimUtils::loadTestVectors() {
-    auto location = std::string(std::string(getenv("ROOT")));
-    auto file_name = location + "/" + test_vectors_file;
-
-    std::ifstream input(file_name, std::ios::binary);
-
-    if (!input.is_open()) {
-        throw std::runtime_error("Test vectors file was not found in path. Exiting...");
-    }
-    input.seekg(0, std::ifstream::beg);
-    InsertToQueries(input);
-}
-
-template <typename data_t>
-void BM_VecSimUtils::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                                  size_t &correct, const std::vector<std::vector<data_t>> &queries,
-                                  Offset_t index_offset) {
-    auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-    auto hnsw_results =
-        VecSimIndex_TopKQuery(indices[VecSimAlgo_HNSWLIB + index_offset],
-                              queries[iter % n_queries].data(), k, &query_params, BY_SCORE);
-    st.PauseTiming();
-
-    // Measure recall:
-    auto bf_results = VecSimIndex_TopKQuery(indices[VecSimAlgo_BF + index_offset],
-                                            queries[iter % n_queries].data(), k, nullptr, BY_SCORE);
+void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
+                                     VecSimQueryResult_List bf_results, size_t &correct) {
     auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
     while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
         auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
@@ -159,20 +85,112 @@ void BM_VecSimUtils::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, 
         VecSimQueryResult_IteratorFree(bf_it);
     }
     VecSimQueryResult_IteratorFree(hnsw_it);
-
-    VecSimQueryResult_Free(bf_results);
-    VecSimQueryResult_Free(hnsw_results);
-    st.ResumeTiming();
 }
-/*
- *  Populate the given queries vector with the serialized raw vectors data in
- *  the file which is located in the given path.
 
-*/
-#define HNSW_TOP_K_ARGS(ef_runtime, k) Args({ef_runtime, k})->ArgNames({"ef_runtime", "k"})
+std::vector<VecSimIndex *> BM_VecSimGeneral::indices = std::vector<VecSimIndex *>();
+template <typename index_type_t>
+class BM_VecSimIndex : public BM_VecSimGeneral {
+public:
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
 
-#define FIXED_BATCH_SIZE_ARGS(batch_size, num_batches)                                             \
-    ->Args({batch_size, num_batches})->ArgNames({"batch size", "number of batches"})
+    static std::vector<std::vector<data_t>> queries;
+
+    BM_VecSimIndex(bool is_multi);
+    virtual ~BM_VecSimIndex() = default;
+
+protected:
+    static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+    }
+    static inline char *GetHNSWDataByInternalId(size_t id, Offset_t index_offset = 0) {
+        return CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
+    }
+
+    static void LoadHNSWIndex(const std::string &location, Offset_t index_offset = 0);
+
+private:
+    static void Initialize(bool is_multi);
+    static void loadTestVectors();
+    static void InsertToQueries(std::ifstream &input);
+};
+
+template <typename index_type_t>
+std::vector<std::vector<typename index_type_t::data_t>> BM_VecSimIndex<index_type_t>::queries =
+    std::vector<std::vector<typename index_type_t::data_t>>();
+
+template <typename index_type_t>
+BM_VecSimIndex<index_type_t>::BM_VecSimIndex(bool is_multi) {
+    if (ref_count == 0) {
+        // Initialize the static members.
+        Initialize(is_multi);
+    }
+    ref_count++;
+}
+
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::Initialize(bool is_multi) {
+
+    // Initialize and load HNSW index for DBPedia data set.
+    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
+                              .dim = dim,
+                              .metric = VecSimMetric_Cosine,
+                              .multi = is_multi,
+                              .initialCapacity = n_vectors,
+                              .blockSize = block_size};
+
+    BFParams bf_params = {.type = index_type_t::get_index_type(),
+                          .dim = dim,
+                          .metric = VecSimMetric_Cosine,
+                          .initialCapacity = n_vectors,
+                          .blockSize = block_size};
+
+    INDICES.push_back(CreateNewIndex(bf_params));
+    INDICES.push_back(CreateNewIndex(hnsw_params));
+
+    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
+    LoadHNSWIndex(AttachRootPath(hnsw_index_file));
+
+    // Add the same vectors to Flat index.
+    for (size_t i = 0; i < n_vectors; ++i) {
+        char *blob = GetHNSWDataByInternalId(i);
+        VecSimIndex_AddVector(INDICES[VecSimAlgo_BF], blob, i);
+    }
+
+    // Load the test query vectors form file. Index file path is relative to repository root dir.
+    loadTestVectors();
+}
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::LoadHNSWIndex(const std::string &location,
+                                                 Offset_t index_offset) {
+    auto *hnsw_index = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + index_offset]);
+
+    hnsw_index->loadIndex(location);
+    size_t ef_r = 10;
+    hnsw_index->setEf(ef_r);
+}
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::loadTestVectors() {
+    auto location = std::string(std::string(getenv("ROOT")));
+    auto file_name = location + "/" + test_vectors_file;
+
+    std::ifstream input(file_name, std::ios::binary);
+
+    if (!input.is_open()) {
+        throw std::runtime_error("Test vectors file was not found in path. Exiting...");
+    }
+    input.seekg(0, std::ifstream::beg);
+    InsertToQueries(input);
+}
+
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
+    for (size_t i = 0; i < BM_VecSimIndex::n_queries; i++) {
+        std::vector<data_t> query(dim);
+        input.read((char *)query.data(), dim * sizeof(data_t));
+        queries.push_back(query);
+    }
+}
 
 #define VARIABLE_BATCH_SIZE_ARGS(initial_batch_size, num_batches)                                  \
     ->Args({initial_batch_size, num_batches})->ArgNames({"batch initial size", "number of batches"})

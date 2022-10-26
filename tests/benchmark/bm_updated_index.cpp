@@ -13,9 +13,9 @@
 #include "bm_basics.h"
 
 // Global benchmark data
-size_t BM_VecSimUtils::n_vectors = 500000;
+size_t BM_VecSimGeneral::n_vectors = 500000;
 
-const char *BM_VecSimUtils::hnsw_index_file =
+const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512.hnsw";
 
 const char *updated_hnsw_index_file =
@@ -24,10 +24,10 @@ template <typename index_type_t>
 class BM_VecSimUpdatedIndex : public BM_VecSimBasics<index_type_t> {
 public:
     const static Offset_t updated_index_offset = 2;
-    using BM_BASICS = BM_VecSimBasics<index_type_t>;
+    using BM_INDEX = BM_VecSimIndex<index_type_t>;
 
     BM_VecSimUpdatedIndex() {
-        if (BM_VecSimUtils::ref_count == 1) {
+        if (BM_VecSimGeneral::ref_count == 1) {
             // Initialize the updated indexes as well, if this is the first instance.
             Initialize();
         }
@@ -37,7 +37,7 @@ public:
 
 public:
     ~BM_VecSimUpdatedIndex() {
-        if (BM_VecSimUtils::ref_count == 1) {
+        if (BM_VecSimGeneral::ref_count == 1) {
             VecSimIndex_Free(INDICES[VecSimAlgo_BF + updated_index_offset]);
             VecSimIndex_Free(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset]);
         }
@@ -51,12 +51,12 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
                           .metric = VecSimMetric_Cosine,
                           .initialCapacity = N_VECTORS};
     // this index will be inserted after the basic indices at indices[VecSimAlfo_BF + update_offset]
-    INDICES.push_back(BM_VecSimUtils::CreateNewIndex(bf_params));
+    INDICES.push_back(BM_VecSimGeneral::CreateNewIndex(bf_params));
 
     // Initially, load all the vectors to the updated bf index (before we override it).
     for (size_t i = 0; i < N_VECTORS; ++i) {
-        char *blob = BM_BASICS::GetHNSWDataByInternalId(i);
-        size_t label = BM_BASICS::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
+        char *blob = BM_INDEX::GetHNSWDataByInternalId(i);
+        size_t label = BM_INDEX::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
         VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + updated_index_offset], blob, label);
     }
 
@@ -65,20 +65,20 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
                               .dim = DIM,
                               .metric = VecSimMetric_Cosine,
                               .initialCapacity = N_VECTORS};
-    INDICES.push_back(BM_VecSimUtils::CreateNewIndex(hnsw_params));
+    INDICES.push_back(BM_VecSimGeneral::CreateNewIndex(hnsw_params));
 
     // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    BM_BASICS::LoadHNSWIndex(BM_VecSimUtils::AttachRootPath(BM_VecSimUtils::hnsw_index_file),
-                             updated_index_offset);
+    BM_INDEX::LoadHNSWIndex(BM_VecSimGeneral::AttachRootPath(updated_hnsw_index_file),
+                            updated_index_offset);
 
-    if (!BM_BASICS::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
+    if (!BM_INDEX::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
              ->serializingIsValid()) {
         throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
     }
     // Add the same vectors to the *updated* FLAT index (override the previous vectors).
     for (size_t i = 0; i < N_VECTORS; ++i) {
-        char *blob = BM_BASICS::GetHNSWDataByInternalId(i, updated_index_offset);
-        size_t label = BM_BASICS::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
+        char *blob = BM_INDEX::GetHNSWDataByInternalId(i, updated_index_offset);
+        size_t label = BM_INDEX::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
                            ->getExternalLabel(i);
         VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + updated_index_offset], blob, label);
     }

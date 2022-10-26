@@ -1,7 +1,7 @@
 #include "bm_basics.h"
 
-size_t BM_VecSimUtils::n_vectors = 1000000;
-const char *BM_VecSimUtils::hnsw_index_file =
+size_t BM_VecSimGeneral::n_vectors = 1000000;
+const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
 
 template <typename index_type_t>
@@ -17,17 +17,17 @@ public:
     // we Pass a specific index pointer instead of VecSimIndex * so we can use getDataByInternalId
     // which is not known to VecSimIndex class.
     template <typename algo_t>
-    void DeleteVector(algo_t *index, benchmark::State &st);
+    static void DeleteVector(algo_t *index, benchmark::State &st);
 
-    void Range_BF(double radius, benchmark::State &st);
-    void Range_HNSW(double radius, double epsilon, benchmark::State &st);
+    static void Range_BF(double radius, benchmark::State &st);
+    static void Range_HNSW(double radius, double epsilon, benchmark::State &st);
 };
 
 template <typename index_type_t>
 void BM_VecSimBasics_Single<index_type_t>::AddVector(benchmark::State &st) {
     // Add a new vector from the test vectors in every iteration.
     size_t iter = 0;
-    size_t new_id = VecSimIndex_IndexSize(BM_VecSimUtils::INDICES[st.range(0)]);
+    size_t new_id = VecSimIndex_IndexSize(INDICES[st.range(0)]);
     size_t memory_delta = 0;
     for (auto _ : st) {
         memory_delta +=
@@ -171,7 +171,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics_Single, Range_HNSW_fp64, fp64_index_
 }
 
 #define UNIT_AND_ITERATIONS                                                                        \
-    Unit(benchmark::kMillisecond)->Iterations((long)BM_VecSimUtils::block_size)
+    Unit(benchmark::kMillisecond)->Iterations((long)BM_VecSimGeneral::block_size)
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics_Single, AddVector_fp32)
     ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
