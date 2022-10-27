@@ -857,6 +857,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
                 auto it = std::find(neighbour_incoming_edges->begin(),
                                     neighbour_incoming_edges->end(), max_id);
+                assert(it != neighbour_incoming_edges->end());
                 neighbour_incoming_edges->erase(it);
                 neighbour_incoming_edges->push_back(element_internal_id);
             }
