@@ -703,6 +703,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
         };
         TEST_DATA_T query[] = {50, 50, 50, 50};
         runTopKSearchTest(index, query, k, verify_res);
+        runTopKSearchTest(index, query, 0, verify_res); // For sanity, search for nothing
 
         VecSimIndex_Free(index);
     }
