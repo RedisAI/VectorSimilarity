@@ -404,7 +404,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/test_common_hnsw";
     ASSERT_EQ(this->GetFileSize(), 0);
     // Save index.
-    EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_NOT_VALID),
+    EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_INVALID),
                  std::runtime_error);
 
     // nothing should happen to the file.
@@ -412,7 +412,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     std::ofstream output(this->file_name, std::ios::binary);
     // Write invalide encoding version
-    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_NOT_VALID);
+    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_INVALID);
 
     EXPECT_THROW(hnsw_index->loadIndex(this->file_name), std::runtime_error);
 

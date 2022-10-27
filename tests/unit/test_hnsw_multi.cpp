@@ -1701,7 +1701,7 @@ TYPED_TEST(HNSWMultiSerializerTest, hnswMulti_serialization_v2) {
 
     VecSimIndex_Free(index);
 
-    // Create new index, set it into the serializer and extract the data to it.
+    // Create new index and load the serialized index.
     index = this->CreateNewIndex(other_params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);

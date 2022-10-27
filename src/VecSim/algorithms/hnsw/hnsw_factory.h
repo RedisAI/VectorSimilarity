@@ -19,4 +19,12 @@ VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator>
 size_t EstimateInitialSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params);
 
+#ifdef BUILD_TESTS
+// Factory function to be used before loading a serialized index.
+// We need to know at least the type and is multi to generate an instance that
+// belongs to the right class.
+VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_multi,
+                      std::shared_ptr<VecSimAllocator> allocator);
+
+#endif
 }; // namespace HNSWFactory

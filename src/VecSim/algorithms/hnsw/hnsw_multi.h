@@ -38,7 +38,11 @@ public:
                     size_t random_seed = 100, size_t initial_pool_size = 1)
         : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}
-
+#ifdef BUILD_TESTS
+    // Ctor to be used before loading a serialized index. Can be used from v2 and up.
+    HNSWIndex_Multi(const std::string &location, std::shared_ptr<VecSimAllocator> allocator)
+        : HNSWIndex<DataType, DistType>(location, allocator), label_lookup_(0, allocator) {}
+#endif
     ~HNSWIndex_Multi() {}
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {

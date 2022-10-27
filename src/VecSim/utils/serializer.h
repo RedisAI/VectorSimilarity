@@ -9,11 +9,11 @@ public:
     typedef enum EncodingVersion {
         EncodingVersion_V1 = 1,
         EncodingVersion_V2 = 2,
-        EncodingVersion_NOT_VALID, // This should always be last.
+        EncodingVersion_INVALID, // This should always be last.
     } EncodingVersion;
 
     // Persist index into a file in the specified location.
-    void saveIndex(const std::string &location, EncodingVersion version = EncodingVersion_V1);
+    void saveIndex(const std::string &location, EncodingVersion version = EncodingVersion_V2);
     // Restore the index from the file in the specified location.
     void loadIndex(const std::string &location);
     // Check if the serialized index is valid.

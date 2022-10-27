@@ -125,4 +125,29 @@ size_t EstimateElementSize(const HNSWParams *params) {
      */
     return size_meta_data + size_total_data_per_element;
 }
+
+#ifdef BUILD_TESTS
+
+template <typename DataType, typename DistType = DataType>
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const std::string &location, bool is_multi,
+                                                 std::shared_ptr<VecSimAllocator> allocator) {
+    // check if single and return new bf_index
+    if (is_multi)
+        return new (allocator) HNSWIndex_Multi<DataType, DistType>(location, allocator);
+    else
+        return new (allocator) HNSWIndex_Single<DataType, DistType>(location, allocator);
+}
+
+VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_multi,
+                      std::shared_ptr<VecSimAllocator> allocator) {
+    if (type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(location, is_multi, allocator);
+    } else if (type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(location, is_multi, allocator);
+    } else {
+        throw std::runtime_error("Wrong index type");
+    }
+}
+#endif
+
 }; // namespace HNSWFactory
