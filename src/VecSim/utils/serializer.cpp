@@ -15,12 +15,9 @@ void Serializer::saveIndex(const std::string &location, EncodingVersion version)
     saveIndexIMP(output, version);
     output.close();
 }
-// Restore the index from the file in the specified location.
-void Serializer::loadIndex(const std::string &location) {
-    std::ifstream input(location, std::ios::binary);
-    if (!input.is_open()) {
-        throw std::runtime_error("Cannot open file");
-    }
+
+Serializer::EncodingVersion Serializer::ReadVersion(std::ifstream &input) {
+
     input.seekg(0, std::ifstream::beg);
 
     // The version number is the first field that is serialized.
@@ -32,6 +29,5 @@ void Serializer::loadIndex(const std::string &location) {
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
 
-    loadIndexIMP(input, version);
-    input.close();
+    return version;
 }

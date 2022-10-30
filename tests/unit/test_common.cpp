@@ -14,6 +14,7 @@
 #include "VecSim/utils/serializer.h"
 #include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 #include <cstdlib>
 #include <limits>
@@ -401,9 +402,9 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
     HNSWIndex<float, float> *hnsw_index = reinterpret_cast<HNSWIndex<float, float> *>(index);
 
-    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/test_common_hnsw";
-    ASSERT_EQ(this->GetFileSize(), 0);
-    // Save index.
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/bad_index.hnsw";
+
+    // Try to Save index with an invlid version.
     EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_INVALID),
                  std::runtime_error);
 
@@ -411,21 +412,18 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     ASSERT_EQ(this->GetFileSize(), 0);
 
     std::ofstream output(this->file_name, std::ios::binary);
-    // Write invalide encoding version
+    // Write invalid encoding version
     Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_INVALID);
+    EXPECT_THROW(HNSWFactory::NewIndex(this->file_name), std::runtime_error);
 
-    EXPECT_THROW(hnsw_index->loadIndex(this->file_name), std::runtime_error);
-
-    // write WRONG index algorithm
     output.seekp(0);
+
+    // override with a valid version
+    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V2);
+    // write WRONG index algorithm
     Serializer::writeBinaryPOD(output, VecSimAlgo_BF);
 
-    std::ifstream input(this->file_name, std::ios::binary);
-    EXPECT_THROW(hnsw_index->loadIndexIMP(input, Serializer::EncodingVersion_V2),
-                 std::runtime_error);
-
-    // Check that the file stream was closed
-    ASSERT_FALSE(input.is_open());
+    EXPECT_THROW(HNSWFactory::NewIndex(this->file_name), std::runtime_error);
 
     // Clean-up.
     VecSimIndex_Free(index);

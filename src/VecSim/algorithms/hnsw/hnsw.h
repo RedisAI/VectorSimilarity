@@ -1047,7 +1047,7 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
             VisitedNodesHandlerPool(this->pool_initial_size, new_max_elements, this->allocator));
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
 #else
-    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+    visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
     // Reallocate base layer

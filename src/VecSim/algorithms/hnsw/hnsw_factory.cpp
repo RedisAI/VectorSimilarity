@@ -14,7 +14,7 @@ namespace HNSWFactory {
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
                                                  std::shared_ptr<VecSimAllocator> allocator) {
-    // check if single and return new bf_index
+    // check if single and return new hnsw_index
     if (params->multi)
         return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
     else
@@ -129,23 +129,71 @@ size_t EstimateElementSize(const HNSWParams *params) {
 #ifdef BUILD_TESTS
 
 template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const std::string &location, bool is_multi,
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  std::shared_ptr<VecSimAllocator> allocator) {
-    // check if single and return new bf_index
-    if (is_multi)
-        return new (allocator) HNSWIndex_Multi<DataType, DistType>(location, allocator);
+    VecSimIndex *index = nullptr;
+    // check if single and call the ctor that loads index information from file.
+    if (params->multi)
+        index = new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator);
     else
-        return new (allocator) HNSWIndex_Single<DataType, DistType>(location, allocator);
+        index = new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator);
+
+    reinterpret_cast<HNSWIndex<DataType, DistType> *>(index)->restoreGraph(input);
+
+    return index;
 }
 
-VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_multi,
-                      std::shared_ptr<VecSimAllocator> allocator) {
-    if (type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(location, is_multi, allocator);
-    } else if (type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(location, is_multi, allocator);
+VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_multi) {
+
+    std::ifstream input(location, std::ios::binary);
+    if (!input.is_open()) {
+        throw std::runtime_error("Cannot open file");
+    }
+
+    Serializer::EncodingVersion version = Serializer::ReadVersion(input);
+
+    HNSWParams params;
+    switch (version) {
+    case Serializer::EncodingVersion_V2: {
+        // Algorithm type is only serialized from V2 up.
+        VecSimAlgo algo = VecSimAlgo_INVALID;
+        Serializer::readBinaryPOD(input, algo);
+        if (algo != VecSimAlgo_HNSWLIB) {
+            input.close();
+            throw std::runtime_error("Cannot load index: bad algorithm type");
+        }
+        // this information is serialized from V2 and up
+        Serializer::readBinaryPOD(input, params.dim);
+        Serializer::readBinaryPOD(input, params.type);
+        Serializer::readBinaryPOD(input, params.metric);
+        Serializer::readBinaryPOD(input, params.blockSize);
+        Serializer::readBinaryPOD(input, params.multi);
+        Serializer::readBinaryPOD(input, params.epsilon);
+        break;
+    }
+    case Serializer::EncodingVersion_V1: {
+        params.type = type;
+        params.dim = 4;
+        params.metric = VecSimMetric_L2;
+        params.multi = is_multi;
+        params.blockSize = 1;
+        params.epsilon = 0.004;
+        break;
+    }
+    // Something is wrong
+    default:
+        throw std::runtime_error("Cannot load index: bad encoding version");
+    }
+    Serializer::readBinaryPOD(input, params.initialCapacity);
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    if (params.type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator);
+    } else if (params.type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator);
     } else {
-        throw std::runtime_error("Wrong index type");
+        throw std::runtime_error("Cannot load index: bad index type");
     }
 }
 #endif

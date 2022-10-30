@@ -17,7 +17,7 @@
 class BM_VecSimBasics : public benchmark::Fixture {
 public:
     static VecSimIndex *bf_index;
-    static HNSWIndex<float, float> *hnsw_index;
+    static VecSimIndex *hnsw_index;
     static size_t dim;
     static size_t n_vectors;
     static size_t M;

@@ -18,7 +18,7 @@ size_t BM_VecSimBasics::n_vectors = 1000000;
 size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
 VecSimIndex *BM_VecSimBasics::bf_index;
-HNSWIndex<float, float> *BM_VecSimBasics::hnsw_index;
+VecSimIndex *BM_VecSimBasics::hnsw_index;
 std::vector<std::vector<float>> *BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 64;
 size_t BM_VecSimBasics::EF_C = 512;
@@ -74,10 +74,11 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     size_t id_to_remove = 0;
     double memory_delta = 0;
     size_t iter = 0;
+    auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     for (auto _ : st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
-        memcpy(removed_vec.data(), hnsw_index->getDataByInternalId(id_to_remove),
+        memcpy(removed_vec.data(), hnsw_index_casted->getDataByInternalId(id_to_remove),
                dim * sizeof(float));
         blobs.push_back(removed_vec);
         st.ResumeTiming();

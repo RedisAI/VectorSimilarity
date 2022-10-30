@@ -6,6 +6,7 @@
  */
 
 #include "bm_utils.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 void load_test_vectors(const char *path, std::vector<std::vector<float>> &queries, size_t n_queries,
                        size_t dim) {
@@ -37,24 +38,13 @@ BM_VecSimBasics::BM_VecSimBasics() {
 
 void BM_VecSimBasics::Initialize() {
 
-    // Initialize and load HNSW index for DBPedia data set.
-    HNSWParams params = {.type = VecSimType_FLOAT32,
-                         .dim = BM_VecSimBasics::dim,
-                         .metric = VecSimMetric_Cosine,
-                         .multi = false,
-                         .initialCapacity = BM_VecSimBasics::n_vectors,
-                         .blockSize = BM_VecSimBasics::block_size,
-                         .M = BM_VecSimBasics::M,
-                         .efConstruction = BM_VecSimBasics::EF_C};
+    // Generate index from file.
+    hnsw_index = HNSWFactory::NewIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file),
+                                       VecSimType_FLOAT32, false);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    BM_VecSimBasics::hnsw_index =
-        new (allocator) HNSWIndex_Single<float, float>(&params, allocator);
-
-    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    hnsw_index->loadIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
+    auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     size_t ef_r = 10;
-    hnsw_index->setEf(ef_r);
+    hnsw_index_casted->setEf(ef_r);
 
     VecSimParams bf_params = {.algo = VecSimAlgo_BF,
                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -66,7 +56,7 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob = hnsw_index->getDataByInternalId(i);
+        char *blob = hnsw_index_casted->getDataByInternalId(i);
         VecSimIndex_AddVector(bf_index, blob, i);
     }
 
@@ -80,7 +70,7 @@ void BM_VecSimBasics::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                    size_t &correct, VecSimIndex *hnsw_index_,
                                    VecSimIndex *bf_index_) {
     auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
-    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index, (*queries)[iter % n_queries].data(), k,
+    auto hnsw_results = VecSimIndex_TopKQuery(hnsw_index_, (*queries)[iter % n_queries].data(), k,
                                               &query_params, BY_SCORE);
     st.PauseTiming();
 

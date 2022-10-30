@@ -1,16 +1,26 @@
 #pragma once
-
 template <typename DataType, typename DistType>
-HNSWIndex<DataType, DistType>::HNSWIndex(std::string location,
+HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator), element_levels_(0, allocator) {
-    VecSimType type = this->vecType;
-    bool is_multi = this->isMulti;
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
+                                    params->blockSize, params->multi),
+      max_elements_(params->initialCapacity), epsilon_(params->epsilon),
+      element_levels_(max_elements_, allocator) {
 
-    this->loadIndex(location);
-    if (type != this->vecType || is_multi != this->isMulti) {
-        throw std::runtime_error("Wrong type index");
-    }
+    this->restoreIndexFields(input);
+    this->fieldsValidation();
+
+    visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
+        new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
+
+    data_level0_memory_ =
+        (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
+    if (data_level0_memory_ == nullptr)
+        throw std::runtime_error("Not enough memory");
+
+    linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
+    if (linkLists_ == nullptr)
+        throw std::runtime_error("Not enough memory: HNSWIndex failed to allocate linklists");
 }
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output,
@@ -23,29 +33,6 @@ void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output,
 
     this->saveIndexFields(output);
     this->saveGraph(output);
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::loadIndexIMP(std::ifstream &input, EncodingVersion version) {
-    // We already checked in the serializer that this is a valid version number.
-    if (version != EncodingVersion_V1) {
-        // This data is only serialized from V2 up.
-        VecSimAlgo algo = VecSimAlgo_INVALID;
-        readBinaryPOD(input, algo);
-        if (algo != VecSimAlgo_HNSWLIB) {
-            input.close();
-            throw std::runtime_error("Cannot load index: bad algorithm type");
-        }
-        restoreIndexFields_v2(input);
-    }
-
-    this->restoreIndexFields(input);
-
-    // Resize all data structure to the serialized index memory sizes.
-    clearLabelLookup();
-
-    resizeIndex(this->max_elements_);
-    this->restoreGraph(input);
 }
 
 template <typename DataType, typename DistType>
@@ -130,21 +117,10 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
     res.valid_state = true;
     return res;
 }
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreIndexFields_v2(std::ifstream &input) {
 
-    readBinaryPOD(input, this->dim);
-    readBinaryPOD(input, this->vecType);
-    readBinaryPOD(input, this->metric);
-    readBinaryPOD(input, this->blockSize);
-    readBinaryPOD(input, this->dist_func);
-    readBinaryPOD(input, this->isMulti);
-    readBinaryPOD(input, this->epsilon_);
-}
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
-    readBinaryPOD(input, this->max_elements_);
     readBinaryPOD(input, this->M_);
     readBinaryPOD(input, this->maxM_);
     readBinaryPOD(input, this->maxM0_);
@@ -237,7 +213,6 @@ void HNSWIndex<DataType, DistType>::saveIndexFields_v2(std::ofstream &output) co
     writeBinaryPOD(output, this->vecType);
     writeBinaryPOD(output, this->metric);
     writeBinaryPOD(output, this->blockSize);
-    writeBinaryPOD(output, this->dist_func);
     writeBinaryPOD(output, this->isMulti);
     writeBinaryPOD(output, this->epsilon_);
 }

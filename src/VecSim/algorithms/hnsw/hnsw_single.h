@@ -16,7 +16,6 @@ private:
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_single_tests_friends.h"
-    virtual void clearLabelLookup() override { label_lookup_.clear(); }
     virtual void AddToLabelLookup(labelType label, idType id) override { setVectorId(label, id); }
 #endif
 
@@ -31,10 +30,12 @@ public:
           label_lookup_(this->max_elements_, allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
-    HNSWIndex_Single(const std::string &location, std::shared_ptr<VecSimAllocator> allocator)
-        : HNSWIndex<DataType, DistType>(location, allocator), label_lookup_(0, allocator) {}
+    HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
+                     std::shared_ptr<VecSimAllocator> allocator)
+        : HNSWIndex<DataType, DistType>(input, params, allocator),
+          label_lookup_(this->max_elements_, allocator) {}
 #endif
-    ~HNSWIndex_Single() {}
+    ~HNSWIndex_Single() { std::cout << "meow" << std::endl; }
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)

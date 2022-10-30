@@ -17,7 +17,6 @@ private:
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
-    virtual void clearLabelLookup() override { label_lookup_.clear(); }
     virtual void AddToLabelLookup(labelType label, idType id) override {
         if (label_lookup_.find(label) == label_lookup_.end()) {
             label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
@@ -40,8 +39,10 @@ public:
           label_lookup_(this->max_elements_, allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
-    HNSWIndex_Multi(const std::string &location, std::shared_ptr<VecSimAllocator> allocator)
-        : HNSWIndex<DataType, DistType>(location, allocator), label_lookup_(0, allocator) {}
+    HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
+                    std::shared_ptr<VecSimAllocator> allocator)
+        : HNSWIndex<DataType, DistType>(input, params, allocator),
+          label_lookup_(this->max_elements_, allocator) {}
 #endif
     ~HNSWIndex_Multi() {}
 
