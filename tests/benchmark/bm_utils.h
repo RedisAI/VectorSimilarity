@@ -61,120 +61,12 @@ private:
     }
 };
 
-BM_VecSimGeneral::~BM_VecSimGeneral() {
-    ref_count--;
-    if (ref_count == 0) {
-        VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
-    }
-}
-
-void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
-                                     VecSimQueryResult_List bf_results, size_t &correct) {
-    auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-    while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-        auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-        auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-        while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-            auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-            if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
-                correct++;
-                break;
-            }
-        }
-        VecSimQueryResult_IteratorFree(bf_it);
-    }
-    VecSimQueryResult_IteratorFree(hnsw_it);
-}
-
-std::vector<VecSimIndex *> BM_VecSimGeneral::indices = std::vector<VecSimIndex *>();
-template <typename index_type_t>
-class BM_VecSimIndex : public BM_VecSimGeneral {
-public:
-    using data_t = typename index_type_t::data_t;
-    using dist_t = typename index_type_t::dist_t;
-
-    static std::vector<std::vector<data_t>> queries;
-
-    BM_VecSimIndex(bool is_multi);
-    virtual ~BM_VecSimIndex() = default;
-
-protected:
-    static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
-    }
-    static inline char *GetHNSWDataByInternalId(size_t id, Offset_t index_offset = 0) {
-        return CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
-    }
-
-    static void LoadHNSWIndex(const std::string &location, Offset_t index_offset = 0);
-
-private:
-    static void Initialize(bool is_multi);
-    static void loadTestVectors();
-    static void InsertToQueries(std::ifstream &input);
-};
-
-template <typename index_type_t>
-std::vector<std::vector<typename index_type_t::data_t>> BM_VecSimIndex<index_type_t>::queries =
-    std::vector<std::vector<typename index_type_t::data_t>>();
-
-template <typename index_type_t>
-BM_VecSimIndex<index_type_t>::BM_VecSimIndex(bool is_multi) {
-    if (ref_count == 0) {
-        // Initialize the static members.
-        Initialize(is_multi);
-    }
-    ref_count++;
-}
-
-template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::Initialize(bool is_multi) {
-
-    // Initialize and load HNSW index for DBPedia data set.
-    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
-                              .dim = dim,
-                              .metric = VecSimMetric_Cosine,
-                              .multi = is_multi,
-                              .initialCapacity = n_vectors,
-                              .blockSize = block_size};
-
-    BFParams bf_params = {.type = index_type_t::get_index_type(),
-                          .dim = dim,
-                          .metric = VecSimMetric_Cosine,
-                          .initialCapacity = n_vectors,
-                          .blockSize = block_size};
-
-    INDICES.push_back(CreateNewIndex(bf_params));
-    INDICES.push_back(CreateNewIndex(hnsw_params));
-
-    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    LoadHNSWIndex(AttachRootPath(hnsw_index_file));
-
-    // Add the same vectors to Flat index.
-    for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob = GetHNSWDataByInternalId(i);
-        VecSimIndex_AddVector(INDICES[VecSimAlgo_BF], blob, i);
-    }
-
-    // Load the test query vectors form file. Index file path is relative to repository root dir.
-    loadTestVectors();
-}
-template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::LoadHNSWIndex(const std::string &location,
-                                                 Offset_t index_offset) {
-    auto *hnsw_index = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + index_offset]);
-
-    hnsw_index->loadIndex(location);
-    size_t ef_r = 10;
-    hnsw_index->setEf(ef_r);
-}
-template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::loadTestVectors() {
-    auto location = std::string(std::string(getenv("ROOT")));
-    auto file_name = location + "/" + test_vectors_file;
-
-    std::ifstream input(file_name, std::ios::binary);
+/*
+ *  Populate the given queries vector with the serialized raw vectors data in
+ *  the file which is located in the given path.
+ */
+void load_test_vectors(const char *path, std::vector<std::vector<float>> &queries, size_t n_queries,
+                       size_t dim);
 
     if (!input.is_open()) {
         throw std::runtime_error("Test vectors file was not found in path. Exiting...");

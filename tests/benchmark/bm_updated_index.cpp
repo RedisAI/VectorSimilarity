@@ -11,6 +11,7 @@
 #include "VecSim/query_results.h"
 #include "VecSim/utils/serializer.h"
 #include "bm_basics.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 // Global benchmark data
 size_t BM_VecSimGeneral::n_vectors = 500000;
