@@ -131,13 +131,6 @@ BM_VecSimIndex<index_type_t>::BM_VecSimIndex(bool is_multi) {
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize(bool is_multi) {
 
-    // Initialize and load HNSW index for DBPedia data set.
-    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
-                              .dim = dim,
-                              .metric = VecSimMetric_Cosine,
-                              .multi = is_multi,
-                              .initialCapacity = n_vectors,
-                              .blockSize = block_size};
 
     BFParams bf_params = {.type = index_type_t::get_index_type(),
                           .dim = dim,
@@ -146,10 +139,10 @@ void BM_VecSimIndex<index_type_t>::Initialize(bool is_multi) {
                           .blockSize = block_size};
 
     INDICES.push_back(CreateNewIndex(bf_params));
-    INDICES.push_back(CreateNewIndex(hnsw_params));
-
-    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    LoadHNSWIndex(AttachRootPath(hnsw_index_file));
+    
+    // Initialize and load HNSW index for DBPedia data set.
+    INDICES.push_back(HNSWFactory::NewIndex(
+            GetSerializedIndexLocation(hnsw_index_file), index_type_t::get_index_type(), false));
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
