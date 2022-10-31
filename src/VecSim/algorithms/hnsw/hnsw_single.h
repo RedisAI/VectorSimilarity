@@ -35,7 +35,7 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, allocator),
           label_lookup_(this->max_elements_, allocator) {}
 #endif
-    ~HNSWIndex_Single() { std::cout << "meow" << std::endl; }
+    ~HNSWIndex_Single() {}
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
         return new (this->allocator)

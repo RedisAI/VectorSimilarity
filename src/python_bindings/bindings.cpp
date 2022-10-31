@@ -6,6 +6,7 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
@@ -117,9 +118,10 @@ protected:
 // Currently supports only floats. TODO change after serializer refactoring
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
-        this->index = VecSimIndex_New(&params);
+    PyHNSWLibIndex(const std::string &location) {
+        // VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+        // this->index = VecSimIndex_New(&params);
+        this->index = HNSWFactory::NewIndex(location);
     }
 
     void setDefaultEf(size_t ef) {
@@ -129,11 +131,6 @@ public:
     void saveIndex(const std::string &location) {
         auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
         hnsw->saveIndex(location);
-    }
-
-    void loadIndex(const std::string &location) {
-        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
-        hnsw->loadIndex(location);
     }
 };
 
@@ -220,11 +217,10 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("query_param") = nullptr);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
-        .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
-             py::arg("params"))
+        .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
+             py::arg("location"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
-        .def("save_index", &PyHNSWLibIndex::saveIndex)
-        .def("load_index", &PyHNSWLibIndex::loadIndex);
+        .def("save_index", &PyHNSWLibIndex::saveIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

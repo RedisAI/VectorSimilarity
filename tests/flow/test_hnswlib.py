@@ -306,9 +306,8 @@ def test_serialization():
     file_name = os.getcwd()+"/dump"
     hnsw_index.save_index(file_name)
 
-    new_hnsw_index = HNSWIndex(hnswparams)
+    new_hnsw_index = HNSWIndex(file_name)
     assert new_hnsw_index.index_size() == 0
-    new_hnsw_index.load_index(file_name)
     os.remove(file_name)
     assert new_hnsw_index.index_size() == num_elements
 
