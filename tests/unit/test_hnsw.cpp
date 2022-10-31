@@ -623,6 +623,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
+    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
     this->CastToHNSW(index)->cur_element_count = 1e6;
     auto &label_lookup = this->CastToHNSW_Single(index)->label_lookup_;
     for (size_t i = 0; i < 1e6; i++) {
@@ -644,6 +645,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    this->CastToHNSW(index)->cur_element_count = actual_element_count;
     VecSimIndex_Free(index);
 }
 TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {

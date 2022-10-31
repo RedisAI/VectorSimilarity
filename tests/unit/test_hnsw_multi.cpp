@@ -484,6 +484,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
+    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
     this->CastToHNSW(index)->cur_element_count = 1e6;
     vecsim_stl::vector<idType> vec(index->getAllocator());
     for (size_t i = 0; i < 1e5; i++) {
@@ -505,6 +506,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    this->CastToHNSW(index)->cur_element_count = actual_element_count;
     VecSimIndex_Free(index);
 }
 

@@ -136,7 +136,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
         linklistsizeint *cur_node_links_header =
             this->index->get_linklist_at_level(curr_node_id, 0);
         unsigned short links_num = this->index->getListCount(cur_node_links_header);
-        auto *node_links = (linklistsizeint *)(cur_node_links_header + 1);
+        auto *node_links = (idType *)(cur_node_links_header + 1);
 
         __builtin_prefetch(visited_list->getElementsTags() + *node_links);
         __builtin_prefetch(index->getDataByInternalId(*node_links));
