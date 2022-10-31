@@ -14,7 +14,7 @@ typedef struct HNSWIndexMetaData {
     size_t max_in_degree;
 } HNSWIndexMetaData;
 
-typedef enum EncodingVersion { EncodingVersion_V1 = 1 } EncodingVersion;
+typedef enum EncodingVersion { EncodingVersion_V1 = 1, EncodingVersion_V2 } EncodingVersion;
 
 class HNSWIndexSerializer {
 private:
@@ -28,6 +28,7 @@ private:
     void restoreIndexFields(std::ifstream &input);
     void restoreGraph(std::ifstream &input);
     void loadIndex_v1(std::ifstream &input);
+    void loadIndex_v2(std::ifstream &input);
 
 public:
     // Wrap hnsw index.

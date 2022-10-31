@@ -45,7 +45,7 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
 
     // Save index state
     writeBinaryPOD(output, hnsw_index->cur_element_count);
-    writeBinaryPOD(output, hnsw_index->cur_element_count - 1); // leftover
+    writeBinaryPOD(output, (idType)hnsw_index->num_marked_deleted); // TEMP
     writeBinaryPOD(output, hnsw_index->maxlevel_);
     writeBinaryPOD(output, hnsw_index->entrypoint_node_);
 }
@@ -89,6 +89,14 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
 
 void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
     this->restoreIndexFields(input);
+    hnsw_index->num_marked_deleted = 0;
+    hnsw_index->size_links_per_element_ -= sizeof(elementFlags);
+    this->restoreGraph(input);
+}
+
+void HNSWIndexSerializer::loadIndex_v2(std::ifstream &input) {
+    this->restoreIndexFields(input);
+    hnsw_index->num_marked_deleted = 0;
     this->restoreGraph(input);
 }
 
@@ -203,7 +211,7 @@ HNSWIndexSerializer::HNSWIndexSerializer(HNSWIndex<float, float> *hnsw_index_)
 
 void HNSWIndexSerializer::saveIndex(const std::string &location) {
     std::ofstream output(location, std::ios::binary);
-    EncodingVersion version = EncodingVersion_V1;
+    EncodingVersion version = EncodingVersion_V2;
     output.write((char *)&version, sizeof(EncodingVersion));
     this->saveIndexFields(output);
     this->saveGraph(output);
@@ -221,11 +229,18 @@ void HNSWIndexSerializer::loadIndex(const std::string &location) {
     // The version number is the first field that is serialized.
     EncodingVersion version;
     readBinaryPOD(input, version);
-    // Only V1 is supported currently.
-    if (version != EncodingVersion_V1) {
+    switch (version) {
+    case EncodingVersion_V2:
+        loadIndex_v2(input);
+        break;
+
+    case EncodingVersion_V1:
+        loadIndex_v1(input);
+        break;
+
+    default:
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    loadIndex_v1(input);
     input.close();
 }
 
