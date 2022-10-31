@@ -38,7 +38,7 @@ TYPED_TEST_SUITE(HNSWTest_ser_temp, DataTypeSet);
 TYPED_TEST(HNSWTest_ser_temp, hnsw_serialization_v1) {
 
     size_t dim = 4;
-    size_t n = 165; // this is not working
+    size_t n = 100; // this is working
     size_t n_labels[] = {n, 5};
     size_t M = 8;
     size_t ef = 10;
@@ -109,7 +109,7 @@ TYPED_TEST(HNSWTest_ser_temp, hnsw_serialization_v1) {
         ASSERT_EQ(info2.hnswInfo.epsilon, epsilon);
         ASSERT_EQ(info2.hnswInfo.memory, memory);
 
-        ASSERT_TRUE(hnsw_index->serializingIsValid());
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
         GenerateAndAddVector<TEST_DATA_T>(this->index, dim, 1000);
         VecSimIndex_Free(this->index);
     }

@@ -17,10 +17,7 @@ public:
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 
-    // Check if the serialized index is valid.
-    virtual bool serializingIsValid() const = 0;
     // Helper functions for serializing the index.
-
     template <typename T>
     static inline void writeBinaryPOD(std::ostream &out, const T &podRef) {
         out.write((char *)&podRef, sizeof(T));

@@ -69,7 +69,7 @@ protected:
         auto hnsw_index_updated_casted =
             reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated);
 
-        if (!hnsw_index_updated_casted->serializingIsValid()) {
+        if (!hnsw_index_updated_casted->checkIntegrity().valid_state) {
             throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
         }
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).

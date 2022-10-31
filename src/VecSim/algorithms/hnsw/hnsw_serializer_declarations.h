@@ -1,15 +1,14 @@
 #pragma once
 
-// Serializing functions.
+// Serializing and tests functions.
 public:
 HNSWIndex(std::ifstream &input, const HNSWParams *params,
           std::shared_ptr<VecSimAllocator> allocator);
 
+// Validates the connections between vectors
 HNSWIndexMetaData checkIntegrity() const;
+
 virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) const override;
-virtual inline bool serializingIsValid() const override {
-    return this->checkIntegrity().valid_state;
-}
 
 // used by index factory to load nodes connections
 void restoreGraph(std::ifstream &input);
