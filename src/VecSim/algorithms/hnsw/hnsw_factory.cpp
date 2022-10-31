@@ -69,7 +69,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     // Explicit allocation calls - always allocate a header.
     est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
 
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *);
+    size_t size_links_level0 =
+        sizeof(elementFlags) + sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
         size_links_level0 + params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
     est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
