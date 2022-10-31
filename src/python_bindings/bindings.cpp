@@ -122,9 +122,7 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
     }
-    PyHNSWLibIndex(const std::string &location) {
-        this->index = HNSWFactory::NewIndex(location);
-    }
+    PyHNSWLibIndex(const std::string &location) { this->index = HNSWFactory::NewIndex(location); }
 
     void setDefaultEf(size_t ef) {
         auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
@@ -220,7 +218,7 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
-            py::arg("params"))
+             py::arg("params"))
         .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
              py::arg("location"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
