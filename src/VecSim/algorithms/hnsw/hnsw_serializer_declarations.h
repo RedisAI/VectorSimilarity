@@ -8,7 +8,8 @@ HNSWIndex(std::ifstream &input, const HNSWParams *params,
 // Validates the connections between vectors
 HNSWIndexMetaData checkIntegrity() const;
 
-virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) const override;
+// Index memory size might be changed during index saving.
+virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) override;
 
 // used by index factory to load nodes connections
 void restoreGraph(std::ifstream &input);
@@ -18,6 +19,7 @@ virtual void AddToLabelLookup(labelType label, idType id) = 0;
 // Functions for index saving.
 void saveIndexFields(std::ofstream &output) const;
 void saveIndexFields_v2(std::ofstream &output) const;
+
 void saveGraph(std::ofstream &output) const;
 
 // Functions for index loading.

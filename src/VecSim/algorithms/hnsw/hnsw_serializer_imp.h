@@ -23,13 +23,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
         throw std::runtime_error("Not enough memory: HNSWIndex failed to allocate linklists");
 }
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output,
-                                                 EncodingVersion version) const {
+void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output, EncodingVersion version) {
     // We already checked in the serializer that this is a valid version number.
     // Now checking the version number to decide which data to write.
-    if (version != EncodingVersion_V1) {
-        saveIndexFields_v2(output);
-    }
 
     this->saveIndexFields(output);
     this->saveGraph(output);
@@ -169,9 +165,9 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             readBinaryPOD(input, next_edge);
             incoming_edges->push_back(next_edge);
         }
+        incoming_edges->shrink_to_fit();
         this->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
     }
-
     // Restore the rest of the graph layers, along with the label and max_level lookups.
     for (size_t i = 0; i <= this->max_id; i++) {
         // Restore label lookup by getting the label from data_level0_memory_
@@ -179,6 +175,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
 
         unsigned int linkListSize;
         readBinaryPOD(input, linkListSize);
+
         if (linkListSize == 0) {
             this->element_levels_[i] = 0;
             this->linkLists_[i] = nullptr;
@@ -199,6 +196,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
                     readBinaryPOD(input, next_edge);
                     incoming_edges->push_back(next_edge);
                 }
+                incoming_edges->shrink_to_fit();
                 this->setIncomingEdgesPtr(i, j, (void *)incoming_edges);
             }
         }
@@ -219,6 +217,9 @@ void HNSWIndex<DataType, DistType>::saveIndexFields_v2(std::ofstream &output) co
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
+
+    this->saveIndexFields_v2(output);
+
     // Save index build parameters
     writeBinaryPOD(output, this->max_elements_);
     writeBinaryPOD(output, this->M_);
@@ -265,6 +266,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         for (auto id : *incoming_edges_ptr) {
             writeBinaryPOD(output, id);
         }
+        incoming_edges_ptr->shrink_to_fit();
     }
 
     // Save all graph layers other than layer 0: for every id of a vector in the graph,
@@ -284,6 +286,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
             for (auto id : *incoming_edges_ptr) {
                 writeBinaryPOD(output, id);
             }
+            incoming_edges_ptr->shrink_to_fit();
         }
     }
 }

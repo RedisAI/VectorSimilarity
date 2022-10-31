@@ -29,5 +29,6 @@ public:
     }
 
 protected:
-    virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) const = 0;
+    // Index memory size might be changed during index saving.
+    virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) = 0;
 };

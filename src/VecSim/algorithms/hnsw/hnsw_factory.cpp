@@ -143,6 +143,15 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
     return index;
 }
 
+void InitializeParams(std::ifstream &input, HNSWParams &params) {
+    Serializer::readBinaryPOD(input, params.dim);
+    Serializer::readBinaryPOD(input, params.type);
+    Serializer::readBinaryPOD(input, params.metric);
+    Serializer::readBinaryPOD(input, params.blockSize);
+    Serializer::readBinaryPOD(input, params.multi);
+    Serializer::readBinaryPOD(input, params.epsilon);
+}
+
 VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_multi) {
 
     std::ifstream input(location, std::ios::binary);
@@ -163,12 +172,7 @@ VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_mult
             throw std::runtime_error("Cannot load index: bad algorithm type");
         }
         // this information is serialized from V2 and up
-        Serializer::readBinaryPOD(input, params.dim);
-        Serializer::readBinaryPOD(input, params.type);
-        Serializer::readBinaryPOD(input, params.metric);
-        Serializer::readBinaryPOD(input, params.blockSize);
-        Serializer::readBinaryPOD(input, params.multi);
-        Serializer::readBinaryPOD(input, params.epsilon);
+        InitializeParams(input, params);
         break;
     }
     case Serializer::EncodingVersion_V1: {

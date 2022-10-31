@@ -118,9 +118,11 @@ protected:
 // Currently supports only floats. TODO change after serializer refactoring
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
+    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+        this->index = VecSimIndex_New(&params);
+    }
     PyHNSWLibIndex(const std::string &location) {
-        // VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
-        // this->index = VecSimIndex_New(&params);
         this->index = HNSWFactory::NewIndex(location);
     }
 
@@ -217,6 +219,8 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("query_param") = nullptr);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
+        .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
+            py::arg("params"))
         .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
              py::arg("location"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)

@@ -404,7 +404,7 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/bad_index.hnsw";
 
-    // Try to Save index with an invlid version.
+    // Try to Save index with an invalid version.
     EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_INVALID),
                  std::runtime_error);
 
