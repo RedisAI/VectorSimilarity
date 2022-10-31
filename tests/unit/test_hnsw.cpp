@@ -109,7 +109,7 @@ TYPED_TEST(HNSWTest_ser_temp, hnsw_serialization_v1) {
         ASSERT_EQ(info2.hnswInfo.epsilon, epsilon);
         ASSERT_EQ(info2.hnswInfo.memory, memory);
 
-        ASSERT_TRUE(hnsw_index->serializingIsValid());
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
         GenerateAndAddVector<TEST_DATA_T>(this->index, dim, 1000);
         VecSimIndex_Free(this->index);
     }
