@@ -52,6 +52,8 @@ endif
 export SAN
 endif # SAN
 
+ROOT=.
+export ROOT
 #----------------------------------------------------------------------------------------------
 
 define HELPTEXT
