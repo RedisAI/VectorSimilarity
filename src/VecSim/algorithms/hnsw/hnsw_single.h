@@ -54,8 +54,8 @@ public:
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
-    inline void markDelete(labelType label) override;
-    inline void unmarkDelete(labelType label) override;
+    inline int markDelete(labelType label) override;
+    inline int unmarkDelete(labelType label) override;
 };
 
 /**
@@ -138,13 +138,14 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
  * @param label
  */
 template <typename DataType, typename DistType>
-void HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
+int HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
-        throw std::runtime_error("Label not found");
+        return false;
     }
-    idType internalId = search->second;
-    this->markDeletedInternal(internalId);
+
+    this->markDeletedInternal(search->second);
+    return true;
 }
 
 /**
@@ -152,11 +153,12 @@ void HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
  * @param label
  */
 template <typename DataType, typename DistType>
-void HNSWIndex_Single<DataType, DistType>::unmarkDelete(labelType label) {
+int HNSWIndex_Single<DataType, DistType>::unmarkDelete(labelType label) {
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
-        throw std::runtime_error("Label not found");
+        return false;
     }
-    idType internalId = search->second;
-    this->unmarkDeletedInternal(internalId);
+
+    this->unmarkDeletedInternal(search->second);
+    return true;
 }
