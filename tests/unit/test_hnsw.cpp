@@ -874,11 +874,10 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
     size_t dim = 2;
     size_t bad_M[] = {
         1,         // Will fail because 1/log(M).
-        100000000, // Will fail on this->allocator->allocate(max_elements_ * size_data_per_element_)
-        SIZE_MAX,  // Will fail on M * 2 overflow.
-        SIZE_MAX / 2, // Will fail on M * 2 overflow.
-        SIZE_MAX / 4  // Will fail on size_links_level0_ calculation:
-                      // sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *)
+        100000000, // Will fail on M * 2 overflow.
+        USHRT_MAX, // Will fail on M * 2 overflow.
+        USHRT_MAX /
+            2, // Will fail on this->allocator->callocate(max_elements_ * size_data_per_element_)
     };
     size_t len = sizeof(bad_M) / sizeof(size_t);
 
@@ -2026,4 +2025,61 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         ASSERT_EQ(VecSimIndex_IndexSize(serialized_index), n + 1 - n_per_label);
         VecSimIndex_Free(serialized_index);
     }
+}
+
+TYPED_TEST(HNSWTest, mark_delete) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n / 2);
+
+    // Search for k results around the middle. expect to find them.
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+
+    // Mark as deleted the k odd vectors around the middle
+    for (labelType label = (n / 2) - k; label < (n / 2) + k; label++)
+        if (label % 2)
+            this->CastToHNSW(index)->markDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), k);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - k);
+
+    // Search for k results around the middle. expect to find only even results.
+    auto verify_res_even = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id % 2, 0);
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        size_t expected_id = index % 2 ? index + 1 : index;
+        ASSERT_EQ(diff_id, expected_id);
+        ASSERT_EQ(score, (4 * expected_id * expected_id));
+    };
+    runTopKSearchTest(index, query, k, verify_res_even);
+
+    // Unmark the previously marked vectors.
+    for (labelType label = (n / 2) - k; label < (n / 2) + k; label++)
+        if (label % 2)
+            this->CastToHNSW(index)->unmarkDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Search for k results around the middle again. expect to find the same results we found in the
+    // first search.
+    runTopKSearchTest(index, query, k, verify_res);
+
+    VecSimIndex_Free(index);
 }
