@@ -130,13 +130,16 @@ size_t EstimateElementSize(const HNSWParams *params) {
 
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
-                                                 std::shared_ptr<VecSimAllocator> allocator) {
+                                                 std::shared_ptr<VecSimAllocator> allocator,
+                                                 Serializer::EncodingVersion version) {
     VecSimIndex *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
-        index = new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator);
+        index =
+            new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator, version);
     else
-        index = new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator);
+        index =
+            new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
 
     reinterpret_cast<HNSWIndex<DataType, DistType> *>(index)->restoreGraph(input);
 
@@ -152,7 +155,7 @@ void InitializeParams(std::ifstream &input, HNSWParams &params) {
     Serializer::readBinaryPOD(input, params.epsilon);
 }
 
-VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_multi) {
+VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -160,8 +163,7 @@ VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_mult
     }
 
     Serializer::EncodingVersion version = Serializer::ReadVersion(input);
-
-    HNSWParams params;
+    HNSWParams file_params;
     switch (version) {
     case Serializer::EncodingVersion_V2: {
         // Algorithm type is only serialized from V2 up.
@@ -172,30 +174,31 @@ VecSimIndex *NewIndex(const std::string &location, VecSimType type, bool is_mult
             throw std::runtime_error("Cannot load index: bad algorithm type");
         }
         // this information is serialized from V2 and up
-        InitializeParams(input, params);
+        InitializeParams(input, file_params);
         break;
     }
     case Serializer::EncodingVersion_V1: {
-        params.type = type;
-        params.dim = 4;
-        params.metric = VecSimMetric_L2;
-        params.multi = is_multi;
-        params.blockSize = 1;
-        params.epsilon = 0.004;
+        assert(params);
+        file_params.type = params->type;
+        file_params.dim = params->dim;
+        file_params.metric = params->metric;
+        file_params.multi = params->multi;
+        file_params.blockSize = params->blockSize;
+        file_params.epsilon = params->epsilon;
         break;
     }
     // Something is wrong
     default:
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    Serializer::readBinaryPOD(input, params.initialCapacity);
+    Serializer::readBinaryPOD(input, file_params.initialCapacity);
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    if (params.type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator);
-    } else if (params.type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator);
+    if (file_params.type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(input, &file_params, allocator, version);
+    } else if (file_params.type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(input, &file_params, allocator, version);
     } else {
         throw std::runtime_error("Cannot load index: bad index type");
     }

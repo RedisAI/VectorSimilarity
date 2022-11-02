@@ -225,7 +225,7 @@ jobs:
 
   build-macos:
       macos:
-        xcode: 14.1.0
+        xcode: 11.7.0
       steps:
        - abort_for_docs
        - abort_for_noci

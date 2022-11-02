@@ -1,14 +1,20 @@
 #pragma once
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator)
+                                         std::shared_ptr<VecSimAllocator> allocator,
+                                         EncodingVersion version)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
-      max_elements_(params->initialCapacity), epsilon_(params->epsilon),
+      Serializer(version), max_elements_(params->initialCapacity), epsilon_(params->epsilon),
       element_levels_(max_elements_, allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
+
+    // Since level generator is implementation-defined, we dont read its value from the file.
+    // We use seed = 200 and not the default value (100) to get different sequence of
+    // levels value than the loaded index.
+    level_generator_.seed(200);
 
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
@@ -139,8 +145,8 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     readBinaryPOD(input, this->incoming_links_offset);
     readBinaryPOD(input, this->mult_);
 
-    // Restore index level generator of the top level for a new element
-    readBinaryPOD(input, this->level_generator_);
+    // skip restoration of level_generator_ data member
+    HandleLevelGenerator(input);
 
     // Restore index state
     readBinaryPOD(input, this->cur_element_count);
@@ -149,6 +155,20 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     readBinaryPOD(input, this->entrypoint_node_);
 }
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
+    if (this->m_version == EncodingVersion_V1) {
+        // All current v1 files were generated on intel machines, where
+        // sizeof(std::default_random_engine) ==  sizeof(unsigned long)
+        // unlike MacOS where sizeof(std::default_random_engine) ==  sizeof(unsigned int).
+
+        // Skip sizeof(unsigned long) bytes
+        input.ignore(sizeof(unsigned long));
+    }
+
+    // for V2 and up we don't serialize the level generator, so we just returb and
+    // continue to read the file.
+}
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
@@ -241,9 +261,6 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->incoming_links_offset0);
     writeBinaryPOD(output, this->incoming_links_offset);
     writeBinaryPOD(output, this->mult_);
-
-    // Save index level generator of the top level for a new element
-    writeBinaryPOD(output, this->level_generator_);
 
     // Save index state
     writeBinaryPOD(output, this->cur_element_count);

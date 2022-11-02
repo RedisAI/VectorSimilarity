@@ -3,7 +3,7 @@
 // Serializing and tests functions.
 public:
 HNSWIndex(std::ifstream &input, const HNSWParams *params,
-          std::shared_ptr<VecSimAllocator> allocator);
+          std::shared_ptr<VecSimAllocator> allocator, EncodingVersion version);
 
 // Validates the connections between vectors
 HNSWIndexMetaData checkIntegrity() const;
@@ -24,4 +24,5 @@ void saveGraph(std::ofstream &output) const;
 
 // Functions for index loading.
 void restoreIndexFields(std::ifstream &input);
+void HandleLevelGenerator(std::ifstream &input);
 void fieldsValidation() const;

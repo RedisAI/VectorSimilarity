@@ -40,8 +40,8 @@ public:
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
-                    std::shared_ptr<VecSimAllocator> allocator)
-        : HNSWIndex<DataType, DistType>(input, params, allocator),
+                    std::shared_ptr<VecSimAllocator> allocator, Serializer::EncodingVersion version)
+        : HNSWIndex<DataType, DistType>(input, params, allocator, version),
           label_lookup_(this->max_elements_, allocator) {}
 #endif
     ~HNSWIndex_Multi() {}

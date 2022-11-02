@@ -38,9 +38,16 @@ BM_VecSimBasics::BM_VecSimBasics() {
 
 void BM_VecSimBasics::Initialize() {
 
+    // HNSWParams is required to load v1 index
+    HNSWParams params = {.type = VecSimType_FLOAT32,
+                         .dim = BM_VecSimBasics::dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false,
+                         .blockSize = BM_VecSimBasics::block_size};
+
     // Generate index from file.
     hnsw_index = HNSWFactory::NewIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file),
-                                       VecSimType_FLOAT32, false);
+                                       &params);
 
     auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     size_t ef_r = 10;

@@ -21,10 +21,8 @@ size_t EstimateElementSize(const HNSWParams *params);
 
 #ifdef BUILD_TESTS
 // Factory function to be used before loading a serialized index.
-// For V1 We need to know the data type and if the index supports multi indexing to generate an
-// instance that belongs to the right class. For V2 we read this information from the file.
-VecSimIndex *NewIndex(const std::string &location, VecSimType type = VecSimType_INVALID,
-                      bool is_multi = false);
+// params is only used for backward compatibility with V1. It won't be used if V2 and up is loaded.
+VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params = nullptr);
 
 #endif
 }; // namespace HNSWFactory
