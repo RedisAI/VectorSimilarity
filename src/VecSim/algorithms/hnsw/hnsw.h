@@ -191,7 +191,7 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
-    inline unsigned short int getListCount(const linklistsizeint *ptr) const;
+    inline linklistsizeint getListCount(const linklistsizeint *ptr) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
 
@@ -358,8 +358,8 @@ linklistsizeint *HNSWIndex<DataType, DistType>::get_linklist_at_level(idType int
 }
 
 template <typename DataType, typename DistType>
-unsigned short int HNSWIndex<DataType, DistType>::getListCount(const linklistsizeint *ptr) const {
-    return *((unsigned short int *)ptr);
+linklistsizeint HNSWIndex<DataType, DistType>::getListCount(const linklistsizeint *ptr) const {
+    return *ptr;
 }
 
 template <typename DataType, typename DistType>
