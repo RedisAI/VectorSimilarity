@@ -61,12 +61,17 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
         VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + updated_index_offset], blob, label);
     }
 
-    // Initialize and populate an HNSW index where all vectors have been updated.
-    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
-                              .dim = DIM,
-                              .metric = VecSimMetric_Cosine,
-                              .initialCapacity = N_VECTORS};
-    INDICES.push_back(BM_VecSimGeneral::CreateNewIndex(hnsw_params));
+        // Generate the updated index from file.
+        // HNSWParams is required to load v1 index
+        HNSWParams params = {.type = VecSimType_FLOAT32,
+                             .dim = BM_VecSimBasics::dim,
+                             .metric = VecSimMetric_Cosine,
+                             .multi = false,
+                             .blockSize = BM_VecSimBasics::block_size};
+
+        // Generate index from file.
+        hnsw_index =
+            HNSWFactory::NewIndex(GetSerializedIndexLocation(updated_hnsw_index_file), &params);
 
     // Load pre-generated HNSW index. Index file path is relative to repository root dir.
     BM_INDEX::LoadHNSWIndex(BM_VecSimGeneral::AttachRootPath(updated_hnsw_index_file),

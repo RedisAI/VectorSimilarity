@@ -186,7 +186,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
             throw std::runtime_error("Cannot load index: bad algorithm type");
         }
         // this information is serialized from V2 and up
-        InitializeParams(input, params);
+        InitializeParams(input, file_params);
         break;
     }
     case Serializer::EncodingVersion_V1: {
@@ -198,7 +198,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
     default:
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    Serializer::readBinaryPOD(input, params.initialCapacity);
+    Serializer::readBinaryPOD(input, file_params.initialCapacity);
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
