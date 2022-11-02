@@ -45,7 +45,7 @@ void HNSWIndexSerializer::saveIndexFields(std::ofstream &output) {
 
     // Save index state
     writeBinaryPOD(output, hnsw_index->cur_element_count);
-    writeBinaryPOD(output, (idType)hnsw_index->num_marked_deleted); // TEMP
+    writeBinaryPOD(output, hnsw_index->num_marked_deleted);
     writeBinaryPOD(output, hnsw_index->maxlevel_);
     writeBinaryPOD(output, hnsw_index->entrypoint_node_);
 }
@@ -88,9 +88,40 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
 }
 
 void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
-    this->restoreIndexFields(input);
-    this->restoreGraph(input);
+    // Restore index build parameters
+    readBinaryPOD(input, hnsw_index->max_elements_);
+    readBinaryPOD(input, hnsw_index->M_);
+    readBinaryPOD(input, hnsw_index->maxM_);
+    readBinaryPOD(input, hnsw_index->maxM0_);
+    readBinaryPOD(input, hnsw_index->ef_construction_);
+
+    // Restore index search parameter
+    readBinaryPOD(input, hnsw_index->ef_);
+
+    // Restore index meta-data
+    readBinaryPOD(input, hnsw_index->data_size_);
+    readBinaryPOD(input, hnsw_index->size_data_per_element_);
+    readBinaryPOD(input, hnsw_index->size_links_per_element_);
+    readBinaryPOD(input, hnsw_index->size_links_level0_);
+    readBinaryPOD(input, hnsw_index->label_offset_);
+    readBinaryPOD(input, hnsw_index->offsetData_);
+    readBinaryPOD(input, hnsw_index->offsetLevel0_);
+    readBinaryPOD(input, hnsw_index->incoming_links_offset0);
+    readBinaryPOD(input, hnsw_index->incoming_links_offset);
+    readBinaryPOD(input, hnsw_index->mult_);
+
+    // Restore index level generator of the top level for a new element
+    readBinaryPOD(input, hnsw_index->level_generator_);
+
+    // Restore index state
+    readBinaryPOD(input, hnsw_index->cur_element_count);
+    idType dummy;
+    readBinaryPOD(input, dummy);
     hnsw_index->num_marked_deleted = 0;
+    readBinaryPOD(input, hnsw_index->maxlevel_);
+    readBinaryPOD(input, hnsw_index->entrypoint_node_);
+
+    this->restoreGraph(input);
     size_t old_size_links_per_element_ = hnsw_index->size_links_per_element_;
     hnsw_index->size_links_per_element_ -= sizeof(elementFlags);
     hnsw_index->incoming_links_offset -= sizeof(elementFlags);
@@ -102,8 +133,11 @@ void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
         if (linkListSize) {
             char *levels_data = (char *)hnsw_index->allocator->allocate(linkListSize);
             for (size_t offset = 0; offset < hnsw_index->element_levels_[i]; offset++) {
-                memcpy(levels_data + offset * hnsw_index->size_links_per_element_ + 2, hnsw_index->linkLists_[i] + offset * old_size_links_per_element_ + 4, hnsw_index->size_links_per_element_ - 2);
-                *(linklistsizeint *)(levels_data + offset * hnsw_index->size_links_per_element_) = *(idType *)(hnsw_index->linkLists_[i] + offset * old_size_links_per_element_);
+                memcpy(levels_data + offset * hnsw_index->size_links_per_element_ + 2,
+                       hnsw_index->linkLists_[i] + offset * old_size_links_per_element_ + 4,
+                       hnsw_index->size_links_per_element_ - 2);
+                *(linklistsizeint *)(levels_data + offset * hnsw_index->size_links_per_element_) =
+                    *(idType *)(hnsw_index->linkLists_[i] + offset * old_size_links_per_element_);
             }
             hnsw_index->allocator->free_allocation(hnsw_index->linkLists_[i]);
             hnsw_index->linkLists_[i] = levels_data;
@@ -113,7 +147,6 @@ void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
 
 void HNSWIndexSerializer::loadIndex_v2(std::ifstream &input) {
     this->restoreIndexFields(input);
-    hnsw_index->num_marked_deleted = 0;
     this->restoreGraph(input);
 }
 
@@ -145,8 +178,7 @@ void HNSWIndexSerializer::restoreIndexFields(std::ifstream &input) {
 
     // Restore index state
     readBinaryPOD(input, hnsw_index->cur_element_count);
-    idType dummy;
-    readBinaryPOD(input, dummy); // leftover
+    readBinaryPOD(input, hnsw_index->num_marked_deleted);
     readBinaryPOD(input, hnsw_index->maxlevel_);
     readBinaryPOD(input, hnsw_index->entrypoint_node_);
 }

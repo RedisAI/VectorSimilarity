@@ -602,8 +602,9 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        lowerBound = processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef, visited_tag,
-                                      top_candidates, candidate_set, lowerBound);
+        lowerBound = processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer,
+                                                          ef, visited_tag, top_candidates,
+                                                          candidate_set, lowerBound);
     }
 
 #ifdef ENABLE_PARALLELIZATION
