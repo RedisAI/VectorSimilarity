@@ -32,8 +32,6 @@ using std::pair;
 typedef unsigned short int linklistsizeint;
 typedef unsigned short int elementFlags;
 
-short enum Flags { DELETE_MARK = 0x01 };
-
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
