@@ -22,10 +22,6 @@ override DEBUG ?= 1
 CMAKE_COV += -DUSE_COVERAGE=ON
 endif
 
-ifeq ($(NO_TESTS),1)
-CMAKE_TESTS += -DVECSIM_BUILD_TESTS=off
-endif
-
 ifneq ($(SAN),)
 override DEBUG ?= 1
 export ASAN_OPTIONS=detect_odr_violation=0:allocator_may_return_null=1
@@ -98,7 +94,8 @@ endif
 FULL_VARIANT:=$(shell uname)-$(shell uname -m)-$(FLAVOR)
 BINROOT=$(ROOT)/bin/$(FULL_VARIANT)
 BINDIR=$(BINROOT)
-TARGET=$(BINDIR)/libVectorSimilarity.so
+TESTDIR=$(BINDIR)/unit_tests
+BENCHMARKDIR=$(BINDIR)/benchmark
 SRCDIR=src
 
 ifeq ($(SLOW),1)
@@ -107,14 +104,9 @@ else
 MAKE_J:=-j$(shell nproc)
 endif
 
-CMAKE_DIR=$(ROOT)/src
-
-CMAKE_FILES= \
-	src/CMakeLists.txt \
-	src/VecSim/spaces/CMakeLists.txt \
-	cmake/common.cmake \
-	cmake/gtest.cmake \
-	cmake/clang-sanitizers.cmake
+CMAKE_DIR=$(ROOT)
+CMAKE_TEST_DIR=$(ROOT)/tests/unit
+CMAKE_BENCHMARK_DIR=$(ROOT)/tests/benchmark
 
 ifeq ($(DEBUG),1)
 CMAKE_BUILD_TYPE=DEBUG
@@ -180,7 +172,10 @@ _CTEST_ARGS += \
 endif
 
 unit_test:
-	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
+	$(SHOW)mkdir -p $(TESTDIR)
+	$(SHOW)cd $(TESTDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_TEST_DIR)
+	@make --no-print-directory -C $(TESTDIR) $(MAKE_J)
+	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 valgrind:
 	$(SHOW)$(MAKE) VG=1 build unit_test
@@ -216,8 +211,11 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
+	$(SHOW)mkdir -p $(BENCHMARKDIR)
+	$(SHOW)cd $(BENCHMARKDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_BENCHMARK_DIR)
+	@make --no-print-directory -C $(BENCHMARKDIR) $(MAKE_J)
 	for bm_class in basics updated_index spaces batch_iterator; do \
-  		$(BINDIR)/benchmark/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
+  		$(BENCHMARKDIR)/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
   	done
 	$(SHOW)python3 -m tox -e benchmark
 
