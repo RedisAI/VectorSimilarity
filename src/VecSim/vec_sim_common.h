@@ -33,6 +33,9 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
+// Vectors flags (for marking a specific vector)
+typedef enum { DELETE_MARK = 0x01 } Flags;
+
 typedef size_t labelType;
 typedef unsigned int idType;
 
