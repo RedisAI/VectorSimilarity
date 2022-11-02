@@ -416,12 +416,13 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_INVALID);
     EXPECT_THROW(HNSWFactory::NewIndex(this->file_name), std::runtime_error);
 
-    output.seekp(0);
+    // Test WRONG index algorithm exception
+    // Use a valid version
+    output.seekp(0, std::ios_base::beg);
 
-    // override with a valid version
     Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V2);
-    // write WRONG index algorithm
     Serializer::writeBinaryPOD(output, VecSimAlgo_BF);
+    output.close();
 
     EXPECT_THROW(HNSWFactory::NewIndex(this->file_name), std::runtime_error);
 
