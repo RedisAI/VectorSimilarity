@@ -54,17 +54,6 @@ endif # SAN
 
 #----------------------------------------------------------------------------------------------
 
-ROOT=.
-MK.pyver:=3
-
-ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
-$(shell mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
-endif
-include $(ROOT)/deps/readies/mk/main
-export ROOT
-
-#----------------------------------------------------------------------------------------------
-
 define HELPTEXT
 make build
   DEBUG=1          # build debug variant
@@ -78,27 +67,16 @@ make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
-make all           # build all libraries and packages
-
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
   VG|VALGRIND=1      # run tests with valgrind
 make valgrind      # build for Valgrind and run tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
-  BB=1               # run with debugger, stop on BB()
 make mod_test      # run Redis module intergration tests (with RLTest)
   TEST=file:name     # run specific test
   VERBOSE=1          # show more test detail
-  BB=1               # run with debugger, stop on BB()
 make benchmark	   # run benchmarks
-make toxenv        # enter Tox environment (for debugging flow tests)
-
-make platform      # build for specific Linux distribution
-  OSNICK=nick        # Linux distribution to build for
-  REDIS_VER=ver      # use Redis version `ver`
-  TEST=1             # test aftar build
-  PUBLISH=1          # publish (i.e. docker push) after build
 
 make format          # fix formatting of sources
 make check-format    # check formatting of sources
@@ -109,43 +87,23 @@ endef
 
 #----------------------------------------------------------------------------------------------
 
+ROOT=$(shell pwd)
+ifeq ($(DEBUG),1)
+FLAVOR=debug
+else
+FLAVOR=release
+endif
+FULL_VARIANT:=$(shell uname)-$(shell uname -m)-$(FLAVOR)
+BINROOT=$(ROOT)/bin/$(FULL_VARIANT)
 BINDIR=$(BINROOT)
 TARGET=$(BINDIR)/libVectorSimilarity.so
 SRCDIR=src
-
-MK_CUSTOM_CLEAN=1
 
 ifeq ($(SLOW),1)
 MAKE_J=
 else
 MAKE_J:=-j$(shell nproc)
 endif
-
-#----------------------------------------------------------------------------------------------
-
-ifeq ($(ARCH),x64)
-
-ifeq ($(SAN),)
-ifneq ($(findstring centos,$(OSNICK)),)
-VECSIM_MARCH ?= skylake-avx512
-else ifneq ($(findstring xenial,$(OSNICK)),)
-VECSIM_MARCH ?= skylake-avx512
-else
-VECSIM_MARCH ?= x86-64-v4
-endif
-else
-VECSIM_MARCH ?= skylake-avx512
-endif
-
-CMAKE_VECSIM=-DVECSIM_MARCH=$(VECSIM_MARCH)
-
-else # ARCH != x64
-
-CMAKE_VECSIM=
-
-endif # ARCH
-
-#----------------------------------------------------------------------------------------------
 
 CMAKE_DIR=$(ROOT)/src
 
@@ -176,39 +134,22 @@ CMAKE_FLAGS += \
 	-DCMAKE_WARN_DEPRECATED=OFF \
 	-Wno-dev \
 	--no-warn-unused-cli \
-	-DOSNICK=$(OSNICK) \
-	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
-	$(CMAKE_VECSIM) \
 	$(CMAKE_COV) \
 	$(CMAKE_TESTS)
 
-#----------------------------------------------------------------------------------------------
-
-include $(MK)/defs
-
-include $(MK)/rules
-
-#----------------------------------------------------------------------------------------------
-
-.PHONY: __force
-
-$(BINDIR)/Makefile: __force
+build:
+	$(SHOW)mkdir -p $(BINDIR)
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 
-$(TARGET): $(BINDIR)/Makefile
-	@echo Building $(TARGET) ...
-ifneq ($(DRY_RUN),1)
-	$(SHOW)$(MAKE) -C $(BINDIR) $(MAKE_J)
-else
-	@make -C $(BINDIR) $(MAKE_J)
-endif
+.PHONY: build
 
 clean:
 ifeq ($(ALL),1)
 	$(SHOW)rm -rf $(BINROOT) build dist .tox
 else
-	$(SHOW)$(MAKE) -C $(BINDIR) clean
+	$(SHOW)$(MAKE) --no-print-directory -C $(BINDIR) clean
 endif
 
 .PHONY: clean
@@ -295,18 +236,6 @@ format:
 	$(SHOW)FIX=1 ./sbin/check-format.sh
 
 .PHONY: check-format format
-
-#----------------------------------------------------------------------------------------------
-
-platform:
-	$(SHOW)make -C build/platforms build PACK=1 ARTIFACTS=1
-ifeq ($(PUBLISH),1)
-	$(SHOW)make -C build/platforms publish
-endif
-
-.PHONY: platform
-
-#----------------------------------------------------------------------------------------------
 
 COV_EXCLUDE_DIRS += bin tests
 COV_EXCLUDE+=$(foreach D,$(COV_EXCLUDE_DIRS),'$(realpath $(ROOT))/$(D)/*')
