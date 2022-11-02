@@ -89,9 +89,26 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
 
 void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
     this->restoreIndexFields(input);
-    hnsw_index->num_marked_deleted = 0;
-    hnsw_index->size_links_per_element_ -= sizeof(elementFlags);
     this->restoreGraph(input);
+    hnsw_index->num_marked_deleted = 0;
+    size_t old_size_links_per_element_ = hnsw_index->size_links_per_element_;
+    hnsw_index->size_links_per_element_ -= sizeof(elementFlags);
+    hnsw_index->incoming_links_offset -= sizeof(elementFlags);
+    for (idType i = 0; i < hnsw_index->cur_element_count; i++) {
+        auto meta = hnsw_index->get_linklist0(i);
+        *(meta) = *(meta - 1);
+        *(meta - 1) = 0;
+        size_t linkListSize = hnsw_index->element_levels_[i] * hnsw_index->size_links_per_element_;
+        if (linkListSize) {
+            char *levels_data = (char *)hnsw_index->allocator->allocate(linkListSize);
+            for (size_t offset = 0; offset < hnsw_index->element_levels_[i]; offset++) {
+                memcpy(levels_data + offset * hnsw_index->size_links_per_element_ + 2, hnsw_index->linkLists_[i] + offset * old_size_links_per_element_ + 4, hnsw_index->size_links_per_element_ - 2);
+                *(linklistsizeint *)(levels_data + offset * hnsw_index->size_links_per_element_) = *(idType *)(hnsw_index->linkLists_[i] + offset * old_size_links_per_element_);
+            }
+            hnsw_index->allocator->free_allocation(hnsw_index->linkLists_[i]);
+            hnsw_index->linkLists_[i] = levels_data;
+        }
+    }
 }
 
 void HNSWIndexSerializer::loadIndex_v2(std::ifstream &input) {
@@ -263,10 +280,10 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
         for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
             linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
-            unsigned int size = hnsw_index->getListCount(ll_cur);
+            unsigned short size = hnsw_index->getListCount(ll_cur);
             auto *data = (idType *)(ll_cur + 1);
             std::set<idType> s;
-            for (unsigned int j = 0; j < size; j++) {
+            for (unsigned short j = 0; j < size; j++) {
                 // Check if we found an invalid neighbor.
                 if (data[j] >= hnsw_index->cur_element_count || data[j] == i) {
                     res.valid_state = false;
@@ -278,7 +295,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 
                 // Check if this connection is bidirectional.
                 linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
-                int size_other = hnsw_index->getListCount(ll_other);
+                unsigned short size_other = hnsw_index->getListCount(ll_other);
                 auto *data_other = (idType *)(ll_other + 1);
                 for (int r = 0; r < size_other; r++) {
                     if (data_other[r] == (idType)i) {
