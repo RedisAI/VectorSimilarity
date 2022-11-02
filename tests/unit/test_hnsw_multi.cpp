@@ -1735,3 +1735,73 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWMultiTest, mark_delete) {
+    size_t n_labels = 100;
+    size_t per_label = 10;
+    size_t k = 11;
+    size_t dim = 4;
+
+    size_t n = n_labels * per_label;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n_labels; i++) {
+        for (size_t j = 0; j < per_label; j++)
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i * per_label + j);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
+    // Search for k results around the middle. expect to find them.
+    auto verify_res = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id, idx);
+        ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
+        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], id * per_label + j);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+
+    // Mark as deleted the k odd vectors around the middle
+    for (labelType label = 0; label < 2 * k; label++)
+        if (label % 2)
+            this->CastToHNSW(index)->markDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), k * per_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - k * per_label);
+
+    // Search for k results around the middle. expect to find only even results.
+    auto verify_res_even = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id % 2, 0);
+        ASSERT_EQ(id, idx * 2);
+        ASSERT_EQ(score, dim * per_label * per_label * id * id);
+        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], id * per_label + j);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res_even);
+
+    // Unmark the previously marked vectors.
+    for (labelType label = 0; label < 2 * k; label++)
+        if (label % 2)
+            this->CastToHNSW(index)->unmarkDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Search for k results around the middle again. expect to find the same results we found in the
+    // first search.
+    runTopKSearchTest(index, query, k, verify_res);
+
+    VecSimIndex_Free(index);
+}
