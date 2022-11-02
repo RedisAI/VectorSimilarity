@@ -51,9 +51,6 @@ commands:
   checkout-all:
     steps:
       - checkout
-      - run:
-          name: Checkout submodules
-          command: git submodule update --init --recursive
 
   install-prerequisites:
     steps:
