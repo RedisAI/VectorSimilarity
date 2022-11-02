@@ -10,6 +10,7 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
+#include "VecSim/tombstone_interface.h"
 
 #include <deque>
 #include <memory>
@@ -31,13 +32,15 @@ using std::pair;
 typedef unsigned short int linklistsizeint;
 typedef unsigned short int elementFlags;
 
+short enum Flags { DELETE_MARK = 0x01 };
+
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
 template <typename DataType, typename DistType>
-class HNSWIndex : public VecSimIndexAbstract<DistType> {
+class HNSWIndex : public VecSimIndexAbstract<DistType>, public VecSimIndexTombstone {
 protected:
     // Index build parameters
     size_t max_elements_;
@@ -67,7 +70,6 @@ protected:
     // Index state
     size_t cur_element_count;
     size_t maxlevel_;
-    size_t num_marked_deleted;
 
     // Index data structures
     idType entrypoint_node_;
@@ -181,9 +183,7 @@ public:
     VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
                                       VecSimQueryParams *queryParams) override;
 
-    virtual inline void markDelete(labelType label) = 0;
     inline void markDeletedInternal(idType internalId);
-    virtual inline void unmarkDelete(labelType label) = 0;
     inline void unmarkDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
 
@@ -225,7 +225,7 @@ double HNSWIndex<DataType, DistType>::getEpsilon() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexSize() const {
-    return cur_element_count;
+    return cur_element_count - num_marked_deleted;
 }
 
 template <typename DataType, typename DistType>
@@ -357,8 +357,6 @@ template <typename DataType, typename DistType>
 VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler.get();
 }
-
-static const unsigned short DELETE_MARK = 0x01;
 
 /**
  * Uses the first 8 bits of the memory for the linked list to store the mark,
@@ -977,7 +975,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
-      max_elements_(params->initialCapacity),
+      VecSimIndexTombstone(), max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
       element_levels_(max_elements_, allocator)
 
@@ -1022,15 +1020,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // data_level0_memory will look like this:
     // | ---2--- | -----2----- | -----4*M0----------- | ---------8-------- |-data_size_-| ---8--- |
     // | <flags> | <links_len> | <link_1> <link_2>... |<incoming_links_ptr>|   <data>   | <label> |
-    if (maxM0_ > ((USHRT_MAX - sizeof(void *) - sizeof(linklistsizeint) - sizeof(elementFlags)) /
-                  sizeof(idType)) +
-                     1)
-        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
+
     size_links_level0_ =
         sizeof(linklistsizeint) + sizeof(elementFlags) + maxM0_ * sizeof(idType) + sizeof(void *);
-
-    if (size_links_level0_ > USHRT_MAX - data_size_ - sizeof(labelType))
-        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labelType);
 
     // No need to test for overflow because we passed the test for size_links_level0_ and this is
