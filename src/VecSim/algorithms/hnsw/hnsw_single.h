@@ -71,7 +71,7 @@ template <typename DataType, typename DistType>
 double HNSWIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
                                                              const void *vector_data) const {
     auto id = label_lookup_.find(label);
-    if (id == label_lookup_.end()) {
+    if (id == label_lookup_.end() || this->isMarkedDeleted(id->second)) {
         return INVALID_SCORE;
     }
     return this->dist_func(vector_data, this->getDataByInternalId(id->second), this->dim);
