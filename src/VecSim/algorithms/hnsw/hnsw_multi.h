@@ -69,8 +69,10 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
-        dist = (dist < d) ? dist : d;
+        if (!this->isMarkedDeleted(id)) {
+            DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+            dist = (dist < d) ? dist : d;
+        }
     }
 
     return dist;

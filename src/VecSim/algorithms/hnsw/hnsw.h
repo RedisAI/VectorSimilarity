@@ -111,6 +111,7 @@ protected:
                      tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
+    template <bool has_marked_deleted>
     inline void processCandidate_RangeSearch(
         idType curNodeId, const void *data_point, size_t layer, double epsilon, tag_t visited_tag,
         std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
@@ -122,6 +123,7 @@ protected:
     candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
                                   void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+    template <bool has_marked_deleted>
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                           double epsilon, double radius,
                                                           void *timeoutCtx,
@@ -356,12 +358,6 @@ VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler.get();
 }
 
-/**
- * Uses the first 8 bits of the memory for the linked list to store the mark,
- * whereas maxM0_ has to be limited to the lower 24 bits, however, still large enough in almost all
- * cases.
- * @param internalId
- */
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
     assert(internalId < this->cur_element_count);
@@ -374,10 +370,6 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
     }
 }
 
-/**
- * Remove the deleted mark of the node.
- * @param internalId
- */
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkDeletedInternal(idType internalId) {
     assert(internalId < this->cur_element_count);
@@ -390,11 +382,6 @@ void HNSWIndex<DataType, DistType>::unmarkDeletedInternal(idType internalId) {
     }
 }
 
-/**
- * Checks the first 8 bits of the memory to see if the element is marked deleted.
- * @param internalId
- * @return
- */
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
     elementFlags *flags = get_flags(internalId);
@@ -503,6 +490,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
 }
 
 template <typename DataType, typename DistType>
+template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
     std::unique_ptr<vecsim_stl::abstract_results_container> &results,
@@ -539,7 +527,8 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             // If the new candidate is in the requested radius, add it to the results set.
-            if (candidate_dist <= radius_) {
+            if (candidate_dist <= radius_ &&
+                (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
                 results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
         }
@@ -1481,6 +1470,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 }
 
 template <typename DataType, typename DistType>
+template <bool has_marked_deleted>
 VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
     idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
@@ -1497,16 +1487,21 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
-    DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
-    DistType dynamic_range = ep_dist;
-
-    if (ep_dist <= radius) {
-        // Entry-point is within the radius - add it to the results.
-        res_container->emplace(getExternalLabel(ep_id), ep_dist);
-        dynamic_range = radius; // to ensure that dyn_range >= radius.
+    DistType ep_dist, dynamic_range, dynamic_range_search_boundaries;
+    if (has_marked_deleted && isMarkedDeleted(ep_id)) {
+        ep_dist = std::numeric_limits<DistType>::max();
+        dynamic_range_search_boundaries = dynamic_range = ep_dist;
+    } else {
+        ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+        dynamic_range = ep_dist;
+        if (ep_dist <= radius) {
+            // Entry-point is within the radius - add it to the results.
+            res_container->emplace(getExternalLabel(ep_id), ep_dist);
+            dynamic_range = radius; // to ensure that dyn_range >= radius.
+        }
+        dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
     }
 
-    DistType dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
     candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
@@ -1535,9 +1530,9 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         // epsilon environment of the dynamic range, and add them to the results if they are in the
         // requested radius.
         // Here we send the radius as double to match the function arguments type.
-        processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
-                                     res_container, candidate_set, dynamic_range_search_boundaries,
-                                     radius);
+        processCandidate_RangeSearch<has_marked_deleted>(
+            curr_el_pair.second, data_point, 0, epsilon, visited_tag, res_container, candidate_set,
+            dynamic_range_search_boundaries, radius);
     }
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1583,8 +1578,12 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
-    rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, epsilon, radius,
-                                                    timeoutCtx, &rl.code);
+    if (this->num_marked_deleted)
+        rl.results = searchRangeBottomLayer_WithTimeout<true>(bottom_layer_ep, query_data, epsilon,
+                                                              radius, timeoutCtx, &rl.code);
+    else
+        rl.results = searchRangeBottomLayer_WithTimeout<false>(bottom_layer_ep, query_data, epsilon,
+                                                               radius, timeoutCtx, &rl.code);
 
     return rl;
 }
