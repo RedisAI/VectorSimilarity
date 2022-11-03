@@ -29,8 +29,8 @@ using std::pair;
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
 
-typedef unsigned short int linklistsizeint;
-typedef unsigned short int elementFlags;
+typedef uint16_t linklistsizeint;
+typedef uint16_t elementFlags;
 
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
@@ -972,7 +972,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 #endif
 {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
-    if (M > USHRT_MAX / 2)
+    if (M > UINT16_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     M_ = M;
     maxM_ = M_;
