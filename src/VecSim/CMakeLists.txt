@@ -7,6 +7,8 @@ project(VecsimLib)
 file(GLOB_RECURSE headers ./**.h)
 set(HEADER_LIST "${headers}")
 
+include_directories(../)
+
 add_subdirectory(spaces)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
