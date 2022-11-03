@@ -251,22 +251,20 @@ define COVERAGE_RESET
 $(SHOW)set -e ;\
 echo "Starting coverage analysys." ;\
 mkdir -p $(COV_DIR) ;\
-lcov --directory $(TESTDIR) -z > /dev/null 2>&1
+lcov --directory $(BINROOT) --base-directory $(SRCDIR) -z > /dev/null 2>&1
 endef
 
 
 define COVERAGE_COLLECT_REPORT
 $(SHOW)set -e ;\
 echo "Collecting coverage data ..." ;\
-lcov --capture --directory $(TESTDIR) --output-file $(COV_INFO) > /dev/null 2>&1 ;\
+lcov --capture --directory $(BINROOT) --base-directory $(SRCDIR) --output-file $(COV_INFO) > /dev/null 2>&1 ;\
 lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE) > /dev/null 2>&1 ;\
 mv $(COV_INFO).1 $(COV_INFO)
 endef
 
 coverage:
-	$(SHOW)mkdir -p $(BINDIR)
-	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
-	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
+	$(SHOW)$(MAKE) build COV=1
 	$(SHOW)$(COVERAGE_RESET)
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)
