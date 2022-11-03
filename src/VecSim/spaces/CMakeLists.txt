@@ -1,14 +1,14 @@
 
 # Build non optimized code in a single project without architecture optimization flag.
 project(VectorSimilaritySpaces_no_optimization)
-	add_library(VectorSimilaritySpaces_no_optimization STATIC
+	add_library(VectorSimilaritySpaces_no_optimization
 	L2/L2.cpp
 	IP/IP.cpp
 	)
 
 include(CheckCXXCompilerFlag)
 
-
+project(VectorSimilarity_Spaces)
 # TODO: Remove this once cpu_features get support for M1
 if(NOT APPLE)
 		include(${root}/cmake/cpu_features.cmake)
@@ -46,7 +46,7 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 # Here we are compiling the space selectors with the relevant optimization flag.
-add_library(VectorSimilaritySpaces STATIC 
+add_library(VectorSimilaritySpaces 
 	space_aux.cpp
 	L2_space.cpp
 	IP_space.cpp
@@ -65,7 +65,7 @@ endif()
 if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Build and link the relevant optimization for X86.
 	if(CXX_AVX512DQ)
-		project(VectorSimilaritySpaces_avx512dq)
+		# project(VectorSimilaritySpaces_avx512dq)
 		add_library(VectorSimilaritySpaces_avx512dq STATIC
 				L2/L2_AVX512DQ_FP64.cpp
 				IP/IP_AVX512DQ_FP64.cpp)
@@ -74,7 +74,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building without AVX512DQ")
 	endif()
 	if(CXX_AVX512F)
-			project(VectorSimilaritySpaces_avx512)
+			# project(VectorSimilaritySpaces_avx512)
 				add_library(VectorSimilaritySpaces_avx512 STATIC
 					L2/L2_AVX512_FP32.cpp
 					L2/L2_AVX512_FP64.cpp
@@ -85,7 +85,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building without AVX512")
 	endif()
 	if(CXX_AVX)
-		project(VectorSimilaritySpaces_avx)
+		# project(VectorSimilaritySpaces_avx)
 			add_library(VectorSimilaritySpaces_avx STATIC
 				L2/L2_AVX_FP32.cpp
 				L2/L2_AVX_FP64.cpp
@@ -97,7 +97,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building without AVX")
 	endif()
 	if(CXX_SSE)
-		project(VectorSimilaritySpaces_sse)
+		# project(VectorSimilaritySpaces_sse)
 			add_library(VectorSimilaritySpaces_sse STATIC
 				L2/L2_SSE_FP32.cpp
 				L2/L2_SSE_FP64.cpp

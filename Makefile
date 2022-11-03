@@ -1,4 +1,3 @@
-
 ifeq (n,$(findstring n,$(firstword -$(MAKEFLAGS))))
 DRY_RUN:=1
 else
@@ -20,6 +19,10 @@ endif
 ifeq ($(COV),1)
 override DEBUG ?= 1
 CMAKE_COV += -DUSE_COVERAGE=ON
+endif
+
+ifeq ($(NO_TESTS),1)
+CMAKE_TESTS += -DVECSIM_BUILD_TESTS=off
 endif
 
 ifneq ($(SAN),)
@@ -172,13 +175,13 @@ _CTEST_ARGS += \
 endif
 
 unit_test:
-	$(SHOW)mkdir -p $(TESTDIR)
-	$(SHOW)cd $(TESTDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_TEST_DIR)
-	@make --no-print-directory -C $(TESTDIR) $(MAKE_J)
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 valgrind:
-	$(SHOW)$(MAKE) VG=1 build unit_test
+	$(SHOW)$(MAKE) VG=1 unit_test
 
 .PHONY: unit_test valgrind
 
@@ -211,9 +214,9 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-	$(SHOW)mkdir -p $(BENCHMARKDIR)
-	$(SHOW)cd $(BENCHMARKDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_BENCHMARK_DIR)
-	@make --no-print-directory -C $(BENCHMARKDIR) $(MAKE_J)
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	for bm_class in basics updated_index spaces batch_iterator; do \
   		$(BENCHMARKDIR)/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
   	done
@@ -261,9 +264,9 @@ mv $(COV_INFO).1 $(COV_INFO)
 endef
 
 coverage:
-	$(SHOW)mkdir -p $(TESTDIR)
-	$(SHOW)cd $(TESTDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_TEST_DIR)
-	@make --no-print-directory -C $(TESTDIR) $(MAKE_J) 
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	$(SHOW)$(COVERAGE_RESET)
 	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)
