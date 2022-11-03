@@ -1646,6 +1646,7 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
     size_t per_label = 10;
     size_t k = 11;
     size_t dim = 4;
+    VecSimBatchIterator *batchIterator;
 
     size_t n = n_labels * per_label;
 
@@ -1661,7 +1662,7 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 0);
 
-    // Search for k results around the middle. expect to find them.
+    // Search for k results from the origin. expect to find them.
     auto verify_res = [&](size_t id, double score, size_t idx) {
         ASSERT_EQ(id, idx);
         ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
@@ -1673,8 +1674,14 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
         }
     };
     runTopKSearchTest(index, query, k, verify_res);
+    // with all vectors, this is the element of the k-th vector from the origin
+    size_t all_element = per_label * (k - 1);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
 
-    // Mark as deleted the k odd vectors around the middle
+    // Mark as deleted the first k odd vectors.
     for (labelType label = 0; label < 2 * k; label++)
         if (label % 2)
             this->CastToHNSW(index)->markDelete(label);
@@ -1695,6 +1702,12 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
         }
     };
     runTopKSearchTest(index, query, k, verify_res_even);
+    // with only even vectors, this is the element of the k-th vector from the origin.
+    size_t even_el = all_element * 2;
+    runRangeQueryTest(index, query, dim * even_el * even_el, verify_res_even, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
+    VecSimBatchIterator_Free(batchIterator);
 
     // Unmark the previously marked vectors.
     for (labelType label = 0; label < 2 * k; label++)
@@ -1707,6 +1720,10 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
     // Search for k results around the middle again. expect to find the same results we found in the
     // first search.
     runTopKSearchTest(index, query, k, verify_res);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);
 }
