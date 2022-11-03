@@ -240,10 +240,32 @@ format:
 COV_EXCLUDE_DIRS += bin tests
 COV_EXCLUDE+=$(foreach D,$(COV_EXCLUDE_DIRS),'$(realpath $(ROOT))/$(D)/*')
 
+COV_INFO=$(BINROOT)/cov.info
+COV_DIR=$(BINROOT)/cov
+COV_PROFDATA=$(COV_DIR)/cov.profdata
+
+define COVERAGE_RESET
+$(SHOW)set -e ;\
+echo "Starting coverage analysys." ;\
+mkdir -p $(COV_DIR) ;\
+lcov --directory $(TESTDIR) -z > /dev/null 2>&1
+endef
+
+
+define COVERAGE_COLLECT_REPORT
+$(SHOW)set -e ;\
+echo "Collecting coverage data ..." ;\
+lcov --capture --directory $(TESTDIR) --output-file $(COV_INFO) > /dev/null 2>&1 ;\
+lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE) > /dev/null 2>&1 ;\
+mv $(COV_INFO).1 $(COV_INFO)
+endef
+
 coverage:
-	$(SHOW)$(MAKE) build COV=1
+	$(SHOW)mkdir -p $(TESTDIR)
+	$(SHOW)cd $(TESTDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_TEST_DIR)
+	@make --no-print-directory -C $(TESTDIR) $(MAKE_J) 
 	$(SHOW)$(COVERAGE_RESET)
-	$(SHOW)$(MAKE) unit_test COV=1
+	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)
 
 show-cov:
