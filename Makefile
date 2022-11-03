@@ -250,7 +250,7 @@ show-cov:
 	$(SHOW)lcov -l $(COV_INFO)
 
 upload-cov:
-	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f bin/linux-x64-debug-cov/cov.info
+	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f $(BINDIR)/cov.info
 
 .PHONY: coverage show-cov upload-cov
 
