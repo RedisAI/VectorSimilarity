@@ -893,7 +893,7 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        ASSERT_TRUE(index == NULL);
+        ASSERT_TRUE(index == NULL) << "Failed on M=" << bad_M[i];
     }
 }
 
