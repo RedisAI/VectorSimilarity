@@ -10,6 +10,9 @@ include(${root}/cmake/san.cmake)
 
 project(VectorSimilarity_UnitTest)
 
+include_directories(${PROJECT_SOURCE_DIR}/../../src)
+add_subdirectory(${PROJECT_SOURCE_DIR}/../../ VectorSimilarity)
+
 include(CTest)
 ADD_DEFINITIONS(-DBUILD_TESTS)
 include(FetchContent)
@@ -30,10 +33,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 
 enable_testing()
-
-include_directories(${PROJECT_SOURCE_DIR}/../../src)
-add_subdirectory(${PROJECT_SOURCE_DIR}/../../ VectorSimilarity)
-
 add_library(VectorSimilaritySerialization ../../src/VecSim/algorithms/hnsw/serialization.cpp)
 
 add_executable(test_hnsw test_hnsw.cpp test_hnsw_multi.cpp test_utils.cpp)
