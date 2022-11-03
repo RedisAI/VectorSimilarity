@@ -6,6 +6,8 @@ endif()
 message("# VectorSimilarity/tests/unit root: " ${root})
 message("# VectorSimilarity/tests/unit binroot: " ${binroot})
 
+include(${root}/cmake/san.cmake)
+
 project(VectorSimilarity_UnitTest)
 
 include(CTest)
