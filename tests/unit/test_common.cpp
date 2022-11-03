@@ -323,6 +323,20 @@ TYPED_TEST(UtilsTests, results_containers) {
     VecSimQueryResult_Free(res2);
 }
 
+TYPED_TEST(UtilsTests, tiered_index) {
+	std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+	HNSWParams params = {.dim = 4, .metric = VecSimMetric_L2};
+	auto *hnsw_index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
+	auto jobQ = std::queue<void *>();
+	struct Job {
+
+	};
+	auto submit_callback = [](void *job_queue, void **jobs) {
+
+	};
+}
+
 class CommonAPITest : public ::testing::Test {};
 
 TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
@@ -359,3 +373,6 @@ TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
     // Free the internal array pointer - the validation for success is by having no leaks.
     VecSimQueryResult_FreeArray(res_inner_array);
 }
+
+
+
