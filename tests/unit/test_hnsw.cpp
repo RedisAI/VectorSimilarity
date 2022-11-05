@@ -862,8 +862,8 @@ TYPED_TEST(HNSWTest, hnsw_test_inf_score) {
 
 // Tests VecSimIndex_New failure on bad M parameter. Should return null.
 TYPED_TEST(HNSWTest, hnsw_bad_params) {
-    size_t n = 1000000;
-    size_t dim = 1000000;
+    size_t n = 10000000;
+    size_t dim = 10000000;
     size_t bad_M[] = {
         1,          // Will fail because 1/log(M).
         100000000,  // Will fail on M * 2 overflow.
