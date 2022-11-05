@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [main, '[0-9].[0-9]']
-    branches-ignore: ['*docs', '*noci']
   pull_request:
     branches-ignore: ['*docs', '*noci']
 
