@@ -5,13 +5,13 @@
 
 #include <shared_mutex>
 
-using SubmitCB = int (*) (void *job_queue, void **jobs);
+using SubmitCB = int (*) (void *job_queue, void **jobs, size_t len);
 using UpdateMemoryCB = int (*) (void *memory_ctx, size_t memory);
 
 template <typename DataType, typename DistType>
 class VecSimTieredIndex {
 protected:
-	BruteForceIndex<DataType, DistType> tempFlat;
+	BruteForceIndex<DataType, DistType> *tempFlat;
 	VecSimIndexAbstract<DistType> *index;
 	void *jobQueue;
 	SubmitCB SubmitJobsToQueue;
@@ -24,13 +24,20 @@ protected:
 	std::shared_timed_mutex mainIndexGuard;
 
 public:
-	VecSimTieredIndex(VecSimParams bf_params, VecSimIndexAbstract<DistType> *index_, void *job_queue_,
+	VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, void *job_queue_,
 	                  SubmitCB submitCb, void *memory_ctx, UpdateMemoryCB UpdateMemCb) :
 					  index(index_), jobQueue(job_queue_), SubmitJobsToQueue(submitCb), memoryCtx(memory_ctx),
 					  UpdateIndexMemory(UpdateMemCb) {
-		tempFlat = BruteForceFactory::NewIndex(&bf_params, index->getAllocator());
+		BFParams bf_params = {
+				.type = index_->getType(),
+				.dim = index_->getDim(),
+				.metric = index_->getMetric(),
+				.multi = index_->isMultiValue()
+		};
+		tempFlat = static_cast<BruteForceIndex<DataType, DistType>*>(BruteForceFactory::NewIndex(&bf_params, index->getAllocator()));
 	}
 	~VecSimTieredIndex() {
 		VecSimIndex_Free(index);
+		VecSimIndex_Free(tempFlat);
 	}
 };

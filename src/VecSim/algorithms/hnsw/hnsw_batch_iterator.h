@@ -69,7 +69,7 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
       candidates(this->allocator) {
 
     this->dist_func = index->GetDistFunc();
-    this->dim = index->GetDim();
+    this->dim = index->getDim();
     this->entry_point = index->getEntryPointId();
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = index->getVisitedList();

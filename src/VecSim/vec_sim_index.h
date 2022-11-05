@@ -49,7 +49,9 @@ public:
     virtual ~VecSimIndexAbstract() {}
 
     inline dist_func_t<DistType> GetDistFunc() const { return dist_func; }
-    inline size_t GetDim() const { return dim; }
+    inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
+	inline VecSimType getType() const { return vecType; }
+	inline VecSimMetric getMetric() const { return metric; }
 };

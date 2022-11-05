@@ -6,6 +6,8 @@
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
 #include "VecSim/utils/vecsim_results_container.h"
+#include "VecSim/vec_sim_tired_index.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 #include <cstdlib>
 #include <limits>
@@ -323,18 +325,44 @@ TYPED_TEST(UtilsTests, results_containers) {
     VecSimQueryResult_Free(res2);
 }
 
+int submit_callback(void *job_queue, void **jobs, size_t len) {
+	for (size_t i = 0; i < len; i++) {
+		static_cast<std::queue<void *>*>(job_queue)->push(jobs[i]);
+	}
+	return VecSim_OK;
+}
+
+int update_mem_callback(void *mem_ctx, size_t mem) {
+	*(size_t *)mem_ctx = mem;
+	return VecSim_OK;
+}
+
 TYPED_TEST(UtilsTests, tiered_index) {
 	std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-	HNSWParams params = {.dim = 4, .metric = VecSimMetric_L2};
-	auto *hnsw_index = test_utils::CreateNewIndex(params, TypeParam::get_index_type());
-	auto jobQ = std::queue<void *>();
+	HNSWParams params = {.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2, .multi = false};
+	auto *hnsw_index = reinterpret_cast<VecSimIndexAbstract<float> *>(HNSWFactory::NewIndex(&params, allocator));
+	auto *jobQ = new std::queue<void *>();
+	using JobCallback = void (*) (void *);
 	struct Job {
-
+		size_t id;
+		JobCallback execute;
 	};
-	auto submit_callback = [](void *job_queue, void **jobs) {
-
-	};
+//	std::function<int(void *, void **, size_t)> submit_callback = [](void *job_queue, void **jobs, size_t len) {
+//		for (size_t i = 0; i < len; i++) {
+//			static_cast<std::queue<void *>*>(job_queue)->push(jobs[i]);
+//		}
+//		return VecSim_OK;
+//	};
+//	std::function<int(void **, size_t)> update_mem_callback = [](void *mem_ctx, size_t mem) {
+//		*(size_t *)mem_ctx = mem;
+//		return VecSim_OK;
+//	};
+	size_t memory_ctx = 0;
+	VecSimTieredIndex<float, float> tiered_index(hnsw_index, reinterpret_cast<void*>(jobQ),
+												 submit_callback,
+												 (void *)&memory_ctx,
+												 update_mem_callback);
 }
 
 class CommonAPITest : public ::testing::Test {};
