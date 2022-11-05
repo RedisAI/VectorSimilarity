@@ -233,10 +233,10 @@ endif
 #----------------------------------------------------------------------------------------------
 
 check-format:
-	$(SHOW)./sbin/check-format.sh
+	$(SHOW)./check-format.sh
 
 format:
-	$(SHOW)FIX=1 ./sbin/check-format.sh
+	$(SHOW)FIX=1 ./check-format.sh
 
 .PHONY: check-format format
 
@@ -255,12 +255,24 @@ lcov --directory $(BINROOT) --base-directory $(SRCDIR) -z > /dev/null 2>&1
 endef
 
 
-define COVERAGE_COLLECT_REPORT
+define COVERAGE_COLLECT
 $(SHOW)set -e ;\
 echo "Collecting coverage data ..." ;\
 lcov --capture --directory $(BINROOT) --base-directory $(SRCDIR) --output-file $(COV_INFO) > /dev/null 2>&1 ;\
 lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE) > /dev/null 2>&1 ;\
 mv $(COV_INFO).1 $(COV_INFO)
+endef
+
+define COVERAGE_REPORT
+$(SHOW)set -e ;\
+lcov -l $(COV_INFO) ;\
+genhtml --legend --ignore-errors source -o $(COV_DIR) $(COV_INFO) > /dev/null 2>&1 ;\
+echo "Coverage info at $$(realpath $(COV_DIR))/index.html"
+endef
+
+define COVERAGE_COLLECT_REPORT
+$(COVERAGE_COLLECT)
+$(COVERAGE_REPORT)
 endef
 
 coverage:
@@ -273,7 +285,7 @@ show-cov:
 	$(SHOW)lcov -l $(COV_INFO)
 
 upload-cov:
-	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f $(BINDIR)/cov.info
+	$(SHOW)bash <(curl  https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f ${COV_INFO}
 
 .PHONY: coverage show-cov upload-cov
 
