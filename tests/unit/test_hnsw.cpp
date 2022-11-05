@@ -2036,6 +2036,9 @@ TYPED_TEST(HNSWTest, mark_delete) {
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    // Try marking and unmarking non-existing label
+    ASSERT_NO_THROW(this->CastToHNSW(index)->markDelete(0));
+    ASSERT_NO_THROW(this->CastToHNSW(index)->unmarkDelete(0));
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -2057,12 +2060,23 @@ TYPED_TEST(HNSWTest, mark_delete) {
     VecSimBatchIterator_Free(batchIterator);
 
     // Mark as deleted the k odd vectors around the middle
-    for (labelType label = (n / 2) - k; label < (n / 2) + k; label++)
+    for (labelType label = 0; label < n; label++)
         if (label % 2)
             this->CastToHNSW(index)->markDelete(label);
 
-    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), k);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n - k);
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Add a new vector, make sure it has no link to a deleted vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
+    for (size_t level = 0; level <= this->CastToHNSW(index)->element_levels_[n]; level++) {
+        auto links = this->CastToHNSW(index)->get_linklist_at_level(n, level);
+        idType *neighbors = (idType *)(links + 1);
+        for (size_t idx = 0; idx < *links; idx++) {
+            ASSERT_TRUE(neighbors[idx] % 2 == 0)
+                << "Got a link to " << neighbors[idx] << " on level " << level;
+        }
+    }
 
     // Search for k results around the middle. expect to find only even results.
     auto verify_res_even = [&](size_t id, double score, size_t index) {
@@ -2079,12 +2093,12 @@ TYPED_TEST(HNSWTest, mark_delete) {
     VecSimBatchIterator_Free(batchIterator);
 
     // Unmark the previously marked vectors.
-    for (labelType label = (n / 2) - k; label < (n / 2) + k; label++)
+    for (labelType label = 0; label < n; label++)
         if (label % 2)
             this->CastToHNSW(index)->unmarkDelete(label);
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
 
     // Search for k results around the middle again. expect to find the same results we found in the
     // first search.
