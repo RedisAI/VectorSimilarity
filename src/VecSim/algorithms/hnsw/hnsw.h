@@ -384,8 +384,6 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         elementFlags *flags = get_flags(internalId);
         *flags |= DELETE_MARK;
         this->num_marked_deleted++;
-    } else {
-        throw std::runtime_error("The requested to delete element is already deleted");
     }
 }
 
@@ -396,8 +394,6 @@ void HNSWIndex<DataType, DistType>::unmarkDeletedInternal(idType internalId) {
         elementFlags *flags = get_flags(internalId);
         *flags &= ~DELETE_MARK;
         this->num_marked_deleted--;
-    } else {
-        throw std::runtime_error("The requested to undelete element is not deleted");
     }
 }
 
