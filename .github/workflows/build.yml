@@ -31,3 +31,21 @@ jobs:
         with:
           name: valgrind tests reports
           path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+
+  codecov:
+    name: codecov job
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: sudo .install/install_script.sh
+      - name: run codecov
+        run: make coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: /bin/Linux-x86_64-debug/cov.info
+          fail_ci_if_error: true
+
+
