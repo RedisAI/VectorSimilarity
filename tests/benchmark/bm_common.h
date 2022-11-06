@@ -26,7 +26,8 @@ public:
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                                  size_t k, size_t &correct, Offset_t index_offset) {
-    auto query_params = VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.efRuntime = ef}};
+    HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+    auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
     auto hnsw_results =
         VecSimIndex_TopKQuery(INDICES[VecSimAlgo_HNSWLIB + index_offset],
                               QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);

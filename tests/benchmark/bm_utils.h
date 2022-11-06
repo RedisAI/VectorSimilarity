@@ -53,6 +53,11 @@ protected:
         return std::string(getenv("ROOT")) + "/" + file_name;
     }
 
+    static inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
+        VecSimQueryParams QueryParams = {.hnswRuntimeParams = RuntimeParams};
+        return QueryParams;
+    }
+
 private:
     static inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
         VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};

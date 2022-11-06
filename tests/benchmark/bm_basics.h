@@ -71,8 +71,8 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     size_t iter = 0;
     size_t total_res = 0;
     size_t total_res_bf = 0;
-    auto query_params =
-        VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
+    HNSWRuntimeParams hnswRuntimeParams = {.epsilon = epsilon};
+    auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
 
     for (auto _ : st) {
         auto hnsw_results =
