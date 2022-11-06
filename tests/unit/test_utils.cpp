@@ -247,7 +247,7 @@ size_t getLabelsLookupNodeSize() {
  */
 int tiered_index_mock::submit_callback(void *job_queue, void **jobs, size_t len) {
     for (size_t i = 0; i < len; i++) {
-        static_cast<std::queue<void *> *>(job_queue)->push(jobs[i]);
+        static_cast<JobQueue *>(job_queue)->push(jobs[i]);
     }
     return VecSim_OK;
 }

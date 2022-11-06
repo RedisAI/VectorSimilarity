@@ -55,6 +55,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // Execute the job from the queue and validate that the index was updated properly.
     reinterpret_cast<HNSWJob *>(jobQ->front())->Execute(jobQ->front());
     ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
     ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
 
     // Cleanup.

@@ -4,8 +4,22 @@
 #include "hnsw.h"
 #include "hnsw_factory.h"
 
+/*
+ * The required information for the atomic update protocol. Todo: extend this data structure as
+ * needed.
+ */
+typedef struct UpdateMessage {
+    HNSWJobType type;
+    // ...
+} UpdateMessage;
+
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
+private:
+    // Todo: implement these methods later on
+    void executeJob(HNSWJob *job) {}
+    UpdateMessage *computeDeltas(HNSWJob *job) { return nullptr; }
+    void applyDeltas(HNSWJob *job, UpdateMessage *message) {}
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
