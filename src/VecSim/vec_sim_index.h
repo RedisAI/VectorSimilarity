@@ -52,6 +52,6 @@ public:
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
     inline bool isMultiValue() const { return isMulti; }
-	inline VecSimType getType() const { return vecType; }
-	inline VecSimMetric getMetric() const { return metric; }
+    inline VecSimType getType() const { return vecType; }
+    inline VecSimMetric getMetric() const { return metric; }
 };

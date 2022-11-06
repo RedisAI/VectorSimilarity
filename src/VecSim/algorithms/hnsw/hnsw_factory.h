@@ -10,6 +10,8 @@
 namespace HNSWFactory {
 
 VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
+                            std::shared_ptr<VecSimAllocator> allocator);
 size_t EstimateInitialSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params);
 

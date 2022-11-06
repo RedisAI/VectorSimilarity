@@ -16,6 +16,7 @@
 #include <queue>
 #include <cassert>
 #include <limits>
+#include <stdexcept>
 
 using spaces::dist_func_t;
 

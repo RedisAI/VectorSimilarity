@@ -58,6 +58,13 @@ typedef enum {
 } VecSimResolveCode;
 
 /**
+ * Callback signatures for asynchronous tiered index.
+ */
+typedef int (*SubmitCB)(void *job_queue, void **jobs, size_t jobs_len);
+typedef int (*UpdateMemoryCB)(void *memory_ctx, size_t memory);
+typedef void (*JobCallback)(void *);
+
+/**
  * @brief Index initialization parameters.
  *
  */
@@ -84,10 +91,29 @@ typedef struct {
 } BFParams;
 
 typedef struct {
+    HNSWParams hnswParams;
+    void *jobQueue;
+    SubmitCB submitCb;
+    void *memoryCtx;
+    UpdateMemoryCB UpdateMemCb;
+} TieredHNSWParams;
+
+typedef enum { HNSW_INSERT_JOB, HNSW_DELETE_JOB } HNSWJobType;
+
+typedef struct HNSWJob {
+    HNSWJobType jobType;
+    labelType label;
+    void *blob;
+    void *index;
+    JobCallback Execute;
+} HNSWJob;
+
+typedef struct {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
+        TieredHNSWParams tieredHNSWParams;
     };
 } VecSimParams;
 

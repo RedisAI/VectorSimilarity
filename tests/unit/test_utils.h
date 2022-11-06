@@ -5,6 +5,7 @@
 #include <exception>
 
 #include "VecSim/vec_sim.h"
+#include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "gtest/gtest.h"
 
 // IndexType is used to define indices unit tests
@@ -105,3 +106,9 @@ inline double GetInfVal(VecSimType type) {
         throw std::invalid_argument("This type is not supported");
     }
 }
+
+namespace tiered_index_mock {
+using JobQueue = std::queue<void *>;
+int submit_callback(void *job_queue, void **jobs, size_t len);
+int update_mem_callback(void *mem_ctx, size_t mem);
+} // namespace tiered_index_mock
