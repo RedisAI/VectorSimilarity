@@ -7,7 +7,6 @@ on:
 
 jobs:
   build-matrix:
-    if: github.event.label.name == 'multi-build'
     name: build matrix
     strategy:
       matrix:
@@ -17,6 +16,7 @@ jobs:
       image: ${{ matrix.os }}
     steps:
       - name: checkout
+        if: github.event.label.name == 'multi-build'
         uses: actions/checkout@v2
       - name: install dependencies
         run: .install/install_script.sh
