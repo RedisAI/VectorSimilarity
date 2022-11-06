@@ -1693,12 +1693,8 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
 
     // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
-    TEST_DATA_T additional[dim];
-    GenerateVector<TEST_DATA_T>(additional, dim, n);
-    for (size_t i = 0; i < dim; i += 2) {
-        additional[i] *= -1;
-    }
-    VecSimIndex_AddVector(index, additional, n);
+    // This value is very close to a deleted vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
     for (size_t level = 0; level <= this->CastToHNSW_Multi(index)->element_levels_[n]; level++) {
         auto links = this->CastToHNSW(index)->get_linklist_at_level(n, level);
         idType *neighbors = (idType *)(links + 1);

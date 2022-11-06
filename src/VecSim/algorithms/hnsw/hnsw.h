@@ -569,10 +569,16 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
     candidatesMaxHeap<DistType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
-    DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
-    DistType lowerBound = dist;
-    top_candidates.emplace(dist, ep_id);
-    candidate_set.emplace(-dist, ep_id);
+    DistType lowerBound;
+    if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
+        DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+        lowerBound = dist;
+        top_candidates.emplace(dist, ep_id);
+        candidate_set.emplace(-dist, ep_id);
+    } else {
+        lowerBound = std::numeric_limits<DistType>::max();
+        candidate_set.emplace(-lowerBound, ep_id);
+    }
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
