@@ -273,9 +273,13 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-	for bm_class in single updated_index spaces batch_iterator; do \
+	for bm_class in basics basics_multi updated_index updated_index_multi batch_iterator batch_iterator_multi; do \
   		$(BINDIR)/benchmark/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
-  	done
+	done
+
+	$(BINDIR)/benchmark/bm_spaces --benchmark_out=spaces_results.json --benchmark_out_format=json; 
+
+
 	$(SHOW)python3 -m tox -e benchmark
 
 toxenv:

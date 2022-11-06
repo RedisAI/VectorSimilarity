@@ -11,12 +11,23 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 enable_testing()
 
-add_executable(bm_batch_iterator bm_batch_iterator.cpp)
+add_executable(bm_batch_iterator bm_batch_iterator_single.cpp bm_utils.cpp)
 target_link_libraries(bm_batch_iterator VectorSimilarity benchmark::benchmark)
-add_executable(bm_single bm_single.cpp)
-target_link_libraries(bm_single VectorSimilarity benchmark::benchmark)
-add_executable(bm_updated_index bm_updated_index.cpp)
+
+add_executable(bm_batch_iterator_multi bm_batch_iterator_multi.cpp bm_utils.cpp)
+target_link_libraries(bm_batch_iterator_multi VectorSimilarity benchmark::benchmark)
+
+add_executable(bm_basics bm_basics_single.cpp bm_utils.cpp)
+target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
+
+add_executable(bm_basics_multi bm_basics_multi.cpp bm_utils.cpp)
+target_link_libraries(bm_basics_multi VectorSimilarity benchmark::benchmark)
+
+add_executable(bm_updated_index bm_updated_index_single.cpp  bm_utils.cpp)
 target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
+
+add_executable(bm_updated_index_multi bm_updated_index_multi.cpp bm_utils.cpp)
+target_link_libraries(bm_updated_index_multi VectorSimilarity benchmark::benchmark)
 
 #########################################################################################
 # Passed this line we have optimization enabled by the compiler.                        #

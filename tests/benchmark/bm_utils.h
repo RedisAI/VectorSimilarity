@@ -14,7 +14,8 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
-#include "bm_common.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "bm_definitions.h"
 
 class BM_VecSimGeneral : public benchmark::Fixture {
 public:
@@ -22,16 +23,19 @@ public:
 
 protected:
     static size_t dim;
+    static size_t M;
+    static size_t EF_C;
     static size_t n_vectors;
 
-    static const char *test_vectors_file;
+    static bool is_multi;
+    static std::vector<const char *> test_vectors_files;
     static size_t n_queries;
 
     static size_t ref_count;
 
     static std::vector<VecSimIndex *> indices;
 
-    static const char *hnsw_index_file;
+    static std::vector<const char *> hnsw_index_files;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral();
@@ -45,7 +49,7 @@ protected:
         return VecSimIndex_New(&params);
     }
 
-    static inline std::string AttachRootPath(const char *file_name) {
+    static inline std::string AttachRootPath(std::string file_name) {
         return std::string(getenv("ROOT")) + "/" + file_name;
     }
 
@@ -61,33 +65,6 @@ private:
     }
 };
 
-BM_VecSimGeneral::~BM_VecSimGeneral() {
-    ref_count--;
-    if (ref_count == 0) {
-        VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
-    }
-}
-
-void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
-                                     VecSimQueryResult_List bf_results, size_t &correct) {
-    auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
-    while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
-        auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
-        auto bf_it = VecSimQueryResult_List_GetIterator(bf_results);
-        while (VecSimQueryResult_IteratorHasNext(bf_it)) {
-            auto bf_res_item = VecSimQueryResult_IteratorNext(bf_it);
-            if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
-                correct++;
-                break;
-            }
-        }
-        VecSimQueryResult_IteratorFree(bf_it);
-    }
-    VecSimQueryResult_IteratorFree(hnsw_it);
-}
-
-std::vector<VecSimIndex *> BM_VecSimGeneral::indices = std::vector<VecSimIndex *>();
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
 public:
@@ -96,7 +73,7 @@ public:
 
     static std::vector<std::vector<data_t>> queries;
 
-    BM_VecSimIndex(bool is_multi);
+    BM_VecSimIndex() = default;
     virtual ~BM_VecSimIndex() = default;
 
 protected:
@@ -107,11 +84,9 @@ protected:
         return CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
     }
 
-    static void LoadHNSWIndex(const std::string &location, Offset_t index_offset = 0);
-
 private:
-    static void Initialize(bool is_multi);
-    static void loadTestVectors();
+    static void Initialize();
+    static void loadTestVectors(VecSimType type);
     static void InsertToQueries(std::ifstream &input);
 };
 
@@ -120,29 +95,34 @@ std::vector<std::vector<typename index_type_t::data_t>> BM_VecSimIndex<index_typ
     std::vector<std::vector<typename index_type_t::data_t>>();
 
 template <typename index_type_t>
-BM_VecSimIndex<index_type_t>::BM_VecSimIndex(bool is_multi) {
-    if (ref_count == 0) {
-        // Initialize the static members.
-        Initialize(is_multi);
-    }
-    ref_count++;
-}
+void BM_VecSimIndex<index_type_t>::Initialize() {
 
-template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::Initialize(bool is_multi) {
+    VecSimType type = index_type_t::get_index_type();
 
-
-    BFParams bf_params = {.type = index_type_t::get_index_type(),
+    BFParams bf_params = {.type = type,
                           .dim = dim,
                           .metric = VecSimMetric_Cosine,
+                          .multi = IS_MULTI,
                           .initialCapacity = n_vectors,
                           .blockSize = block_size};
 
     INDICES.push_back(CreateNewIndex(bf_params));
-    
+
+    HNSWParams params = {.type = type,
+                         .dim = DIM,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = IS_MULTI,
+                         .initialCapacity = N_VECTORS,
+                         .blockSize = BM_VecSimGeneral::block_size,
+                         .M = BM_VecSimGeneral::M,
+                         .efConstruction = BM_VecSimGeneral::EF_C};
+
     // Initialize and load HNSW index for DBPedia data set.
-    INDICES.push_back(HNSWFactory::NewIndex(
-            GetSerializedIndexLocation(hnsw_index_file), index_type_t::get_index_type(), false));
+    INDICES.push_back(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_files[type]), &params));
+
+    auto *hnsw_index = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB]);
+    size_t ef_r = 10;
+    hnsw_index->setEf(ef_r);
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
@@ -151,21 +131,12 @@ void BM_VecSimIndex<index_type_t>::Initialize(bool is_multi) {
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
-    loadTestVectors();
+    loadTestVectors(type);
 }
-template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::LoadHNSWIndex(const std::string &location,
-                                                 Offset_t index_offset) {
-    auto *hnsw_index = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + index_offset]);
 
-    hnsw_index->loadIndex(location);
-    size_t ef_r = 10;
-    hnsw_index->setEf(ef_r);
-}
 template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::loadTestVectors() {
-    auto location = std::string(std::string(getenv("ROOT")));
-    auto file_name = location + "/" + test_vectors_file;
+void BM_VecSimIndex<index_type_t>::loadTestVectors(VecSimType type) {
+    auto file_name = AttachRootPath(test_vectors_files[type]);
 
     std::ifstream input(file_name, std::ios::binary);
 
@@ -187,6 +158,3 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
 
 #define VARIABLE_BATCH_SIZE_ARGS(initial_batch_size, num_batches)                                  \
     ->Args({initial_batch_size, num_batches})->ArgNames({"batch initial size", "number of batches"})
-
-#define BATCHES_TO_ADHOC_ARGS(step, num_batches)                                                   \
-    ->Args({step, num_batches})->ArgNames({"step", "number of batches"})
