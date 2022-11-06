@@ -1,0 +1,24 @@
+name: multi_build
+
+on:
+  pull_request:
+    types:
+      - labeled
+
+jobs:
+  build-matrix:
+    if: github.event.label.name == 'multi-build'
+    name: build matrix
+    strategy:
+      matrix:
+        os: [rockylinux:8, ubuntu:xenail, ubuntu:bionic, ubuntu:jammy]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.os }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: make unit_test

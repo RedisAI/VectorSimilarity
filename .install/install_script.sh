@@ -4,6 +4,7 @@ VERSION=${VERSION#"VERSION_ID="}
 OS_NAME=$(grep '^NAME' /etc/os-release | sed 's/"//g')
 OS_NAME=${OS_NAME#"NAME="}
 OS=${OS_NAME,,}_${VERSION}
+OS=${OS// /'_'}
 echo $OS
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
