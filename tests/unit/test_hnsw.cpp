@@ -1952,17 +1952,19 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
     size_t dim = 4;
     size_t n = 1000;
     size_t n_labels[] = {n, 100};
-    size_t M = 8;
-    size_t ef = 10;
+    size_t M_serialized = 8;
+    size_t M_param = 5;
+    size_t ef_serialized = 10;
+    size_t ef_param = 12;
     bool is_multi[] = {false, true};
     std::string multilToString[] = {"single", "multi_100labels_"};
 
     HNSWParams params{.type = TypeParam::get_index_type(),
                       .dim = dim,
                       .metric = VecSimMetric_L2,
-                      .M = M,
-                      .efConstruction = ef,
-                      .efRuntime = ef};
+                      .M = M_param,
+                      .efConstruction = ef_param,
+                      .efRuntime = ef_param};
     for (size_t i = 0; i < 2; ++i) {
         // Set index type.
         params.multi = is_multi[i];
@@ -1970,6 +1972,13 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
                          VecSimType_ToString(TypeParam::get_index_type()) + "_" +
                          multilToString[i] + ".hnsw_v1";
+
+        // Try to load with an invalid type
+        params.type = VecSimType_INVALID;
+        ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(file_name, &params), std::runtime_error,
+                                 "Cannot load index: bad index data type");
+        // Reatore value.
+        params.type = TypeParam::get_index_type();
 
         // Create new index from file
         VecSimIndex *serialized_index = HNSWFactory::NewIndex(file_name, &params);
@@ -1980,12 +1989,21 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
 
         VecSimIndexInfo info2 = VecSimIndex_Info(serialized_index);
         ASSERT_EQ(info2.algo, VecSimAlgo_HNSWLIB);
-        ASSERT_EQ(info2.hnswInfo.M, M);
+        // Check that M is taken from file and not from @params.
+        ASSERT_EQ(info2.hnswInfo.M, M_serialized);
+        ASSERT_NE(info2.hnswInfo.M, M_param);
+
         ASSERT_EQ(info2.hnswInfo.isMulti, is_multi[i]);
+
         // Check it was intialized with the default blockSize value.
         ASSERT_EQ(info2.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
-        ASSERT_EQ(info2.hnswInfo.efConstruction, ef);
-        ASSERT_EQ(info2.hnswInfo.efRuntime, ef);
+
+        // Check that ef is taken from file and not from @params.
+        ASSERT_EQ(info2.hnswInfo.efConstruction, ef_serialized);
+        ASSERT_EQ(info2.hnswInfo.efRuntime, ef_serialized);
+        ASSERT_NE(info2.hnswInfo.efRuntime, ef_param);
+        ASSERT_NE(info2.hnswInfo.efConstruction, ef_param);
+
         ASSERT_EQ(info2.hnswInfo.indexSize, n);
         ASSERT_EQ(info2.hnswInfo.metric, VecSimMetric_L2);
         ASSERT_EQ(info2.hnswInfo.type, TypeParam::get_index_type());
