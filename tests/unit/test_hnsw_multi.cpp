@@ -1736,7 +1736,7 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(HNSWMultiTest, mark_delete) {
+TYPED_TEST(HNSWMultiTest, markDelete) {
     size_t n_labels = 100;
     size_t per_label = 10;
     size_t k = 11;
@@ -1749,8 +1749,8 @@ TYPED_TEST(HNSWMultiTest, mark_delete) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
     // Try marking and unmarking non-existing label
-    ASSERT_NO_THROW(this->CastToHNSW(index)->markDelete(0));
-    ASSERT_NO_THROW(this->CastToHNSW(index)->unmarkDelete(0));
+    ASSERT_FALSE(this->CastToHNSW(index)->markDelete(0));
+    ASSERT_FALSE(this->CastToHNSW(index)->unmarkDelete(0));
 
     for (size_t i = 0; i < n_labels; i++) {
         for (size_t j = 0; j < per_label; j++)

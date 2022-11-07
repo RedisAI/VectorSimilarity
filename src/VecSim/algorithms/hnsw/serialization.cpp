@@ -69,13 +69,13 @@ void HNSWIndexSerializer::saveGraph(std::ofstream &output) {
     // store (<size>, data), where <size> is the data size, and the data is the concatenated
     // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
     for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
-        unsigned int linkListSize =
+        unsigned int llSize =
             hnsw_index->element_levels_[i] > 0
                 ? hnsw_index->size_links_per_element_ * hnsw_index->element_levels_[i]
                 : 0;
-        writeBinaryPOD(output, linkListSize);
-        if (linkListSize)
-            output.write(hnsw_index->linkLists_[i], linkListSize);
+        writeBinaryPOD(output, llSize);
+        if (llSize)
+            output.write(hnsw_index->linkLists_[i], llSize);
         for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
             auto *incoming_edges_ptr = hnsw_index->getIncomingEdgesPtr(i, j);
             unsigned int set_size = incoming_edges_ptr->size();
@@ -129,14 +129,14 @@ void HNSWIndexSerializer::loadIndex_v1(std::ifstream &input) {
         auto meta = hnsw_index->get_linklist0(i);
         *(meta) = *(meta - 1);
         *(meta - 1) = 0;
-        size_t linkListSize = hnsw_index->element_levels_[i] * hnsw_index->size_links_per_element_;
-        if (linkListSize) {
-            char *levels_data = (char *)hnsw_index->allocator->allocate(linkListSize);
+        size_t llSize = hnsw_index->element_levels_[i] * hnsw_index->size_links_per_element_;
+        if (llSize) {
+            char *levels_data = (char *)hnsw_index->allocator->allocate(llSize);
             for (size_t offset = 0; offset < hnsw_index->element_levels_[i]; offset++) {
                 memcpy(levels_data + offset * hnsw_index->size_links_per_element_ + 2,
                        hnsw_index->linkLists_[i] + offset * old_size_links_per_element_ + 4,
                        hnsw_index->size_links_per_element_ - 2);
-                *(linklistsizeint *)(levels_data + offset * hnsw_index->size_links_per_element_) =
+                *(linkListSize *)(levels_data + offset * hnsw_index->size_links_per_element_) =
                     *(idType *)(hnsw_index->linkLists_[i] + offset * old_size_links_per_element_);
             }
             hnsw_index->allocator->free_allocation(hnsw_index->linkLists_[i]);
@@ -227,18 +227,18 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
     for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
         reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)
             ->label_lookup_[hnsw_index->getExternalLabel(i)] = i;
-        unsigned int linkListSize;
-        readBinaryPOD(input, linkListSize);
-        if (linkListSize == 0) {
+        unsigned int llSize;
+        readBinaryPOD(input, llSize);
+        if (llSize == 0) {
             hnsw_index->element_levels_[i] = 0;
             hnsw_index->linkLists_[i] = nullptr;
         } else {
-            hnsw_index->element_levels_[i] = linkListSize / hnsw_index->size_links_per_element_;
-            hnsw_index->linkLists_[i] = (char *)hnsw_index->allocator->allocate(linkListSize);
+            hnsw_index->element_levels_[i] = llSize / hnsw_index->size_links_per_element_;
+            hnsw_index->linkLists_[i] = (char *)hnsw_index->allocator->allocate(llSize);
             if (hnsw_index->linkLists_[i] == nullptr)
                 throw std::runtime_error(
                     "Not enough memory: loadIndex failed to allocate linklist");
-            input.read(hnsw_index->linkLists_[i], linkListSize);
+            input.read(hnsw_index->linkLists_[i], llSize);
             for (size_t j = 1; j <= hnsw_index->element_levels_[i]; j++) {
                 auto *incoming_edges =
                     new (hnsw_index->allocator) vecsim_stl::vector<idType>(hnsw_index->allocator);
@@ -311,7 +311,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
     size_t incoming_edges_sets_sizes = 0;
     for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
         for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
-            linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
+            linkListSize *ll_cur = hnsw_index->get_linklist_at_level(i, l);
             unsigned short size = hnsw_index->getListCount(ll_cur);
             auto *data = (idType *)(ll_cur + 1);
             std::set<idType> s;
@@ -326,7 +326,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                linklistsizeint *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
+                linkListSize *ll_other = hnsw_index->get_linklist_at_level(data[j], l);
                 unsigned short size_other = hnsw_index->getListCount(ll_other);
                 auto *data_other = (idType *)(ll_other + 1);
                 for (int r = 0; r < size_other; r++) {

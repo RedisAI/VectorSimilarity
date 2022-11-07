@@ -1940,7 +1940,7 @@ TEST_F(HNSWGeneralTest, hnsw_serialization_v1) {
     serializer.reset();
 }
 
-TYPED_TEST(HNSWTest, mark_delete) {
+TYPED_TEST(HNSWTest, markDelete) {
     size_t n = 100;
     size_t k = 11;
     size_t dim = 4;
@@ -1950,8 +1950,8 @@ TYPED_TEST(HNSWTest, mark_delete) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
     // Try marking and unmarking non-existing label
-    ASSERT_NO_THROW(this->CastToHNSW(index)->markDelete(0));
-    ASSERT_NO_THROW(this->CastToHNSW(index)->unmarkDelete(0));
+    ASSERT_FALSE(this->CastToHNSW(index)->markDelete(0));
+    ASSERT_FALSE(this->CastToHNSW(index)->unmarkDelete(0));
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);

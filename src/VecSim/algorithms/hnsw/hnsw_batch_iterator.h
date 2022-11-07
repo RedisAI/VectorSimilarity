@@ -108,8 +108,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        linklistsizeint *cur_node_links_header =
-            this->index->get_linklist_at_level(curr_node_id, 0);
+        linkListSize *cur_node_links_header = this->index->get_linklist_at_level(curr_node_id, 0);
         unsigned short links_num = this->index->getListCount(cur_node_links_header);
         auto *node_links = (idType *)(cur_node_links_header + 1);
 
