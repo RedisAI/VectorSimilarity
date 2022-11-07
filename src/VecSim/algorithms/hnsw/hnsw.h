@@ -494,7 +494,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             if (top_candidates.size() > ef)
                 top_candidates.pop();
 
-            lowerBound = top_candidates.top().first;
+            if (!has_marked_deleted || !top_candidates.empty())
+                lowerBound = top_candidates.top().first;
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
