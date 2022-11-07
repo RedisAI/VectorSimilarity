@@ -527,7 +527,6 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 #endif
-
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.

@@ -113,8 +113,8 @@ void BM_VecSimBasics::Initialize() {
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
-    BM_VecSimBasics::queries = load_test_vectors(BM_VecSimBasics::test_vectors_file, BM_VecSimBasics::n_queries,
-                      BM_VecSimBasics::dim);
+    BM_VecSimBasics::queries = load_test_vectors(BM_VecSimBasics::test_vectors_file,
+                                                 BM_VecSimBasics::n_queries, BM_VecSimBasics::dim);
 }
 
 void BM_VecSimBasics::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
