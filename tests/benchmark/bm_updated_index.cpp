@@ -12,7 +12,7 @@ size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
 VecSimIndex *BM_VecSimBasics::bf_index;
 VecSimIndex *BM_VecSimBasics::hnsw_index;
-std::vector<std::vector<float>> *BM_VecSimBasics::queries;
+std::vector<std::vector<float>> BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 65;
 size_t BM_VecSimBasics::EF_C = 512;
 size_t BM_VecSimBasics::block_size = 1024;
@@ -94,7 +94,7 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(bf_index, queries[iter % n_queries].data(), k, nullptr, BY_SCORE);
         iter++;
     }
 }
@@ -103,7 +103,7 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)(benchmark::State &st)
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index_updated, (*queries)[iter % n_queries].data(), k, nullptr,
+        VecSimIndex_TopKQuery(bf_index_updated, queries[iter % n_queries].data(), k, nullptr,
                               BY_SCORE);
         iter++;
     }
