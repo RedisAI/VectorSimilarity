@@ -5,11 +5,7 @@
 using namespace tiered_index_mock;
 
 template <typename index_type_t>
-class HNSWTieredIndexTest : public ::testing::Test {
-public:
-    using data_t = typename index_type_t::data_t;
-    using dist_t = typename index_type_t::dist_t;
-};
+class HNSWTieredIndexTest : public ::testing::Test {};
 
 TYPED_TEST_SUITE(HNSWTieredIndexTest, DataTypeSet);
 

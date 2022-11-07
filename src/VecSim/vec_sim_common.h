@@ -92,20 +92,24 @@ typedef struct {
 
 typedef struct {
     HNSWParams hnswParams;
-    void *jobQueue;
-    SubmitCB submitCb;
-    void *memoryCtx;
-    UpdateMemoryCB UpdateMemCb;
+    void *jobQueue;    // External queue that holds the jobs.
+    SubmitCB submitCb; // A callback that submits an array of jobs into a given jobQueue.
+    void *memoryCtx;   // External context that stores the index memory consumption.
+    UpdateMemoryCB
+        UpdateMemCb; // A callback that updates the memoryCtx with a given memory (number).
 } TieredHNSWParams;
 
 typedef enum { HNSW_INSERT_JOB, HNSW_DELETE_JOB } HNSWJobType;
 
+/**
+ * Definition of HNSW job structure for asynchronous tiered index.
+ */
 typedef struct HNSWJob {
     HNSWJobType jobType;
     labelType label;
     void *blob;
     void *index;
-    JobCallback Execute;
+    JobCallback Execute; // A callback that receives an HNSWJob as its input and executes the job.
 } HNSWJob;
 
 typedef struct {
