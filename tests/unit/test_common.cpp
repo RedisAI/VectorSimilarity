@@ -386,35 +386,18 @@ protected:
     std::string file_name;
 };
 TEST_F(SerializerTest, HNSWSerialzer) {
-    size_t dim = 4;
-    size_t n = 1000;
-    size_t M = 8;
-    size_t ef = 8;
-
-    HNSWParams params{.type = VecSimType_FLOAT32,
-                      .dim = dim,
-                      .metric = VecSimMetric_L2,
-                      .initialCapacity = n,
-                      .blockSize = 1,
-                      .M = M,
-                      .efConstruction = ef,
-                      .efRuntime = ef};
-    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
-    HNSWIndex<float, float> *hnsw_index = reinterpret_cast<HNSWIndex<float, float> *>(index);
 
     this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/bad_index.hnsw";
 
-    // Try to Save index with an invalid version.
-    EXPECT_THROW(hnsw_index->saveIndex(this->file_name, Serializer::EncodingVersion_INVALID),
-                 std::runtime_error);
-
-    // nothing should happen to the file.
-    ASSERT_EQ(this->GetFileSize(), 0);
+    // Try to load an index from a file that doesnt exist.
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot open file");
 
     std::ofstream output(this->file_name, std::ios::binary);
     // Write invalid encoding version
     Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_INVALID);
-    EXPECT_THROW(HNSWFactory::NewIndex(this->file_name), std::runtime_error);
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot load index: bad encoding version");
 
     // Test WRONG index algorithm exception
     // Use a valid version
@@ -424,8 +407,6 @@ TEST_F(SerializerTest, HNSWSerialzer) {
     Serializer::writeBinaryPOD(output, VecSimAlgo_BF);
     output.close();
 
-    EXPECT_THROW(HNSWFactory::NewIndex(this->file_name), std::runtime_error);
-
-    // Clean-up.
-    VecSimIndex_Free(index);
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot load index: bad algorithm type");
 }

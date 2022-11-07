@@ -48,12 +48,6 @@ public:
         spaces::SetDistFunc(metric, dim, &dist_func);
     }
 
-#ifdef BUILD_TESTS
-    VecSimIndexAbstract(std::shared_ptr<VecSimAllocator> allocator)
-        : VecSimIndexInterface(allocator), last_mode(EMPTY_MODE) {}
-
-#endif
-
     /**
      * @brief Destroy the Vec Sim Index object
      *

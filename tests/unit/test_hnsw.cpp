@@ -1910,7 +1910,7 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
         VecSimIndex_Free(index);
 
         // Load the index from the file.
-        VecSimIndex *serialized_index = HNSWFactory::NewIndex(file_name, &params);
+        VecSimIndex *serialized_index = HNSWFactory::NewIndex(file_name);
         auto *serialized_hnsw_index = this->CastToHNSW(serialized_index);
 
         // Verify that the index was loaded as expected.
@@ -1954,19 +1954,15 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
     size_t n_labels[] = {n, 100};
     size_t M = 8;
     size_t ef = 10;
-    double epsilon = 0.004;
-    size_t blockSize = 1;
     bool is_multi[] = {false, true};
     std::string multilToString[] = {"single", "multi_100labels_"};
 
     HNSWParams params{.type = TypeParam::get_index_type(),
                       .dim = dim,
                       .metric = VecSimMetric_L2,
-                      .blockSize = blockSize,
                       .M = M,
                       .efConstruction = ef,
-                      .efRuntime = ef,
-                      .epsilon = epsilon};
+                      .efRuntime = ef};
     for (size_t i = 0; i < 2; ++i) {
         // Set index type.
         params.multi = is_multi[i];
@@ -1986,7 +1982,8 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         ASSERT_EQ(info2.algo, VecSimAlgo_HNSWLIB);
         ASSERT_EQ(info2.hnswInfo.M, M);
         ASSERT_EQ(info2.hnswInfo.isMulti, is_multi[i]);
-        ASSERT_EQ(info2.hnswInfo.blockSize, blockSize);
+        // Check it was intialized with the default blockSize value.
+        ASSERT_EQ(info2.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(info2.hnswInfo.efConstruction, ef);
         ASSERT_EQ(info2.hnswInfo.efRuntime, ef);
         ASSERT_EQ(info2.hnswInfo.indexSize, n);
@@ -1994,7 +1991,8 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         ASSERT_EQ(info2.hnswInfo.type, TypeParam::get_index_type());
         ASSERT_EQ(info2.hnswInfo.dim, dim);
         ASSERT_EQ(info2.hnswInfo.indexLabelCount, n_labels[i]);
-        ASSERT_EQ(info2.hnswInfo.epsilon, epsilon);
+        // Check it was intialized with the default epsilon value.
+        ASSERT_EQ(info2.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
 
         // Check the functionality of the loaded index.
 

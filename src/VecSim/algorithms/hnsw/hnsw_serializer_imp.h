@@ -29,9 +29,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
         throw std::runtime_error("Not enough memory: HNSWIndex failed to allocate linklists");
 }
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output, EncodingVersion version) {
-    // We already checked in the serializer that this is a valid version number.
-    // Now checking the version number to decide which data to write.
+void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
 
     this->saveIndexFields(output);
     this->saveGraph(output);
@@ -166,7 +164,7 @@ void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
         input.ignore(sizeof(unsigned long));
     }
 
-    // for V2 and up we don't serialize the level generator, so we just returb and
+    // for V2 and up we don't serialize the level generator, so we just return and
     // continue to read the file.
 }
 template <typename DataType, typename DistType>

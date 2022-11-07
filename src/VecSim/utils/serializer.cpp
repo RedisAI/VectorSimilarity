@@ -4,15 +4,14 @@
 #include "VecSim/utils/serializer.h"
 
 // Persist index into a file in the specified location.
-void Serializer::saveIndex(const std::string &location, EncodingVersion version) {
-    // Only V1 and V2 are supported
-    if (version >= EncodingVersion_INVALID) {
-        throw std::runtime_error("Cannot load index: bad encoding version");
-    }
+void Serializer::saveIndex(const std::string &location) {
+
+    // Serializing with V2.
+    EncodingVersion version = EncodingVersion_V2;
 
     std::ofstream output(location, std::ios::binary);
     writeBinaryPOD(output, version);
-    saveIndexIMP(output, version);
+    saveIndexIMP(output);
     output.close();
 }
 

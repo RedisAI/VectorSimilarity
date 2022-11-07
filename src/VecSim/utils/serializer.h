@@ -13,8 +13,9 @@ public:
     } EncodingVersion;
 
     Serializer(EncodingVersion version = EncodingVersion_V2) : m_version(version) {}
-    // Persist index into a file in the specified location.
-    void saveIndex(const std::string &location, EncodingVersion version = EncodingVersion_V2);
+
+    // Persist index into a file in the specified location with V2 encoding routine.
+    void saveIndex(const std::string &location);
 
     static EncodingVersion ReadVersion(std::ifstream &input);
 
@@ -33,5 +34,5 @@ protected:
     EncodingVersion m_version;
 
     // Index memory size might be changed during index saving.
-    virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) = 0;
+    virtual void saveIndexIMP(std::ofstream &output) = 0;
 };

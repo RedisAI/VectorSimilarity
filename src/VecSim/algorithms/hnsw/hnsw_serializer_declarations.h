@@ -9,7 +9,7 @@ HNSWIndex(std::ifstream &input, const HNSWParams *params,
 HNSWIndexMetaData checkIntegrity() const;
 
 // Index memory size might be changed during index saving.
-virtual void saveIndexIMP(std::ofstream &output, EncodingVersion version) override;
+virtual void saveIndexIMP(std::ofstream &output) override;
 
 // used by index factory to load nodes connections
 void restoreGraph(std::ifstream &input);

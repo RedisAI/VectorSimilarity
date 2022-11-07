@@ -111,3 +111,18 @@ inline double GetInfVal(VecSimType type) {
         throw std::invalid_argument("This type is not supported");
     }
 }
+
+// Test a specific exception type is thrown and prints the right message.
+#define ASSERT_EXCEPTION_MESSAGE(VALUE, EXCEPTION_TYPE, MESSAGE)                                   \
+    try {                                                                                          \
+        VALUE;                                                                                     \
+        FAIL() << "exception '" << MESSAGE << "' not thrown at all!";                              \
+    } catch (const EXCEPTION_TYPE &e) {                                                            \
+        EXPECT_EQ(std::string(MESSAGE), e.what())                                                  \
+            << " exception message is incorrect. Expected the following "                          \
+               "message:\n\n"                                                                      \
+            << MESSAGE << "\n";                                                                    \
+    } catch (...) {                                                                                \
+        FAIL() << "exception '" << MESSAGE << "' not thrown with expected type '"                  \
+               << #EXCEPTION_TYPE << "'!";                                                         \
+    }

@@ -146,13 +146,24 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
     return index;
 }
 
-void InitializeParams(std::ifstream &input, HNSWParams &params) {
+// Intialize @params from file for V2
+static void InitializeParams(std::ifstream &input, HNSWParams &params) {
     Serializer::readBinaryPOD(input, params.dim);
     Serializer::readBinaryPOD(input, params.type);
     Serializer::readBinaryPOD(input, params.metric);
     Serializer::readBinaryPOD(input, params.blockSize);
     Serializer::readBinaryPOD(input, params.multi);
     Serializer::readBinaryPOD(input, params.epsilon);
+}
+
+// Intialize @params for V1
+static void InitializeParams(HNSWParams &file_params, const HNSWParams *params) {
+    file_params.type = params->type;
+    file_params.dim = params->dim;
+    file_params.metric = params->metric;
+    file_params.multi = params->multi;
+    file_params.blockSize = params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE;
+    file_params.epsilon = params->epsilon ? params->epsilon : HNSW_DEFAULT_EPSILON;
 }
 
 VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
@@ -179,12 +190,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
     }
     case Serializer::EncodingVersion_V1: {
         assert(params);
-        file_params.type = params->type;
-        file_params.dim = params->dim;
-        file_params.metric = params->metric;
-        file_params.multi = params->multi;
-        file_params.blockSize = params->blockSize;
-        file_params.epsilon = params->epsilon;
+        InitializeParams(file_params, params);
         break;
     }
     // Something is wrong
@@ -200,7 +206,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
     } else if (file_params.type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(input, &file_params, allocator, version);
     } else {
-        throw std::runtime_error("Cannot load index: bad index type");
+        throw std::runtime_error("Cannot load index: bad index data type");
     }
 }
 #endif
