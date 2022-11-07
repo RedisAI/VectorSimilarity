@@ -14,6 +14,14 @@ message("# VectorSimilarity binroot: " ${binroot})
 message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 message("# VectorSimilarity build test: " ${VECSIM_BUILD_TESTS})
 
+if (DEFINED ENV{OPT})
+	if ($ENV{OPT} EQUAL 1)
+		ADD_DEFINITIONS(-DOPT=1)
+	elseif($ENV{OPT} EQUAL 2)
+		ADD_DEFINITIONS(-DOPT=2)
+	endif()
+endif()
+
 include(${root}/cmake/common.cmake)
 
 if (USE_ASAN OR USE_MSAN)

@@ -122,14 +122,23 @@ public:
         auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
         hnsw->setEf(ef);
     }
+
     void saveIndex(const std::string &location) {
         auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
         serializer.saveIndex(location);
     }
-
     void loadIndex(const std::string &location) {
         auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
         serializer.loadIndex(location);
+    }
+
+    void markDelete(size_t id) {
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        hnsw->markDelete(id);
+    }
+    void unmarkDelete(size_t id) {
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        hnsw->unmarkDelete(id);
     }
 };
 
@@ -220,7 +229,9 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("params"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
         .def("save_index", &PyHNSWLibIndex::saveIndex)
-        .def("load_index", &PyHNSWLibIndex::loadIndex);
+        .def("load_index", &PyHNSWLibIndex::loadIndex)
+        .def("mark_delete", &PyHNSWLibIndex::markDelete)
+        .def("unmark_delete", &PyHNSWLibIndex::unmarkDelete);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

@@ -60,6 +60,38 @@ void BM_VecSimBasics::Initialize() {
 
     // Load pre-generated HNSW index. Index file path is relative to repository root dir.
     load_HNSW_index(hnsw_index_file, hnsw_index);
+
+#ifdef PATTERN
+    printf("USING PATTERN %d\n", PATTERN);
+#if PATTERN == 1
+    for (size_t i = 0; i < n_vectors / 2; ++i) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
+#elif PATTERN == 2
+    for (size_t i = 0; i < n_vectors / 4; ++i) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
+#elif PATTERN == 3
+    for (size_t i = 0; i < n_vectors / 10; ++i) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
+#elif PATTERN == 4
+    for (size_t i = n_vectors / 2; i < n_vectors; ++i) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
+#elif PATTERN == 5
+    for (size_t i = n_vectors - (n_vectors / 4); i < n_vectors; ++i) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
+#elif PATTERN == 6
+    for (size_t i = n_vectors - (n_vectors / 10); i < n_vectors; ++i) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
+#else
+    printf("Unknown pattern. running on entire data.\n");
+#endif
+#endif
+
     size_t ef_r = 10;
     reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->setEf(ef_r);
 
@@ -73,9 +105,11 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob =
-            reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
-        VecSimIndex_AddVector(bf_index, blob, i);
+        if (!reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->isMarkedDeleted(i)) {
+            char *blob =
+                reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
+            VecSimIndex_AddVector(bf_index, blob, i);
+        }
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.

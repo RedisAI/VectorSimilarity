@@ -462,6 +462,54 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             continue;
 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef OPT
+        if (!has_marked_deleted || !isMarkedDeleted(candidate_id)) {
+            char *currObj1 = (getDataByInternalId(candidate_id));
+
+            DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
+            if (lowerBound > dist1 || top_candidates.size() < ef) {
+                candidate_set.emplace(-dist1, candidate_id);
+                emplaceToHeap(top_candidates, dist1, candidate_id);
+
+                if (top_candidates.size() > ef)
+                    top_candidates.pop();
+
+                if (!has_marked_deleted || !top_candidates.empty())
+                    lowerBound = top_candidates.top().first;
+            }
+        } else {
+            linklistsizeint *deleted_ll = get_linklist_at_level(candidate_id, layer);
+            size_t deleted_links_num = getListCount(deleted_ll);
+            auto *deleted_links = (idType *)(deleted_ll + 1);
+            for (size_t i = 0; i < deleted_links_num; i++) {
+                idType cur_deleted_neighbor = deleted_links[i];
+                this->visited_nodes_handler->tagNode(cur_deleted_neighbor, visited_tag);
+                if (!isMarkedDeleted(cur_deleted_neighbor)) {
+                    char *currObj1 = (getDataByInternalId(cur_deleted_neighbor));
+                    DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
+                    if (lowerBound > dist1 || top_candidates.size() < ef) {
+                        candidate_set.emplace(-dist1, cur_deleted_neighbor);
+                        emplaceToHeap(top_candidates, dist1, cur_deleted_neighbor);
+
+                        if (top_candidates.size() > ef)
+                            top_candidates.pop();
+
+                        lowerBound = top_candidates.top().first;
+#if OPT == 1
+                        break;
+#endif
+                    }
+#if OPT == 2
+                    break;
+#endif
+                }
+            }
+        }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+#else
         char *currObj1 = (getDataByInternalId(candidate_id));
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
@@ -477,6 +525,9 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             if (!has_marked_deleted || !top_candidates.empty())
                 lowerBound = top_candidates.top().first;
         }
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+#endif
+
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.

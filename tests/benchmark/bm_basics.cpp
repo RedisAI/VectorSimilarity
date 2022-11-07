@@ -196,24 +196,24 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Memory_HNSW)(benchmark::State &st) {
     st.counters["memory"] = (double)VecSimIndex_Info(hnsw_index).hnswInfo.memory;
 }
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_FLAT)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_HNSW)->Iterations(1);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_FLAT)->Iterations(1);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_HNSW)->Iterations(1);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)
-    ->Unit(benchmark::kMillisecond)
-    ->Iterations((long)BM_VecSimBasics::block_size);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorHNSW)
+//     ->Unit(benchmark::kMillisecond)
+//     ->Iterations((long)BM_VecSimBasics::block_size);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)
-    ->Unit(benchmark::kMillisecond)
-    ->Iterations((long)BM_VecSimBasics::block_size);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVectorBF)
+//     ->Unit(benchmark::kMillisecond)
+//     ->Iterations((long)BM_VecSimBasics::block_size);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)
-    ->Unit(benchmark::kMillisecond)
-    ->Iterations((long)BM_VecSimBasics::block_size);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorHNSW)
+//     ->Unit(benchmark::kMillisecond)
+//     ->Iterations((long)BM_VecSimBasics::block_size);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)
-    ->Unit(benchmark::kMillisecond)
-    ->Iterations((long)BM_VecSimBasics::block_size);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVectorBF)
+//     ->Unit(benchmark::kMillisecond)
+//     ->Iterations((long)BM_VecSimBasics::block_size);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
     ->Arg(10)
@@ -227,36 +227,39 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_BF)
 BENCHMARK_REGISTER_F(BM_VecSimBasics, TopK_HNSW)
 // {ef_runtime, k} (recall that always ef_runtime >= k)
 HNSW_TOP_K_ARGS(10, 10)
+HNSW_TOP_K_ARGS(20, 10)
+HNSW_TOP_K_ARGS(50, 10)
+HNSW_TOP_K_ARGS(100, 10)
 HNSW_TOP_K_ARGS(200, 10)
 HNSW_TOP_K_ARGS(100, 100)
 HNSW_TOP_K_ARGS(200, 100)
 HNSW_TOP_K_ARGS(500, 500)->Iterations(100)->Unit(benchmark::kMillisecond);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
-    // The actual radius will be the given arg divided by 100, since arg must be an integer.
-    ->Arg(20)
-    ->ArgName("radiusX100")
-    ->Arg(35)
-    ->ArgName("radiusX100")
-    ->Arg(50)
-    ->ArgName("radiusX100")
-    ->Unit(benchmark::kMillisecond);
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_BF)
+//     // The actual radius will be the given arg divided by 100, since arg must be an integer.
+//     ->Arg(20)
+//     ->ArgName("radiusX100")
+//     ->Arg(35)
+//     ->ArgName("radiusX100")
+//     ->Arg(50)
+//     ->ArgName("radiusX100")
+//     ->Unit(benchmark::kMillisecond);
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
-// {radius*100, epsilon*1000}
-// The actual radius will be the given arg divided by 100, and the actual epsilon values
-// will be the given arg divided by 1000.
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, Range_HNSW)
+// // {radius*100, epsilon*1000}
+// // The actual radius will be the given arg divided by 100, and the actual epsilon values
+// // will be the given arg divided by 1000.
 #define HNSW_RANGE_ARGS(radius, epsilon)                                                           \
     ->Args({radius, epsilon})->ArgNames({"radiusX100", "epsilonX1000"})
 
-HNSW_RANGE_ARGS(20, 1)
-HNSW_RANGE_ARGS(20, 10)
-HNSW_RANGE_ARGS(20, 100)
-HNSW_RANGE_ARGS(35, 1)
-HNSW_RANGE_ARGS(35, 10)
-HNSW_RANGE_ARGS(35, 100)
-HNSW_RANGE_ARGS(50, 1)
-HNSW_RANGE_ARGS(50, 10)
-HNSW_RANGE_ARGS(50, 100)->Iterations(100)->Unit(benchmark::kMillisecond);
+// HNSW_RANGE_ARGS(20, 1)
+// HNSW_RANGE_ARGS(20, 10)
+// HNSW_RANGE_ARGS(20, 100)
+// HNSW_RANGE_ARGS(35, 1)
+// HNSW_RANGE_ARGS(35, 10)
+// HNSW_RANGE_ARGS(35, 100)
+// HNSW_RANGE_ARGS(50, 1)
+// HNSW_RANGE_ARGS(50, 10)
+// HNSW_RANGE_ARGS(50, 100)->Iterations(100)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
