@@ -480,7 +480,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
                     lowerBound = top_candidates.top().first;
             }
         } else {
-            linklistsizeint *deleted_ll = get_linklist_at_level(candidate_id, layer);
+            linkListSize *deleted_ll = get_linklist_at_level(candidate_id, layer);
             size_t deleted_links_num = getListCount(deleted_ll);
             auto *deleted_links = (idType *)(deleted_ll + 1);
             for (size_t i = 0; i < deleted_links_num; i++) {
