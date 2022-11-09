@@ -14,14 +14,10 @@ message("# VectorSimilarity binroot: " ${binroot})
 message("# VectorSimilarity static build: " ${VECSIM_STATIC})
 message("# VectorSimilarity build test: " ${VECSIM_BUILD_TESTS})
 
-if (DEFINED ENV{OPT})
-	if ($ENV{OPT} EQUAL 1)
-		ADD_DEFINITIONS(-DOPT=1)
-	elseif($ENV{OPT} EQUAL 2)
-		ADD_DEFINITIONS(-DOPT=2)
-	elseif($ENV{OPT} EQUAL 3)
-		ADD_DEFINITIONS(-DOPT=3)
-	endif()
+if (DEFINED ENV{OPT}
+	AND $ENV{OPT} GREATER_EQUAL 1
+	AND $ENV{OPT} LESS_EQUAL 3)
+	ADD_DEFINITIONS(-DOPT=$ENV{OPT})
 endif()
 
 include(${root}/cmake/common.cmake)
