@@ -15,8 +15,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
-      # - name: install dependencies
-      #   run: .install/install_script.sh
+      - name: install dependencies
+        run: .install/install_script.sh
       - name: set GCC env variables on rocky8
         run: |
           echo CXX=/opt/rh/gcc-toolset-9/root/usr/bin/g++ >> ~/.bashrc
