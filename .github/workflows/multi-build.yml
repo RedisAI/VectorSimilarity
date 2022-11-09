@@ -31,42 +31,42 @@ jobs:
       - name: unit tests
         run: make unit_test
 
-    bionic:
-      if: github.event.label.name == 'multi-build'
-      runs-on: ubuntu-latest
-      container:
-        image: ubuntu:bionic
-      steps:
-        - name: checkout
-          uses: actions/checkout@v2
-        - name: install dependencies
-          run: .install/install_script.sh
-        - name: unit tests
-          run: make unit_test
-    
-    xenial:
-      if: github.event.label.name == 'multi-build'
-      runs-on: ubuntu-latest
-      container:
-        image: ubuntu:bionic
-      steps:
-        - name: checkout
-          uses: actions/checkout@v2
-        - name: install dependencies
-          run: .install/install_script.sh
-        - name: unit tests
-          run: make unit_test
+  bionic:
+    if: github.event.label.name == 'multi-build'
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:bionic
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: make unit_test
+  
+  xenial:
+    if: github.event.label.name == 'multi-build'
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:bionic
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: make unit_test
 
-    jammy:
-      if: github.event.label.name == 'multi-build'
-      runs-on: ubuntu-latest
-      container:
-        image: ubuntu:jammy
-      steps:
-        - name: checkout
-          uses: actions/checkout@v2
-        - name: install dependencies
-          run: .install/install_script.sh
-        - name: unit tests
-          run: make unit_test
+  jammy:
+    if: github.event.label.name == 'multi-build'
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:jammy
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: make unit_test
 
