@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cerrno>
 #include <climits>
+#include <float.h>
 
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
@@ -27,11 +28,14 @@ const char *VecSimCommonStrings::L2_STRING = "L2";
 
 const char *VecSimCommonStrings::DIMENSION_STRING = "DIMENSION";
 const char *VecSimCommonStrings::INDEX_SIZE_STRING = "INDEX_SIZE";
+const char *VecSimCommonStrings::INDEX_LABEL_COUNT_STRING = "INDEX_LABEL_COUNT";
+const char *VecSimCommonStrings::IS_MULTI_STRING = "IS_MULTI_VALUE";
 const char *VecSimCommonStrings::MEMORY_STRING = "MEMORY";
 
 const char *VecSimCommonStrings::HNSW_EF_RUNTIME_STRING = "EF_RUNTIME";
 const char *VecSimCommonStrings::HNSW_M_STRING = "M";
 const char *VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION";
+const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 
@@ -47,21 +51,8 @@ int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryRes
 int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
     assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
            !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare floats
+    // Compare doubles
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
-
-void float_vector_normalize(float *x, size_t dim) {
-    double sum = 0;
-    for (size_t i = 0; i < dim; i++) {
-        sum += (double)x[i] * (double)x[i];
-    }
-    float norm = sqrt(sum);
-    if (norm == 0)
-        return;
-    for (size_t i = 0; i < dim; i++) {
-        x[i] = x[i] / norm;
-    }
 }
 
 void sort_results_by_id(VecSimQueryResult_List rl) {
@@ -82,6 +73,19 @@ VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long 
     // The last test checks that the entire rawParam.value was used.
     // We catch here inputs like "3.14", "123text" and so on.
     if (*val <= 0 || *val == LLONG_MAX || errno != 0 || (rawParam.value + rawParam.valLen) != ep) {
+        return VecSimParamResolverErr_BadValue;
+    }
+    return VecSimParamResolver_OK;
+}
+
+VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val) {
+    char *ep; // For checking that strtold used all rawParam.valLen chars.
+    errno = 0;
+    *val = strtod(rawParam.value, &ep);
+    // Here we verify that val is positive and strtod was successful.
+    // The last test checks that the entire rawParam.value was used.
+    // We catch here inputs like "-3.14", "123text" and so on.
+    if (*val <= 0 || *val == DBL_MAX || errno != 0 || (rawParam.value + rawParam.valLen) != ep) {
         return VecSimParamResolverErr_BadValue;
     }
     return VecSimParamResolver_OK;
@@ -143,4 +147,18 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
     default:
         return NULL;
     }
+}
+
+size_t VecSimType_sizeof(VecSimType type) {
+    switch (type) {
+    case VecSimType_FLOAT32:
+        return sizeof(float);
+    case VecSimType_FLOAT64:
+        return sizeof(double);
+    case VecSimType_INT32:
+        return sizeof(int32_t);
+    case VecSimType_INT64:
+        return sizeof(int64_t);
+    }
+    return 0;
 }

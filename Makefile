@@ -61,6 +61,7 @@ ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
 $(shell mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
 endif
 include $(ROOT)/deps/readies/mk/main
+export ROOT
 
 #----------------------------------------------------------------------------------------------
 
@@ -272,8 +273,9 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-	$(SHOW)$(BINDIR)/benchmark/bm_basics
-	$(SHOW)$(BINDIR)/benchmark/bm_batch_iterator
+	for bm_class in basics updated_index spaces batch_iterator; do \
+  		$(BINDIR)/benchmark/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
+  	done
 	$(SHOW)python3 -m tox -e benchmark
 
 toxenv:

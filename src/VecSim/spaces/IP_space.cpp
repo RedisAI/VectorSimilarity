@@ -1,59 +1,120 @@
-#include "IP_space.h"
-#include "space_aux.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
-
-InnerProductSpace::InnerProductSpace(size_t dim, std::shared_ptr<VecSimAllocator> allocator)
-    : SpaceInterface(allocator) {
-    fstdistfunc_ = InnerProduct;
-#if defined(M1)
-
-#elif defined(__x86_64__)
-    Arch_Optimization arch_opt = getArchitectureOptimization();
-    if (arch_opt == ARCH_OPT_AVX512) {
-#ifdef __AVX512F__
+#include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/IP/IP_AVX512DQ.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = InnerProductSIMD16Ext_AVX512;
-        } else {
-            fstdistfunc_ = InnerProductSIMD16ExtResiduals_AVX512;
-        }
-#endif
-    } else if (arch_opt == ARCH_OPT_AVX) {
-#ifdef __AVX__
 #include "VecSim/spaces/IP/IP_AVX.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = InnerProductSIMD16Ext_AVX;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = InnerProductSIMD4Ext_AVX;
-        } else if (dim > 16) {
-            fstdistfunc_ = InnerProductSIMD16ExtResiduals_AVX;
-        } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4ExtResiduals_AVX;
-        }
-#endif
-    } else if (arch_opt == ARCH_OPT_SSE) {
-#ifdef __SSE__
 #include "VecSim/spaces/IP/IP_SSE.h"
-        if (dim % 16 == 0) {
-            fstdistfunc_ = InnerProductSIMD16Ext_SSE;
-        } else if (dim % 4 == 0) {
-            fstdistfunc_ = InnerProductSIMD4Ext_SSE;
-        } else if (dim > 16) {
-            fstdistfunc_ = InnerProductSIMD16ExtResiduals_SSE;
-        } else if (dim > 4) {
-            fstdistfunc_ = InnerProductSIMD4ExtResiduals_SSE;
-        }
+
+namespace spaces {
+dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
+
+    dist_func_t<float> ret_dist_func = FP32_InnerProduct;
+#if defined(M1)
+#elif defined(__x86_64__)
+
+    CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
+    switch (arch_opt) {
+    case ARCH_OPT_NONE:
+        break;
+    case ARCH_OPT_AVX512_F:
+    case ARCH_OPT_AVX512_DQ:
+#ifdef __AVX512F__
+    {
+        static dist_func_t<float> dist_funcs[] = {
+            FP32_InnerProduct, FP32_InnerProductSIMD16Ext_AVX512, FP32_InnerProductSIMD4Ext_AVX512,
+            FP32_InnerProductSIMD16ExtResiduals_AVX512, FP32_InnerProductSIMD4ExtResiduals_AVX512};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
 #endif
-    }
+    case ARCH_OPT_AVX:
+#ifdef __AVX__
+    {
+        static dist_func_t<float> dist_funcs[] = {
+            FP32_InnerProduct, FP32_InnerProductSIMD16Ext_AVX, FP32_InnerProductSIMD4Ext_AVX,
+            FP32_InnerProductSIMD16ExtResiduals_AVX, FP32_InnerProductSIMD4ExtResiduals_AVX};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+
+#endif
+    case ARCH_OPT_SSE:
+#ifdef __SSE__
+    {
+        static dist_func_t<float> dist_funcs[] = {
+            FP32_InnerProduct, FP32_InnerProductSIMD16Ext_SSE, FP32_InnerProductSIMD4Ext_SSE,
+            FP32_InnerProductSIMD16ExtResiduals_SSE, FP32_InnerProductSIMD4ExtResiduals_SSE};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    } // switch
 #endif // __x86_64__
-    dim_ = dim;
-    data_size_ = dim * sizeof(float);
+    return ret_dist_func;
 }
 
-size_t InnerProductSpace::get_data_size() const { return data_size_; }
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
 
-DISTFUNC<float> InnerProductSpace::get_dist_func() const { return fstdistfunc_; }
+    dist_func_t<double> ret_dist_func = FP64_InnerProduct;
+#if defined(M1)
+#elif defined(__x86_64__)
 
-void *InnerProductSpace::get_data_dim() { return &dim_; }
+    CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
+    switch (arch_opt) {
+    case ARCH_OPT_NONE:
+        break;
+    case ARCH_OPT_AVX512_DQ:
+#ifdef __AVX512DQ__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX512, FP64_InnerProductSIMD2Ext_AVX512,
+            FP64_InnerProductSIMD8ExtResiduals_AVX512, FP64_InnerProductSIMD2ExtResiduals_AVX512};
 
-InnerProductSpace::~InnerProductSpace() = default;
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    case ARCH_OPT_AVX512_F:
+#ifdef __AVX512F__
+    {
+        // If AVX512 foundation flag is supported, but AVX512DQ isn't supported, we cannot extract
+        // 2X64-bit elements from the 512bit register, which is required when dim%8 != 0, so we can
+        // continue the vector computations by using 128 register optimization on the vectors'
+        // tails. Then, we use modified versions that split both part of the computation without
+        // using the unsupported extraction operation.
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX512,
+            FP64_InnerProductSIMD8ExtResiduals_AVX512, FP64_InnerProductSIMD2Ext_AVX512_noDQ,
+            FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    case ARCH_OPT_AVX:
+#ifdef __AVX__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX, FP64_InnerProductSIMD2Ext_AVX,
+            FP64_InnerProductSIMD8ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+
+#endif
+    case ARCH_OPT_SSE:
+#ifdef __SSE__
+    {
+        static dist_func_t<double> dist_funcs[] = {
+            FP64_InnerProduct, FP64_InnerProductSIMD8Ext_SSE, FP64_InnerProductSIMD2Ext_SSE,
+            FP64_InnerProductSIMD8ExtResiduals_SSE, FP64_InnerProductSIMD2ExtResiduals_SSE};
+
+        ret_dist_func = dist_funcs[optimization_type];
+    } break;
+#endif
+    } // switch
+#endif // __x86_64__ */
+    return ret_dist_func;
+}
+
+} // namespace spaces

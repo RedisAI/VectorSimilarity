@@ -2,32 +2,25 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
 
-VectorBlockMember::VectorBlockMember(std::shared_ptr<VecSimAllocator> allocator)
-    : VecsimBaseObject(allocator) {}
-
-VectorBlock::VectorBlock(size_t blockSize, size_t vectorSize,
+VectorBlock::VectorBlock(size_t blockSize, size_t vectorBytesCount,
                          std::shared_ptr<VecSimAllocator> allocator)
-    : VecsimBaseObject(allocator), dim(vectorSize), length(0), blockSize(blockSize) {
-    this->members =
-        (VectorBlockMember **)this->allocator->allocate(sizeof(VectorBlockMember *) * blockSize);
-    this->vectors = (float *)this->allocator->allocate(sizeof(float) * blockSize * vectorSize);
+    : VecsimBaseObject(allocator), vector_bytes_count(vectorBytesCount), length(0),
+      blockSize(blockSize) {
+    this->vectors = (char *)this->allocator->allocate(vectorBytesCount * blockSize);
 }
 
 VectorBlock::~VectorBlock() {
-    for (size_t i = 0; i < this->length; i++) {
-        delete members[i];
-    }
-    this->allocator->deallocate(members, sizeof(VectorBlockMember *) * blockSize);
-    this->allocator->deallocate(vectors, sizeof(float) * blockSize * dim);
+    this->allocator->deallocate(vectors, vector_bytes_count * blockSize);
 }
 
-void VectorBlock::addVector(VectorBlockMember *vectorBlockMember, const void *vectorData) {
-    // Mutual point both structs on each other.
-    this->members[this->length] = vectorBlockMember;
-    vectorBlockMember->block = this;
-    vectorBlockMember->index = this->length;
+void VectorBlock::addVector(const void *vectorData) {
 
     // Copy vector data and update block size.
-    memcpy(this->vectors + (this->length * this->dim), vectorData, this->dim * sizeof(float));
+    memcpy(this->vectors + (this->length * vector_bytes_count), vectorData, vector_bytes_count);
     this->length++;
+}
+
+void VectorBlock::updateVector(size_t index, const void *vector_data) {
+    char *destinaion = getVector(index);
+    memcpy(destinaion, vector_data, vector_bytes_count);
 }

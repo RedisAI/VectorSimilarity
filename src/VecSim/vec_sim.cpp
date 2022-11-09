@@ -2,9 +2,11 @@
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
+#include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include <cassert>
 #include "memory.h"
 
@@ -13,10 +15,15 @@ extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callba
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
-                                                  VecSimQueryParams *qparams, bool hybrid) {
+                                                  VecSimQueryParams *qparams,
+                                                  VecsimQueryType query_type) {
     long long num_val;
     // EF_RUNTIME is a valid parameter only in HNSW algorithm.
     if (index_type != VecSimAlgo_HNSWLIB) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
+    // EF_RUNTIME is invalid for range query
+    if (query_type == QUERY_TYPE_RANGE) {
         return VecSimParamResolverErr_UnknownParam;
     }
     if (qparams->hnswRuntimeParams.efRuntime != 0) {
@@ -31,9 +38,9 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
 }
 
 static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQueryParams *qparams,
-                                                  bool hybrid) {
+                                                  VecsimQueryType query_type) {
     long long num_val;
-    if (!hybrid) {
+    if (query_type != QUERY_TYPE_HYBRID) {
         return VecSimParamResolverErr_InvalidPolicy_NHybrid;
     }
     if (qparams->batchSize != 0) {
@@ -46,9 +53,31 @@ static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQ
     return VecSimParamResolver_OK;
 }
 
+static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRawParam rparam,
+                                                VecSimQueryParams *qparams,
+                                                VecsimQueryType query_type) {
+    double num_val;
+    // EPSILON is a valid parameter only in HNSW algorithm.
+    if (index_type != VecSimAlgo_HNSWLIB) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
+    if (query_type != QUERY_TYPE_RANGE) {
+        return VecSimParamResolverErr_InvalidPolicy_NRange;
+    }
+    if (qparams->hnswRuntimeParams.epsilon != 0) {
+        return VecSimParamResolverErr_AlreadySet;
+    }
+    if (validate_positive_double_param(rparam, &num_val) != VecSimParamResolver_OK) {
+        return VecSimParamResolverErr_BadValue;
+    }
+    qparams->hnswRuntimeParams.epsilon = num_val;
+    return VecSimParamResolver_OK;
+}
+
 static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
-                                                     VecSimQueryParams *qparams, bool hybrid) {
-    if (!hybrid) {
+                                                     VecSimQueryParams *qparams,
+                                                     VecsimQueryType query_type) {
+    if (query_type != QUERY_TYPE_HYBRID) {
         return VecSimParamResolverErr_InvalidPolicy_NHybrid;
     }
     if (qparams->searchMode != 0) {
@@ -70,10 +99,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = new (allocator) HNSWIndex(&params->hnswParams, allocator);
+            index = HNSWFactory::NewIndex(&params->hnswParams, allocator);
             break;
         case VecSimAlgo_BF:
-            index = new (allocator) BruteForceIndex(&params->bfParams, allocator);
+            index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
         default:
             break;
@@ -87,9 +116,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWIndex::estimateInitialSize(&params->hnswParams);
+        return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateInitialSize(&params->bfParams);
+        return BruteForceFactory::EstimateInitialSize(&params->bfParams);
     }
     return -1;
 }
@@ -115,24 +144,26 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWIndex::estimateElementMemory(&params->hnswParams);
+        return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceIndex::estimateElementMemory(&params->bfParams);
+        return BruteForceFactory::EstimateElementSize(&params->bfParams);
     }
     return -1;
 }
 
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
-    // TODO: need more generic
-    assert(type == VecSimType_FLOAT32);
-    float_vector_normalize((float *)blob, dim);
+    if (type == VecSimType_FLOAT32) {
+        normalizeVector<float>((float *)blob, dim);
+    } else if (type == VecSimType_FLOAT64) {
+        normalizeVector<double>((double *)blob, dim);
+    }
 }
 
 extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
-                                                       bool hybrid) {
+                                                       VecsimQueryType query_type) {
 
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
@@ -142,17 +173,22 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
         if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
-            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, hybrid)) !=
+            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, query_type)) !=
+                VecSimParamResolver_OK) {
+                return res;
+            }
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
+            if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
-            if ((res = _ResolveParams_BatchSize(rparams[i], qparams, hybrid)) !=
+            if ((res = _ResolveParams_BatchSize(rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
-            if ((res = _ResolveParams_HybridPolicy(rparams[i], qparams, hybrid)) !=
+            if ((res = _ResolveParams_HybridPolicy(rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
@@ -191,7 +227,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
 }
 
 extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                                         float radius,
+                                                         double radius,
                                                          VecSimQueryParams *queryParams,
                                                          VecSimQueryResult_Order order) {
     if (order != BY_ID && order != BY_SCORE) {

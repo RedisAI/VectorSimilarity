@@ -5,8 +5,6 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
 
-namespace hnswlib {
-
 typedef unsigned short tag_t;
 
 /**
@@ -61,5 +59,3 @@ public:
 
     ~VisitedNodesHandlerPool() override;
 };
-
-} // namespace hnswlib

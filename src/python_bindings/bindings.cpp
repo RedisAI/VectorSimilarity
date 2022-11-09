@@ -1,6 +1,6 @@
 
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/hnsw/hnsw_wrapper.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/batch_iterator.h"
 
@@ -15,13 +15,13 @@ namespace py = pybind11;
 // a tuple of two lists: (ids, scores)
 py::object wrap_results(VecSimQueryResult_List res, size_t len) {
     size_t *data_numpy_l = new size_t[len];
-    float *data_numpy_d = new float[len];
+    double *data_numpy_d = new double[len];
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {
         VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
         int id = VecSimQueryResult_GetId(item);
-        float score = VecSimQueryResult_GetScore(item);
+        double score = VecSimQueryResult_GetScore(item);
         data_numpy_d[res_ind] = score;
         data_numpy_l[res_ind++] = id;
     }
@@ -36,10 +36,10 @@ py::object wrap_results(VecSimQueryResult_List res, size_t len) {
             {len * sizeof(size_t), sizeof(size_t)}, // C-style contiguous strides for double
             data_numpy_l,                           // the data pointer
             free_when_done_l),
-        py::array_t<float>(
-            {(size_t)1, len},                     // shape
-            {len * sizeof(float), sizeof(float)}, // C-style contiguous strides for double
-            data_numpy_d,                         // the data pointer
+        py::array_t<double>(
+            {(size_t)1, len},                       // shape
+            {len * sizeof(double), sizeof(double)}, // C-style contiguous strides for double
+            data_numpy_d,                           // the data pointer
             free_when_done_d));
 }
 
@@ -73,17 +73,15 @@ public:
 
     void addVector(py::object input, size_t id) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        float *vector_data = (float *)items.data(0);
-        VecSimIndex_AddVector(index, (void *)vector_data, id);
+        VecSimIndex_AddVector(index, (void *)items.data(0), id);
     }
 
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        float *vector_data = (float *)items.data(0);
         VecSimQueryResult_List res =
-            VecSimIndex_TopKQuery(index, (void *)vector_data, k, query_params, BY_SCORE);
+            VecSimIndex_TopKQuery(index, (void *)items.data(0), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
@@ -91,11 +89,10 @@ public:
         return wrap_results(res, k);
     }
 
-    py::object range(py::object input, float radius, VecSimQueryParams *query_params) {
+    py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
         py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        float *vector_data = (float *)items.data(0);
         VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index, (void *)vector_data, radius, query_params, BY_SCORE);
+            VecSimIndex_RangeQuery(index, (void *)items.data(0), radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
@@ -113,6 +110,7 @@ protected:
     VecSimIndex *index;
 };
 
+// Currently supports only floats. TODO change after serializer refactoring
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params) {
@@ -121,19 +119,17 @@ public:
     }
 
     void setDefaultEf(size_t ef) {
-        auto *hnsw = reinterpret_cast<HNSWIndex *>(index);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
+        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
         serializer.saveIndex(location);
     }
+
     void loadIndex(const std::string &location) {
-        auto serializer =
-            hnswlib::HNSWIndexSerializer(reinterpret_cast<HNSWIndex *>(index)->getHNSWIndex());
-        auto space = reinterpret_cast<HNSWIndex *>(index)->getSpace().get();
-        serializer.loadIndex(location, space);
+        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
+        serializer.loadIndex(location);
     }
 };
 
@@ -174,16 +170,19 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("type", &HNSWParams::type)
         .def_readwrite("dim", &HNSWParams::dim)
         .def_readwrite("metric", &HNSWParams::metric)
+        .def_readwrite("multi", &HNSWParams::multi)
         .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
         .def_readwrite("M", &HNSWParams::M)
         .def_readwrite("efConstruction", &HNSWParams::efConstruction)
-        .def_readwrite("efRuntime", &HNSWParams::efRuntime);
+        .def_readwrite("efRuntime", &HNSWParams::efRuntime)
+        .def_readwrite("epsilon", &HNSWParams::epsilon);
 
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
         .def_readwrite("type", &BFParams::type)
         .def_readwrite("dim", &BFParams::dim)
         .def_readwrite("metric", &BFParams::metric)
+        .def_readwrite("multi", &BFParams::multi)
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
@@ -200,7 +199,8 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<HNSWRuntimeParams>(queryParams, "HNSWRuntimeParams")
         .def(py::init<>())
-        .def_readwrite("efRuntime", &HNSWRuntimeParams::efRuntime);
+        .def_readwrite("efRuntime", &HNSWRuntimeParams::efRuntime)
+        .def_readwrite("epsilon", &HNSWRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
         .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
