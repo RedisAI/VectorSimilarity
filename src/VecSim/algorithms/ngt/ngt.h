@@ -1,14 +1,15 @@
 #pragma once
 
-#include "visited_nodes_handler.h"
-#include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/IP_space.h"
-#include "VecSim/spaces/space_interface.h"
+#include "../hnsw/visited_nodes_handler.h"
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/vec_sim_common.h"
+#include "VecSim/vec_sim_index.h"
 
 #include <deque>
 #include <memory>
@@ -22,76 +23,71 @@
 #include <sys/resource.h>
 #include <fstream>
 
-namespace hnswlib {
-using namespace std;
+using std::pair;
 
-#define HNSW_INVALID_ID    UINT_MAX
-#define HNSW_INVALID_LEVEL SIZE_MAX
-
-typedef size_t labeltype;
-typedef unsigned int tableint;
-typedef unsigned int linklistsizeint;
+#define NGT_INVALID_ID    UINT_MAX
+#define NGT_INVALID_LEVEL SIZE_MAX
 
 typedef enum { INNER, LEAF } NodeRole;
 #define MAX_PER_LEAF 10
 // #include <functional>
 #include <forward_list>
 
-template <typename dist_t>
+template <typename DataType, typename DistType>
 class VPTree;
-template <typename dist_t>
+template <typename DataType, typename DistType>
 class HierarchicalNSW;
 
-template <typename dist_t>
+template <typename DataType, typename DistType>
 struct DistanceComparator {
     const void *pivot;
-    const DISTFUNC<dist_t> dist_func;
+    const dist_func_t<DistType> dist_func;
     const void *dfp;
-    HierarchicalNSW<dist_t> &idx;
+    HierarchicalNSW<DataType, DistType> &idx;
 
-    DistanceComparator(const void *pivot, DISTFUNC<dist_t> df, void *dfp, HierarchicalNSW<dist_t> &idx)
+    DistanceComparator(const void *pivot, dist_func_t<DistType> df, void *dfp, HierarchicalNSW<DataType, DistType> &idx)
         : pivot(pivot), dist_func(df), dfp(dfp), idx(idx) {}
-    bool operator()(tableint a, tableint b) {
+    bool operator()(idType a, idType b) {
         return dist_func(pivot, idx.getDataByInternalId(a), dfp) < dist_func(pivot, idx.getDataByInternalId(b), dfp);
     }
 };
 
 // should be able to access data by id;
-template <typename dist_t>
+template <typename DataType, typename DistType>
 struct Node : public VecsimBaseObject {
 public:
     NodeRole role;
-    vecsim_stl::forward_list<tableint>::iterator before_begin, back;
+    vecsim_stl::forward_list<idType>::iterator before_begin, back;
     size_t size;
-    Node<dist_t> *left, *right;
+    Node<DataType, DistType> *left, *right;
     void *pivot;
-    dist_t radius;
+    DistType radius;
 
 public:
-    Node(vecsim_stl::forward_list<tableint>::iterator before,
-         vecsim_stl::forward_list<tableint>::iterator back, size_t size,
+    Node(vecsim_stl::forward_list<idType>::iterator before,
+         vecsim_stl::forward_list<idType>::iterator back, size_t size,
          std::shared_ptr<VecSimAllocator> allocator);
     ~Node();
 
-    inline vecsim_stl::forward_list<tableint>::iterator begin() { return before_begin._M_next(); }
-    inline vecsim_stl::forward_list<tableint>::iterator end() { return back._M_next(); }
+    inline vecsim_stl::forward_list<idType>::iterator begin() { return before_begin._M_next(); }
+    inline vecsim_stl::forward_list<idType>::iterator end() { return back._M_next(); }
 
     void merge();
-    void split(VPTree<dist_t> &vpt);
-    void rebuild(VPTree<dist_t> &vpt);
-    inline bool has(tableint id);
+    void split(VPTree<DataType, DistType> &vpt);
+    void rebuild(VPTree<DataType, DistType> &vpt);
+    inline bool has(idType id);
     inline bool unbalanced() const;
 };
 
-template <typename dist_t>
-Node<dist_t>::Node(vecsim_stl::forward_list<tableint>::iterator before,
-                   vecsim_stl::forward_list<tableint>::iterator back, size_t size,
+template <typename DataType, typename DistType>
+Node<DataType, DistType>::Node(vecsim_stl::forward_list<idType>::iterator before,
+                   vecsim_stl::forward_list<idType>::iterator back, size_t size,
                    std::shared_ptr<VecSimAllocator> allocator)
     : VecsimBaseObject(allocator), role(LEAF), before_begin(before), back(back), size(size),
       left(NULL), right(NULL), pivot(NULL), radius(0) {}
 
-template <typename dist_t>
-Node<dist_t>::~Node() {
+template <typename DataType, typename DistType>
+Node<DataType, DistType>::~Node() {
     if (INNER == this->role) {
         this->allocator->free_allocation(pivot);
         delete left;
@@ -99,8 +95,8 @@ Node<dist_t>::~Node() {
     }
 }
 
-template <typename dist_t>
-void Node<dist_t>::split(VPTree<dist_t> &vpt) {
+template <typename DataType, typename DistType>
+void Node<DataType, DistType>::split(VPTree<DataType, DistType> &vpt) {
     assert(LEAF == this->role);
     this->role = INNER;
 
@@ -117,16 +113,16 @@ void Node<dist_t>::split(VPTree<dist_t> &vpt) {
     // median++;
     //
     // auto distComp = DistanceComparator(vpt.index.getDataByInternalId(*(begin())), vpt.dist_func,
-    //                                    vpt.dist_func_param_);
+    //                                    vpt.dim);
     // std::nth_element(begin(), median, end, distComp);
-    auto tmp = vecsim_stl::vector<tableint>(begin(), end(), this->allocator);
-    auto distComp = DistanceComparator<dist_t>(vpt.index.getDataByInternalId(*(begin())),
-                                               vpt.dist_func, vpt.dist_func_param_, vpt.index);
+    auto tmp = vecsim_stl::vector<idType>(begin(), end(), this->allocator);
+    auto distComp = DistanceComparator<DataType, DistType>(vpt.index.getDataByInternalId(*(begin())),
+                                               vpt.dist_func, vpt.dim, vpt.index);
     size_t med_idx = size / 2;
     auto med = tmp.begin() + med_idx;
     std::nth_element(tmp.begin(), med, tmp.end(), distComp);
     auto it = begin();
-    tableint beg_id = *it;
+    idType beg_id = *it;
     for (size_t i = 0; i < size; i++) {
         *it = tmp[i];
         it++;
@@ -139,16 +135,16 @@ void Node<dist_t>::split(VPTree<dist_t> &vpt) {
     auto med_data = vpt.index.getDataByInternalId(*(med));
     auto beg_data = vpt.index.getDataByInternalId(beg_id);
 
-    radius = vpt.dist_func(beg_data, med_data, vpt.dist_func_param_);
+    radius = vpt.dist_func(beg_data, med_data, vpt.dim);
     pivot = this->allocator->allocate(vpt.data_size_);
     memcpy(pivot, beg_data, vpt.data_size_);
 
-    left = new (this->allocator) Node<dist_t>(before_begin, before_median, med_idx, this->allocator);
-    right = new (this->allocator) Node<dist_t>(before_median, back, size - med_idx, this->allocator);
+    left = new (this->allocator) Node<DataType, DistType>(before_begin, before_median, med_idx, this->allocator);
+    right = new (this->allocator) Node<DataType, DistType>(before_median, back, size - med_idx, this->allocator);
 }
 
-template <typename dist_t>
-void Node<dist_t>::rebuild(VPTree<dist_t> &vpt) {
+template <typename DataType, typename DistType>
+void Node<DataType, DistType>::rebuild(VPTree<DataType, DistType> &vpt) {
     if (size > MAX_PER_LEAF) {
         split(vpt);
         left->rebuild(vpt);
@@ -156,8 +152,8 @@ void Node<dist_t>::rebuild(VPTree<dist_t> &vpt) {
     }
 }
 
-template <typename dist_t>
-void Node<dist_t>::merge() {
+template <typename DataType, typename DistType>
+void Node<DataType, DistType>::merge() {
     assert(INNER == this->role);
     this->role = LEAF;
     allocator->free_allocation(pivot);
@@ -173,14 +169,14 @@ void Node<dist_t>::merge() {
     }
 }
 
-template <typename dist_t>
-inline bool Node<dist_t>::unbalanced() const {
+template <typename DataType, typename DistType>
+inline bool Node<DataType, DistType>::unbalanced() const {
     double ratio = (double)left->size / right->size;
     return (ratio <= 0.5) || (2 <= ratio);
 }
 
-template <typename dist_t>
-inline bool Node<dist_t>::has(tableint id) {
+template <typename DataType, typename DistType>
+inline bool Node<DataType, DistType>::has(idType id) {
     // flat search. can be upgraded to logarithmic
     for (auto it = begin(); it != end(); ++it) {
         if (*it == id) {
@@ -191,40 +187,40 @@ inline bool Node<dist_t>::has(tableint id) {
 }
 
 struct CandidatesItr {
-    vecsim_stl::forward_list<tableint>::iterator begin;
-    vecsim_stl::forward_list<tableint>::iterator end;
-    CandidatesItr(vecsim_stl::forward_list<tableint>::iterator begin,
-                  vecsim_stl::forward_list<tableint>::iterator end)
+    vecsim_stl::forward_list<idType>::iterator begin;
+    vecsim_stl::forward_list<idType>::iterator end;
+    CandidatesItr(vecsim_stl::forward_list<idType>::iterator begin,
+                  vecsim_stl::forward_list<idType>::iterator end)
         : begin(begin), end(end) {}
 };
 
 
-template <typename dist_t>
+template <typename DataType, typename DistType>
 class VPTree : public VecsimBaseObject {
 public:
-    Node<dist_t> *root;
-    vecsim_stl::forward_list<tableint> base;
-    DISTFUNC<dist_t> dist_func;
-    void *dist_func_param_;
+    Node<DataType, DistType> *root;
+    vecsim_stl::forward_list<idType> base;
+    NGTIndex<DataType, DistType> &index;
+    dist_func_t<DistType> dist_func;
+    size_t dim;
     size_t data_size_;
-    HierarchicalNSW<dist_t> &index;
 
 public:
-    VPTree(HierarchicalNSW<dist_t> &hnsw, SpaceInterface<dist_t> *s,
+    VPTree(HierarchicalNSW<DataType, DistType> &hnsw, dist_func_t<DistType> *func, size_t data_size,
            std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator),
-          root(new (this->allocator) Node<dist_t>(base.before_begin(), base.end(), 0, allocator)),
-          base(allocator), dist_func(s->get_dist_func()), dist_func_param_(s->get_data_dim()),
-          data_size_(s->get_data_size()), index(hnsw) {}
+          root(new (this->allocator) Node<DataType, DistType>(base.before_begin(), base.end(), 0, allocator)),
+          base(allocator), index(hnsw), dist_func(index.GetDistFunc()),
+          dim(hnsw.GetDim()), data_size_(data_size),  {}
     ~VPTree() { delete root; }
     CandidatesItr find(const void *query, size_t batchSize) const;
-    void insert(tableint id, const void *data);
-    void remove(tableint id, const void *data);
+    void insert(idType id, const void *data);
+    void remove(idType id, const void *data);
 };
 
-// void VPTree::insert(tableint id) { root.insert(base, id, hnsw->get(id)); }
-template <typename dist_t>
-void VPTree<dist_t>::insert(tableint id, const void *data) {
+// void VPTree::insert(idType id) { root.insert(base, id, hnsw->get(id)); }
+template <typename DataType, typename DistType>
+void VPTree<DataType, DistType>::insert(idType id, const void *data) {
     auto curr = root;
 
     while (curr->role != LEAF) {
@@ -237,7 +233,7 @@ void VPTree<dist_t>::insert(tableint id, const void *data) {
             curr->rebuild(*this);
             return;
         } else {
-            if (curr->radius < dist_func(curr->pivot, data, dist_func_param_)) {
+            if (curr->radius < dist_func(curr->pivot, data, this->dim)) {
                 curr = curr->right;
             } else {
                 curr = curr->left;
@@ -252,11 +248,11 @@ void VPTree<dist_t>::insert(tableint id, const void *data) {
 }
 
 // assumes the id in the tree. this should be checked before calling this function.
-template <typename dist_t>
-void VPTree<dist_t>::remove(tableint id, const void *data) {
+template <typename DataType, typename DistType>
+void VPTree<DataType, DistType>::remove(idType id, const void *data) {
 
-    Node<dist_t> *curr = root;
-    Node<dist_t> *parent = NULL;
+    Node<DataType, DistType> *curr = root;
+    Node<DataType, DistType> *parent = NULL;
 
     while (curr->role != LEAF) {
         curr->size--;
@@ -271,7 +267,7 @@ void VPTree<dist_t>::remove(tableint id, const void *data) {
             return;
         } else {
             parent = curr;
-            dist_t d = dist_func(curr->pivot, data, dist_func_param_);
+            DistType d = dist_func(curr->pivot, data, this->dim);
             if (curr->radius < d) {
                 curr = curr->right;
             } else if (curr->radius > d) {
@@ -299,11 +295,11 @@ void VPTree<dist_t>::remove(tableint id, const void *data) {
     }
 }
 
-template <typename dist_t>
-CandidatesItr VPTree<dist_t>::find(const void *query, size_t batchSize) const {
-    Node<dist_t> *curr = root;
+template <typename DataType, typename DistType>
+CandidatesItr VPTree<DataType, DistType>::find(const void *query, size_t batchSize) const {
+    Node<DataType, DistType> *curr = root;
     while (curr->role != LEAF && curr->size > batchSize) {
-        if (curr->radius < dist_func(curr->pivot, query, dist_func_param_)) {
+        if (curr->radius < dist_func(curr->pivot, query, this->dim)) {
             curr = curr->right;
         } else {
             curr = curr->left;
@@ -312,14 +308,23 @@ CandidatesItr VPTree<dist_t>::find(const void *query, size_t batchSize) const {
     return CandidatesItr(curr->begin(), curr->end());
 }
 
-template <typename dist_t>
-using candidatesMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, tableint>>;
-template <typename dist_t>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>;
+// This type is strongly bounded to `idType` because of the way we get the link list:
+//
+// linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
+// unsigned short neighbours_count = getListCount(neighbours_list);
+// auto *neighbours = (idType *)(neighbours_list + 1);
+//
+// TODO: reduce the type to smaller type when possible
+typedef idType linklistsizeint;
 
-template <typename dist_t>
-class HierarchicalNSW : public VecsimBaseObject {
-private:
+template <typename DistType>
+using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
+template <typename DistType>
+using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
+
+template <typename DataType, typename DistType>
+class NGTIndex : public VecSimIndexAbstract<DistType> {
+protected:
     // Index build parameters
     size_t max_elements_;
     size_t M_;
@@ -329,6 +334,7 @@ private:
 
     // Index search parameter
     size_t ef_;
+    double epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
     size_t data_size_;
@@ -346,17 +352,19 @@ private:
 
     // Index state
     size_t cur_element_count;
-    tableint max_id;
+    // TODO: after introducing the memory reclaim upon delete, max_id is redundant since the valid
+    // internal ids are being kept as a continuous sequence [0, 1, ..,, cur_element_count-1].
+    // We can remove this field completely if we change the serialization version, as the decoding
+    // relies on this field.
+    idType max_id;
     size_t maxlevel_;
 
     // Index data structures
-    tableint entrypoint_node_;
+    idType entrypoint_node_;
     char *data_level0_memory_;
     // char **linkLists_;
     // vecsim_stl::vector<size_t> element_levels_;
-    VPTree<dist_t> vptree;
-    vecsim_stl::set<tableint> available_ids;
-    vecsim_stl::unordered_map<labeltype, tableint> label_lookup_;
+    VPTree<DataType, DistType> vptree;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -368,243 +376,253 @@ private:
     std::vector<std::mutex> link_list_locks_;
 #endif
 
-    // callback for computing distance between two points in the underline space.
-    DISTFUNC<dist_t> fstdistfunc_;
-    void *dist_func_param_;
-#ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
-    // Allow the following test to access the index size private member.
-    friend class HNSWLibTest_preferAdHocOptimization_Test;
-    friend class HNSWLibTest_test_dynamic_hnsw_info_iterator_Test;
-#endif
+// #ifdef BUILD_TESTS
+//     friend class HNSWIndexSerializer;
+// #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
+// #endif
 
-    HierarchicalNSW() {}                                // default constructor
-    HierarchicalNSW(const HierarchicalNSW &) = default; // default (shallow) copy constructor
-    void setExternalLabel(tableint internal_id, labeltype label);
-    labeltype *getExternalLabelPtr(tableint internal_id) const;
-    size_t getRandomLevel(double reverse_size);
-    vecsim_stl::set<tableint> *getIncomingEdgesPtr(tableint internal_id, size_t level) const;
-    void setIncomingEdgesPtr(tableint internal_id, size_t level, void *set_ptr);
-    linklistsizeint *get_linklist0(tableint internal_id) const;
-    linklistsizeint *get_linklist(tableint internal_id, size_t level) const;
-    void setListCount(linklistsizeint *ptr, unsigned short int size);
-    void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<dist_t> candidates,
-                          size_t Mcurmax, tableint *node_neighbors,
-                          const vecsim_stl::set<tableint> &orig_neighbors, tableint *removed_links,
-                          size_t *removed_links_num);
-    inline dist_t processCandidate(tableint curNodeId, const void *data_point, size_t layer,
-                                   size_t ef, tag_t visited_tag,
-                                   candidatesMaxHeap<dist_t> &top_candidates,
-                                   candidatesMaxHeap<dist_t> &candidates_set,
-                                   dist_t lowerBound) const;
-    candidatesMaxHeap<dist_t> searchLayer(tableint ep_id, const void *data_point, size_t layer,
-                                          size_t ef) const;
-    candidatesLabelsMaxHeap<dist_t> searchBottomLayer_WithTimeout(const void *data_point, size_t ef,
-                                                                  size_t k, void *timeoutCtx,
-                                                                  VecSimQueryResult_Code *rc) const;
-    void getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates, size_t M);
-    tableint mutuallyConnectNewElement(tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates,
-                                       size_t level);
-    void repairConnectionsForDeletion(tableint element_internal_id, tableint neighbour_id,
-                                      tableint *neighbours_list,
-                                      tableint *neighbour_neighbours_list, size_t level);
+    NGTIndex() = delete;                  // default constructor is disabled.
+    NGTIndex(const NGTIndex &) = delete; // default (shallow) copy constructor is disabled.
+    inline void setExternalLabel(idType internal_id, labelType label);
+    inline labelType *getExternalLabelPtr(idType internal_id) const;
+    inline size_t getRandomLevel(double reverse_size);
+    inline vecsim_stl::vector<idType> *getIncomingEdgesPtr(idType internal_id, size_t level) const;
+    inline void setIncomingEdgesPtr(idType internal_id, size_t level, void *edges_ptr);
+    inline linklistsizeint *get_linklist0(idType internal_id) const;
+    inline linklistsizeint *get_linklist(idType internal_id, size_t level) const;
+    inline void setListCount(linklistsizeint *ptr, unsigned short int size);
+    inline void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates,
+                                 size_t Mcurmax, idType *node_neighbors,
+                                 const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
+                                 size_t *removed_links_num);
+    template <typename Identifier> // Either idType or labelType
+    inline DistType
+    processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
+                     tag_t visited_tag,
+                     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+                     candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
+    inline void processCandidate_RangeSearch(
+        idType curNodeId, const void *data_point, size_t layer, double epsilon, tag_t visited_tag,
+        std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
+        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, double radius) const;
+    candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
+                                            size_t ef) const;
+    candidatesLabelsMaxHeap<DistType> *
+    searchBottomLayer_WithTimeout(const void *data_point, size_t ef, size_t k,
+                                  void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+    VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
+                                                          double epsilon, double radius,
+                                                          void *timeoutCtx,
+                                                          VecSimQueryResult_Code *rc) const;
+    void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
+    inline idType mutuallyConnectNewElement(idType cur_c,
+                                            candidatesMaxHeap<DistType> &top_candidates,
+                                            size_t level);
+    void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
+                                      idType *neighbours_list, idType *neighbour_neighbours_list,
+                                      size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
+    inline void resizeIndex(size_t new_max_elements);
+    inline void SwapLastIdWithDeletedId(idType element_internal_id);
+
+    // Protected internal function that implements generic single vector insertion.
+    int appendVector(const void *vector_data, labelType label);
+
+    // Protected internal function that implements generic single vector deletion.
+    int removeVector(idType id);
+
+    inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
+                              DistType dist, idType id) const;
+    inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
+                              DistType dist, idType id) const;
 
 public:
-    HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
-                    std::shared_ptr<VecSimAllocator> allocator, size_t M = 16,
-                    size_t ef_construction = 200, size_t ef = 10, size_t random_seed = 100,
-                    size_t initial_pool_size = 1);
-    virtual ~HierarchicalNSW();
+    NGTIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+              size_t random_seed = 100, size_t initial_pool_size = 1);
+    virtual ~NGTIndex();
 
-    void setEf(size_t ef);
-    size_t getEf() const;
-    size_t getIndexSize() const;
-    size_t getIndexCapacity() const;
-    size_t getEfConstruction() const;
-    size_t getM() const;
-    size_t getMaxLevel() const;
-    size_t getEntryPointLabel() const;
-    tableint getEntryPointId() const;
-    labeltype getExternalLabel(tableint internal_id) const;
-    VisitedNodesHandler *getVisitedList() const;
-    char *getDataByInternalId(tableint internal_id) const;
-    linklistsizeint *get_linklist_at_level(tableint internal_id, size_t level) const;
-    unsigned short int getListCount(const linklistsizeint *ptr) const;
-    void resizeIndex(size_t new_max_elements);
-    bool removePoint(labeltype label);
-    void addPoint(const void *data_point, labeltype label);
-    dist_t getDistanceByLabelFromPoint(labeltype label, const void *data_point);
-    tableint searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                 VecSimQueryResult_Code *rc) const;
-    vecsim_stl::max_priority_queue<pair<dist_t, labeltype>>
-    searchKnn(const void *query_data, size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+    inline void setEf(size_t ef);
+    inline size_t getEf() const;
+    inline void setEpsilon(double epsilon);
+    inline double getEpsilon() const;
+    inline size_t indexSize() const override;
+    inline size_t getIndexCapacity() const;
+    inline size_t getEfConstruction() const;
+    inline size_t getM() const;
+    inline size_t getMaxLevel() const;
+    inline idType getEntryPointId() const;
+    inline labelType getEntryPointLabel() const;
+    inline labelType getExternalLabel(idType internal_id) const;
+    inline VisitedNodesHandler *getVisitedList() const;
+    VecSimIndexInfo info() const override;
+    VecSimInfoIterator *infoIterator() const override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    char *getDataByInternalId(idType internal_id) const;
+    inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
+    inline unsigned short int getListCount(const linklistsizeint *ptr) const;
+
+    VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
+                                     VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
+                                      VecSimQueryParams *queryParams) override;
+
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
+
+protected:
+    // inline label to id setters that need to be implemented by derived class
+    virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const = 0;
+    virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
+    virtual inline void setVectorId(labelType label, idType id) = 0;
+    virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
 };
 
 /**
  * getters and setters of index data
  */
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setEf(size_t ef) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::setEf(size_t ef) {
     ef_ = ef;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEf() const {
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::getEf() const {
     return ef_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getIndexSize() const {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::setEpsilon(double epsilon) {
+    epsilon_ = epsilon;
+}
+
+template <typename DataType, typename DistType>
+double NGTIndex<DataType, DistType>::getEpsilon() const {
+    return epsilon_;
+}
+
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::indexSize() const {
     return cur_element_count;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getIndexCapacity() const {
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::getIndexCapacity() const {
     return max_elements_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEfConstruction() const {
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::getEfConstruction() const {
     return ef_construction_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getM() const {
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::getM() const {
     return M_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getMaxLevel() const {
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::getMaxLevel() const {
     return maxlevel_;
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getEntryPointLabel() const {
-    if (entrypoint_node_ != HNSW_INVALID_ID)
-        return (size_t)getExternalLabel(entrypoint_node_);
+template <typename DataType, typename DistType>
+labelType NGTIndex<DataType, DistType>::getEntryPointLabel() const {
+    if (entrypoint_node_ != NGT_INVALID_ID)
+        return getExternalLabel(entrypoint_node_);
     return SIZE_MAX;
 }
 
-template <typename dist_t>
-labeltype HierarchicalNSW<dist_t>::getExternalLabel(tableint internal_id) const {
-    labeltype return_label;
+template <typename DataType, typename DistType>
+labelType NGTIndex<DataType, DistType>::getExternalLabel(idType internal_id) const {
+    labelType return_label;
     memcpy(&return_label,
            (data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_),
-           sizeof(labeltype));
+           sizeof(labelType));
     return return_label;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setExternalLabel(tableint internal_id, labeltype label) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::setExternalLabel(idType internal_id, labelType label) {
     memcpy((data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), &label,
-           sizeof(labeltype));
+           sizeof(labelType));
 }
 
-template <typename dist_t>
-labeltype *HierarchicalNSW<dist_t>::getExternalLabelPtr(tableint internal_id) const {
-    return (labeltype *)(data_level0_memory_ + internal_id * size_data_per_element_ +
+template <typename DataType, typename DistType>
+labelType *NGTIndex<DataType, DistType>::getExternalLabelPtr(idType internal_id) const {
+    return (labelType *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                          label_offset_);
 }
 
-template <typename dist_t>
-char *HierarchicalNSW<dist_t>::getDataByInternalId(tableint internal_id) const {
+template <typename DataType, typename DistType>
+char *NGTIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
     return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
 }
 
-template <typename dist_t>
-size_t HierarchicalNSW<dist_t>::getRandomLevel(double reverse_size) {
+template <typename DataType, typename DistType>
+size_t NGTIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(level_generator_)) * reverse_size;
     return (size_t)r;
 }
 
-template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::getDistanceByLabelFromPoint(labeltype label,
-                                                            const void *data_point) {
-    if (label_lookup_.find(label) == label_lookup_.end()) {
-        return INVALID_SCORE;
-    }
-    dist_t t =
-        fstdistfunc_(data_point, getDataByInternalId(label_lookup_[label]), dist_func_param_);
-    return t;
+template <typename DataType, typename DistType>
+vecsim_stl::vector<idType> *NGTIndex<DataType, DistType>::getIncomingEdgesPtr(idType internal_id,
+                                                                               size_t level) const {
+    return reinterpret_cast<vecsim_stl::vector<idType> *>(
+        *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
+                    incoming_links_offset0));
 }
 
-template <typename dist_t>
-vecsim_stl::set<tableint> *HierarchicalNSW<dist_t>::getIncomingEdgesPtr(tableint internal_id,
-                                                                        size_t level) const {
-    assert(level == 0);
-    if (level == 0) {
-        return reinterpret_cast<vecsim_stl::set<tableint> *>(
-            *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
-                       incoming_links_offset0));
-    }
-    return nullptr;
-    // return reinterpret_cast<vecsim_stl::set<tableint> *>(
-    //     *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
-    //                incoming_links_offset));
-}
-
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setIncomingEdgesPtr(tableint internal_id, size_t level,
-                                                  void *set_ptr) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::setIncomingEdgesPtr(idType internal_id, size_t level,
+                                                        void *edges_ptr) {
     if (level == 0) {
         memcpy(data_level0_memory_ + internal_id * size_data_per_element_ + incoming_links_offset0,
-               &set_ptr, sizeof(void *));
-    } else {
-        // memcpy(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
-        //            incoming_links_offset,
-        //        &set_ptr, sizeof(void *));
+               &edges_ptr, sizeof(void *));
     }
 }
 
-template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist0(tableint internal_id) const {
+template <typename DataType, typename DistType>
+linklistsizeint *NGTIndex<DataType, DistType>::get_linklist0(idType internal_id) const {
     return (linklistsizeint *)(data_level0_memory_ + internal_id * size_data_per_element_ +
                                offsetLevel0_);
 }
 
-template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist(tableint internal_id, size_t level) const {
-    return nullptr;
-    // return (linklistsizeint *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_);
+template <typename DataType, typename DistType>
+linklistsizeint *NGTIndex<DataType, DistType>::get_linklist_at_level(idType internal_id,
+                                                                      size_t level) const {
+    return get_linklist0(internal_id);
 }
 
-template <typename dist_t>
-linklistsizeint *HierarchicalNSW<dist_t>::get_linklist_at_level(tableint internal_id,
-                                                                size_t level) const {
-    return level == 0 ? get_linklist0(internal_id) : get_linklist(internal_id, level);
-}
-
-template <typename dist_t>
-unsigned short int HierarchicalNSW<dist_t>::getListCount(const linklistsizeint *ptr) const {
+template <typename DataType, typename DistType>
+unsigned short int NGTIndex<DataType, DistType>::getListCount(const linklistsizeint *ptr) const {
     return *((unsigned short int *)ptr);
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::setListCount(linklistsizeint *ptr, unsigned short int size) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::setListCount(linklistsizeint *ptr, unsigned short int size) {
     *((unsigned short int *)(ptr)) = *((unsigned short int *)&size);
 }
 
-template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::getEntryPointId() const {
+template <typename DataType, typename DistType>
+idType NGTIndex<DataType, DistType>::getEntryPointId() const {
     return entrypoint_node_;
 }
 
-template <typename dist_t>
-VisitedNodesHandler *HierarchicalNSW<dist_t>::getVisitedList() const {
+template <typename DataType, typename DistType>
+VisitedNodesHandler *NGTIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler.get();
 }
 
 /**
  * helper functions
  */
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
-                                               candidatesMaxHeap<dist_t> candidates, size_t Mcurmax,
-                                               tableint *node_neighbors,
-                                               const vecsim_stl::set<tableint> &orig_neighbors,
-                                               tableint *removed_links, size_t *removed_links_num) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::removeExtraLinks(
+    linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates, size_t Mcurmax,
+    idType *node_neighbors, const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
+    size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
@@ -617,7 +635,7 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
 
     while (orig_candidates.size() > 0) {
         if (orig_candidates.top().second != candidates.top().second) {
-            if (orig_neighbors.find(orig_candidates.top().second) != orig_neighbors.end()) {
+            if (neighbors_bitmap[orig_candidates.top().second]) {
                 removed_links[removed_idx++] = orig_candidates.top().second;
             }
             orig_candidates.pop();
@@ -631,58 +649,123 @@ void HierarchicalNSW<dist_t>::removeExtraLinks(linklistsizeint *node_ll,
     *removed_links_num = removed_idx;
 }
 
-template <typename dist_t>
-dist_t HierarchicalNSW<dist_t>::processCandidate(tableint curNodeId, const void *data_point,
-                                                 size_t layer, size_t ef, tag_t visited_tag,
-                                                 candidatesMaxHeap<dist_t> &top_candidates,
-                                                 candidatesMaxHeap<dist_t> &candidate_set,
-                                                 dist_t lowerBound) const {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::emplaceToHeap(
+    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
+    heap.emplace(dist, id);
+}
+
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::emplaceToHeap(
+    vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
+    idType id) const {
+    heap.emplace(dist, getExternalLabel(id));
+}
+
+// This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
+// overloading to emplace correctly for both cases.
+template <typename DataType, typename DistType>
+template <typename Identifier>
+DistType NGTIndex<DataType, DistType>::processCandidate(
+    idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
+    vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+    candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
 #endif
     linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
     size_t links_num = getListCount(node_ll);
-    auto *node_links = (tableint *)(node_ll + 1);
+    auto *node_links = (idType *)(node_ll + 1);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1) + 64);
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
-    __builtin_prefetch(getDataByInternalId(*(node_links + 1)));
 
     for (size_t j = 0; j < links_num; j++) {
-        tableint candidate_id = *(node_links + j);
+        idType *candidate_pos = node_links + j;
+        idType candidate_id = *candidate_pos;
 
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_links + j + 1));
-        __builtin_prefetch(getDataByInternalId(*(node_links + j + 1)));
+        // Pre-fetch the next candidate data into memory cache, to improve performance.
+        idType *next_candidate_pos = node_links + j + 1;
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
+
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
         char *currObj1 = (getDataByInternalId(candidate_id));
 
-        dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
-        if (top_candidates.size() < ef || lowerBound > dist1) {
+        DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
+        if (lowerBound > dist1 || top_candidates.size() < ef) {
             candidate_set.emplace(-dist1, candidate_id);
 
-            __builtin_prefetch(getDataByInternalId(candidate_set.top().second));
-
-            top_candidates.emplace(dist1, candidate_id);
+            emplaceToHeap(top_candidates, dist1, candidate_id);
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
 
-            if (!top_candidates.empty())
-                lowerBound = top_candidates.top().first;
+            lowerBound = top_candidates.top().first;
         }
     }
+    // Pre-fetch the neighbours list of the top candidate (the one that is going
+    // to be processed in the next iteration) into memory cache, to improve performance.
+    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+
     return lowerBound;
 }
 
-template <typename dist_t>
-candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
-                                                               const void *data_point, size_t layer,
-                                                               size_t ef) const {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::processCandidate_RangeSearch(
+    idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
+    std::unique_ptr<vecsim_stl::abstract_results_container> &results,
+    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
+
+#ifdef ENABLE_PARALLELIZATION
+    std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
+#endif
+    linklistsizeint *node_ll = get_linklist_at_level(curNodeId, layer);
+    size_t links_num = getListCount(node_ll);
+    auto *node_links = (idType *)(node_ll + 1);
+
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
+    __builtin_prefetch(getDataByInternalId(*node_links));
+
+    // Cast radius once instead of each time we check that candidate_dist <= radius_
+    DistType radius_ = DistType(radius);
+    for (size_t j = 0; j < links_num; j++) {
+        idType *candidate_pos = node_links + j;
+        idType candidate_id = *candidate_pos;
+
+        // Pre-fetch the next candidate data into memory cache, to improve performance.
+        idType *next_candidate_pos = node_links + j + 1;
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
+
+        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+            continue;
+        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+        char *candidate_data = getDataByInternalId(candidate_id);
+
+        DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
+        if (candidate_dist < dyn_range) {
+            candidate_set.emplace(-candidate_dist, candidate_id);
+
+            // If the new candidate is in the requested radius, add it to the results set.
+            if (candidate_dist <= radius_) {
+                results->emplace(getExternalLabel(candidate_id), candidate_dist);
+            }
+        }
+    }
+    // Pre-fetch the neighbours list of the top candidate (the one that is going
+    // to be processed in the next iteration) into memory cache, to improve performance.
+    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+}
+
+template <typename DataType, typename DistType>
+candidatesMaxHeap<DistType>
+NGTIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
+                                           size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -691,19 +774,19 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    candidatesMaxHeap<dist_t> top_candidates(this->allocator);
-    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
-    dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
-    dist_t lowerBound = dist;
+    DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+    DistType lowerBound = dist;
     top_candidates.emplace(dist, ep_id);
     candidate_set.emplace(-dist, ep_id);
 
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
-        std::pair<dist_t, tableint> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
+        if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
@@ -718,15 +801,15 @@ candidatesMaxHeap<dist_t> HierarchicalNSW<dist_t>::searchLayer(tableint ep_id,
     return top_candidates;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t> &top_candidates,
-                                                       const size_t M) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::getNeighborsByHeuristic2(
+    candidatesMaxHeap<DistType> &top_candidates, const size_t M) {
     if (top_candidates.size() < M) {
         return;
     }
 
-    candidatesMaxHeap<dist_t> queue_closest(this->allocator);
-    vecsim_stl::vector<std::pair<dist_t, tableint>> return_list(this->allocator);
+    candidatesMaxHeap<DistType> queue_closest(this->allocator);
+    vecsim_stl::vector<pair<DistType, idType>> return_list(this->allocator);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
         // (higher).
@@ -737,20 +820,19 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
     while (queue_closest.size()) {
         if (return_list.size() >= M)
             break;
-        std::pair<dist_t, tableint> current_pair = queue_closest.top();
-        dist_t dist_to_query = -current_pair.first;
+        pair<DistType, idType> current_pair = queue_closest.top();
+        DistType candidate_to_query_dist = -current_pair.first;
         queue_closest.pop();
         bool good = true;
 
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
-        for (std::pair<dist_t, tableint> second_pair : return_list) {
-            dist_t curdist =
-                fstdistfunc_(getDataByInternalId(second_pair.second),
-                             getDataByInternalId(current_pair.second), dist_func_param_);
-            ;
-            if (curdist < dist_to_query) {
+        for (pair<DistType, idType> second_pair : return_list) {
+            DistType candidate_to_selected_dist =
+                this->dist_func(getDataByInternalId(second_pair.second),
+                                getDataByInternalId(current_pair.second), this->dim);
+            if (candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
             }
@@ -760,48 +842,47 @@ void HierarchicalNSW<dist_t>::getNeighborsByHeuristic2(candidatesMaxHeap<dist_t>
         }
     }
 
-    for (std::pair<dist_t, tableint> current_pair : return_list) {
+    for (pair<DistType, idType> current_pair : return_list) {
         top_candidates.emplace(-current_pair.first, current_pair.second);
     }
 }
 
-template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
-    tableint cur_c, candidatesMaxHeap<dist_t> &top_candidates, size_t level) {
+template <typename DataType, typename DistType>
+idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
+    idType cur_c, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
     size_t Mcurmax = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
     if (top_candidates.size() > M_)
         throw std::runtime_error(
             "Should be not be more than M_ candidates returned by the heuristic");
 
-    vecsim_stl::vector<tableint> selectedNeighbors(this->allocator);
+    vecsim_stl::vector<idType> selectedNeighbors(this->allocator);
     selectedNeighbors.reserve(M_);
     while (top_candidates.size() > 0) {
         selectedNeighbors.push_back(top_candidates.top().second);
         top_candidates.pop();
     }
 
-    tableint next_closest_entry_point = selectedNeighbors.back();
+    idType next_closest_entry_point = selectedNeighbors.back();
     {
         linklistsizeint *ll_cur = get_linklist_at_level(cur_c, level);
         if (*ll_cur) {
             throw std::runtime_error("The newly inserted element should have blank link list");
         }
         setListCount(ll_cur, selectedNeighbors.size());
-        auto *data = (tableint *)(ll_cur + 1);
+        auto *data = (idType *)(ll_cur + 1);
         for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
             if (data[idx])
                 throw std::runtime_error("Possible memory corruption");
-            // if (level > element_levels_[selectedNeighbors[idx]])
-            //     throw std::runtime_error("Trying to make a link on a non-existent level");
             data[idx] = selectedNeighbors[idx];
         }
-        auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
         setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
     // go over the selected neighbours - selectedNeighbor is the neighbour id
-    for (tableint selectedNeighbor : selectedNeighbors) {
+    vecsim_stl::vector<bool> neighbors_bitmap(this->allocator);
+    for (idType selectedNeighbor : selectedNeighbors) {
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
 #endif
@@ -812,11 +893,9 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             throw std::runtime_error("Bad value of sz_link_list_other");
         if (selectedNeighbor == cur_c)
             throw std::runtime_error("Trying to connect an element to itself");
-        // if (level > element_levels_[selectedNeighbor])
-        //     throw std::runtime_error("Trying to make a link on a non-existent level");
 
         // get the array of neighbours - for the current neighbour
-        auto *neighbor_neighbors = (tableint *)(ll_other + 1);
+        auto *neighbor_neighbors = (idType *)(ll_other + 1);
 
         // If the selected neighbor can add another link (hasn't reached the max) - add it.
         if (sz_link_list_other < Mcurmax) {
@@ -824,37 +903,38 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
             setListCount(ll_other, sz_link_list_other + 1);
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
-            candidatesMaxHeap<dist_t> candidates(this->allocator);
-            vecsim_stl::set<tableint> orig_neighbors_set(this->allocator);
-            dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c),
-                                        getDataByInternalId(selectedNeighbor), dist_func_param_);
+            candidatesMaxHeap<DistType> candidates(this->allocator);
+            // (re)use the bitmap to represent the set of the original neighbours for the current
+            // selected neighbour.
+            neighbors_bitmap.assign(max_id + 1, false);
+            DistType d_max = this->dist_func(getDataByInternalId(cur_c),
+                                             getDataByInternalId(selectedNeighbor), this->dim);
             candidates.emplace(d_max, cur_c);
             // consider cur_c as if it was a link of the selected neighbor
-            orig_neighbors_set.insert(cur_c);
-
+            neighbors_bitmap[cur_c] = true;
             for (size_t j = 0; j < sz_link_list_other; j++) {
-                candidates.emplace(fstdistfunc_(getDataByInternalId(neighbor_neighbors[j]),
-                                                getDataByInternalId(selectedNeighbor),
-                                                dist_func_param_),
+                candidates.emplace(this->dist_func(getDataByInternalId(neighbor_neighbors[j]),
+                                                   getDataByInternalId(selectedNeighbor),
+                                                   this->dim),
                                    neighbor_neighbors[j]);
-                orig_neighbors_set.insert(neighbor_neighbors[j]);
+                neighbors_bitmap[neighbor_neighbors[j]] = true;
             }
 
-            tableint removed_links[sz_link_list_other + 1];
+            idType removed_links[sz_link_list_other + 1];
             size_t removed_links_num;
-            removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, orig_neighbors_set,
+            removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, neighbors_bitmap,
                              removed_links, &removed_links_num);
 
             // remove the current neighbor from the incoming list of nodes for the
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
             auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
             for (size_t i = 0; i < removed_links_num; i++) {
-                tableint node_id = removed_links[i];
+                idType node_id = removed_links[i];
                 auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
-                    neighbour_incoming_edges->insert(cur_c);
+                    neighbour_incoming_edges->push_back(cur_c);
                     continue;
                 }
 
@@ -864,10 +944,12 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
                 // otherwise, the edge turned from bidirectional to
                 // uni-directional, so we insert it to the neighbour's
                 // incoming edges set.
-                if (node_incoming_edges->find(selectedNeighbor) != node_incoming_edges->end()) {
-                    node_incoming_edges->erase(selectedNeighbor);
+                auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(),
+                                    selectedNeighbor);
+                if (it != node_incoming_edges->end()) {
+                    node_incoming_edges->erase(it);
                 } else {
-                    neighbour_incoming_edges->insert(node_id);
+                    neighbour_incoming_edges->push_back(node_id);
                 }
             }
         }
@@ -875,50 +957,45 @@ tableint HierarchicalNSW<dist_t>::mutuallyConnectNewElement(
     return next_closest_entry_point;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_internal_id,
-                                                           tableint neighbour_id,
-                                                           tableint *neighbours_list,
-                                                           tableint *neighbour_neighbours_list,
-                                                           size_t level) {
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::repairConnectionsForDeletion(
+    idType element_internal_id, idType neighbour_id, idType *neighbours_list,
+    idType *neighbour_neighbours_list, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
 
     // put the deleted element's neighbours in the candidates.
-    candidatesMaxHeap<dist_t> candidates(this->allocator);
-    vecsim_stl::set<tableint> candidates_set(this->allocator);
+    candidatesMaxHeap<DistType> candidates(this->allocator);
     unsigned short neighbours_count = getListCount(neighbours_list);
-    auto *neighbours = (tableint *)(neighbours_list + 1);
+    auto *neighbours = (idType *)(neighbours_list + 1);
     for (size_t j = 0; j < neighbours_count; j++) {
         // Don't put the neighbor itself in his own candidates
         if (neighbours[j] == neighbour_id) {
             continue;
         }
-        candidates.emplace(fstdistfunc_(getDataByInternalId(neighbours[j]),
-                                        getDataByInternalId(neighbour_id), dist_func_param_),
+        candidates.emplace(this->dist_func(getDataByInternalId(neighbours[j]),
+                                           getDataByInternalId(neighbour_id), this->dim),
                            neighbours[j]);
-        candidates_set.insert(neighbours[j]);
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
-    vecsim_stl::set<tableint> neighbour_orig_neighbours_set(this->allocator);
+    vecsim_stl::vector<bool> neighbour_orig_neighbours_set(max_id + 1, false, this->allocator);
     unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
-    auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+    auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
     for (size_t j = 0; j < neighbour_neighbours_count; j++) {
-        neighbour_orig_neighbours_set.insert(neighbour_neighbours[j]);
+        neighbour_orig_neighbours_set[neighbour_neighbours[j]] = true;
         // Don't add the removed element to the candidates, nor nodes that are already in the
         // candidates set.
-        if (candidates_set.find(neighbour_neighbours[j]) != candidates_set.end() ||
+        if (neighbours_bitmap[neighbour_neighbours[j]] ||
             neighbour_neighbours[j] == element_internal_id) {
             continue;
         }
-        candidates.emplace(fstdistfunc_(getDataByInternalId(neighbour_id),
-                                        getDataByInternalId(neighbour_neighbours[j]),
-                                        dist_func_param_),
+        candidates.emplace(this->dist_func(getDataByInternalId(neighbour_id),
+                                           getDataByInternalId(neighbour_neighbours[j]), this->dim),
                            neighbour_neighbours[j]);
     }
 
     size_t Mcurmax = level ? maxM_ : maxM0_;
     size_t removed_links_num;
-    tableint removed_links[neighbour_neighbours_count];
+    idType removed_links[neighbour_neighbours_count];
     removeExtraLinks(neighbour_neighbours_list, candidates, Mcurmax, neighbour_neighbours,
                      neighbour_orig_neighbours_set, removed_links, &removed_links_num);
 
@@ -927,7 +1004,7 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
     auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
 
     for (size_t i = 0; i < removed_links_num; i++) {
-        tableint node_id = removed_links[i];
+        idType node_id = removed_links[i];
         auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
 
         // if the node id (the neighbour's neighbour to be removed)
@@ -935,100 +1012,190 @@ void HierarchicalNSW<dist_t>::repairConnectionsForDeletion(tableint element_inte
         // we should remove it from the node's incoming edges.
         // otherwise, edge turned from bidirectional to one directional,
         // and it should be saved in the neighbor's incoming edges.
-        if (node_incoming_edges->find(neighbour_id) != node_incoming_edges->end()) {
-            node_incoming_edges->erase(neighbour_id);
+        auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), neighbour_id);
+        if (it != node_incoming_edges->end()) {
+            node_incoming_edges->erase(it);
         } else {
-            neighbour_incoming_edges->insert(node_id);
+            neighbour_incoming_edges->push_back(node_id);
         }
     }
 
     // updates for the new edges created
     unsigned short updated_links_num = getListCount(neighbour_neighbours_list);
     for (size_t i = 0; i < updated_links_num; i++) {
-        tableint node_id = neighbour_neighbours[i];
-        if (neighbour_orig_neighbours_set.find(node_id) == neighbour_orig_neighbours_set.end()) {
+        idType node_id = neighbour_neighbours[i];
+        if (!neighbour_orig_neighbours_set[node_id]) {
             auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
             // if the node has an edge to the neighbour as well, remove it
             // from the incoming nodes of the neighbour
             // otherwise, need to update the edge as incoming.
             linklistsizeint *node_links_list = get_linklist_at_level(node_id, level);
             unsigned short node_links_size = getListCount(node_links_list);
-            auto *node_links = (tableint *)(node_links_list + 1);
+            auto *node_links = (idType *)(node_links_list + 1);
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(node_id);
+                    neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
+                                                              neighbour_incoming_edges->end(),
+                                                              node_id));
                     bidirectional_edge = true;
                     break;
                 }
             }
             if (!bidirectional_edge) {
-                node_incoming_edges->insert(neighbour_id);
+                node_incoming_edges->push_back(neighbour_id);
             }
         }
     }
 }
 
-template <typename dist_t>
-HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_elements,
-                                         std::shared_ptr<VecSimAllocator> allocator, size_t M,
-                                         size_t ef_construction, size_t ef, size_t random_seed,
-                                         size_t pool_initial_size)
-    : VecsimBaseObject(allocator), vptree(*this, s, allocator), available_ids(allocator),
-      label_lookup_(allocator)
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
+    // swap label
+    replaceIdOfLabel(getExternalLabel(max_id), element_internal_id, max_id);
+
+    // TODO: implement in VPTree
+
+    // swap neighbours
+    size_t last_element_top_level = 0;
+    for (size_t level = 0; level <= last_element_top_level; level++) {
+        linklistsizeint *neighbours_list = get_linklist_at_level(max_id, level);
+        unsigned short neighbours_count = getListCount(neighbours_list);
+        auto *neighbours = (idType *)(neighbours_list + 1);
+
+        // go over the neighbours that also points back to the last element whose is going to
+        // change, and update the id.
+        for (size_t i = 0; i < neighbours_count; i++) {
+            idType neighbour_id = neighbours[i];
+            linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
+            unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
+
+            auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
+            bool bidirectional_edge = false;
+            for (size_t j = 0; j < neighbour_neighbours_count; j++) {
+                // if the edge is bidirectional, update for this neighbor
+                if (neighbour_neighbours[j] == max_id) {
+                    bidirectional_edge = true;
+                    neighbour_neighbours[j] = element_internal_id;
+                    break;
+                }
+            }
+
+            // if this edge is uni-directional, we should update the id in the neighbor's
+            // incoming edges.
+            if (!bidirectional_edge) {
+                auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+                auto it = std::find(neighbour_incoming_edges->begin(),
+                                    neighbour_incoming_edges->end(), max_id);
+                assert(it != neighbour_incoming_edges->end());
+                neighbour_incoming_edges->erase(it);
+                neighbour_incoming_edges->push_back(element_internal_id);
+            }
+        }
+
+        // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
+        // updates.
+        auto *incoming_edges = getIncomingEdgesPtr(max_id, level);
+        for (auto incoming_edge : *incoming_edges) {
+            linklistsizeint *incoming_neighbour_neighbours_list =
+                get_linklist_at_level(incoming_edge, level);
+            unsigned short incoming_neighbour_neighbours_count =
+                getListCount(incoming_neighbour_neighbours_list);
+            auto *incoming_neighbour_neighbours =
+                (idType *)(incoming_neighbour_neighbours_list + 1);
+            for (size_t j = 0; j < incoming_neighbour_neighbours_count; j++) {
+                if (incoming_neighbour_neighbours[j] == max_id) {
+                    incoming_neighbour_neighbours[j] = element_internal_id;
+                    break;
+                }
+            }
+        }
+    }
+
+    // swap the last_id level 0 data, and invalidate the deleted id's data
+    memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
+           data_level0_memory_ + max_id * size_data_per_element_ + offsetLevel0_,
+           size_data_per_element_);
+    memset(data_level0_memory_ + max_id * size_data_per_element_ + offsetLevel0_, 0,
+           size_data_per_element_);
+
+    if (max_id == this->entrypoint_node_) {
+        this->entrypoint_node_ = element_internal_id;
+    }
+}
+
+/* typedef struct {
+    VecSimType type;     // Datatype to index.
+    size_t dim;          // Vector's dimension.
+    VecSimMetric metric; // Distance metric to use in the index.
+    size_t initialCapacity;
+    size_t blockSize;
+    size_t M;
+    size_t efConstruction;
+    size_t efRuntime;
+    double epsilon;
+} HNSWParams; */
+template <typename DataType, typename DistType>
+NGTIndex<DataType, DistType>::NGTIndex(const HNSWParams *params,
+                                         std::shared_ptr<VecSimAllocator> allocator,
+                                         size_t random_seed, size_t pool_initial_size)
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
+                                    params->blockSize, params->multi),
+      max_elements_(params->initialCapacity),
+      data_size_(VecSimType_sizeof(params->type) * this->dim), vptree(*this, this->dist_func, data_size_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
-          link_list_locks_(max_elements),
+      ,
+      link_list_locks_(max_elements_)
 #endif
 {
-
-    max_elements_ = max_elements;
+    size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > SIZE_MAX / 2)
-        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
+        throw std::runtime_error("NGT index parameter M is too large: argument overflow");
     M_ = M;
     maxM_ = M_;
     maxM0_ = M_ * 2;
-    ef_construction_ = std::max(ef_construction, M_);
-    ef_ = ef;
 
-    data_size_ = s->get_data_size();
-    fstdistfunc_ = s->get_dist_func();
-    dist_func_param_ = s->get_data_dim();
+    size_t ef_construction = params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C;
+    ef_construction_ = std::max(ef_construction, M_);
+    ef_ = params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT;
+    epsilon_ = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
 
     cur_element_count = 0;
-    max_id = HNSW_INVALID_ID;
+    max_id = NGT_INVALID_ID;
 #ifdef ENABLE_PARALLELIZATION
     pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(new (
-        this->allocator) VisitedNodesHandlerPool(pool_initial_size, max_elements, this->allocator));
+    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
 #else
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
-        new (this->allocator) VisitedNodesHandler(max_elements, this->allocator));
+        new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
 
     // initializations for special treatment of the first node
-    entrypoint_node_ = HNSW_INVALID_ID;
-    maxlevel_ = HNSW_INVALID_LEVEL;
+    entrypoint_node_ = NGT_INVALID_ID;
+    maxlevel_ = NGT_INVALID_LEVEL;
 
     if (M <= 1)
-        throw std::runtime_error("HNSW index parameter M cannot be 1");
+        throw std::runtime_error("NGT index parameter M cannot be 1");
     mult_ = 1 / log(1.0 * M_);
     level_generator_.seed(random_seed);
 
     // data_level0_memory will look like this:
-    // -----4------ | -----4*M0----------- | ----8------------------| ------32------- | ----8---- |
-    // <links_len>  | <link_1> <link_2>... | <incoming_links_set> |   <data>        |  <label>
-    if (maxM0_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(tableint)) + 1)
-        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(tableint) + sizeof(void *);
+    // | -----4------ | -----4*M0----------- | ----------8----------| --data_size_-- | ----8---- |
+    // | <links_len>  | <link_1> <link_2>... | <incoming_links_ptr> |     <data>     |  <label>  |
+    if (maxM0_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(idType)) + 1)
+        throw std::runtime_error("NGT index parameter M is too large: argument overflow");
+    size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(idType) + sizeof(void *);
 
-    if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labeltype))
-        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labeltype);
+    if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labelType))
+        throw std::runtime_error("NGT index parameter M is too large: argument overflow");
+    size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labelType);
 
     // No need to test for overflow because we passed the test for size_links_level0_ and this is
     // less.
-    incoming_links_offset0 = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
+    incoming_links_offset0 = maxM0_ * sizeof(idType) + sizeof(linklistsizeint);
     offsetData_ = size_links_level0_;
     label_offset_ = size_links_level0_ + data_size_;
     offsetLevel0_ = 0;
@@ -1037,50 +1204,25 @@ HierarchicalNSW<dist_t>::HierarchicalNSW(SpaceInterface<dist_t> *s, size_t max_e
         (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
     if (data_level0_memory_ == nullptr)
         throw std::runtime_error("Not enough memory");
-
-    // linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
-    // if (linkLists_ == nullptr)
-    //     throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate
-    //     linklists");
-
-    // The i-th entry in linkLists array points to max_level[i] (continuous)
-    // chunks of memory, each one will look like this:
-    // -----4------ | -----4*M-------------- | ----8------------------|
-    // <links_len>  | <link_1> <link_2> ...  | <incoming_links_set>
-    size_links_per_element_ = sizeof(linklistsizeint) + maxM_ * sizeof(tableint) + sizeof(void *);
-    // No need to test for overflow because we passed the test for incoming_links_offset0 and this
-    // is less.
-    incoming_links_offset = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
 }
 
-template <typename dist_t>
-HierarchicalNSW<dist_t>::~HierarchicalNSW() {
-    if (max_id != HNSW_INVALID_ID) {
-        for (tableint id = 0; id <= max_id; id++) {
-            if (available_ids.find(id) != available_ids.end()) {
-                continue;
-            }
-            // for (size_t level = 0; level <= element_levels_[id]; level++) {
+template <typename DataType, typename DistType>
+NGTIndex<DataType, DistType>::~NGTIndex() {
+    if (max_id != NGT_INVALID_ID) {
+        for (idType id = 0; id <= max_id; id++) {
             delete getIncomingEdgesPtr(id, 0);
-            // }
-            // if (element_levels_[id] > 0)
-            //     this->allocator->free_allocation(linkLists_[id]);
         }
     }
 
-    // this->allocator->free_allocation(linkLists_);
     this->allocator->free_allocation(data_level0_memory_);
 }
 
 /**
  * Index API functions
  */
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
-    if (new_max_elements < cur_element_count)
-        throw std::runtime_error(
-            "Cannot resize, max element is less than the current number of elements");
-        // element_levels_.resize(new_max_elements);
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
+    resizeLabelLookup(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
@@ -1097,25 +1239,13 @@ void HierarchicalNSW<dist_t>::resizeIndex(size_t new_max_elements) {
         throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
     data_level0_memory_ = data_level0_memory_new;
 
-    // Reallocate all other layers
-    // char **linkLists_new =
-    //     (char **)this->allocator->reallocate(linkLists_, sizeof(void *) * new_max_elements);
-    // if (linkLists_new == nullptr)
-    //     throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other
-    //     layers");
-    // linkLists_ = linkLists_new;
-
     max_elements_ = new_max_elements;
 }
 
-template <typename dist_t>
-bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
-    // check that the label actually exists in the graph, and update the number of elements.
-    tableint element_internal_id;
-    if (label_lookup_.find(label) == label_lookup_.end()) {
-        return true;
-    }
-    element_internal_id = label_lookup_[label];
+template <typename DataType, typename DistType>
+int NGTIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
+
+    vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
     // go over levels and repair connections
     size_t element_top_level = /*element_levels_[element_internal_id]*/ 0;
@@ -1123,23 +1253,29 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
     for (size_t level = 0; level <= element_top_level; level++) {
         linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);
-        auto *neighbours = (tableint *)(neighbours_list + 1);
-
+        auto *neighbours = (idType *)(neighbours_list + 1);
+        // reset the neighbours' bitmap for the current level.
+        neighbours_bitmap.assign(max_id + 1, false);
+        // store the deleted element's neighbours set in a bitmap for fast access.
+        for (size_t j = 0; j < neighbours_count; j++) {
+            neighbours_bitmap[neighbours[j]] = true;
+        }
         // go over the neighbours that also points back to the removed point and make a local
         // repair.
         for (size_t i = 0; i < neighbours_count; i++) {
-            tableint neighbour_id = neighbours[i];
+            idType neighbour_id = neighbours[i];
             linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
             unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
 
-            auto *neighbour_neighbours = (tableint *)(neighbour_neighbours_list + 1);
+            auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
             bool bidirectional_edge = false;
             for (size_t j = 0; j < neighbour_neighbours_count; j++) {
                 // if the edge is bidirectional, do repair for this neighbor
                 if (neighbour_neighbours[j] == element_internal_id) {
                     bidirectional_edge = true;
                     repairConnectionsForDeletion(element_internal_id, neighbour_id, neighbours_list,
-                                                 neighbour_neighbours_list, level);
+                                                 neighbour_neighbours_list, level,
+                                                 neighbours_bitmap);
                     break;
                 }
             }
@@ -1148,7 +1284,9 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->erase(element_internal_id);
+                neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
+                                                          neighbour_incoming_edges->end(),
+                                                          element_internal_id));
             }
         }
 
@@ -1159,95 +1297,64 @@ bool HierarchicalNSW<dist_t>::removePoint(const labeltype label) {
             linklistsizeint *incoming_node_neighbours_list =
                 get_linklist_at_level(incoming_edge, level);
             repairConnectionsForDeletion(element_internal_id, incoming_edge, neighbours_list,
-                                         incoming_node_neighbours_list, level);
+                                         incoming_node_neighbours_list, level, neighbours_bitmap);
         }
         delete incoming_edges;
     }
 
-    // replace the entry point with another one, if we are deleting the current entry point.
-    // if (element_internal_id == entrypoint_node_) {
-    //     assert(element_top_level == maxlevel_);
-    //     // Sets the (arbitrary) new entry point.
-    //     while (element_internal_id == entrypoint_node_) {
-    //         linklistsizeint *top_level_list = get_linklist_at_level(element_internal_id,
-    //         maxlevel_);
+    // Swap the last id with the deleted one, and invalidate the last id data.
+    if (max_id == element_internal_id) {
+        // we're deleting the last internal id, just invalidate data without swapping.
+        memset(data_level0_memory_ + max_id * size_data_per_element_ + offsetLevel0_, 0,
+               size_data_per_element_);
+    } else {
+        SwapLastIdWithDeletedId(element_internal_id);
+    }
+    --cur_element_count;
+    --max_id;
 
-    //         if (getListCount(top_level_list) > 0) {
-    //             // Tries to set the (arbitrary) first neighbor as the entry point.
-    //             entrypoint_node_ = ((tableint *)(top_level_list + 1))[0];
-    //         } else {
-    //             // If there is no neighbors in the current level, check for any vector at
-    //             // this level to be the new entry point.
-    //             for (tableint cur_id = 0; cur_id <= max_id; cur_id++) {
-    //                 if (element_levels_[cur_id] == maxlevel_ && cur_id != element_internal_id) {
-    //                     entrypoint_node_ = cur_id;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //         // If we didn't find any vector at the top level, decrease the maxlevel_ and try
-    //         again,
-    //         // until we find a new entry point, or the index is empty.
-    //         if (element_internal_id == entrypoint_node_) {
-    //             maxlevel_--;
-    //             if ((int)maxlevel_ < 0) {
-    //                 maxlevel_ = HNSW_INVALID_LEVEL;
-    //                 entrypoint_node_ = HNSW_INVALID_ID;
-    //             }
-    //         }
-    //     }
-    // }
+    // If we need to free a complete block & there is a least one block between the
+    // capacity and the size.
+    if (cur_element_count % this->blockSize == 0 &&
+        cur_element_count + this->blockSize <= max_elements_) {
 
-    // if (element_levels_[element_internal_id] > 0) {
-    //     this->allocator->free_allocation(linkLists_[element_internal_id]);
-    // }
-    // add the element id to the available ids for future reuse.
-    cur_element_count--;
-    label_lookup_.erase(label);
-    available_ids.insert(element_internal_id);
-    // element_levels_[element_internal_id] = HNSW_INVALID_LEVEL;
-    memset(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_, 0,
-           size_data_per_element_);
+        // Check if the capacity is aligned to block size.
+        size_t extra_space_to_free = max_elements_ % this->blockSize;
+
+        // Remove one block from the capacity.
+        this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
+    }
     return true;
 }
 
-template <typename dist_t>
-void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype label) {
+template <typename DataType, typename DistType>
+int NGTIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
 
-    tableint cur_c = 0;
+    idType cur_c;
+
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
+    }
 
     {
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
-        // Checking if an element with the given label already exists. if so, remove it.
-        if (label_lookup_.find(label) != label_lookup_.end()) {
-            removePoint(label);
-        }
+
         if (cur_element_count >= max_elements_) {
-            throw std::runtime_error("The number of elements exceeds the specified limit");
+            size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
+            resizeIndex(max_elements_ + vectors_to_add);
         }
-        if (available_ids.empty()) {
-            cur_c = cur_element_count;
-            max_id = cur_element_count;
-        } else {
-            cur_c = *available_ids.begin();
-            available_ids.erase(available_ids.begin());
-        }
-        cur_element_count++;
-        label_lookup_[label] = cur_c;
+        cur_c = max_id = cur_element_count++;
+        setVectorId(label, cur_c);
     }
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
-#endif
-    // choose randomly the maximum level in which the new element will be in the index.
-    // size_t element_max_level = getRandomLevel(mult_);
-    // element_levels_[cur_c] = element_max_level;
-
-#ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> entry_point_lock(global);
 #endif
-    // size_t maxlevelcopy = maxlevel_;
 
 #ifdef ENABLE_PARALLELIZATION
     if (element_max_level <= maxlevelcopy)
@@ -1259,23 +1366,23 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
            size_data_per_element_);
 
     // Initialisation of the data and label
-    memcpy(getExternalLabelPtr(cur_c), &label, sizeof(labeltype));
-    memcpy(getDataByInternalId(cur_c), data_point, data_size_);
+    setExternalLabel(cur_c, label);
+    memcpy(getDataByInternalId(cur_c), vector_data, data_size_);
 
     // if (element_max_level > 0) {
     //     linkLists_[cur_c] =
-    //         (char *)this->allocator->allocate(size_links_per_element_ * element_max_level + 1);
+    //         (char *)this->allocator->allocate(size_links_per_element_ * element_max_level);
     //     if (linkLists_[cur_c] == nullptr)
     //         throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
-    //     memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level + 1);
+    //     memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level);
     // }
-    vptree.insert(cur_c, data_point);
+    vptree.insert(cur_c, vector_data);
 
     // this condition only means that we are not inserting the first element.
-    if (entrypoint_node_ != HNSW_INVALID_ID) {
+    if (entrypoint_node_ != NGT_INVALID_ID) {
 //         if (element_max_level < maxlevelcopy) {
-//             dist_t cur_dist =
-//                 fstdistfunc_(data_point, getDataByInternalId(currObj), dist_func_param_);
+//             DistType cur_dist =
+//                 this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
 //             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
 //                 // this is done for the levels which are above the max level
 //                 // to which we are going to insert the new element. We do
@@ -1292,15 +1399,15 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
 //                     data = get_linklist(currObj, level);
 //                     int size = getListCount(data);
 
-//                     auto *datal = (tableint *)(data + 1);
+//                     auto *datal = (idType *)(data + 1);
 //                     for (int i = 0; i < size; i++) {
-//                         tableint cand = datal[i];
+//                         idType cand = datal[i];
 //                         if (cand < 0 || cand > max_elements_)
 //                             throw std::runtime_error(
 //                                 "candidate error: candidate id is out of index range");
 
-//                         dist_t d =
-//                             fstdistfunc_(data_point, getDataByInternalId(cand), dist_func_param_);
+//                         DistType d =
+//                             this->dist_func(vector_data, getDataByInternalId(cand), this->dim);
 //                         if (d < cur_dist) {
 //                             cur_dist = d;
 //                             currObj = cand;
@@ -1315,8 +1422,8 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         //     if (level > maxlevelcopy || level < 0) // possible?
         //         throw std::runtime_error("Level error");
 
-        candidatesMaxHeap<dist_t> top_candidates =
-            searchLayer(currObj, data_point, 0, ef_construction_);
+        candidatesMaxHeap<DistType> top_candidates =
+            searchLayer(currObj, vector_data, 0, ef_construction_);
         currObj = mutuallyConnectNewElement(cur_c, top_candidates, 0);
         // }
 
@@ -1325,9 +1432,9 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         //     entrypoint_node_ = cur_c;
         //     maxlevel_ = element_max_level;
         //     // create the incoming edges set for the new levels.
-        //     for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level;
-        //     level_idx++) {
-        //         auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
+        //     for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
+        //         auto *incoming_edges =
+        //             new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
         //         setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
         //     }
         // }
@@ -1335,59 +1442,20 @@ void HierarchicalNSW<dist_t>::addPoint(const void *data_point, const labeltype l
         // Do nothing for the first element
         entrypoint_node_ = 0;
         // for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges = new vecsim_stl::set<tableint>(this->allocator);
-            setIncomingEdgesPtr(cur_c, 0, incoming_edges);
+        auto *incoming_edges =
+            new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+        setIncomingEdgesPtr(cur_c, 0, incoming_edges);
         // }
         // maxlevel_ = element_max_level;
     }
+    return true;
 }
 
-template <typename dist_t>
-tableint HierarchicalNSW<dist_t>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                                      VecSimQueryResult_Code *rc) const {
-
-    if (cur_element_count == 0) {
-        return entrypoint_node_;
-    }
-    tableint currObj = entrypoint_node_;
-    dist_t cur_dist =
-        fstdistfunc_(query_data, getDataByInternalId(entrypoint_node_), dist_func_param_);
-    for (size_t level = maxlevel_; level > 0; level--) {
-        bool changed = true;
-        while (changed) {
-            if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
-                *rc = VecSim_QueryResult_TimedOut;
-                return HNSW_INVALID_ID;
-            }
-            changed = false;
-            linklistsizeint *node_ll = get_linklist(currObj, level);
-            unsigned short links_count = getListCount(node_ll);
-            auto *node_links = (tableint *)(node_ll + 1);
-            for (int i = 0; i < links_count; i++) {
-                tableint candidate = node_links[i];
-                if (candidate > max_elements_)
-                    throw std::runtime_error("candidate error: out of index range");
-
-                dist_t d =
-                    fstdistfunc_(query_data, getDataByInternalId(candidate), dist_func_param_);
-                if (d < cur_dist) {
-                    cur_dist = d;
-                    currObj = candidate;
-                    changed = true;
-                }
-            }
-        }
-    }
-    *rc = VecSim_QueryResult_OK;
-    return currObj;
-}
-
-template <typename dist_t>
-candidatesLabelsMaxHeap<dist_t>
-HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(const void *data_point, size_t ef, size_t k,
-                                                       void *timeoutCtx,
-                                                       VecSimQueryResult_Code *rc) const {
-    candidatesLabelsMaxHeap<dist_t> results(this->allocator);
+template <typename DataType, typename DistType>
+candidatesLabelsMaxHeap<DistType> *
+NGTIndex<DataType, DistType>::searchBottomLayer_WithTimeout(const void *data_point,
+                                                             size_t ef, size_t k, void *timeoutCtx,
+                                                             VecSimQueryResult_Code *rc) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -1398,71 +1466,422 @@ HierarchicalNSW<dist_t>::searchBottomLayer_WithTimeout(const void *data_point, s
 
     CandidatesItr itr = vptree.find(data_point, ef);
 
-    candidatesMaxHeap<dist_t> top_candidates(this->allocator);
-    candidatesMaxHeap<dist_t> candidate_set(this->allocator);
+    candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     for (auto it = itr.begin; it != itr.end; it++) {
-        dist_t dist = fstdistfunc_(data_point, getDataByInternalId(*it), dist_func_param_);
+        DistType dist = dist_func(data_point, getDataByInternalId(*it), this->dim);
         top_candidates.emplace(dist, *it);
         candidate_set.emplace(-dist, *it);
         this->visited_nodes_handler->tagNode(*it, visited_tag);
     }
 
-    // dist_t dist = fstdistfunc_(data_point, getDataByInternalId(ep_id), dist_func_param_);
-    // dist_t lowerBound = dist;
-    // top_candidates.emplace(dist, ep_id);
-    // candidate_set.emplace(-dist, ep_id);
 
-    // this->visited_nodes_handler->tagNode(ep_id, visited_tag);
-    dist_t lowerBound = top_candidates.top().first;
+    DistType lowerBound = top_candidates.top().first;
 
     while (!candidate_set.empty()) {
-        pair<dist_t, tableint> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
+        if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
-            return results;
+            return top_candidates;
         }
         candidate_set.pop();
 
         lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
-                                      top_candidates, candidate_set, lowerBound);
+                                      *top_candidates, candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
 #endif
-    while (top_candidates.size() > k) {
-        top_candidates.pop();
-    }
-    while (top_candidates.size() > 0) {
-        auto &res = top_candidates.top();
-        results.emplace(res.first, getExternalLabel(res.second));
-        top_candidates.pop();
+    while (top_candidates->size() > k) {
+        top_candidates->pop();
     }
     *rc = VecSim_QueryResult_OK;
-    return results;
+    return top_candidates;
 }
 
-template <typename dist_t>
-candidatesLabelsMaxHeap<dist_t>
-HierarchicalNSW<dist_t>::searchKnn(const void *query_data, size_t k, void *timeoutCtx,
-                                   VecSimQueryResult_Code *rc) const {
+template <typename DataType, typename DistType>
+VecSimQueryResult_List NGTIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
+                                                                VecSimQueryParams *queryParams) {
 
-    if (cur_element_count == 0) {
-        *rc = VecSim_QueryResult_OK;
-        return candidatesLabelsMaxHeap<dist_t>(this->allocator);
+    VecSimQueryResult_List rl = {0};
+    this->last_mode = STANDARD_KNN;
+
+    if (cur_element_count == 0 || k == 0) {
+        rl.code = VecSim_QueryResult_OK;
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
     }
 
-    // tableint bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, rc);
-    // if (VecSim_OK != *rc) {
-    //     return candidatesLabelsMaxHeap<dist_t>(this->allocator);
-    // }
-    candidatesLabelsMaxHeap<dist_t> results =
-        searchBottomLayer_WithTimeout(query_data, std::max(ef_, k), k, timeoutCtx, rc);
+    void *timeoutCtx = nullptr;
 
-    return results;
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    if (this->metric == VecSimMetric_Cosine) {
+        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        query_data = normalized_blob;
+    }
+    // Get original efRuntime and store it.
+    size_t ef = ef_;
+
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.efRuntime != 0) {
+            ef = queryParams->hnswRuntimeParams.efRuntime;
+        }
+    }
+
+    // We now oun the results heap, we need to free (delete) it when we done
+    candidatesLabelsMaxHeap<DistType> *results = searchBottomLayer_WithTimeout(
+        query_data, std::max(ef, k), k, timeoutCtx, &rl.code);
+
+    if (VecSim_OK == rl.code) {
+        rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
+        for (int i = (int)results->size() - 1; i >= 0; --i) {
+            VecSimQueryResult_SetId(rl.results[i], results->top().second);
+            VecSimQueryResult_SetScore(rl.results[i], results->top().first);
+            results->pop();
+        }
+    }
+    delete results;
+    return rl;
 }
 
-} // namespace hnswlib
+template <typename DataType, typename DistType>
+VecSimQueryResult *NGTIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
+    idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
+    VecSimQueryResult_Code *rc) const {
+
+    *rc = VecSim_QueryResult_OK;
+    auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
+
+#ifdef ENABLE_PARALLELIZATION
+    this->visited_nodes_handler =
+        this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
+#endif
+
+    tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
+
+    // Set the initial effective-range to be at least the distance from the entry-point.
+    DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+    DistType dynamic_range = ep_dist;
+
+    if (ep_dist <= radius) {
+        // Entry-point is within the radius - add it to the results.
+        res_container->emplace(getExternalLabel(ep_id), ep_dist);
+        dynamic_range = radius; // to ensure that dyn_range >= radius.
+    }
+
+    DistType dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
+    candidate_set.emplace(-ep_dist, ep_id);
+    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
+
+    // Cast radius once instead of each time we check that -curr_el_pair.first >= radius_.
+    DistType radius_ = DistType(radius);
+    while (!candidate_set.empty()) {
+        pair<DistType, idType> curr_el_pair = candidate_set.top();
+        // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
+        // finish the search.
+        if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
+            break;
+        }
+        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            break;
+        }
+        candidate_set.pop();
+
+        // Decrease the effective range, but keep dyn_range >= radius.
+        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius_) {
+            dynamic_range = -curr_el_pair.first;
+            dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
+        }
+
+        // Go over the candidate neighbours, add them to the candidates list if they are within the
+        // epsilon environment of the dynamic range, and add them to the results if they are in the
+        // requested radius.
+        // Here we send the radius as double to match the function arguments type.
+        processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
+                                     res_container, candidate_set, dynamic_range_search_boundaries,
+                                     radius);
+    }
+
+#ifdef ENABLE_PARALLELIZATION
+    visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);
+#endif
+    return res_container->get_results();
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryResult_List NGTIndex<DataType, DistType>::rangeQuery(const void *query_data,
+                                                                 double radius,
+                                                                 VecSimQueryParams *queryParams) {
+    VecSimQueryResult_List rl = {0};
+    this->last_mode = RANGE_QUERY;
+
+    if (cur_element_count == 0) {
+        rl.code = VecSim_QueryResult_OK;
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
+    }
+    void *timeoutCtx = nullptr;
+
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        query_data = normalized_blob;
+    }
+
+    double epsilon = epsilon_;
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
+            epsilon = queryParams->hnswRuntimeParams.epsilon;
+        }
+    }
+
+    // search bottom layer
+    // Here we send the radius as double to match the function arguments type.
+    // TODO: implement
+    rl.results = searchRangeBottomLayer_WithTimeout(0, query_data, epsilon, radius,
+                                                    timeoutCtx, &rl.code);
+
+    return rl;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexInfo NGTIndex<DataType, DistType>::info() const {
+
+    VecSimIndexInfo info;
+    info.algo = VecSimAlgo_NGT;
+    info.hnswInfo.dim = this->dim;
+    info.hnswInfo.type = this->vecType;
+    info.hnswInfo.isMulti = this->isMulti;
+    info.hnswInfo.metric = this->metric;
+    info.hnswInfo.blockSize = this->blockSize;
+    info.hnswInfo.M = this->getM();
+    info.hnswInfo.efConstruction = this->getEfConstruction();
+    info.hnswInfo.efRuntime = this->getEf();
+    info.hnswInfo.epsilon = this->epsilon_;
+    info.hnswInfo.indexSize = this->indexSize();
+    info.hnswInfo.indexLabelCount = this->indexLabelCount();
+    info.hnswInfo.max_level = this->getMaxLevel();
+    info.hnswInfo.entrypoint = this->getEntryPointLabel();
+    info.hnswInfo.memory = this->allocator->getAllocationSize();
+    info.hnswInfo.last_mode = this->last_mode;
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimInfoIterator *NGTIndex<DataType, DistType>::infoIterator() const {
+    VecSimIndexInfo info = this->info();
+    // For readability. Update this number when needed.
+    size_t numberOfInfoFields = 12;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TYPE_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.hnswInfo.type)}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.dim}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::METRIC_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.hnswInfo.metric)}}});
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.isMulti}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexSize}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexLabelCount}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.M}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efConstruction}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efRuntime}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.max_level}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.entrypoint}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.memory}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .fieldValue = {FieldValue{
+                             .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+                         .fieldType = INFOFIELD_FLOAT64,
+                         .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
+
+    return infoIterator;
+}
+
+template <typename DataType, typename DistType>
+bool NGTIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
+                                                      bool initial_check) {
+    // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
+    // see scripts/HNSW_batches_clf.py
+    size_t index_size = this->indexSize();
+    if (subsetSize > index_size) {
+        throw std::runtime_error("internal error: subset size cannot be larger than index size");
+    }
+    size_t d = this->dim;
+    size_t M = this->getM();
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
+    bool res;
+
+    // node 0
+    if (index_size <= 30000) {
+        // node 1
+        if (index_size <= 5500) {
+            // node 5
+            res = true;
+        } else {
+            // node 6
+            if (r <= 0.17) {
+                // node 11
+                res = true;
+            } else {
+                // node 12
+                if (k <= 12) {
+                    // node 13
+                    if (d <= 55) {
+                        // node 17
+                        res = false;
+                    } else {
+                        // node 18
+                        if (M <= 10) {
+                            // node 19
+                            res = false;
+                        } else {
+                            // node 20
+                            res = true;
+                        }
+                    }
+                } else {
+                    // node 14
+                    res = true;
+                }
+            }
+        }
+    } else {
+        // node 2
+        if (r < 0.07) {
+            // node 3
+            if (index_size <= 750000) {
+                // node 15
+                res = true;
+            } else {
+                // node 16
+                if (k <= 7) {
+                    // node 21
+                    res = false;
+                } else {
+                    // node 22
+                    if (r <= 0.03) {
+                        // node 23
+                        res = true;
+                    } else {
+                        // node 24
+                        res = false;
+                    }
+                }
+            }
+        } else {
+            // node 4
+            if (d <= 75) {
+                // node 7
+                res = false;
+            } else {
+                // node 8
+                if (k <= 12) {
+                    // node 9
+                    if (r <= 0.21) {
+                        // node 27
+                        if (M <= 57) {
+                            // node 29
+                            if (index_size <= 75000) {
+                                // node 31
+                                res = true;
+                            } else {
+                                // node 32
+                                res = false;
+                            }
+                        } else {
+                            // node 30
+                            res = true;
+                        }
+                    } else {
+                        // node 28
+                        res = false;
+                    }
+                } else {
+                    // node 10
+                    if (M <= 10) {
+                        // node 25
+                        if (r <= 0.17) {
+                            // node 33
+                            res = true;
+                        } else {
+                            // node 34
+                            res = false;
+                        }
+                    } else {
+                        // node 26
+                        if (index_size <= 300000) {
+                            // node 35
+                            res = true;
+                        } else {
+                            // node 36
+                            if (r <= 0.17) {
+                                // node 37
+                                res = true;
+                            } else {
+                                // node 38
+                                res = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Set the mode - if this isn't the initial check, we switched mode form batches to ad-hoc.
+    this->last_mode =
+        res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
+    return res;
+}

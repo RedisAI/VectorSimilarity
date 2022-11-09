@@ -7,6 +7,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/algorithms/ngt/ngt_factory.h"
 #include <cassert>
 #include "memory.h"
 
@@ -147,6 +148,8 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->bfParams);
+    case VecSimAlgo_NGT:
+        return NGTFactory::EstimateElementSize(&params->bfParams);
     }
     return -1;
 }
