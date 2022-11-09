@@ -19,6 +19,8 @@ if (DEFINED ENV{OPT})
 		ADD_DEFINITIONS(-DOPT=1)
 	elseif($ENV{OPT} EQUAL 2)
 		ADD_DEFINITIONS(-DOPT=2)
+	elseif($ENV{OPT} EQUAL 3)
+		ADD_DEFINITIONS(-DOPT=3)
 	endif()
 endif()
 

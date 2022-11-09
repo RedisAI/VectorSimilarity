@@ -87,6 +87,10 @@ void BM_VecSimBasics::Initialize() {
     for (size_t i = n_vectors - (n_vectors / 10); i < n_vectors; ++i) {
         reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
     }
+#elif PATTERN == 7
+    for (size_t i = 0; i < n_vectors; i+=2) {
+        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->markDelete(i);
+    }
 #else
     printf("Unknown pattern. running on entire data.\n");
 #endif

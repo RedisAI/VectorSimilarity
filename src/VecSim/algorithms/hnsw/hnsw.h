@@ -485,6 +485,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
             auto *deleted_links = (idType *)(deleted_ll + 1);
             for (size_t i = 0; i < deleted_links_num; i++) {
                 idType cur_deleted_neighbor = deleted_links[i];
+                if (this->visited_nodes_handler->getNodeTag(cur_deleted_neighbor) == visited_tag)
+                    continue;
                 this->visited_nodes_handler->tagNode(cur_deleted_neighbor, visited_tag);
                 if (!isMarkedDeleted(cur_deleted_neighbor)) {
                     char *currObj1 = (getDataByInternalId(cur_deleted_neighbor));
