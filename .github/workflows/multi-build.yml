@@ -1,24 +1,72 @@
-name: multi_build
+name: multi-build
 
 on:
   pull_request:
     types:
       - labeled
 
+
 jobs:
-  build-matrix:
-    name: build matrix
-    strategy:
-      matrix:
-        os: [rockylinux:8, ubuntu:xenail, ubuntu:bionic, ubuntu:jammy]
+  rocky8:
+    if: github.event.label.name == 'multi-build'
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.os }}
+      image: rockylinux:8
     steps:
       - name: checkout
-        if: github.event.label.name == 'multi-build'
         uses: actions/checkout@v2
-      - name: install dependencies
-        run: .install/install_script.sh
+      # - name: install dependencies
+      #   run: .install/install_script.sh
+      - name: set GCC env variables on rocky8
+        run: |
+          echo CXX=/opt/rh/gcc-toolset-9/root/usr/bin/g++ >> ~/.bashrc
+          echo CC=/opt/rh/gcc-toolset-9/root/usr/bin/gcc >> ~/.bashrc
+          echo export CXX >>  ~/.bashrc
+          echo export CC >>  ~/.bashrc
+          # cat ~/.bashrc
+
+          # yum install -y procps
+          # ps -p $$
+          # echo "$SHELL"
       - name: unit tests
         run: make unit_test
+
+    bionic:
+      if: github.event.label.name == 'multi-build'
+      runs-on: ubuntu-latest
+      container:
+        image: ubuntu:bionic
+      steps:
+        - name: checkout
+          uses: actions/checkout@v2
+        - name: install dependencies
+          run: .install/install_script.sh
+        - name: unit tests
+          run: make unit_test
+    
+    xenial:
+      if: github.event.label.name == 'multi-build'
+      runs-on: ubuntu-latest
+      container:
+        image: ubuntu:bionic
+      steps:
+        - name: checkout
+          uses: actions/checkout@v2
+        - name: install dependencies
+          run: .install/install_script.sh
+        - name: unit tests
+          run: make unit_test
+
+    jammy:
+      if: github.event.label.name == 'multi-build'
+      runs-on: ubuntu-latest
+      container:
+        image: ubuntu:jammy
+      steps:
+        - name: checkout
+          uses: actions/checkout@v2
+        - name: install dependencies
+          run: .install/install_script.sh
+        - name: unit tests
+          run: make unit_test
+
