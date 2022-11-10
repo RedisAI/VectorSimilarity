@@ -22,7 +22,7 @@ private:
 
 public:
     NGTIndex_Multi(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
-                    size_t random_seed = 100, size_t initial_pool_size = 1)
+                   size_t random_seed = 100, size_t initial_pool_size = 1)
         : NGTIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}
 
@@ -58,7 +58,7 @@ size_t NGTIndex_Multi<DataType, DistType>::indexLabelCount() const {
 
 template <typename DataType, typename DistType>
 double NGTIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
-                                                            const void *vector_data) const {
+                                                           const void *vector_data) const {
 
     auto IDs = this->label_lookup_.find(label);
     if (IDs == this->label_lookup_.end()) {
@@ -80,7 +80,7 @@ double NGTIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
 
 template <typename DataType, typename DistType>
 void NGTIndex_Multi<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
-                                                           idType old_id) {
+                                                          idType old_id) {
     assert(label_lookup_.find(label) != label_lookup_.end());
     auto &ids = label_lookup_.at(label);
     for (size_t i = 0; i < ids.size(); i++) {
@@ -130,7 +130,7 @@ int NGTIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const
 template <typename DataType, typename DistType>
 VecSimBatchIterator *
 NGTIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                      VecSimQueryParams *queryParams) const {
+                                                     VecSimQueryParams *queryParams) const {
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {

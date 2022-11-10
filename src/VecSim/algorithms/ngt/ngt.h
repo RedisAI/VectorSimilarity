@@ -390,9 +390,8 @@ protected:
     inline linklistsizeint *get_linklist(idType internal_id) const;
     inline void setListCount(linklistsizeint *ptr, unsigned short int size);
     inline void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates,
-                                 idType *node_neighbors,
-                                 const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
-                                 size_t *removed_links_num);
+                                 idType *node_neighbors, const vecsim_stl::vector<bool> &bitmap,
+                                 idType *removed_links, size_t *removed_links_num);
     template <typename Identifier> // Either idType or labelType
     inline DistType
     processCandidate(idType curNodeId, const void *data_point, size_t ef, tag_t visited_tag,
@@ -598,8 +597,8 @@ VisitedNodesHandler *NGTIndex<DataType, DistType>::getVisitedList() const {
  */
 template <typename DataType, typename DistType>
 void NGTIndex<DataType, DistType>::removeExtraLinks(
-    linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates,
-    idType *node_neighbors, const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
+    linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates, idType *node_neighbors,
+    const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
     size_t *removed_links_num) {
 
     auto orig_candidates = candidates;

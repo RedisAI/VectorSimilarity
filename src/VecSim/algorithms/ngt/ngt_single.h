@@ -19,7 +19,7 @@ private:
 
 public:
     NGTIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
-                     size_t random_seed = 100, size_t initial_pool_size = 1)
+                    size_t random_seed = 100, size_t initial_pool_size = 1)
         : NGTIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}
 
@@ -55,7 +55,7 @@ size_t NGTIndex_Single<DataType, DistType>::indexLabelCount() const {
 
 template <typename DataType, typename DistType>
 double NGTIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
-                                                             const void *vector_data) const {
+                                                            const void *vector_data) const {
     auto id = label_lookup_.find(label);
     if (id == label_lookup_.end()) {
         return INVALID_SCORE;
@@ -69,7 +69,7 @@ double NGTIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
 
 template <typename DataType, typename DistType>
 void NGTIndex_Single<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
-                                                            idType old_id) {
+                                                           idType old_id) {
     label_lookup_[label] = new_id;
 }
 
@@ -94,8 +94,7 @@ int NGTIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int NGTIndex_Single<DataType, DistType>::addVector(const void *vector_data,
-                                                    const labelType label) {
+int NGTIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
 
     // Checking if an element with the given label already exists. if so, remove it.
     if (label_lookup_.find(label) != label_lookup_.end()) {
@@ -108,7 +107,7 @@ int NGTIndex_Single<DataType, DistType>::addVector(const void *vector_data,
 template <typename DataType, typename DistType>
 VecSimBatchIterator *
 NGTIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                       VecSimQueryParams *queryParams) const {
+                                                      VecSimQueryParams *queryParams) const {
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
