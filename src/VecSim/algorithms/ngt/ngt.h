@@ -33,17 +33,17 @@ typedef enum { INNER, LEAF } NodeRole;
 template <typename DataType, typename DistType>
 class VPTree;
 template <typename DataType, typename DistType>
-class HierarchicalNSW;
+class NGTIndex;
 
 template <typename DataType, typename DistType>
 struct DistanceComparator {
     const void *pivot;
     const dist_func_t<DistType> dist_func;
     const size_t dim;
-    HierarchicalNSW<DataType, DistType> &idx;
+    NGTIndex<DataType, DistType> &idx;
 
     DistanceComparator(const void *pivot, dist_func_t<DistType> df, size_t dim,
-                       HierarchicalNSW<DataType, DistType> &idx)
+                       NGTIndex<DataType, DistType> &idx)
         : pivot(pivot), dist_func(df), dim(dim), idx(idx) {}
     bool operator()(idType a, idType b) {
         return dist_func(pivot, idx.getDataByInternalId(a), dim) <
@@ -114,7 +114,7 @@ void Node<DataType, DistType>::split(VPTree<DataType, DistType> &vpt) {
     // auto distComp = DistanceComparator(vpt.index.getDataByInternalId(*(begin())), vpt.dist_func,
     //                                    vpt.dim);
     // std::nth_element(begin(), median, end, distComp);
-    auto tmp = vecsim_stl::vector<idType>(begin(), end(), this->allocator);
+    auto tmp = std::vector<idType>(begin(), end());
     auto distComp = DistanceComparator<DataType, DistType>(
         vpt.index.getDataByInternalId(*(begin())), vpt.dist_func, vpt.dim, vpt.index);
     size_t med_idx = size / 2;
@@ -206,13 +206,13 @@ public:
     size_t data_size_;
 
 public:
-    VPTree(HierarchicalNSW<DataType, DistType> &hnsw, dist_func_t<DistType> *func, size_t data_size,
+    VPTree(NGTIndex<DataType, DistType> &ngt, dist_func_t<DistType> func, size_t data_size,
            std::shared_ptr<VecSimAllocator> allocator)
         : VecsimBaseObject(allocator),
           root(new (this->allocator)
                    Node<DataType, DistType>(base.before_begin(), base.end(), 0, allocator)),
-          base(allocator), index(hnsw), dist_func(index.GetDistFunc()), dim(hnsw.GetDim()),
-          data_size_(data_size), {}
+          base(allocator), index(ngt), dist_func(index.GetDistFunc()), dim(index.GetDim()),
+          data_size_(data_size) {}
     ~VPTree() { delete root; }
     CandidatesItr find(const void *query, size_t batchSize) const;
     void insert(idType id, const void *data);
@@ -390,7 +390,7 @@ protected:
     inline linklistsizeint *get_linklist(idType internal_id) const;
     inline void setListCount(linklistsizeint *ptr, unsigned short int size);
     inline void removeExtraLinks(linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates,
-                                 size_t Mcurmax, idType *node_neighbors,
+                                 idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                                  size_t *removed_links_num);
     template <typename Identifier> // Either idType or labelType
@@ -598,13 +598,13 @@ VisitedNodesHandler *NGTIndex<DataType, DistType>::getVisitedList() const {
  */
 template <typename DataType, typename DistType>
 void NGTIndex<DataType, DistType>::removeExtraLinks(
-    linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates, size_t Mcurmax,
+    linklistsizeint *node_ll, candidatesMaxHeap<DistType> candidates,
     idType *node_neighbors, const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
     size_t *removed_links_num) {
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
-    getNeighborsByHeuristic2(candidates, Mcurmax);
+    getNeighborsByHeuristic2(candidates, maxM_);
 
     // check the diff in the link list, save the neighbours
     // that were chosen to be removed, and update the new neighbours
@@ -831,7 +831,6 @@ void NGTIndex<DataType, DistType>::getNeighborsByHeuristic2(
 template <typename DataType, typename DistType>
 idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
     idType cur_c, candidatesMaxHeap<DistType> &top_candidates) {
-    size_t Mcurmax = maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
     if (top_candidates.size() > M_)
         throw std::runtime_error(
@@ -870,7 +869,7 @@ idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
         linklistsizeint *ll_other = get_linklist(selectedNeighbor);
         size_t sz_link_list_other = getListCount(ll_other);
 
-        if (sz_link_list_other > Mcurmax)
+        if (sz_link_list_other > maxM_)
             throw std::runtime_error("Bad value of sz_link_list_other");
         if (selectedNeighbor == cur_c)
             throw std::runtime_error("Trying to connect an element to itself");
@@ -879,7 +878,7 @@ idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
         auto *neighbor_neighbors = (idType *)(ll_other + 1);
 
         // If the selected neighbor can add another link (hasn't reached the max) - add it.
-        if (sz_link_list_other < Mcurmax) {
+        if (sz_link_list_other < maxM_) {
             neighbor_neighbors[sz_link_list_other] = cur_c;
             setListCount(ll_other, sz_link_list_other + 1);
         } else {
@@ -903,15 +902,15 @@ idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
 
             idType removed_links[sz_link_list_other + 1];
             size_t removed_links_num;
-            removeExtraLinks(ll_other, candidates, Mcurmax, neighbor_neighbors, neighbors_bitmap,
+            removeExtraLinks(ll_other, candidates, neighbor_neighbors, neighbors_bitmap,
                              removed_links, &removed_links_num);
 
             // remove the current neighbor from the incoming list of nodes for the
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
-            auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, 0);
+            auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor);
             for (size_t i = 0; i < removed_links_num; i++) {
                 idType node_id = removed_links[i];
-                auto *node_incoming_edges = getIncomingEdgesPtr(node_id, 0);
+                auto *node_incoming_edges = getIncomingEdgesPtr(node_id);
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
@@ -974,10 +973,9 @@ void NGTIndex<DataType, DistType>::repairConnectionsForDeletion(
                            neighbour_neighbours[j]);
     }
 
-    size_t Mcurmax = maxM_;
     size_t removed_links_num;
     idType removed_links[neighbour_neighbours_count];
-    removeExtraLinks(neighbour_neighbours_list, candidates, Mcurmax, neighbour_neighbours,
+    removeExtraLinks(neighbour_neighbours_list, candidates, neighbour_neighbours,
                      neighbour_orig_neighbours_set, removed_links, &removed_links_num);
 
     // remove neighbour id from the incoming list of nodes for his
@@ -1186,7 +1184,7 @@ template <typename DataType, typename DistType>
 NGTIndex<DataType, DistType>::~NGTIndex() {
     if (max_id != INVALID_ID) {
         for (idType id = 0; id <= max_id; id++) {
-            delete getIncomingEdgesPtr(id, 0);
+            delete getIncomingEdgesPtr(id);
         }
     }
 
@@ -1328,8 +1326,6 @@ int NGTIndex<DataType, DistType>::appendVector(const void *vector_data, const la
     std::unique_lock<std::mutex> entry_point_lock(global);
 #endif
 
-    size_t currObj = entrypoint_node_;
-
     memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
 
@@ -1340,15 +1336,15 @@ int NGTIndex<DataType, DistType>::appendVector(const void *vector_data, const la
     vptree.insert(cur_c, vector_data);
 
     // this condition only means that we are not inserting the first element.
-    if (entrypoint_node_ != INVALID_ID) {
+    if (cur_element_count > 1) {
         candidatesMaxHeap<DistType> top_candidates = searchGraph(vector_data, ef_construction_);
         mutuallyConnectNewElement(cur_c, top_candidates);
     } else {
         // Do nothing for the first element
-        entrypoint_node_ = 0;
         setIncomingEdgesPtr(cur_c,
                             new (this->allocator) vecsim_stl::vector<idType>(this->allocator));
     }
+
     return true;
 }
 
@@ -1371,13 +1367,13 @@ NGTIndex<DataType, DistType>::searchGraph_WithTimeout(const void *data_point, si
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     for (auto it = itr.begin; it != itr.end; it++) {
-        DistType dist = dist_func(data_point, getDataByInternalId(*it), this->dim);
-        top_candidates.emplace(dist, getExternalLabel(*it));
+        DistType dist = this->dist_func(data_point, getDataByInternalId(*it), this->dim);
+        top_candidates->emplace(dist, getExternalLabel(*it));
         candidate_set.emplace(-dist, *it);
         this->visited_nodes_handler->tagNode(*it, visited_tag);
     }
 
-    DistType lowerBound = top_candidates.top().first;
+    DistType lowerBound = top_candidates->top().first;
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();

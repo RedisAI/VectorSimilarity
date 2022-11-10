@@ -1,5 +1,5 @@
-// #include "VecSim/algorithms/hnsw/hnsw_single.h"
-// #include "VecSim/algorithms/hnsw/hnsw_multi.h"
+#include "VecSim/algorithms/ngt/ngt_single.h"
+#include "VecSim/algorithms/ngt/ngt_multi.h"
 #include "VecSim/algorithms/ngt/ngt_factory.h"
 #include "VecSim/algorithms/ngt/ngt.h"
 
@@ -9,11 +9,10 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
                                                  std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
-    // if (params->multi)
-    //     return new (allocator) NGTIndex_Multi<DataType, DistType>(params, allocator);
-    // else
-    //     return new (allocator) NGTIndex_Single<DataType, DistType>(params, allocator);
-    return new (allocator) NGTIndex<DataType, DistType>(params, allocator);
+    if (params->multi)
+        return new (allocator) NGTIndex_Multi<DataType, DistType>(params, allocator);
+    else
+        return new (allocator) NGTIndex_Single<DataType, DistType>(params, allocator);
 }
 
 VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
@@ -27,14 +26,14 @@ VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator>
     return NULL;
 }
 
-// template <typename DataType, typename DistType = DataType>
-// inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
-//     // check if single and return new bf_index
-//     if (is_multi)
-//         return sizeof(NGTIndex_Multi<DataType, DistType>);
-//     else
-//         return sizeof(NGTIndex_Single<DataType, DistType>);
-// }
+template <typename DataType, typename DistType = DataType>
+inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
+    // check if single and return new bf_index
+    if (is_multi)
+        return sizeof(NGTIndex_Multi<DataType, DistType>);
+    else
+        return sizeof(NGTIndex_Single<DataType, DistType>);
+}
 
 size_t EstimateInitialSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
