@@ -8,7 +8,7 @@ on:
 
 jobs:
   rocky8:
-    if: github.event.label.name == 'multi-build'
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
@@ -24,7 +24,7 @@ jobs:
           make unit_test
 
   bionic:
-    if: github.event.label.name == 'multi-build'
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'bionic'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:bionic
@@ -37,7 +37,7 @@ jobs:
         run: make unit_test
   
   xenial:
-    if: github.event.label.name == 'multi-build'
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'xenial'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:bionic
@@ -50,7 +50,7 @@ jobs:
         run: make unit_test
 
   jammy:
-    if: github.event.label.name == 'multi-build'
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'jammy'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:jammy
