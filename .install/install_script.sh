@@ -2,7 +2,7 @@
 
 OS_TYPE=$(uname -s)
 
-if [[ $OS_TYPE = 'darwin' ]]
+if [[ $OS_TYPE = 'Darwin' ]]
 then
     OS='macos'
 else
