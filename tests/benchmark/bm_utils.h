@@ -17,11 +17,13 @@
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "bm_definitions.h"
 
+
 class BM_VecSimGeneral : public benchmark::Fixture {
 public:
     static size_t block_size;
 
 protected:
+    static std::vector<const char *> hnsw_index_files;
     static size_t dim;
     static size_t M;
     static size_t EF_C;
@@ -34,8 +36,6 @@ protected:
     static size_t ref_count;
 
     static std::vector<VecSimIndex *> indices;
-
-    static std::vector<const char *> hnsw_index_files;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral();
@@ -78,7 +78,8 @@ public:
 
     static std::vector<std::vector<data_t>> queries;
 
-    BM_VecSimIndex() = default;
+    BM_VecSimIndex(const std::vector<const char *>& index_files, const std::vector<const char *>& test_files);
+
     virtual ~BM_VecSimIndex() = default;
 
 protected:
@@ -90,18 +91,31 @@ protected:
     }
 
 private:
-    static void Initialize();
+    static void Initialize(const std::vector<const char *>& index_files, const std::vector<const char *>& test_files);
     static void loadTestVectors(VecSimType type);
     static void InsertToQueries(std::ifstream &input);
 };
 
 template <typename index_type_t>
-std::vector<std::vector<typename index_type_t::data_t>> BM_VecSimIndex<index_type_t>::queries =
-    std::vector<std::vector<typename index_type_t::data_t>>();
+std::vector<std::vector<typename index_type_t::data_t>> BM_VecSimIndex<index_type_t>::queries;
 
 template <typename index_type_t>
-void BM_VecSimIndex<index_type_t>::Initialize() {
+BM_VecSimIndex<index_type_t>::BM_VecSimIndex(const std::vector<const char *>& index_files, const std::vector<const char *>& test_files)  {
+    if (BM_VecSimGeneral::ref_count == 0) {
+        // Initialize the static members.
+        Initialize(index_files, test_files);
+    }
+    BM_VecSimGeneral::ref_count++;
+}
 
+
+
+
+template <typename index_type_t>
+void BM_VecSimIndex<index_type_t>::Initialize(const std::vector<const char *>& index_files, const std::vector<const char *>& test_files) {
+
+    BM_VecSimGeneral::hnsw_index_files = index_files;
+    BM_VecSimGeneral::test_vectors_files = test_files;
     VecSimType type = index_type_t::get_index_type();
 
     BFParams bf_params = {.type = type,
@@ -123,7 +137,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                          .efConstruction = BM_VecSimGeneral::EF_C};
 
     // Initialize and load HNSW index for DBPedia data set.
-    INDICES.push_back(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_files[type]), &params));
+    INDICES.push_back(HNSWFactory::NewIndex(AttachRootPath(BM_VecSimGeneral::hnsw_index_files.at(type)), &params));
 
     auto *hnsw_index = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB]);
     size_t ef_r = 10;
@@ -141,7 +155,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::loadTestVectors(VecSimType type) {
-    auto file_name = AttachRootPath(test_vectors_files[type]);
+
+    auto file_name = AttachRootPath(test_vectors_files.at(type));
 
     std::ifstream input(file_name, std::ios::binary);
 
@@ -149,15 +164,17 @@ void BM_VecSimIndex<index_type_t>::loadTestVectors(VecSimType type) {
         throw std::runtime_error("Test vectors file was not found in path. Exiting...");
     }
     input.seekg(0, std::ifstream::beg);
+    
     InsertToQueries(input);
 }
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
+    queries.resize(n_queries);
     for (size_t i = 0; i < BM_VecSimIndex::n_queries; i++) {
         std::vector<data_t> query(dim);
         input.read((char *)query.data(), dim * sizeof(data_t));
-        queries.push_back(query);
+        QUERIES.push_back(query);
     }
 }
 

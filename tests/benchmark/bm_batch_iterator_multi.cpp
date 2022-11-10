@@ -1,6 +1,8 @@
 
 #include "bm_batch_iterator.h"
 
+
+
 bool BM_VecSimGeneral::is_multi = true;
 
 // Global benchmark data
@@ -11,15 +13,21 @@ size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
 
-size_t BM_VecSimGeneral::ref_count = 0;
+std::vector<const char *> init_index_files() { 
+    std::vector<const char *> v = {"tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1", 
+    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1"};
 
-std::vector<const char *> BM_VecSimGeneral::hnsw_index_files = {
-    // TODO serialize both with v2
-    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1",
-    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512_FP64.hnsw_v2"};
+    return v;
+}
 
-std::vector<const char *> BM_VecSimGeneral::test_vectors_files = {
-    // TODO create test vector for FP64
-    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw",
-    "tests/benchmark/data/DBpedia-test_vectors-n10k_FP64.raw"};
+std::vector<const char *> init_test_files() { 
+    std::vector<const char *> v = {"tests/benchmark/data/DBpedia-test_vectors-n10k.raw", 
+    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw"};
+
+    return v;
+}
+template <typename index_type_t>
+BM_BatchIterator<index_type_t>::BM_BatchIterator() :  BM_VecSimIndex<index_type_t>(init_index_files(), init_test_files())  {}
 BENCHMARK_MAIN();
+                                                                   
+ 

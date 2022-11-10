@@ -7,13 +7,17 @@
 #include "VecSim/query_results.h"
 #include "bm_utils.h"
 
+size_t BM_VecSimGeneral::ref_count = 0;
+std::vector<const char *> BM_VecSimGeneral::hnsw_index_files = std::vector<const char *>();
+std::vector<const char *> BM_VecSimGeneral::test_vectors_files = std::vector<const char *>();
+
 template <typename index_type_t>
 class BM_BatchIterator : public BM_VecSimIndex<index_type_t> {
 protected:
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-    BM_BatchIterator() = default;
+   BM_BatchIterator();
     ~BM_BatchIterator() = default;
 
     static void BF_FixedBatchSize(benchmark::State &st);
@@ -38,7 +42,7 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(benchmark::State &st,
                                                            size_t index_memory,
                                                            double &memory_delta) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
-        INDICES[VecSimAlgo_HNSWLIB], QUERIES[iter % N_QUERIES].data(), nullptr);
+        INDICES.at(VecSimAlgo_HNSWLIB), QUERIES[iter % N_QUERIES].data(), nullptr);
     VecSimQueryResult_List accumulated_results[num_batches];
     size_t batch_num = 0;
     total_res_num = 0;
@@ -54,7 +58,7 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(benchmark::State &st,
         batch_size *= batch_increase_factor;
     }
     // Update the memory delta as a result of using the batch iterator.
-    size_t curr_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).hnswInfo.memory;
+    size_t curr_memory = VecSimIndex_Info(INDICES.at(VecSimAlgo_HNSWLIB)).hnswInfo.memory;
     memory_delta += (double)(curr_memory - index_memory);
     VecSimBatchIterator_Free(batchIterator);
     st.PauseTiming();
