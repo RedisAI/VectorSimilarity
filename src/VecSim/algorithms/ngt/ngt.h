@@ -28,7 +28,6 @@ using std::pair;
 typedef enum { INNER, LEAF } VPTNodeRole;
 #define MAX_PER_LEAF 10
 // #include <functional>
-#include <forward_list>
 
 template <typename DataType, typename DistType>
 class NGTIndex;
@@ -38,7 +37,7 @@ struct DistanceComparator {
     const void *pivot;
     const dist_func_t<DistType> dist_func;
     const size_t dim;
-    NGTIndex<DataType, DistType> &idx;
+    const NGTIndex<DataType, DistType> &idx;
 
     DistanceComparator(const void *pivot, dist_func_t<DistType> df, size_t dim,
                        NGTIndex<DataType, DistType> &idx)
@@ -88,7 +87,6 @@ public:
     }
 
     void merge();
-    void split(NGTIndex<DataType, DistType> &vpt);
     void rebuild(NGTIndex<DataType, DistType> &vpt);
     inline bool has(idType id) const;
     inline bool unbalanced() const;
@@ -113,54 +111,11 @@ VPTNode<DataType, DistType>::~VPTNode() {
 }
 
 template <typename DataType, typename DistType>
-void VPTNode<DataType, DistType>::split(NGTIndex<DataType, DistType> &vpt) {
-    assert(LEAF == this->role);
-    // Holds to the ids before changing role.
-    auto my_ids = ids;
-    this->role = INNER;
-
-    int i = (int)((double)rand() / RAND_MAX * (size - 1));
-    auto tmp = my_ids->at(0);
-    my_ids->at(0) = my_ids->at(i);
-    my_ids->at(i) = tmp;
-
-    auto distComp = DistanceComparator<DataType, DistType>(vpt.getDataByInternalId(my_ids->begin()),
-                                                           vpt.dist_func, vpt.dim, vpt);
-    auto med = my_ids->begin() + (size / 2);
-    std::nth_element(my_ids->begin() + 1, med, my_ids->end(), distComp);
-
-    pivot_id = my_ids->begin();
-    pivot = vpt.getDataByInternalId(pivot_id);
-    radius = vpt.dist_func(pivot, vpt.getDataByInternalId(*med), vpt.dim);
-
-    auto left_ids = new (allocator) vecsim_stl::vector<idType>(allocator);
-    left_ids->insert(left_ids->begin(), my_ids->begin(), med);
-    auto right_ids = new (allocator) vecsim_stl::vector<idType>(allocator);
-    right_ids->insert(right_ids->begin(), med, my_ids->end());
-
-    // After passing the ids to the left and the right, we can delete current vector.
-    delete my_ids;
-
-    auto old_left = left;
-    auto old_right = right;
-
-    left = new (this->allocator)
-        VPTNode<DataType, DistType>(left_ids, left_ids->size(), this->allocator);
-    right = new (this->allocator)
-        VPTNode<DataType, DistType>(right_ids, right_ids->size(), this->allocator);
-
-    left->left = old_left;
-    left->right = right;
-    right->left = left;
-    right->right = old_right;
-}
-
-template <typename DataType, typename DistType>
-void VPTNode<DataType, DistType>::rebuild(NGTIndex<DataType, DistType> &vpt) {
+void VPTNode<DataType, DistType>::rebuild(NGTIndex<DataType, DistType> &ngt) {
     if (size > MAX_PER_LEAF) {
-        split(vpt);
-        left->rebuild(vpt);
-        right->rebuild(vpt);
+        ngt.splitLeaf(this);
+        left->rebuild(ngt);
+        right->rebuild(ngt);
     }
 }
 
@@ -298,7 +253,7 @@ protected:
     double mult_;
 
     // Index level generator of the top level for a new element
-    std::default_random_engine level_generator_;
+    std::default_random_engine random_index_generator_;
 
     // Index state
     size_t cur_element_count;
@@ -328,11 +283,14 @@ protected:
     // #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
     // #endif
 
+    // TODO: remove when rebuildVPTree is iterative
+    friend struct VPTNode<DataType, DistType>;
+
     NGTIndex() = delete;                 // default constructor is disabled.
     NGTIndex(const NGTIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline void setExternalLabel(idType internal_id, labelType label);
     inline labelType *getExternalLabelPtr(idType internal_id) const;
-    inline size_t getRandomLevel(double reverse_size);
+    inline size_t getRandomIndex(size_t size);
     inline vecsim_stl::vector<idType> *getIncomingEdgesPtr(idType internal_id) const;
     inline void setIncomingEdgesPtr(idType internal_id, void *edges_ptr);
     inline linklistsizeint *get_linklist(idType internal_id) const;
@@ -352,6 +310,8 @@ protected:
     CandidatesFromTree<DataType, DistType> searchTree(const void *query, size_t batchSize) const;
     void removeFromTree(idType id, const void *data);
     void insertToTree(idType id, const void *data);
+    inline void splitLeaf(VPTNode<DataType, DistType> *node);
+    inline void rebuildVPTree(VPTNode<DataType, DistType> *root);
     candidatesMaxHeap<DistType> searchGraph(const void *data_point, size_t ef) const;
     candidatesLabelsMaxHeap<DistType> *searchGraph_WithTimeout(const void *data_point, size_t ef,
                                                                size_t k, void *timeoutCtx,
@@ -497,9 +457,9 @@ char *NGTIndex<DataType, DistType>::getDataByInternalId(idType internal_id) cons
 }
 
 template <typename DataType, typename DistType>
-size_t NGTIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
+size_t NGTIndex<DataType, DistType>::getRandomIndex(size_t size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
-    double r = -log(distribution(level_generator_)) * reverse_size;
+    double r = distribution(random_index_generator_) * size;
     return (size_t)r;
 }
 
@@ -548,6 +508,79 @@ VisitedNodesHandler *NGTIndex<DataType, DistType>::getVisitedList() const {
  */
 
 template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::splitLeaf(VPTNode<DataType, DistType> *node) {
+    assert(LEAF == node->role);
+    // Holds to the ids before changing role.
+    auto node_ids = node->ids;
+    node->role = INNER;
+
+    size_t i = getRandomIndex(node->size);
+    auto tmp = (*node_ids)[0];
+    (*node_ids)[0] = (*node_ids)[i];
+    (*node_ids)[i] = tmp;
+
+    auto distComp = DistanceComparator<DataType, DistType>(getDataByInternalId((*node_ids)[0]),
+                                                           this->dist_func, this->dim, *this);
+    auto med = node_ids->begin() + (node->size / 2);
+    std::nth_element(node_ids->begin() + 1, med, node_ids->end(), distComp);
+
+    node->pivot_id = (*node_ids)[0];
+    node->pivot = getDataByInternalId(node->pivot_id);
+    node->radius = this->dist_func(node->pivot, getDataByInternalId(*med), this->dim);
+
+    auto left_ids = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+    left_ids->insert(left_ids->begin(), node_ids->begin(), med);
+    auto right_ids = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+    right_ids->insert(right_ids->begin(), med, node_ids->end());
+
+    // After passing the ids to the left and the right, we can delete current vector.
+    delete node_ids;
+
+    auto old_left = node->left;
+    auto old_right = node->right;
+
+    node->left = new (this->allocator)
+        VPTNode<DataType, DistType>(left_ids, left_ids->size(), this->allocator);
+    node->right = new (this->allocator)
+        VPTNode<DataType, DistType>(right_ids, right_ids->size(), this->allocator);
+
+    node->left->left = old_left;
+    node->left->right = node->right;
+    node->right->left = node->left;
+    node->right->right = old_right;
+}
+
+template <typename DataType, typename DistType>
+void NGTIndex<DataType, DistType>::rebuildVPTree(VPTNode<DataType, DistType> *root) {
+    assert(INNER == root->role);
+
+    // TODO: make vector temporary (not allocated)
+    // vecsim_stl::vector<idType> tree_ids(this->allocator);
+    // tree_ids.reserve(root->size);
+    auto tree_ids = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+    tree_ids->reserve(root->size);
+
+    auto right_next_leaf = root->right_leaf()->right;
+    for (auto curr = root->left_leaf(); curr != right_next_leaf; curr = curr->right) {
+        tree_ids->insert(tree_ids->end(), curr->ids->begin(), curr->ids->end());
+    }
+    auto left_next_leaf = root->left_leaf()->left;
+
+    if (INVALID_ID == root->pivot_id)
+        this->allocator->free_allocation(root->pivot);
+    delete root->left;
+    delete root->right;
+
+    root->left = left_next_leaf;
+    root->right = right_next_leaf;
+
+    // TODO: make iterative
+    root->ids = tree_ids;
+    root->role = LEAF;
+    root->rebuild(*this);
+}
+
+template <typename DataType, typename DistType>
 void NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
     VPTNode<DataType, DistType> *curr = &this->VPtree_root;
 
@@ -557,13 +590,10 @@ void NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
         curr->size++;
 
         if (curr->unbalanced()) {
-            // TODO: rebuild sub-tree
-
-            // delete curr->left;
-            // delete curr->right;
-            // curr->role = LEAF;
-            // base.insert_after(curr->before_begin, id);
-            // curr->rebuild(*this);
+            // Arbitrarily insert id to sub-tree
+            curr->left_leaf()->ids->push_back(id);
+            // Rebuild sub-tree.
+            rebuildVPTree(curr);
             return;
         } else {
             if (curr->radius < this->dist_func(curr->pivot, data, this->dim)) {
@@ -577,7 +607,7 @@ void NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
     curr->size++;
     curr->ids->push_back(id);
     if (curr->size > MAX_PER_LEAF) {
-        // curr->split(*this);
+        splitLeaf(curr);
     }
 }
 
@@ -591,15 +621,19 @@ void NGTIndex<DataType, DistType>::removeFromTree(idType id, const void *data) {
     while (curr->role != LEAF) {
         curr->size--;
         if (curr->unbalanced()) {
-            // find(id)->remove(base, id);  // logarithmic search but calculates distances all the
-            // way
-            // TODO: rebuild without the deleted id
+            // TODO: consider logarithmic search.
+            // Logarithmic but calculates distances all the way
 
-            // base.remove(id); // linear search but simple
-            // delete curr->left;
-            // delete curr->right;
-            // curr->role = LEAF;
-            // curr->rebuild(*this);
+            auto end = curr->right_leaf()->right;
+            for (auto it = curr->left_leaf(); it != end; it = it->right) {
+                auto pos = std::find(it->ids->begin(), it->ids->end(), id);
+                if (pos != it->ids->end()) {
+                    it->ids->erase(pos);
+                    break;
+                }
+            }
+
+            rebuildVPTree(curr);
             return;
         } else {
             parent = curr;
@@ -1210,7 +1244,7 @@ NGTIndex<DataType, DistType>::NGTIndex(const HNSWParams *params,
     if (M <= 1)
         throw std::runtime_error("NGT index parameter M cannot be 1");
     mult_ = 1 / log(1.0 * M_);
-    level_generator_.seed(random_seed);
+    random_index_generator_.seed(random_seed);
 
     // data_level0_memory will look like this:
     // | -----4------ | -----4*M0----------- | ----------8----------| --data_size_-- | ----8---- |
