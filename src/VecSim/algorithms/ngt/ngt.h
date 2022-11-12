@@ -133,11 +133,16 @@ void VPTNode<DataType, DistType>::merge() {
     ids->insert(ids->end(), left->ids->begin(), left->ids->end());
     auto old_left = left;
     left = left->left;
+    // TODO: add dummies for leaf list (or make it a ring) and remove checks.
+    if (old_left->left)
+        old_left->left->right = this;
     delete old_left;
 
     ids->insert(ids->end(), right->ids->begin(), right->ids->end());
     auto old_right = right;
     right = right->right;
+    if (old_right->right)
+        old_right->right->left = this;
     delete old_right;
 }
 
@@ -176,7 +181,7 @@ public:
         : _begin(begin), _end(back->right) {}
     ~CandidatesFromTree() = default;
 
-    class CandidatesItr : public std::iterator<std::input_iterator_tag, idType> {
+    class CandidatesItr {
     private:
         const VPTNode<DataType, DistType> *curr;
         size_t idx;
@@ -278,10 +283,10 @@ protected:
     std::vector<std::mutex> link_list_locks_;
 #endif
 
-    // #ifdef BUILD_TESTS
-    //     friend class HNSWIndexSerializer;
-    // #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
-    // #endif
+#ifdef BUILD_TESTS
+//     friend class HNSWIndexSerializer;
+#include "VecSim/algorithms/ngt/ngt_base_tests_friends.h"
+#endif
 
     // TODO: remove when rebuildVPTree is iterative
     friend struct VPTNode<DataType, DistType>;
@@ -548,6 +553,11 @@ void NGTIndex<DataType, DistType>::splitLeaf(VPTNode<DataType, DistType> *node) 
     node->left->right = node->right;
     node->right->left = node->left;
     node->right->right = old_right;
+
+    if (old_left)
+        old_left->right = node->left;
+    if (old_right)
+        old_right->left = node->right;
 }
 
 template <typename DataType, typename DistType>
@@ -1123,7 +1133,15 @@ void NGTIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_intern
     // swap label
     replaceIdOfLabel(getExternalLabel(max_id), element_internal_id, max_id);
 
-    // TODO: implement in VPTree
+    // TODO: implement not linearly
+    auto end = VPtree_root.right_leaf()->right;
+    for (auto curr = VPtree_root.left_leaf(); curr != end; curr = curr->right) {
+        auto pos = std::find(curr->ids->begin(), curr->ids->end(), max_id);
+        if (pos != curr->ids->end()) {
+            *pos = element_internal_id;
+            break;
+        }
+    }
 
     // swap neighbours
 
@@ -1423,8 +1441,6 @@ int NGTIndex<DataType, DistType>::appendVector(const void *vector_data, const la
     setExternalLabel(cur_c, label);
     memcpy(getDataByInternalId(cur_c), vector_data, data_size_);
 
-    insertToTree(cur_c, vector_data);
-
     // this condition only means that we are not inserting the first element.
     if (cur_element_count > 1) {
         candidatesMaxHeap<DistType> top_candidates = searchGraph(vector_data, ef_construction_);
@@ -1434,6 +1450,8 @@ int NGTIndex<DataType, DistType>::appendVector(const void *vector_data, const la
         setIncomingEdgesPtr(cur_c,
                             new (this->allocator) vecsim_stl::vector<idType>(this->allocator));
     }
+
+    insertToTree(cur_c, vector_data);
 
     return true;
 }

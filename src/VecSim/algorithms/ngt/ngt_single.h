@@ -10,7 +10,7 @@ private:
 
 #ifdef BUILD_TESTS
 //     friend class HNSWIndexSerializer;
-// #include "VecSim/algorithms/ngt/ngt_single_tests_friends.h"
+#include "VecSim/algorithms/ngt/ngt_single_tests_friends.h"
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;

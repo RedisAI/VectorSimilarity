@@ -1,0 +1,6 @@
+#include "VecSim/friend_test_decl.h"
+INDEX_TEST_FRIEND_CLASS(NGTTest_test_dynamic_ngt_info_iterator_Test)
+INDEX_TEST_FRIEND_CLASS(NGTTest_preferAdHocOptimization_Test)
+INDEX_TEST_FRIEND_CLASS(NGTTest_testSizeEstimation_Test)
+INDEX_TEST_FRIEND_CLASS(IndexAllocatorTest_testIncomingEdgesSet_Test)
+INDEX_TEST_FRIEND_CLASS(IndexAllocatorTest_test_ngt_reclaim_memory_Test)

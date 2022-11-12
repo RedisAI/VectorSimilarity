@@ -105,7 +105,8 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_BF:
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
-        default:
+        case VecSimAlgo_NGT:
+            index = NGTFactory::NewIndex(&params->hnswParams, allocator);
             break;
         }
     } catch (...) {
