@@ -71,8 +71,8 @@ protected:
                              .blockSize = BM_VecSimBasics::block_size};
 
         // Generate index from file.
-        hnsw_index =
-            HNSWFactory::NewIndex(GetSerializedIndexLocation(updated_hnsw_index_file), &params);
+        hnsw_index_updated = HNSWFactory::NewIndex(
+            BM_VecSimBasics::GetSerializedIndexLocation(updated_hnsw_index_file), &params);
 
         auto hnsw_index_updated_casted =
             reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated);
