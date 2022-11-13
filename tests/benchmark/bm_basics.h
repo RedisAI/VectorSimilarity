@@ -100,10 +100,14 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteVector_fp32, fp32_index_t)
 (benchmark::State &st) {
     if (VecSimAlgo_BF == st.range(0)) {
         DeleteVector<BruteForceIndex<float, float>>(
-            reinterpret_cast<BruteForceIndex<float, float> *>(INDICES[VecSimAlgo_BF]), st);
+            reinterpret_cast<BruteForceIndex<float, float> *>(
+                BM_VecSimIndex<fp32_index_t>::indices[VecSimAlgo_BF]),
+            st);
     } else if (VecSimAlgo_HNSWLIB == st.range(0)) {
         DeleteVector<HNSWIndex<float, float>>(
-            reinterpret_cast<HNSWIndex<float, float> *>(INDICES[VecSimAlgo_HNSWLIB]), st);
+            reinterpret_cast<HNSWIndex<float, float> *>(
+                BM_VecSimIndex<fp32_index_t>::indices[VecSimAlgo_HNSWLIB]),
+            st);
     }
 }
 
@@ -111,10 +115,14 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteVector_fp64, fp64_index_t)
 (benchmark::State &st) {
     if (VecSimAlgo_BF == st.range(0)) {
         DeleteVector<BruteForceIndex<double, double>>(
-            reinterpret_cast<BruteForceIndex<double, double> *>(INDICES[VecSimAlgo_BF]), st);
+            reinterpret_cast<BruteForceIndex<double, double> *>(
+                BM_VecSimIndex<fp64_index_t>::indices[VecSimAlgo_BF]),
+            st);
     } else if (VecSimAlgo_HNSWLIB == st.range(0)) {
         DeleteVector<HNSWIndex<double, double>>(
-            reinterpret_cast<HNSWIndex<double, double> *>(INDICES[VecSimAlgo_HNSWLIB]), st);
+            reinterpret_cast<HNSWIndex<double, double> *>(
+                BM_VecSimIndex<fp64_index_t>::indices[VecSimAlgo_HNSWLIB]),
+            st);
     }
 }
 

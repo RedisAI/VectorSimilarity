@@ -1,10 +1,8 @@
 #pragma once
 
-#include "bm_utils.h"
+#include "bm_index.h"
 
 size_t BM_VecSimGeneral::block_size = 1024;
-
-size_t BM_VecSimGeneral::ref_count = 0;
 
 // Class for common bm for basic index and updated index.
 template <typename index_type_t>

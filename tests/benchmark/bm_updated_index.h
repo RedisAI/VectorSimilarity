@@ -19,17 +19,19 @@ public:
     const static Offset_t updated_index_offset = 2;
     using BM_INDEX = BM_VecSimIndex<index_type_t>;
 
-    static std::vector<const char *> updated_hnsw_index_files;
-
+    static bool is_initialized;
+    static size_t first_updatedBM_ref_count;
     BM_VecSimUpdatedIndex() {
-        if (BM_VecSimGeneral::ref_count == 1) {
+        if (!is_initialized) {
             // Initialize the updated indexes as well, if this is the first instance.
             Initialize();
+            is_initialized = true;
+            first_updatedBM_ref_count = REF_COUNT;
         }
     }
 
     ~BM_VecSimUpdatedIndex() {
-        if (BM_VecSimGeneral::ref_count == 1) {
+        if (REF_COUNT == first_updatedBM_ref_count) {
             VecSimIndex_Free(INDICES[VecSimAlgo_BF + updated_index_offset]);
             VecSimIndex_Free(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset]);
         }
@@ -37,12 +39,21 @@ public:
 
 private:
     static void Initialize();
+
+    static const std::vector<const char *> GetUpdatedIndexFiles();
 };
+
+template <typename index_type_t>
+bool BM_VecSimUpdatedIndex<index_type_t>::is_initialized = false;
+
+template <typename index_type_t>
+size_t BM_VecSimUpdatedIndex<index_type_t>::first_updatedBM_ref_count = 0;
 
 template <typename index_type_t>
 void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
 
     VecSimType type = index_type_t::get_index_type();
+    const std::vector<const char *> updated_hnsw_index_files = GetUpdatedIndexFiles();
 
     BFParams bf_params = {.type = type,
                           .dim = DIM,
@@ -50,7 +61,7 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
                           .multi = IS_MULTI,
                           .initialCapacity = N_VECTORS};
     // This index will be inserted after the basic indices at indices[VecSimAlfo_BF + update_offset]
-    INDICES.push_back(BM_VecSimGeneral::CreateNewIndex(bf_params));
+    INDICES.push_back(BM_INDEX::CreateNewIndex(bf_params));
 
     // Initially, load all the vectors to the updated bf index (before we override it).
     for (size_t i = 0; i < N_VECTORS; ++i) {
@@ -70,8 +81,8 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
     // Generate index from file.
     // This index will be inserted after the basic indices at indices[VecSimAlfo_HNSWLIB +
     // update_offset]
-    INDICES.push_back(HNSWFactory::NewIndex(
-        BM_VecSimGeneral::AttachRootPath(updated_hnsw_index_files[type]), &params));
+    INDICES.push_back(
+        HNSWFactory::NewIndex(BM_INDEX::AttachRootPath(updated_hnsw_index_files[type]), &params));
 
     if (!BM_INDEX::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
              ->checkIntegrity()

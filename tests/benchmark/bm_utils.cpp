@@ -7,8 +7,6 @@
 
 #include "bm_utils.h"
 
-std::vector<VecSimIndex *> BM_VecSimGeneral::indices = std::vector<VecSimIndex *>();
-
 void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
                                      VecSimQueryResult_List bf_results, size_t &correct) {
     auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
@@ -25,12 +23,4 @@ void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
         VecSimQueryResult_IteratorFree(bf_it);
     }
     VecSimQueryResult_IteratorFree(hnsw_it);
-}
-
-BM_VecSimGeneral::~BM_VecSimGeneral() {
-    ref_count--;
-    if (ref_count == 0) {
-        VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
-    }
 }

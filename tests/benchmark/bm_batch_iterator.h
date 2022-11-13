@@ -5,11 +5,7 @@
 #include <unistd.h>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "bm_utils.h"
-
-size_t BM_VecSimGeneral::ref_count = 0;
-std::vector<const char *> BM_VecSimGeneral::hnsw_index_files = std::vector<const char *>();
-std::vector<const char *> BM_VecSimGeneral::test_vectors_files = std::vector<const char *>();
+#include "bm_index.h"
 
 template <typename index_type_t>
 class BM_BatchIterator : public BM_VecSimIndex<index_type_t> {
@@ -17,7 +13,7 @@ protected:
     using data_t = typename index_type_t::data_t;
     using dist_t = typename index_type_t::dist_t;
 
-   BM_BatchIterator();
+    BM_BatchIterator() = default;
     ~BM_BatchIterator() = default;
 
     static void BF_FixedBatchSize(benchmark::State &st);
@@ -82,6 +78,7 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
     size_t iter = 0;
     size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_BF]).bfInfo.memory;
     double memory_delta = 0.0;
+
     for (auto _ : st) {
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
             INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), nullptr);
