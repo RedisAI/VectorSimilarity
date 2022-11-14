@@ -8,7 +8,7 @@ on:
 
 jobs:
   rocky8:
-    if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
+    # if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
@@ -22,6 +22,17 @@ jobs:
           export CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
           export CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
           make unit_test
+      - name: valgrind
+        run: |
+          export CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
+          export CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
+          make valgrind
+      - name: Archive valgrind tests reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+
 
   bionic:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'bionic'
@@ -35,6 +46,14 @@ jobs:
         run: .install/install_script.sh
       - name: unit tests
         run: make unit_test
+      - name: valgrind
+        run: make valgrind
+      - name: Archive valgrind tests reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+
   
   xenial:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'xenial'
@@ -48,6 +67,33 @@ jobs:
         run: .install/install_script.sh
       - name: unit tests
         run: make unit_test
+      - name: valgrind
+        run: make valgrind
+      - name: Archive valgrind tests reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+
+  focal:
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'focal'
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: make unit_test
+      - name: valgrind
+        run: make valgrind
+      - name: Archive valgrind tests reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
 
   jammy:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'jammy'
@@ -61,6 +107,13 @@ jobs:
         run: .install/install_script.sh
       - name: unit tests
         run: make unit_test
+      - name: valgrind
+        run: make valgrind
+      - name: Archive valgrind tests reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
 
   macos:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'macos'
