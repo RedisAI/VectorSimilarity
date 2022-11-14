@@ -78,13 +78,11 @@ jobs:
   focal:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'focal'
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:focal
     steps:
       - name: checkout
         uses: actions/checkout@v2
       - name: install dependencies
-        run: .install/install_script.sh
+        run: sudo .install/install_script.sh
       - name: unit tests
         run: make unit_test
       - name: valgrind
