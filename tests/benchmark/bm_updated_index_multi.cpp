@@ -34,7 +34,7 @@ template <typename index_type_t>
 const std::vector<const char *> BM_VecSimUpdatedIndex<index_type_t>::GetUpdatedIndexFiles() {
     static const std::vector<const char *> v = {
         "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw",
-        "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512_FP64 -updated_.hnsw"};
+        "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw"};
 
     return v;
 }

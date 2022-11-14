@@ -137,7 +137,7 @@ void BM_VecSimIndex<index_type_t>::loadTestVectors(const std::string &test_file,
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
-    for (size_t i = 0; i < BM_VecSimIndex::n_queries; i++) {
+    for (size_t i = 0; i < N_QUERIES; i++) {
         std::vector<data_t> query(dim);
         input.read((char *)query.data(), dim * sizeof(data_t));
         queries.push_back(query);
