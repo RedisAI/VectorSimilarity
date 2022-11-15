@@ -161,15 +161,4 @@ public:
     inline static void setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
         VecSimIndexInterface::timeoutCallback = callback;
     }
-#ifdef BUILD_TESTS
-    // Persist index into a file in the specified location.
-    void saveIndex(const std::string &location, EncodingVersion version = EncodingVersion_V1);
-    // Restore the index from the file in the specified location.
-    void loadIndex(const std::string &location);
-    //Check if the serialized index is valid. 
-    virtual bool serializingIsValid() const = 0;
-protected:
-    virtual void saveIndexIMP(std::ofstream &output) const = 0;
-    virtual void loadIndexIMP(const std::string &location) = 0;
-#endif
 };
