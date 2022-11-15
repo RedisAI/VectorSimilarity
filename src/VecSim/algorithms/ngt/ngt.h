@@ -26,8 +26,6 @@
 using std::pair;
 
 typedef enum { INNER, LEAF } VPTNodeRole;
-#define MAX_PER_LEAF 10
-// #include <functional>
 
 template <typename DataType, typename DistType>
 class NGTIndex;
@@ -54,7 +52,7 @@ struct VPTNode : public VecsimBaseObject {
 public:
     VPTNodeRole role;
     size_t size;
-    VPTNode<DataType, DistType> *left, *right;
+    VPTNode<DataType, DistType> *left, *right, *parent;
     union {
         struct {
             vecsim_stl::vector<idType> *ids;
@@ -67,7 +65,7 @@ public:
     };
 
 public:
-    VPTNode(vecsim_stl::vector<idType> *ids, size_t size,
+    VPTNode(vecsim_stl::vector<idType> *ids, size_t size, VPTNode<DataType, DistType> *parent,
             std::shared_ptr<VecSimAllocator> allocator);
     ~VPTNode();
 
@@ -88,86 +86,8 @@ public:
 
     void merge();
     void rebuild(NGTIndex<DataType, DistType> &vpt);
-    inline bool has(idType id) const;
     inline bool unbalanced() const;
 };
-
-template <typename DataType, typename DistType>
-VPTNode<DataType, DistType>::VPTNode(vecsim_stl::vector<idType> *ids, size_t size,
-                                     std::shared_ptr<VecSimAllocator> allocator)
-    : VecsimBaseObject(allocator), role(LEAF), size(size), left(NULL), right(NULL), ids(ids) {}
-
-template <typename DataType, typename DistType>
-VPTNode<DataType, DistType>::~VPTNode() {
-    if (INNER == this->role) {
-        if (pivot_id == INVALID_ID) // If node owns the pivot data
-            this->allocator->free_allocation(pivot);
-        delete left;
-        delete right;
-    } else {
-        assert(LEAF == this->role);
-        delete ids;
-    }
-}
-
-template <typename DataType, typename DistType>
-void VPTNode<DataType, DistType>::rebuild(NGTIndex<DataType, DistType> &ngt) {
-    if (size > MAX_PER_LEAF) {
-        ngt.splitLeaf(this);
-        left->rebuild(ngt);
-        right->rebuild(ngt);
-    }
-}
-
-template <typename DataType, typename DistType>
-void VPTNode<DataType, DistType>::merge() {
-    assert(INNER == this->role);
-    this->role = LEAF;
-    if (pivot_id == INVALID_ID)
-        allocator->free_allocation(pivot);
-    pivot = NULL;
-
-    ids = new (allocator) vecsim_stl::vector<idType>(allocator);
-    ids->reserve(size);
-
-    ids->insert(ids->end(), left->ids->begin(), left->ids->end());
-    auto old_left = left;
-    left = left->left;
-    // TODO: add dummies for leaf list (or make it a ring) and remove checks.
-    if (old_left->left)
-        old_left->left->right = this;
-    delete old_left;
-
-    ids->insert(ids->end(), right->ids->begin(), right->ids->end());
-    auto old_right = right;
-    right = right->right;
-    if (old_right->right)
-        old_right->right->left = this;
-    delete old_right;
-}
-
-template <typename DataType, typename DistType>
-inline bool VPTNode<DataType, DistType>::unbalanced() const {
-    assert(INNER == this->role);
-    double ratio = (double)left->size / right->size;
-    return (ratio < 0.5) || (2 < ratio);
-}
-
-template <typename DataType, typename DistType>
-inline bool VPTNode<DataType, DistType>::has(idType id) const {
-    if (LEAF == this->role) {
-        return (std::find(this->ids->begin(), this->ids->end(), id) != this->ids->end());
-    }
-    assert(INNER == this->role);
-    // flat search. can be upgraded to logarithmic (with )
-    auto last = this->right_leaf();
-    for (auto curr = this->left_leaf(); curr != last; curr = curr->right) {
-        if (curr->has(id)) {
-            return true;
-        }
-    }
-    return last->has(id);
-}
 
 template <typename DataType, typename DistType>
 class CandidatesFromTree {
@@ -176,9 +96,8 @@ private:
     const VPTNode<DataType, DistType> *_end;
 
 public:
-    CandidatesFromTree(const VPTNode<DataType, DistType> *begin,
-                       const VPTNode<DataType, DistType> *back)
-        : _begin(begin), _end(back->right) {}
+    CandidatesFromTree(const VPTNode<DataType, DistType> *root)
+        : _begin(root->left_leaf()), _end(root->right_leaf()->right) {}
     ~CandidatesFromTree() = default;
 
     class CandidatesItr {
@@ -219,6 +138,71 @@ public:
     CandidatesItr end() { return CandidatesItr(_end); }
 };
 
+template <typename DataType, typename DistType>
+VPTNode<DataType, DistType>::VPTNode(vecsim_stl::vector<idType> *ids, size_t size,
+                                     VPTNode<DataType, DistType> *parent,
+                                     std::shared_ptr<VecSimAllocator> allocator)
+    : VecsimBaseObject(allocator), role(LEAF), size(size), left(NULL), right(NULL), parent(parent),
+      ids(ids) {}
+
+template <typename DataType, typename DistType>
+VPTNode<DataType, DistType>::~VPTNode() {
+    if (INNER == this->role) {
+        if (pivot_id == INVALID_ID) { // If node owns the pivot data
+            this->allocator->free_allocation(pivot);
+        }
+        delete left;
+        delete right;
+    } else {
+        assert(LEAF == this->role);
+        delete ids;
+    }
+}
+
+template <typename DataType, typename DistType>
+void VPTNode<DataType, DistType>::rebuild(NGTIndex<DataType, DistType> &ngt) {
+    if (size > ngt.max_per_leaf_) {
+        ngt.splitLeaf(this);
+        left->rebuild(ngt);
+        right->rebuild(ngt);
+    }
+}
+
+template <typename DataType, typename DistType>
+void VPTNode<DataType, DistType>::merge() {
+    assert(INNER == this->role);
+    if (pivot_id == INVALID_ID) {
+        allocator->free_allocation(pivot);
+    }
+    pivot = NULL;
+
+    ids = new (allocator) vecsim_stl::vector<idType>(allocator);
+    ids->reserve(size);
+    CandidatesFromTree<DataType, DistType> ids_itr(this);
+    for (auto id : ids_itr) {
+        ids->push_back(id);
+    }
+
+    auto left_leaf_left = left_leaf()->left;
+    left_leaf_left->right = this;
+    delete left;
+    left = left_leaf_left;
+
+    auto right_leaf_right = right_leaf()->right;
+    right_leaf_right->left = this;
+    delete right;
+    right = right_leaf_right;
+
+    this->role = LEAF;
+}
+
+template <typename DataType, typename DistType>
+inline bool VPTNode<DataType, DistType>::unbalanced() const {
+    assert(INNER == this->role);
+    double ratio = (double)left->size / right->size;
+    return (ratio < 0.5) || (2 < ratio);
+}
+
 // This type is strongly bounded to `idType` because of the way we get the link list:
 //
 // linklistsizeint *neighbours_list = get_linklist(element_internal_id);
@@ -239,7 +223,7 @@ protected:
     // Index build parameters
     size_t max_elements_;
     size_t M_;
-    size_t maxM_;
+    size_t max_per_leaf_;
     size_t ef_construction_;
 
     // Index search parameter
@@ -272,6 +256,8 @@ protected:
     idType entrypoint_node_;
     char *data_level0_memory_;
     VPTNode<DataType, DistType> VPtree_root;
+    VPTNode<DataType, DistType> VPtree_dummy;
+    vecsim_stl::unordered_map<idType, VPTNode<DataType, DistType> *> idToLeaf;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -311,19 +297,26 @@ protected:
     inline void processCandidate_RangeSearch(
         idType curNodeId, const void *data_point, double epsilon, tag_t visited_tag,
         std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
-        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, double radius) const;
-    CandidatesFromTree<DataType, DistType> searchTree(const void *query, size_t batchSize) const;
-    void removeFromTree(idType id, const void *data);
-    void insertToTree(idType id, const void *data);
+        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, DistType radius) const;
+    CandidatesFromTree<DataType, DistType> searchTree(const VPTNode<DataType, DistType> *root,
+                                                      const void *query, size_t batchSize) const;
+    CandidatesFromTree<DataType, DistType> searchRangeTree(const void *query,
+                                                           DistType radius) const;
+    CandidatesFromTree<DataType, DistType> insertToTree(idType id, const void *data);
+    void removeFromTree(idType id);
     inline void splitLeaf(VPTNode<DataType, DistType> *node);
     inline void rebuildVPTree(VPTNode<DataType, DistType> *root);
-    candidatesMaxHeap<DistType> searchGraph(const void *data_point, size_t ef) const;
-    candidatesLabelsMaxHeap<DistType> *searchGraph_WithTimeout(const void *data_point, size_t ef,
-                                                               size_t k, void *timeoutCtx,
-                                                               VecSimQueryResult_Code *rc) const;
-    VecSimQueryResult *searchRangeGraph_WithTimeout(idType ep_id, const void *data_point,
-                                                    double epsilon, double radius, void *timeoutCtx,
-                                                    VecSimQueryResult_Code *rc) const;
+    candidatesMaxHeap<DistType>
+    searchGraph(CandidatesFromTree<DataType, DistType> &initial_candidates, const void *data_point,
+                size_t ef) const;
+    candidatesLabelsMaxHeap<DistType> *
+    searchGraph_WithTimeout(CandidatesFromTree<DataType, DistType> &initial_candidates,
+                            const void *data_point, size_t ef, size_t k, void *timeoutCtx,
+                            VecSimQueryResult_Code *rc) const;
+    VecSimQueryResult *
+    searchRangeGraph_WithTimeout(CandidatesFromTree<DataType, DistType> &initial_candidates,
+                                 const void *data_point, double epsilon, DistType radius,
+                                 void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
     inline idType mutuallyConnectNewElement(idType cur_c,
                                             candidatesMaxHeap<DistType> &top_candidates);
@@ -345,7 +338,7 @@ protected:
                               DistType dist, idType id) const;
 
 public:
-    NGTIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+    NGTIndex(const NGTParams *params, std::shared_ptr<VecSimAllocator> allocator,
              size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~NGTIndex();
 
@@ -357,8 +350,6 @@ public:
     inline size_t getIndexCapacity() const;
     inline size_t getEfConstruction() const;
     inline size_t getM() const;
-    inline idType getEntryPointId() const;
-    inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
     VecSimIndexInfo info() const override;
@@ -429,13 +420,6 @@ size_t NGTIndex<DataType, DistType>::getM() const {
 }
 
 template <typename DataType, typename DistType>
-labelType NGTIndex<DataType, DistType>::getEntryPointLabel() const {
-    if (entrypoint_node_ != INVALID_ID)
-        return getExternalLabel(entrypoint_node_);
-    return SIZE_MAX;
-}
-
-template <typename DataType, typename DistType>
 labelType NGTIndex<DataType, DistType>::getExternalLabel(idType internal_id) const {
     labelType return_label;
     memcpy(&return_label,
@@ -499,11 +483,6 @@ void NGTIndex<DataType, DistType>::setListCount(linklistsizeint *ptr, unsigned s
 }
 
 template <typename DataType, typename DistType>
-idType NGTIndex<DataType, DistType>::getEntryPointId() const {
-    return entrypoint_node_;
-}
-
-template <typename DataType, typename DistType>
 VisitedNodesHandler *NGTIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler.get();
 }
@@ -545,19 +524,24 @@ void NGTIndex<DataType, DistType>::splitLeaf(VPTNode<DataType, DistType> *node) 
     auto old_right = node->right;
 
     node->left = new (this->allocator)
-        VPTNode<DataType, DistType>(left_ids, left_ids->size(), this->allocator);
+        VPTNode<DataType, DistType>(left_ids, left_ids->size(), node, this->allocator);
     node->right = new (this->allocator)
-        VPTNode<DataType, DistType>(right_ids, right_ids->size(), this->allocator);
+        VPTNode<DataType, DistType>(right_ids, right_ids->size(), node, this->allocator);
 
     node->left->left = old_left;
     node->left->right = node->right;
     node->right->left = node->left;
     node->right->right = old_right;
 
-    if (old_left)
-        old_left->right = node->left;
-    if (old_right)
-        old_right->left = node->right;
+    old_left->right = node->left;
+    old_right->left = node->right;
+
+    for (auto id : *left_ids) {
+        idToLeaf[id] = node->left;
+    }
+    for (auto id : *right_ids) {
+        idToLeaf[id] = node->right;
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -571,28 +555,36 @@ void NGTIndex<DataType, DistType>::rebuildVPTree(VPTNode<DataType, DistType> *ro
     tree_ids->reserve(root->size);
 
     auto right_next_leaf = root->right_leaf()->right;
+    auto left_next_leaf = root->left_leaf()->left;
     for (auto curr = root->left_leaf(); curr != right_next_leaf; curr = curr->right) {
         tree_ids->insert(tree_ids->end(), curr->ids->begin(), curr->ids->end());
     }
-    auto left_next_leaf = root->left_leaf()->left;
 
-    if (INVALID_ID == root->pivot_id)
+    if (INVALID_ID == root->pivot_id) {
         this->allocator->free_allocation(root->pivot);
+    }
     delete root->left;
     delete root->right;
 
     root->left = left_next_leaf;
     root->right = right_next_leaf;
+    left_next_leaf->right = root;
+    right_next_leaf->left = root;
 
     // TODO: make iterative
     root->ids = tree_ids;
     root->role = LEAF;
+    for (auto i : *tree_ids) {
+        idToLeaf[i] = root;
+    }
     root->rebuild(*this);
 }
 
 template <typename DataType, typename DistType>
-void NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
+CandidatesFromTree<DataType, DistType>
+NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
     VPTNode<DataType, DistType> *curr = &this->VPtree_root;
+    VPTNode<DataType, DistType> *ret = curr;
 
     while (curr->role != LEAF) {
         // Increase the size of the current node, as we are going to insert the vector to one of it
@@ -604,7 +596,7 @@ void NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
             curr->left_leaf()->ids->push_back(id);
             // Rebuild sub-tree.
             rebuildVPTree(curr);
-            return;
+            return searchTree(curr, data, ef_construction_);
         } else {
             if (curr->radius < this->dist_func(curr->pivot, data, this->dim)) {
                 curr = curr->right;
@@ -612,80 +604,93 @@ void NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
                 curr = curr->left;
             }
         }
+        if (curr->size <= ef_construction_) {
+            ret = curr;
+        }
     }
 
     curr->size++;
     curr->ids->push_back(id);
-    if (curr->size > MAX_PER_LEAF) {
+    idToLeaf[id] = curr;
+    if (curr->size > this->max_per_leaf_) {
         splitLeaf(curr);
     }
+
+    // TEST
+    // for (idType id = 0; id < cur_element_count; id++) {
+    //     auto curleaf = idToLeaf[id];
+    //     auto pos = std::find(curleaf->ids->begin(), curleaf->ids->end(), id);
+    //     assert(pos != curleaf->ids->end());
+    // }
+    // for (auto cur = this->VPtree_dummy.right; cur != &this->VPtree_dummy; cur = cur->right) {
+    //     assert(cur->role == LEAF);
+    //     assert(cur->size <= this->max_per_leaf_);
+    //     if (cur->parent)
+    //         assert(cur->parent->role == INNER);
+    // }
+    /////////////
+    return CandidatesFromTree<DataType, DistType>(ret);
 }
 
 // assumes the id in the tree. this should be checked before calling this function.
 template <typename DataType, typename DistType>
-void NGTIndex<DataType, DistType>::removeFromTree(idType id, const void *data) {
+void NGTIndex<DataType, DistType>::removeFromTree(idType id) {
 
-    VPTNode<DataType, DistType> *curr = &this->VPtree_root;
-    VPTNode<DataType, DistType> *parent = NULL;
+    VPTNode<DataType, DistType> *leaf = idToLeaf.at(id);
+    idToLeaf.erase(id);
+    auto pos = std::find(leaf->ids->begin(), leaf->ids->end(), id);
+    assert(pos != leaf->ids->end());
+    *pos = leaf->ids->back();
+    leaf->ids->pop_back();
+    leaf->size--;
 
-    while (curr->role != LEAF) {
+    VPTNode<DataType, DistType> *top_unbalanced = nullptr;
+    auto curr = leaf;
+    while (curr != &this->VPtree_root) {
+        curr = curr->parent;
         curr->size--;
+        if (curr->pivot_id == id) {
+            void *data = curr->pivot;
+            curr->pivot = this->allocator->allocate(this->data_size_);
+            memcpy(curr->pivot, data, this->data_size_);
+            curr->pivot_id = INVALID_ID;
+        }
         if (curr->unbalanced()) {
-            // TODO: consider logarithmic search.
-            // Logarithmic but calculates distances all the way
-
-            auto end = curr->right_leaf()->right;
-            for (auto it = curr->left_leaf(); it != end; it = it->right) {
-                auto pos = std::find(it->ids->begin(), it->ids->end(), id);
-                if (pos != it->ids->end()) {
-                    it->ids->erase(pos);
-                    break;
-                }
-            }
-
-            rebuildVPTree(curr);
-            return;
-        } else {
-            parent = curr;
-            DistType d = this->dist_func(curr->pivot, data, this->dim);
-
-            if (curr->pivot_id == id) {
-                // If we delete a pivot, copy the vector before deleting the data
-                void *data = curr->pivot;
-                curr->pivot = this->allocator->allocate(this->data_size_);
-                memcpy(curr->pivot, data, this->data_size_);
-                curr->pivot_id = INVALID_ID;
-            }
-
-            if (curr->radius < d) {
-                curr = curr->right;
-            } else if (curr->radius > d) {
-                curr = curr->left;
-            } else {
-                if (curr->right->has(id)) {
-                    curr = curr->right;
-                } else {
-                    curr = curr->left;
-                }
-            }
+            top_unbalanced = curr;
         }
     }
 
-    curr->size--;
-    auto pos = std::find(curr->ids->begin(), curr->ids->end(), id);
-    assert(pos != curr->ids->end());
-    *pos = curr->ids->back();
-    curr->ids->pop_back();
-
-    if (parent && parent->size < MAX_PER_LEAF) {
-        parent->merge();
+    if (top_unbalanced) {
+        rebuildVPTree(top_unbalanced);
+    } else if (leaf != &this->VPtree_root && leaf->parent->size <= this->max_per_leaf_) {
+        CandidatesFromTree<DataType, DistType> ids_itr(leaf->parent);
+        for (auto i : ids_itr) {
+            idToLeaf[i] = leaf->parent;
+        }
+        leaf->parent->merge();
     }
+    // TEST
+    // for (idType i = 0; i < cur_element_count; i++) {
+    //     if (i == id)
+    //         continue;
+    //     auto curleaf = idToLeaf[i];
+    //     auto pos = std::find(curleaf->ids->begin(), curleaf->ids->end(), i);
+    //     assert(pos != curleaf->ids->end());
+    // }
+    // for (auto cur = this->VPtree_dummy.right; cur != &this->VPtree_dummy; cur = cur->right) {
+    //     assert(cur->role == LEAF);
+    //     assert(cur->size <= this->max_per_leaf_);
+    //     if (cur->parent)
+    //         assert(cur->parent->role == INNER);
+    // }
+    /////////////
 }
 
 template <typename DataType, typename DistType>
 CandidatesFromTree<DataType, DistType>
-NGTIndex<DataType, DistType>::searchTree(const void *query, size_t batchSize) const {
-    const VPTNode<DataType, DistType> *curr = &this->VPtree_root;
+NGTIndex<DataType, DistType>::searchTree(const VPTNode<DataType, DistType> *root, const void *query,
+                                         size_t batchSize) const {
+    const VPTNode<DataType, DistType> *curr = root;
     while (curr->role != LEAF && curr->size > batchSize) {
         if (curr->radius < this->dist_func(curr->pivot, query, this->dim)) {
             curr = curr->right;
@@ -693,7 +698,23 @@ NGTIndex<DataType, DistType>::searchTree(const void *query, size_t batchSize) co
             curr = curr->left;
         }
     }
-    return CandidatesFromTree<DataType, DistType>(curr->left_leaf(), curr->right_leaf());
+    return CandidatesFromTree<DataType, DistType>(curr);
+}
+
+template <typename DataType, typename DistType>
+CandidatesFromTree<DataType, DistType>
+NGTIndex<DataType, DistType>::searchRangeTree(const void *query, DistType radius) const {
+    const VPTNode<DataType, DistType> *curr = &this->VPtree_root;
+    DistType d = std::numeric_limits<DistType>::max();
+    while (curr->role != LEAF) {
+        d = this->dist_func(curr->pivot, query, this->dim);
+        if (curr->radius < d) {
+            curr = curr->right;
+        } else {
+            curr = curr->left;
+        }
+    }
+    return CandidatesFromTree<DataType, DistType>(curr);
 }
 
 template <typename DataType, typename DistType>
@@ -704,7 +725,7 @@ void NGTIndex<DataType, DistType>::removeExtraLinks(
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
-    getNeighborsByHeuristic2(candidates, maxM_);
+    getNeighborsByHeuristic2(candidates, M_);
 
     // check the diff in the link list, save the neighbours
     // that were chosen to be removed, and update the new neighbours
@@ -797,7 +818,7 @@ template <typename DataType, typename DistType>
 void NGTIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, double epsilon, tag_t visited_tag,
     std::unique_ptr<vecsim_stl::abstract_results_container> &results,
-    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
+    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -809,8 +830,6 @@ void NGTIndex<DataType, DistType>::processCandidate_RangeSearch(
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *(node_ll + 1));
     __builtin_prefetch(getDataByInternalId(*node_links));
 
-    // Cast radius once instead of each time we check that candidate_dist <= radius_
-    DistType radius_ = DistType(radius);
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
@@ -830,7 +849,7 @@ void NGTIndex<DataType, DistType>::processCandidate_RangeSearch(
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             // If the new candidate is in the requested radius, add it to the results set.
-            if (candidate_dist <= radius_) {
+            if (candidate_dist <= radius) {
                 results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
         }
@@ -841,8 +860,9 @@ void NGTIndex<DataType, DistType>::processCandidate_RangeSearch(
 }
 
 template <typename DataType, typename DistType>
-candidatesMaxHeap<DistType> NGTIndex<DataType, DistType>::searchGraph(const void *data_point,
-                                                                      size_t ef) const {
+candidatesMaxHeap<DistType> NGTIndex<DataType, DistType>::searchGraph(
+    CandidatesFromTree<DataType, DistType> &initial_candidates, const void *data_point,
+    size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -851,16 +871,16 @@ candidatesMaxHeap<DistType> NGTIndex<DataType, DistType>::searchGraph(const void
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
 
-    CandidatesFromTree<DataType, DistType> initial_candidates = searchTree(data_point, ef);
-
     candidatesMaxHeap<DistType> top_candidates(this->allocator);
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     for (auto id : initial_candidates) {
-        DistType dist = this->dist_func(data_point, getDataByInternalId(id), this->dim);
-        top_candidates.emplace(dist, id);
-        candidate_set.emplace(-dist, id);
-        this->visited_nodes_handler->tagNode(id, visited_tag);
+        if (id != max_id) { // skip oun id
+            DistType dist = this->dist_func(data_point, getDataByInternalId(id), this->dim);
+            top_candidates.emplace(dist, id);
+            candidate_set.emplace(-dist, id);
+            this->visited_nodes_handler->tagNode(id, visited_tag);
+        }
     }
 
     DistType lowerBound = top_candidates.top().first;
@@ -969,7 +989,7 @@ idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
         linklistsizeint *ll_other = get_linklist(selectedNeighbor);
         size_t sz_link_list_other = getListCount(ll_other);
 
-        if (sz_link_list_other > maxM_)
+        if (sz_link_list_other > M_)
             throw std::runtime_error("Bad value of sz_link_list_other");
         if (selectedNeighbor == cur_c)
             throw std::runtime_error("Trying to connect an element to itself");
@@ -978,7 +998,7 @@ idType NGTIndex<DataType, DistType>::mutuallyConnectNewElement(
         auto *neighbor_neighbors = (idType *)(ll_other + 1);
 
         // If the selected neighbor can add another link (hasn't reached the max) - add it.
-        if (sz_link_list_other < maxM_) {
+        if (sz_link_list_other < M_) {
             neighbor_neighbors[sz_link_list_other] = cur_c;
             setListCount(ll_other, sz_link_list_other + 1);
         } else {
@@ -1133,15 +1153,12 @@ void NGTIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_intern
     // swap label
     replaceIdOfLabel(getExternalLabel(max_id), element_internal_id, max_id);
 
-    // TODO: implement not linearly
-    auto end = VPtree_root.right_leaf()->right;
-    for (auto curr = VPtree_root.left_leaf(); curr != end; curr = curr->right) {
-        auto pos = std::find(curr->ids->begin(), curr->ids->end(), max_id);
-        if (pos != curr->ids->end()) {
-            *pos = element_internal_id;
-            break;
-        }
-    }
+    // Update Tree data
+    auto leaf = idToLeaf[max_id];
+    auto pos = std::find(leaf->ids->begin(), leaf->ids->end(), max_id);
+    *pos = element_internal_id;
+    idToLeaf[element_internal_id] = leaf;
+    idToLeaf.erase(max_id);
 
     // swap neighbours
 
@@ -1214,35 +1231,37 @@ void NGTIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_intern
     size_t initialCapacity;
     size_t blockSize;
     size_t M;
+    size_t maxPerLeaf;
     size_t efConstruction;
     size_t efRuntime;
     double epsilon;
 } HNSWParams; */
 template <typename DataType, typename DistType>
-NGTIndex<DataType, DistType>::NGTIndex(const HNSWParams *params,
+NGTIndex<DataType, DistType>::NGTIndex(const NGTParams *params,
                                        std::shared_ptr<VecSimAllocator> allocator,
                                        size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
-      VPtree_root(new (allocator) vecsim_stl::vector<idType>(allocator), 0, allocator)
+      VPtree_root(new (allocator) vecsim_stl::vector<idType>(allocator), 0, nullptr, allocator),
+      VPtree_dummy(nullptr, 0, nullptr, allocator), idToLeaf(params->initialCapacity, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
       ,
       link_list_locks_(max_elements_)
 #endif
 {
-    size_t M = params->M ? params->M : HNSW_DEFAULT_M;
-    if (M > SIZE_MAX / 2)
-        throw std::runtime_error("NGT index parameter M is too large: argument overflow");
+    size_t M = params->M ? params->M : DEFAULT_M;
     M_ = M;
-    maxM_ = M_;
 
-    size_t ef_construction = params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C;
+    size_t mpl = params->maxPerLeaf ? params->maxPerLeaf : DEFAULT_MAX_PER_LEAF;
+    max_per_leaf_ = mpl;
+
+    size_t ef_construction = params->efConstruction ? params->efConstruction : DEFAULT_EF_C;
     ef_construction_ = std::max(ef_construction, M_);
-    ef_ = params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT;
-    epsilon_ = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
+    ef_ = params->efRuntime ? params->efRuntime : DEFAULT_EF_RT;
+    epsilon_ = params->epsilon > 0.0 ? params->epsilon : DEFAULT_EPSILON;
 
     cur_element_count = 0;
     max_id = INVALID_ID;
@@ -1267,9 +1286,9 @@ NGTIndex<DataType, DistType>::NGTIndex(const HNSWParams *params,
     // data_level0_memory will look like this:
     // | -----4------ | -----4*M0----------- | ----------8----------| --data_size_-- | ----8---- |
     // | <links_len>  | <link_1> <link_2>... | <incoming_links_ptr> |     <data>     |  <label>  |
-    if (maxM_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(idType)) + 1)
+    if (M_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(idType)) + 1)
         throw std::runtime_error("NGT index parameter M is too large: argument overflow");
-    size_links_level0_ = sizeof(linklistsizeint) + maxM_ * sizeof(idType) + sizeof(void *);
+    size_links_level0_ = sizeof(linklistsizeint) + M_ * sizeof(idType) + sizeof(void *);
 
     if (size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labelType))
         throw std::runtime_error("NGT index parameter M is too large: argument overflow");
@@ -1277,7 +1296,7 @@ NGTIndex<DataType, DistType>::NGTIndex(const HNSWParams *params,
 
     // No need to test for overflow because we passed the test for size_links_level0_ and this is
     // less.
-    incoming_links_offset0 = maxM_ * sizeof(idType) + sizeof(linklistsizeint);
+    incoming_links_offset0 = M_ * sizeof(idType) + sizeof(linklistsizeint);
     offsetData_ = size_links_level0_;
     label_offset_ = size_links_level0_ + data_size_;
     offsetLevel0_ = 0;
@@ -1286,6 +1305,11 @@ NGTIndex<DataType, DistType>::NGTIndex(const HNSWParams *params,
         (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
     if (data_level0_memory_ == nullptr)
         throw std::runtime_error("Not enough memory");
+
+    VPtree_root.left = &VPtree_dummy;
+    VPtree_root.right = &VPtree_dummy;
+    VPtree_dummy.left = &VPtree_root;
+    VPtree_dummy.right = &VPtree_root;
 }
 
 template <typename DataType, typename DistType>
@@ -1305,6 +1329,7 @@ NGTIndex<DataType, DistType>::~NGTIndex() {
 template <typename DataType, typename DistType>
 void NGTIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     resizeLabelLookup(new_max_elements);
+    idToLeaf.reserve(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
@@ -1329,9 +1354,9 @@ int NGTIndex<DataType, DistType>::removeVector(const idType element_internal_id)
 
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
-    // go over the graph and repair connections
-    removeFromTree(element_internal_id, getDataByInternalId(element_internal_id));
+    removeFromTree(element_internal_id);
 
+    // go over the graph and repair connections
     linklistsizeint *neighbours_list = get_linklist(element_internal_id);
     unsigned short neighbours_count = getListCount(neighbours_list);
     auto *neighbours = (idType *)(neighbours_list + 1);
@@ -1443,24 +1468,24 @@ int NGTIndex<DataType, DistType>::appendVector(const void *vector_data, const la
 
     // this condition only means that we are not inserting the first element.
     if (cur_element_count > 1) {
-        candidatesMaxHeap<DistType> top_candidates = searchGraph(vector_data, ef_construction_);
+        CandidatesFromTree<DataType, DistType> candidates = insertToTree(cur_c, vector_data);
+        candidatesMaxHeap<DistType> top_candidates =
+            searchGraph(candidates, vector_data, ef_construction_);
         mutuallyConnectNewElement(cur_c, top_candidates);
     } else {
         // No need for graph links for the first element
         setIncomingEdgesPtr(cur_c,
                             new (this->allocator) vecsim_stl::vector<idType>(this->allocator));
+        insertToTree(cur_c, vector_data);
     }
-
-    insertToTree(cur_c, vector_data);
 
     return true;
 }
 
 template <typename DataType, typename DistType>
-candidatesLabelsMaxHeap<DistType> *
-NGTIndex<DataType, DistType>::searchGraph_WithTimeout(const void *data_point, size_t ef, size_t k,
-                                                      void *timeoutCtx,
-                                                      VecSimQueryResult_Code *rc) const {
+candidatesLabelsMaxHeap<DistType> *NGTIndex<DataType, DistType>::searchGraph_WithTimeout(
+    CandidatesFromTree<DataType, DistType> &initial_candidates, const void *data_point, size_t ef,
+    size_t k, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
 
 #ifdef ENABLE_PARALLELIZATION
     this->visited_nodes_handler =
@@ -1468,8 +1493,6 @@ NGTIndex<DataType, DistType>::searchGraph_WithTimeout(const void *data_point, si
 #endif
 
     tag_t visited_tag = this->visited_nodes_handler->getFreshTag();
-
-    CandidatesFromTree<DataType, DistType> initial_candidates = searchTree(data_point, ef);
 
     candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
@@ -1488,7 +1511,7 @@ NGTIndex<DataType, DistType>::searchGraph_WithTimeout(const void *data_point, si
         if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexInterface::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }
@@ -1533,14 +1556,21 @@ VecSimQueryResult_List NGTIndex<DataType, DistType>::topKQuery(const void *query
 
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
-        if (queryParams->hnswRuntimeParams.efRuntime != 0) {
-            ef = queryParams->hnswRuntimeParams.efRuntime;
+        if (queryParams->ngtRuntimeParams.efRuntime) {
+            ef = queryParams->ngtRuntimeParams.efRuntime;
         }
+    }
+
+    auto candidates = searchTree(&this->VPtree_root, query_data, ef);
+
+    if (__builtin_expect(VecSimIndexInterface::timeoutCallback(timeoutCtx), 0)) {
+        rl.code = VecSim_QueryResult_TimedOut;
+        return rl;
     }
 
     // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results =
-        searchGraph_WithTimeout(query_data, std::max(ef, k), k, timeoutCtx, &rl.code);
+        searchGraph_WithTimeout(candidates, query_data, std::max(ef, k), k, timeoutCtx, &rl.code);
 
     if (VecSim_OK == rl.code) {
         rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
@@ -1556,8 +1586,8 @@ VecSimQueryResult_List NGTIndex<DataType, DistType>::topKQuery(const void *query
 
 template <typename DataType, typename DistType>
 VecSimQueryResult *NGTIndex<DataType, DistType>::searchRangeGraph_WithTimeout(
-    idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
-    VecSimQueryResult_Code *rc) const {
+    CandidatesFromTree<DataType, DistType> &initial_candidates, const void *data_point,
+    double epsilon, DistType radius, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
 
     *rc = VecSim_QueryResult_OK;
     auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
@@ -1571,21 +1601,27 @@ VecSimQueryResult *NGTIndex<DataType, DistType>::searchRangeGraph_WithTimeout(
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     // Set the initial effective-range to be at least the distance from the entry-point.
-    DistType ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
-    DistType dynamic_range = ep_dist;
+    for (auto id : initial_candidates) {
+        DistType dist = this->dist_func(data_point, getDataByInternalId(id), this->dim);
+        if (dist <= radius) {
+            // Entry-point is within the radius - add it to the results.
+            res_container->emplace(getExternalLabel(id), dist);
+        }
+        candidate_set.emplace(-dist, id);
+        this->visited_nodes_handler->tagNode(id, visited_tag);
+    }
 
-    if (ep_dist <= radius) {
-        // Entry-point is within the radius - add it to the results.
-        res_container->emplace(getExternalLabel(ep_id), ep_dist);
-        dynamic_range = radius; // to ensure that dyn_range >= radius.
+    DistType dynamic_range; // should be >= to range.
+    if (res_container->size() > 0) {
+        // If some vector was in range, set dynamic range to the requested range.
+        dynamic_range = radius;
+    } else {
+        // else, set dynamic range to the best distance we found so far.
+        dynamic_range = -(candidate_set.top().first);
     }
 
     DistType dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
-    candidate_set.emplace(-ep_dist, ep_id);
-    this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
-    // Cast radius once instead of each time we check that -curr_el_pair.first >= radius_.
-    DistType radius_ = DistType(radius);
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
@@ -1593,14 +1629,14 @@ VecSimQueryResult *NGTIndex<DataType, DistType>::searchRangeGraph_WithTimeout(
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (__builtin_expect(VecSimIndexInterface::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             break;
         }
         candidate_set.pop();
 
         // Decrease the effective range, but keep dyn_range >= radius.
-        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius_) {
+        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius) {
             dynamic_range = -curr_el_pair.first;
             dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
         }
@@ -1644,15 +1680,20 @@ VecSimQueryResult_List NGTIndex<DataType, DistType>::rangeQuery(const void *quer
     double epsilon = epsilon_;
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
-        if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
-            epsilon = queryParams->hnswRuntimeParams.epsilon;
+        if (queryParams->ngtRuntimeParams.epsilon) {
+            epsilon = queryParams->ngtRuntimeParams.epsilon;
         }
     }
 
-    // search bottom layer
-    // Here we send the radius as double to match the function arguments type.
-    // TODO: implement
-    rl.results = searchRangeGraph_WithTimeout(0, query_data, epsilon, radius, timeoutCtx, &rl.code);
+    auto candidates = searchRangeTree(query_data, radius * (1.0 + epsilon));
+
+    if (__builtin_expect(VecSimIndexInterface::timeoutCallback(timeoutCtx), 0)) {
+        rl.code = VecSim_QueryResult_TimedOut;
+        return rl;
+    }
+
+    rl.results =
+        searchRangeGraph_WithTimeout(candidates, query_data, epsilon, radius, timeoutCtx, &rl.code);
 
     return rl;
 }
@@ -1662,21 +1703,20 @@ VecSimIndexInfo NGTIndex<DataType, DistType>::info() const {
 
     VecSimIndexInfo info;
     info.algo = VecSimAlgo_NGT;
-    info.hnswInfo.dim = this->dim;
-    info.hnswInfo.type = this->vecType;
-    info.hnswInfo.isMulti = this->isMulti;
-    info.hnswInfo.metric = this->metric;
-    info.hnswInfo.blockSize = this->blockSize;
-    info.hnswInfo.M = this->getM();
-    info.hnswInfo.efConstruction = this->getEfConstruction();
-    info.hnswInfo.efRuntime = this->getEf();
-    info.hnswInfo.epsilon = this->epsilon_;
-    info.hnswInfo.indexSize = this->indexSize();
-    info.hnswInfo.indexLabelCount = this->indexLabelCount();
-    info.hnswInfo.max_level = 0;
-    info.hnswInfo.entrypoint = this->getEntryPointLabel();
-    info.hnswInfo.memory = this->allocator->getAllocationSize();
-    info.hnswInfo.last_mode = this->last_mode;
+    info.ngtInfo.dim = this->dim;
+    info.ngtInfo.type = this->vecType;
+    info.ngtInfo.isMulti = this->isMulti;
+    info.ngtInfo.metric = this->metric;
+    info.ngtInfo.blockSize = this->blockSize;
+    info.ngtInfo.M = this->getM();
+    info.ngtInfo.maxPerLeaf = this->max_per_leaf_;
+    info.ngtInfo.efConstruction = this->getEfConstruction();
+    info.ngtInfo.efRuntime = this->getEf();
+    info.ngtInfo.epsilon = this->epsilon_;
+    info.ngtInfo.indexSize = this->indexSize();
+    info.ngtInfo.indexLabelCount = this->indexLabelCount();
+    info.ngtInfo.memory = this->allocator->getAllocationSize();
+    info.ngtInfo.last_mode = this->last_mode;
     return info;
 }
 
@@ -1694,61 +1734,57 @@ VecSimInfoIterator *NGTIndex<DataType, DistType>::infoIterator() const {
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::TYPE_STRING,
         .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.hnswInfo.type)}}});
+        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.ngtInfo.type)}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.dim}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.dim}}});
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::METRIC_STRING,
         .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.hnswInfo.metric)}}});
+        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.ngtInfo.metric)}}});
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.isMulti}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.isMulti}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexSize}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.indexSize}}});
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
         .fieldType = INFOFIELD_UINT64,
-        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexLabelCount}}});
+        .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.indexLabelCount}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::M_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.M}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
-        .fieldType = INFOFIELD_UINT64,
-        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efConstruction}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.M}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::NGT_MAX_PER_LEAF_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efRuntime}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.maxPerLeaf}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::EF_CONSTRUCTION_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.max_level}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.efConstruction}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::EF_RUNTIME_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.entrypoint}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.efRuntime}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.memory}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.ngtInfo.memory}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .fieldValue = {FieldValue{
-                             .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)}}});
+                             .stringValue = VecSimSearchMode_ToString(info.ngtInfo.last_mode)}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::EPSILON_STRING,
                          .fieldType = INFOFIELD_FLOAT64,
-                         .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
+                         .fieldValue = {FieldValue{.floatingPointValue = info.ngtInfo.epsilon}}});
 
     return infoIterator;
 }

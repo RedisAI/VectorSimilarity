@@ -6,7 +6,7 @@
 namespace NGTFactory {
 
 template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const NGTParams *params,
                                                  std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new bf_index
     if (params->multi)
@@ -15,7 +15,7 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
         return new (allocator) NGTIndex_Single<DataType, DistType>(params, allocator);
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const NGTParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     if (params->type == VecSimType_FLOAT32) {
         return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
     } else if (params->type == VecSimType_FLOAT64) {
@@ -35,8 +35,8 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
         return sizeof(NGTIndex_Single<DataType, DistType>);
 }
 
-size_t EstimateInitialSize(const HNSWParams *params) {
-    size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
+size_t EstimateInitialSize(const NGTParams *params) {
+    size_t M = (params->M) ? params->M : DEFAULT_M;
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     if (params->type == VecSimType_FLOAT32) {
@@ -71,8 +71,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     return est;
 }
 
-size_t EstimateElementSize(const HNSWParams *params) {
-    size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
+size_t EstimateElementSize(const NGTParams *params) {
+    size_t M = (params->M) ? params->M : DEFAULT_M;
     size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *) +
                                sizeof(vecsim_stl::vector<idType>);
     size_t size_links_higher_level = sizeof(linklistsizeint) + M * sizeof(idType) + sizeof(void *) +

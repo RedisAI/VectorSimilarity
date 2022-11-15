@@ -928,17 +928,17 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       link_list_locks_(max_elements_)
 #endif
 {
-    size_t M = params->M ? params->M : HNSW_DEFAULT_M;
+    size_t M = params->M ? params->M : DEFAULT_M;
     if (M > SIZE_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     M_ = M;
     maxM_ = M_;
     maxM0_ = M_ * 2;
 
-    size_t ef_construction = params->efConstruction ? params->efConstruction : HNSW_DEFAULT_EF_C;
+    size_t ef_construction = params->efConstruction ? params->efConstruction : DEFAULT_EF_C;
     ef_construction_ = std::max(ef_construction, M_);
-    ef_ = params->efRuntime ? params->efRuntime : HNSW_DEFAULT_EF_RT;
-    epsilon_ = params->epsilon > 0.0 ? params->epsilon : HNSW_DEFAULT_EPSILON;
+    ef_ = params->efRuntime ? params->efRuntime : DEFAULT_EF_RT;
+    epsilon_ = params->epsilon > 0.0 ? params->epsilon : DEFAULT_EPSILON;
 
     cur_element_count = 0;
     max_id = HNSW_INVALID_ID;
@@ -1579,23 +1579,23 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexLabelCount}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::M_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.M}}});
     infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
+        .fieldName = VecSimCommonStrings::EF_CONSTRUCTION_STRING,
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efConstruction}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::EF_RUNTIME_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efRuntime}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.max_level}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.entrypoint}}});
     infoIterator->addInfoField(
@@ -1608,7 +1608,7 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
                          .fieldValue = {FieldValue{
                              .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::EPSILON_STRING,
                          .fieldType = INFOFIELD_FLOAT64,
                          .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
 

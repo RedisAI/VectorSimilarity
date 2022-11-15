@@ -18,7 +18,7 @@ private:
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
 public:
-    NGTIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+    NGTIndex_Single(const NGTParams *params, std::shared_ptr<VecSimAllocator> allocator,
                     size_t random_seed = 100, size_t initial_pool_size = 1)
         : NGTIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}

@@ -40,9 +40,24 @@ inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
     return params;
 }
 
+inline VecSimParams CreateParams(const NGTParams &ngt_params) {
+    VecSimParams params{.algo = VecSimAlgo_NGT, .ngtParams = ngt_params};
+    return params;
+}
+
 inline VecSimParams CreateParams(const BFParams &bf_params) {
     VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
     return params;
+}
+
+inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
+    VecSimQueryParams QueryParams = {.hnswRuntimeParams = RuntimeParams};
+    return QueryParams;
+}
+
+inline VecSimQueryParams CreateQueryParams(const NGTRuntimeParams &RuntimeParams) {
+    VecSimQueryParams QueryParams = {.ngtRuntimeParams = RuntimeParams};
+    return QueryParams;
 }
 
 namespace test_utils {

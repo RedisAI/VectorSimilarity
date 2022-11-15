@@ -32,12 +32,15 @@ const char *VecSimCommonStrings::INDEX_LABEL_COUNT_STRING = "INDEX_LABEL_COUNT";
 const char *VecSimCommonStrings::IS_MULTI_STRING = "IS_MULTI_VALUE";
 const char *VecSimCommonStrings::MEMORY_STRING = "MEMORY";
 
-const char *VecSimCommonStrings::HNSW_EF_RUNTIME_STRING = "EF_RUNTIME";
-const char *VecSimCommonStrings::HNSW_M_STRING = "M";
-const char *VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION";
-const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
-const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
-const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
+const char *VecSimCommonStrings::EF_RUNTIME_STRING = "EF_RUNTIME";
+const char *VecSimCommonStrings::M_STRING = "M";
+const char *VecSimCommonStrings::EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION";
+const char *VecSimCommonStrings::EPSILON_STRING = "EPSILON";
+
+const char *VecSimCommonStrings::HNSW_MAX_LEVEL_STRING = "MAX_LEVEL";
+const char *VecSimCommonStrings::HNSW_ENTRYPOINT_STRING = "ENTRYPOINT";
+
+const char *VecSimCommonStrings::NGT_MAX_PER_LEAF_STRING = "MAX_PER_LEAF";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";

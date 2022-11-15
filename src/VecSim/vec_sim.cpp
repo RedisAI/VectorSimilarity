@@ -20,7 +20,7 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
                                                   VecsimQueryType query_type) {
     long long num_val;
     // EF_RUNTIME is a valid parameter only in HNSW algorithm.
-    if (index_type != VecSimAlgo_HNSWLIB) {
+    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_NGT) {
         return VecSimParamResolverErr_UnknownParam;
     }
     // EF_RUNTIME is invalid for range query
@@ -59,7 +59,7 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
                                                 VecsimQueryType query_type) {
     double num_val;
     // EPSILON is a valid parameter only in HNSW algorithm.
-    if (index_type != VecSimAlgo_HNSWLIB) {
+    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_NGT) {
         return VecSimParamResolverErr_UnknownParam;
     }
     if (query_type != QUERY_TYPE_RANGE) {
@@ -106,7 +106,7 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
         case VecSimAlgo_NGT:
-            index = NGTFactory::NewIndex(&params->hnswParams, allocator);
+            index = NGTFactory::NewIndex(&params->ngtParams, allocator);
             break;
         }
     } catch (...) {
@@ -122,7 +122,7 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->bfParams);
     case VecSimAlgo_NGT:
-        return NGTFactory::EstimateInitialSize(&params->hnswParams);
+        return NGTFactory::EstimateInitialSize(&params->ngtParams);
     }
     return -1;
 }
@@ -152,7 +152,7 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->bfParams);
     case VecSimAlgo_NGT:
-        return NGTFactory::EstimateElementSize(&params->hnswParams);
+        return NGTFactory::EstimateElementSize(&params->ngtParams);
     }
     return -1;
 }
@@ -178,12 +178,12 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
-        if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
+        if (!strcasecmp(rparams[i].name, VecSimCommonStrings::EF_RUNTIME_STRING)) {
             if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
-        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EPSILON_STRING)) {
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::EPSILON_STRING)) {
             if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type)) !=
                 VecSimParamResolver_OK) {
                 return res;
@@ -208,7 +208,8 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     }
     // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
     // graph.
-    if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
+    if (qparams->searchMode == HYBRID_ADHOC_BF &&
+        (index_type == VecSimAlgo_HNSWLIB || index_type == VecSimAlgo_NGT) &&
         qparams->hnswRuntimeParams.efRuntime > 0) {
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
     }

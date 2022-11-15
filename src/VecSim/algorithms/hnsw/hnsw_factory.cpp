@@ -36,7 +36,7 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
-    size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
+    size_t M = (params->M) ? params->M : DEFAULT_M;
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     if (params->type == VecSimType_FLOAT32) {
@@ -72,7 +72,7 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 }
 
 size_t EstimateElementSize(const HNSWParams *params) {
-    size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
+    size_t M = (params->M) ? params->M : DEFAULT_M;
     size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *) +
                                sizeof(vecsim_stl::vector<idType>);
     size_t size_links_higher_level = sizeof(linklistsizeint) + M * sizeof(idType) + sizeof(void *) +

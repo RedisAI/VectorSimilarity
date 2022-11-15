@@ -354,10 +354,10 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
     ASSERT_TRUE(info.hnswInfo.isMulti);
     // Default args.
     ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
-    ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
-    ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
-    ASSERT_DOUBLE_EQ(info.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
+    ASSERT_EQ(info.hnswInfo.M, DEFAULT_M);
+    ASSERT_EQ(info.hnswInfo.efConstruction, DEFAULT_EF_C);
+    ASSERT_EQ(info.hnswInfo.efRuntime, DEFAULT_EF_RT);
+    ASSERT_DOUBLE_EQ(info.hnswInfo.epsilon, DEFAULT_EPSILON);
     VecSimIndex_Free(index);
 
     d = 1280;

@@ -37,12 +37,15 @@ public:
     static const char *IS_MULTI_STRING;
     static const char *MEMORY_STRING;
 
-    static const char *HNSW_EF_RUNTIME_STRING;
-    static const char *HNSW_EF_CONSTRUCTION_STRING;
-    static const char *HNSW_M_STRING;
-    static const char *HNSW_EPSILON_STRING;
-    static const char *HNSW_MAX_LEVEL;
-    static const char *HNSW_ENTRYPOINT;
+    static const char *EF_RUNTIME_STRING;
+    static const char *EF_CONSTRUCTION_STRING;
+    static const char *M_STRING;
+    static const char *EPSILON_STRING;
+
+    static const char *HNSW_MAX_LEVEL_STRING;
+    static const char *HNSW_ENTRYPOINT_STRING;
+
+    static const char *NGT_MAX_PER_LEAF_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;

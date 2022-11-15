@@ -6,12 +6,13 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-// HNSW default parameters
-#define HNSW_DEFAULT_M       16
-#define HNSW_DEFAULT_EF_C    200
-#define HNSW_DEFAULT_EF_RT   10
-#define HNSW_DEFAULT_EPSILON 0.01
+// Algorithms default parameters
+#define DEFAULT_M            16
+#define DEFAULT_EF_C         200
+#define DEFAULT_EF_RT        10
+#define DEFAULT_EPSILON      0.01
 #define DEFAULT_BLOCK_SIZE   1024
+#define DEFAULT_MAX_PER_LEAF 15
 
 // Datatypes for indexing.
 typedef enum {
@@ -81,12 +82,27 @@ typedef struct {
     bool multi;          // Determines if the index should multi-index or not.
     size_t initialCapacity;
     size_t blockSize;
+    size_t M;
+    size_t maxPerLeaf;
+    size_t efConstruction;
+    size_t efRuntime;
+    double epsilon;
+} NGTParams;
+
+typedef struct {
+    VecSimType type;     // Datatype to index.
+    size_t dim;          // Vector's dimension.
+    VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
+    size_t initialCapacity;
+    size_t blockSize;
 } BFParams;
 
 typedef struct {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
+        NGTParams ngtParams;
         BFParams bfParams;
     };
 } VecSimParams;
@@ -95,6 +111,11 @@ typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
     double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
 } HNSWRuntimeParams;
+
+typedef struct {
+    size_t efRuntime; // EF parameter for NGT graph accuracy/latency for search.
+    double epsilon;   // Epsilon parameter for NGT graph accuracy/latency for range search.
+} NGTRuntimeParams;
 
 /**
  * @brief Query runtime information - the search mode in RediSearch (used for debug/testing).
@@ -126,6 +147,7 @@ typedef enum {
 typedef struct {
     union {
         HNSWRuntimeParams hnswRuntimeParams;
+        NGTRuntimeParams ngtRuntimeParams;
     };
     size_t batchSize;
     VecSearchMode searchMode;
@@ -156,6 +178,22 @@ typedef struct {
             size_t dim;              // Vector size (dimension).
             VecSearchMode last_mode; // The mode in which the last query ran.
         } hnswInfo;
+        struct {
+            size_t indexSize;       // Current count of vectors.
+            size_t indexLabelCount; // Current unique count of labels.
+            size_t blockSize;       // Sets the amount to grow when resizing
+            size_t M;               // Number of allowed edges per node in graph.
+            size_t maxPerLeaf;      // Number of allowed ids under the same leaf in the tree.
+            size_t efConstruction;  // EF parameter for HNSW graph accuracy/latency for indexing.
+            size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
+            double epsilon; // Epsilon parameter for HNSW graph accuracy/latency for range search.
+            VecSimMetric metric;     // Index distance metric
+            uint64_t memory;         // Index memory consumption.
+            VecSimType type;         // Datatype the index holds.
+            bool isMulti;            // Determines if the index should multi-index or not.
+            size_t dim;              // Vector size (dimension).
+            VecSearchMode last_mode; // The mode in which the last query ran.
+        } ngtInfo;
         struct {
             size_t indexSize;        // Current count of vectors.
             size_t indexLabelCount;  // Current unique count of labels.
