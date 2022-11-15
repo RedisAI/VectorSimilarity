@@ -1577,7 +1577,7 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
@@ -1616,7 +1616,7 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
 
     // labels_lookup and element_levels containers are not allocated at all in some platforms,
     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a

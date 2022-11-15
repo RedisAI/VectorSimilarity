@@ -23,7 +23,7 @@ Serializer::EncodingVersion Serializer::ReadVersion(std::ifstream &input) {
     EncodingVersion version = EncodingVersion_INVALID;
     readBinaryPOD(input, version);
     // Only V1 and V2 are supported
-    if (version >= EncodingVersion_INVALID) {
+    if (version <= 0 || version >= EncodingVersion_INVALID) {
         input.close();
         throw std::runtime_error("Cannot load index: bad encoding version");
     }

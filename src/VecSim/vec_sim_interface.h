@@ -11,7 +11,7 @@
 #include "info_iterator_struct.h"
 
 #include <stddef.h>
-#include <stdexcept>
+
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
@@ -162,5 +162,4 @@ public:
         VecSimIndexInterface::timeoutCallback = callback;
     }
 
-    inline int64_t getAllocationSize() const { return this->allocator->getAllocationSize(); }
 };

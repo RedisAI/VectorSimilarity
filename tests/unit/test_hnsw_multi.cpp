@@ -825,7 +825,7 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)

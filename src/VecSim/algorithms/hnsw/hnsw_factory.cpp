@@ -147,26 +147,26 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
 }
 
 // Intialize @params from file for V2
-static void InitializeParams(std::ifstream &input, HNSWParams &params) {
-    Serializer::readBinaryPOD(input, params.dim);
-    Serializer::readBinaryPOD(input, params.type);
-    Serializer::readBinaryPOD(input, params.metric);
-    Serializer::readBinaryPOD(input, params.blockSize);
-    Serializer::readBinaryPOD(input, params.multi);
-    Serializer::readBinaryPOD(input, params.epsilon);
+static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
+    Serializer::readBinaryPOD(source_params, params.dim);
+    Serializer::readBinaryPOD(source_params, params.type);
+    Serializer::readBinaryPOD(source_params, params.metric);
+    Serializer::readBinaryPOD(source_params, params.blockSize);
+    Serializer::readBinaryPOD(source_params, params.multi);
+    Serializer::readBinaryPOD(source_params, params.epsilon);
 }
 
 // Intialize @params for V1
-static void InitializeParams(HNSWParams &file_params, const HNSWParams *params) {
-    file_params.type = params->type;
-    file_params.dim = params->dim;
-    file_params.metric = params->metric;
-    file_params.multi = params->multi;
-    file_params.blockSize = params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE;
-    file_params.epsilon = params->epsilon ? params->epsilon : HNSW_DEFAULT_EPSILON;
+static void InitializeParams(const HNSWParams *source_params, HNSWParams &params) {
+    params.type = source_params->type;
+    params.dim = source_params->dim;
+    params.metric = source_params->metric;
+    params.multi = source_params->multi;
+    params.blockSize = source_params->blockSize ? source_params->blockSize : DEFAULT_BLOCK_SIZE;
+    params.epsilon = source_params->epsilon ? source_params->epsilon : HNSW_DEFAULT_EPSILON;
 }
 
-VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
+VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -174,7 +174,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
     }
 
     Serializer::EncodingVersion version = Serializer::ReadVersion(input);
-    HNSWParams file_params;
+    HNSWParams params;
     switch (version) {
     case Serializer::EncodingVersion_V2: {
         // Algorithm type is only serialized from V2 up.
@@ -185,26 +185,26 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *params) {
             throw std::runtime_error("Cannot load index: bad algorithm type");
         }
         // this information is serialized from V2 and up
-        InitializeParams(input, file_params);
+        InitializeParams(input, params);
         break;
     }
     case Serializer::EncodingVersion_V1: {
-        assert(params);
-        InitializeParams(file_params, params);
+        assert(v1_params);
+        InitializeParams(v1_params, params);
         break;
     }
     // Something is wrong
     default:
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    Serializer::readBinaryPOD(input, file_params.initialCapacity);
+    Serializer::readBinaryPOD(input, params.initialCapacity);
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    if (file_params.type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(input, &file_params, allocator, version);
-    } else if (file_params.type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(input, &file_params, allocator, version);
+    if (params.type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
+    } else if (params.type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
     } else {
         throw std::runtime_error("Cannot load index: bad index data type");
     }

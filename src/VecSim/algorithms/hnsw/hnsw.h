@@ -1771,5 +1771,5 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
 }
 
 #ifdef BUILD_TESTS
-#include "hnsw_serializer_imp.h"
+#include "hnsw_serializer.h"
 #endif

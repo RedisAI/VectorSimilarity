@@ -395,7 +395,8 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     std::ofstream output(this->file_name, std::ios::binary);
     // Write invalid encoding version
-    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_INVALID);
+    Serializer::writeBinaryPOD(output, 0);
+    output.flush();
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
                              "Cannot load index: bad encoding version");
 

@@ -18,9 +18,7 @@ private:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
     virtual void AddToLabelLookup(labelType label, idType id) override {
-        if (label_lookup_.find(label) == label_lookup_.end()) {
-            label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
-        }
+
         setVectorId(label, id);
     }
 
@@ -28,6 +26,11 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override {
+            // Checking if an element with the given label already exists.
+    // if not, add an empty vector under the new label.
+        if (label_lookup_.find(label) == label_lookup_.end()) {
+            label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
+        }
         label_lookup_.at(label).push_back(id);
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
@@ -135,12 +138,6 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
-
-    // Checking if an element with the given label already exists.
-    // if not, add an empty vector under the new label.
-    if (label_lookup_.find(label) == label_lookup_.end()) {
-        label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
-    }
 
     return this->appendVector(vector_data, label);
 }
