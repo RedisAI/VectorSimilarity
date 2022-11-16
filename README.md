@@ -15,10 +15,17 @@ The API header files are `vec_sim.h` and `query_results.h`, which are located in
 ## Algorithms
 
 ### Flat (Brute Force)
-TBD
+Brute force comparison of the query vector `q` with the stored vectors. Vectors are stored in vector blocks, which are continues memory block 
+
+#### Supports:
+1. In place insert, delete, update of vectors in the index.
+2. KNN queries
+3. Iterator interface 
+4. Range queries
+5. 3rd patry allocators
 
 ### HNSW
-TBD
+
 
 ## Build
 For building you will need:
