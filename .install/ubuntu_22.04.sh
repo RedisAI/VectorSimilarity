@@ -1,4 +1,5 @@
 #!/bin/bash
-apt-get update
-apt-get install -y git wget build-essential valgrind 
+set -e
+apt-get update -qq
+apt-get install -yqq git wget build-essential valgrind 
 source linux_install_cmake.sh
