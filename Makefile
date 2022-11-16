@@ -249,17 +249,17 @@ COV_PROFDATA=$(COV_DIR)/cov.profdata
 
 define COVERAGE_RESET
 $(SHOW)set -e ;\
-echo "Starting coverage analysys." ;\
+echo "Starting coverage analysis." ;\
 mkdir -p $(COV_DIR) ;\
-lcov --directory $(BINROOT) --base-directory $(SRCDIR) -z > /dev/null 2>&1
+lcov --directory $(BINROOT) --base-directory $(SRCDIR) -z
 endef
 
 
 define COVERAGE_COLLECT
 $(SHOW)set -e ;\
 echo "Collecting coverage data ..." ;\
-lcov --capture --directory $(BINROOT) --base-directory $(SRCDIR) --output-file $(COV_INFO) > /dev/null 2>&1 ;\
-lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE) > /dev/null 2>&1 ;\
+lcov --capture --directory $(BINROOT) --base-directory $(SRCDIR) --output-file $(COV_INFO);\
+lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE);\
 mv $(COV_INFO).1 $(COV_INFO)
 endef
 
