@@ -58,9 +58,12 @@ public:
             vecsim_stl::vector<idType> *ids;
         };
         struct {
-            void *pivot;
-            idType pivot_id;
             DistType radius;
+            bool own_pivot;
+            union {
+                void *pivot;
+                idType pivot_id;
+            };
         };
     };
 
@@ -148,8 +151,9 @@ VPTNode<DataType, DistType>::VPTNode(vecsim_stl::vector<idType> *ids, size_t siz
 template <typename DataType, typename DistType>
 VPTNode<DataType, DistType>::~VPTNode() {
     if (INNER == this->role) {
-        if (pivot_id == INVALID_ID) { // If node owns the pivot data
+        if (own_pivot) {
             this->allocator->free_allocation(pivot);
+            own_pivot = false;
         }
         delete left;
         delete right;
@@ -171,10 +175,10 @@ void VPTNode<DataType, DistType>::rebuild(NGTIndex<DataType, DistType> &ngt) {
 template <typename DataType, typename DistType>
 void VPTNode<DataType, DistType>::merge() {
     assert(INNER == this->role);
-    if (pivot_id == INVALID_ID) {
+    if (own_pivot) {
         allocator->free_allocation(pivot);
+        own_pivot = false;
     }
-    pivot = NULL;
 
     ids = new (allocator) vecsim_stl::vector<idType>(allocator);
     ids->reserve(size);
@@ -509,8 +513,9 @@ void NGTIndex<DataType, DistType>::splitLeaf(VPTNode<DataType, DistType> *node) 
     std::nth_element(node_ids->begin() + 1, med, node_ids->end(), distComp);
 
     node->pivot_id = (*node_ids)[0];
-    node->pivot = getDataByInternalId(node->pivot_id);
-    node->radius = this->dist_func(node->pivot, getDataByInternalId(*med), this->dim);
+    node->own_pivot = false;
+    node->radius =
+        this->dist_func(getDataByInternalId(node->pivot_id), getDataByInternalId(*med), this->dim);
 
     auto left_ids = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
     left_ids->insert(left_ids->begin(), node_ids->begin(), med);
@@ -560,8 +565,9 @@ void NGTIndex<DataType, DistType>::rebuildVPTree(VPTNode<DataType, DistType> *ro
         tree_ids->insert(tree_ids->end(), curr->ids->begin(), curr->ids->end());
     }
 
-    if (INVALID_ID == root->pivot_id) {
+    if (root->own_pivot) {
         this->allocator->free_allocation(root->pivot);
+        root->own_pivot = false;
     }
     delete root->left;
     delete root->right;
@@ -598,7 +604,8 @@ NGTIndex<DataType, DistType>::insertToTree(idType id, const void *data) {
             rebuildVPTree(curr);
             return searchTree(curr, data, ef_construction_);
         } else {
-            if (curr->radius < this->dist_func(curr->pivot, data, this->dim)) {
+            auto pivot = curr->own_pivot ? curr->pivot : getDataByInternalId(curr->pivot_id);
+            if (curr->radius < this->dist_func(pivot, data, this->dim)) {
                 curr = curr->right;
             } else {
                 curr = curr->left;
@@ -649,11 +656,10 @@ void NGTIndex<DataType, DistType>::removeFromTree(idType id) {
     while (curr != &this->VPtree_root) {
         curr = curr->parent;
         curr->size--;
-        if (curr->pivot_id == id) {
-            void *data = curr->pivot;
+        if (!curr->own_pivot && curr->pivot_id == id) {
             curr->pivot = this->allocator->allocate(this->data_size_);
-            memcpy(curr->pivot, data, this->data_size_);
-            curr->pivot_id = INVALID_ID;
+            memcpy(curr->pivot, getDataByInternalId(id), this->data_size_);
+            curr->own_pivot = true;
         }
         if (curr->unbalanced()) {
             top_unbalanced = curr;
@@ -692,7 +698,8 @@ NGTIndex<DataType, DistType>::searchTree(const VPTNode<DataType, DistType> *root
                                          size_t batchSize) const {
     const VPTNode<DataType, DistType> *curr = root;
     while (curr->role != LEAF && curr->size > batchSize) {
-        if (curr->radius < this->dist_func(curr->pivot, query, this->dim)) {
+        auto pivot = curr->own_pivot ? curr->pivot : getDataByInternalId(curr->pivot_id);
+        if (curr->radius < this->dist_func(pivot, query, this->dim)) {
             curr = curr->right;
         } else {
             curr = curr->left;
@@ -707,7 +714,8 @@ NGTIndex<DataType, DistType>::searchRangeTree(const void *query, DistType radius
     const VPTNode<DataType, DistType> *curr = &this->VPtree_root;
     DistType d = std::numeric_limits<DistType>::max();
     while (curr->role != LEAF) {
-        d = this->dist_func(curr->pivot, query, this->dim);
+        auto pivot = curr->own_pivot ? curr->pivot : getDataByInternalId(curr->pivot_id);
+        d = this->dist_func(pivot, query, this->dim);
         if (curr->radius < d) {
             curr = curr->right;
         } else {
@@ -1159,6 +1167,14 @@ void NGTIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_intern
     *pos = element_internal_id;
     idToLeaf[element_internal_id] = leaf;
     idToLeaf.erase(max_id);
+
+    auto curr = leaf;
+    while (curr != &this->VPtree_root) {
+        curr = curr->parent;
+        if (!curr->own_pivot && curr->pivot_id == max_id) {
+            curr->pivot_id = element_internal_id;
+        }
+    }
 
     // swap neighbours
 

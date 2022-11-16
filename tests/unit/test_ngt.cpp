@@ -1603,7 +1603,6 @@ TYPED_TEST(NGTTest, testTimeoutReturn) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
 
     VecSimIndex *index = this->CreateNewIndex(params);
-    ;
 
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 1.0);
 
