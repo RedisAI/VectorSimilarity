@@ -33,7 +33,8 @@ protected:
 
     static bool is_multi;
     static size_t n_queries;
-
+    static const char *hnsw_index_file;
+    static const char *test_queries_file;
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
 

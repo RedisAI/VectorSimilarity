@@ -98,30 +98,6 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
     }
     st.counters["memory"] = memory_delta / (double)iter;
 }
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_FixedBatchSize_fp32, fp32_index_t)
-(benchmark::State &st) { BF_FixedBatchSize(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_FixedBatchSize_fp64, fp64_index_t)
-(benchmark::State &st) { BF_FixedBatchSize(st); }
-
-#define REGISTER_FixedBatchSize(BM_FUNC)                                                           \
-    BENCHMARK_REGISTER_F(BM_BatchIterator, BM_FUNC)                                                \
-        ->Args({10, 1})                                                                            \
-        ->Args({10, 3})                                                                            \
-        ->Args({10, 5})                                                                            \
-        ->Args({100, 1})                                                                           \
-        ->Args({100, 3})                                                                           \
-        ->Args({100, 5})                                                                           \
-        ->Args({1000, 1})                                                                          \
-        ->Args({1000, 3})                                                                          \
-        ->Args({1000, 5})                                                                          \
-        ->ArgNames({"batch size", "number of batches"})                                            \
-        ->Unit(benchmark::kMillisecond)
-
-// Register the functions as a benchmark
-// {batch_size, num_batches}
-REGISTER_FixedBatchSize(BF_FixedBatchSize_fp32);
-REGISTER_FixedBatchSize(BF_FixedBatchSize_fp64);
 
 template <typename index_type_t>
 void BM_BatchIterator<index_type_t>::BF_VariableBatchSize(benchmark::State &st) {
@@ -145,28 +121,6 @@ void BM_BatchIterator<index_type_t>::BF_VariableBatchSize(benchmark::State &st) 
         iter++;
     }
 }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_VariableBatchSize_fp32, fp32_index_t)
-(benchmark::State &st) { BF_VariableBatchSize(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_VariableBatchSize_fp64, fp64_index_t)
-(benchmark::State &st) { BF_VariableBatchSize(st); }
-
-// {initial_batch_size, num_batches}
-// batch size is increased by factor of 2 from iteration to the next one.
-#define REGISTER_VariableBatchSize(BM_FUNC)                                                        \
-    BENCHMARK_REGISTER_F(BM_BatchIterator, BM_FUNC)                                                \
-        ->Args({10, 2})                                                                            \
-        ->Args({10, 4})                                                                            \
-        ->Args({100, 2})                                                                           \
-        ->Args({100, 4})                                                                           \
-        ->Args({1000, 2})                                                                          \
-        ->Args({1000, 4})                                                                          \
-        ->ArgNames({"batch initial size", "number of batches"})                                    \
-        ->Unit(benchmark::kMillisecond)
-
-REGISTER_VariableBatchSize(BF_VariableBatchSize_fp32);
-REGISTER_VariableBatchSize(BF_VariableBatchSize_fp64);
 
 template <typename index_type_t>
 void BM_BatchIterator<index_type_t>::BF_BatchesToAdhocBF(benchmark::State &st) {
@@ -197,33 +151,6 @@ void BM_BatchIterator<index_type_t>::BF_BatchesToAdhocBF(benchmark::State &st) {
     }
 }
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_BatchesToAdhocBF_fp32, fp32_index_t)
-(benchmark::State &st) { BF_BatchesToAdhocBF(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_BatchesToAdhocBF_fp64, fp64_index_t)
-(benchmark::State &st) { BF_BatchesToAdhocBF(st); }
-
-// {step, num_batches} - where step is the ratio between the index size to the number of vectors to
-// go over in ad-hoc BF.
-// batch size is increased by factor of 2 from iteration to the next one, and initial batch size
-// is 10.
-#define REGISTER_BatchesToAdhocBF(BM_FUNC)                                                         \
-    BENCHMARK_REGISTER_F(BM_BatchIterator, BM_FUNC)                                                \
-        ->Args({5, 0})                                                                             \
-        ->Args({5, 2})                                                                             \
-        ->Args({5, 5})                                                                             \
-        ->Args({10, 0})                                                                            \
-        ->Args({10, 2})                                                                            \
-        ->Args({10, 5})                                                                            \
-        ->Args({20, 0})                                                                            \
-        ->Args({20, 2})                                                                            \
-        ->Args({20, 5})                                                                            \
-        ->ArgNames({"step", "number of batches"})                                                  \
-        ->Unit(benchmark::kMillisecond)
-
-REGISTER_BatchesToAdhocBF(BF_BatchesToAdhocBF_fp32);
-REGISTER_BatchesToAdhocBF(BF_BatchesToAdhocBF_fp64);
-
 template <typename index_type_t>
 void BM_BatchIterator<index_type_t>::HNSW_FixedBatchSize(benchmark::State &st) {
 
@@ -244,16 +171,6 @@ void BM_BatchIterator<index_type_t>::HNSW_FixedBatchSize(benchmark::State &st) {
     st.counters["memory"] = memory_delta / (double)iter;
 }
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_FixedBatchSize_fp32, fp32_index_t)
-(benchmark::State &st) { HNSW_FixedBatchSize(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_FixedBatchSize_fp64, fp64_index_t)
-(benchmark::State &st) { HNSW_FixedBatchSize(st); }
-
-#define REGISTER_HNSW_FixedBatchSize(BM_FUNC) REGISTER_FixedBatchSize(BM_FUNC)->Iterations(50)
-REGISTER_HNSW_FixedBatchSize(HNSW_FixedBatchSize_fp32);
-REGISTER_HNSW_FixedBatchSize(HNSW_FixedBatchSize_fp64);
-
 template <typename index_type_t>
 void BM_BatchIterator<index_type_t>::HNSW_VariableBatchSize(benchmark::State &st) {
     size_t initial_batch_size = st.range(0);
@@ -272,19 +189,6 @@ void BM_BatchIterator<index_type_t>::HNSW_VariableBatchSize(benchmark::State &st
     st.counters["Recall"] = (float)correct / (float)(total_res_num * iter);
     st.counters["memory"] = memory_delta / (double)iter;
 }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize_fp32, fp32_index_t)
-(benchmark::State &st) { HNSW_VariableBatchSize(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize_fp64, fp64_index_t)
-(benchmark::State &st) { HNSW_VariableBatchSize(st); }
-
-// {initial_batch_size, num_batches}
-// batch size is increased by factor of 2 from iteration to the next one.
-#define REGISTER_HNSW_VariableBatchSize(BM_FUNC) REGISTER_VariableBatchSize(BM_FUNC)->Iterations(50)
-
-REGISTER_HNSW_VariableBatchSize(HNSW_VariableBatchSize_fp32);
-REGISTER_HNSW_VariableBatchSize(HNSW_VariableBatchSize_fp64);
 
 template <typename index_type_t>
 void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st) {
@@ -309,12 +213,58 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
     st.counters["memory"] = memory_delta / (double)iter;
 }
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF_fp32, fp32_index_t)
-(benchmark::State &st) { HNSW_BatchesToAdhocBF(st); }
+// Register the functions as a benchmark
+// {batch_size, num_batches}
+#define REGISTER_FixedBatchSize(BM_FUNC)                                                           \
+    BENCHMARK_REGISTER_F(BM_BatchIterator, BM_FUNC)                                                \
+        ->Args({10, 1})                                                                            \
+        ->Args({10, 3})                                                                            \
+        ->Args({10, 5})                                                                            \
+        ->Args({100, 1})                                                                           \
+        ->Args({100, 3})                                                                           \
+        ->Args({100, 5})                                                                           \
+        ->Args({1000, 1})                                                                          \
+        ->Args({1000, 3})                                                                          \
+        ->Args({1000, 5})                                                                          \
+        ->ArgNames({"batch size", "number of batches"})                                            \
+        ->Unit(benchmark::kMillisecond)
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF_fp64, fp64_index_t)
-(benchmark::State &st) { HNSW_BatchesToAdhocBF(st); }
+// {initial_batch_size, num_batches}
+// batch size is increased by factor of 2 from iteration to the next one.
+#define REGISTER_VariableBatchSize(BM_FUNC)                                                        \
+    BENCHMARK_REGISTER_F(BM_BatchIterator, BM_FUNC)                                                \
+        ->Args({10, 2})                                                                            \
+        ->Args({10, 4})                                                                            \
+        ->Args({100, 2})                                                                           \
+        ->Args({100, 4})                                                                           \
+        ->Args({1000, 2})                                                                          \
+        ->Args({1000, 4})                                                                          \
+        ->ArgNames({"batch initial size", "number of batches"})                                    \
+        ->Unit(benchmark::kMillisecond)
 
+// {step, num_batches} - where step is the ratio between the index size to the number of vectors to
+// go over in ad-hoc BF.
+// batch size is increased by factor of 2 from iteration to the next one, and initial batch size
+// is 10.
+#define REGISTER_BatchesToAdhocBF(BM_FUNC)                                                         \
+    BENCHMARK_REGISTER_F(BM_BatchIterator, BM_FUNC)                                                \
+        ->Args({5, 0})                                                                             \
+        ->Args({5, 2})                                                                             \
+        ->Args({5, 5})                                                                             \
+        ->Args({10, 0})                                                                            \
+        ->Args({10, 2})                                                                            \
+        ->Args({10, 5})                                                                            \
+        ->Args({20, 0})                                                                            \
+        ->Args({20, 2})                                                                            \
+        ->Args({20, 5})                                                                            \
+        ->ArgNames({"step", "number of batches"})                                                  \
+        ->Unit(benchmark::kMillisecond)
+
+// {initial_batch_size, num_batches}
+// batch size is increased by factor of 2 from iteration to the next one.
+#define REGISTER_HNSW_FixedBatchSize(BM_FUNC) REGISTER_FixedBatchSize(BM_FUNC)->Iterations(50)
+
+#define REGISTER_HNSW_VariableBatchSize(BM_FUNC) REGISTER_VariableBatchSize(BM_FUNC)->Iterations(50)
 // {step, num_batches} - where step is the ratio between the index size to the number of vectors to
 // go over in ad-hoc BF.
 // batch size is increased by factor of 2 from iteration to the next one, and initial batch size
@@ -326,6 +276,3 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF_fp64, fp64_i
         ->Args({50, 5})                                                                            \
         ->Args({100, 0})                                                                           \
         ->Iterations(50)
-
-REGISTER_HNSW_BatchesToAdhocBF(HNSW_BatchesToAdhocBF_fp32);
-REGISTER_HNSW_BatchesToAdhocBF(HNSW_BatchesToAdhocBF_fp64);

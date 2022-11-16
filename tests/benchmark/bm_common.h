@@ -87,11 +87,6 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, Offset_t ind
     st.counters["Recall"] = (float)correct / (float)(k * iter);
 }
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_BF_fp32, fp32_index_t)
-(benchmark::State &st) { TopK_BF(st); }
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_BF_fp64, fp64_index_t)
-(benchmark::State &st) { TopK_BF(st); }
-
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Arg(10)                                                                                  \
@@ -99,15 +94,6 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_BF_fp64, fp64_index_t)
         ->Arg(500)                                                                                 \
         ->ArgName("k")                                                                             \
         ->Unit(benchmark::kMillisecond)
-
-REGISTER_TopK_BF(BM_VecSimCommon, TopK_BF_fp32);
-REGISTER_TopK_BF(BM_VecSimCommon, TopK_BF_fp64);
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_HNSW_fp32, fp32_index_t)
-(benchmark::State &st) { TopK_HNSW(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_HNSW_fp64, fp64_index_t)
-(benchmark::State &st) { TopK_HNSW(st); }
 
 // {ef_runtime, k} (recall that always ef_runtime >= k)
 #define REGISTER_TopK_HNSW(BM_CLASS, BM_FUNC)                                                      \
@@ -120,20 +106,3 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_HNSW_fp64, fp64_index_t)
         ->ArgNames({"ef_runtime", "k"})                                                            \
         ->Iterations(100)                                                                          \
         ->Unit(benchmark::kMillisecond)
-
-REGISTER_TopK_HNSW(BM_VecSimCommon, TopK_HNSW_fp32);
-REGISTER_TopK_HNSW(BM_VecSimCommon, TopK_HNSW_fp64);
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_FLAT_fp32, fp32_index_t)
-(benchmark::State &st) { Memory_FLAT(st); }
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_FLAT_fp64, fp64_index_t)
-(benchmark::State &st) { Memory_FLAT(st); }
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_HNSW_fp32, fp32_index_t)
-(benchmark::State &st) { Memory_HNSW(st); }
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_HNSW_fp64, fp64_index_t)
-(benchmark::State &st) { Memory_HNSW(st); }
-
-BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_FLAT_fp32)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_FLAT_fp64)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_HNSW_fp32)->Iterations(1);
-BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_HNSW_fp64)->Iterations(1);

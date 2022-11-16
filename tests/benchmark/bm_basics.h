@@ -95,52 +95,8 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
-// DeleteVector BM
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteVector_fp32, fp32_index_t)
-(benchmark::State &st) {
-    if (VecSimAlgo_BF == st.range(0)) {
-        DeleteVector<BruteForceIndex<float, float>>(
-            reinterpret_cast<BruteForceIndex<float, float> *>(
-                BM_VecSimIndex<fp32_index_t>::indices[VecSimAlgo_BF]),
-            st);
-    } else if (VecSimAlgo_HNSWLIB == st.range(0)) {
-        DeleteVector<HNSWIndex<float, float>>(
-            reinterpret_cast<HNSWIndex<float, float> *>(
-                BM_VecSimIndex<fp32_index_t>::indices[VecSimAlgo_HNSWLIB]),
-            st);
-    }
-}
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteVector_fp64, fp64_index_t)
-(benchmark::State &st) {
-    if (VecSimAlgo_BF == st.range(0)) {
-        DeleteVector<BruteForceIndex<double, double>>(
-            reinterpret_cast<BruteForceIndex<double, double> *>(
-                BM_VecSimIndex<fp64_index_t>::indices[VecSimAlgo_BF]),
-            st);
-    } else if (VecSimAlgo_HNSWLIB == st.range(0)) {
-        DeleteVector<HNSWIndex<double, double>>(
-            reinterpret_cast<HNSWIndex<double, double> *>(
-                BM_VecSimIndex<fp64_index_t>::indices[VecSimAlgo_HNSWLIB]),
-            st);
-    }
-}
-
 #define UNIT_AND_ITERATIONS                                                                        \
     Unit(benchmark::kMillisecond)->Iterations((long)BM_VecSimGeneral::block_size)
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVector_fp32)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
-    ->Arg(VecSimAlgo_HNSWLIB);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVector_fp64)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
-    ->Arg(VecSimAlgo_HNSWLIB);
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, Range_BF_fp32, fp32_index_t)
-(benchmark::State &st) { Range_BF(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, Range_BF_fp64, fp64_index_t)
-(benchmark::State &st) { Range_BF(st); }
 
 // The actual radius will be the given arg divided by 100, since arg must be an integer.
 #define REGISTER_Range_BF(BM_FUNC)                                                                 \
@@ -153,17 +109,9 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, Range_BF_fp64, fp64_index_t)
         ->ArgName("radiusX100")                                                                    \
         ->Unit(benchmark::kMillisecond)
 
-REGISTER_Range_BF(Range_BF_fp32);
-REGISTER_Range_BF(Range_BF_fp64);
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, Range_HNSW_fp32, fp32_index_t)
-(benchmark::State &st) { Range_HNSW(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, Range_HNSW_fp64, fp64_index_t)
-(benchmark::State &st) { Range_HNSW(st); }
-
 #define HNSW_RANGE_ARGS(radius, epsilon)                                                           \
     Args({radius, epsilon})->ArgNames({"radiusX100", "epsilonX1000"})
+
 // {radius*100, epsilon*1000}
 // The actual radius will be the given arg divided by 100, and the actual epsilon values
 // will be the given arg divided by 1000.
@@ -180,6 +128,3 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, Range_HNSW_fp64, fp64_index_t)
         ->HNSW_RANGE_ARGS(50, 100)                                                                 \
         ->Iterations(100)                                                                          \
         ->Unit(benchmark::kMillisecond)
-
-REGISTER_Range_HNSW(Range_HNSW_fp32);
-REGISTER_Range_HNSW(Range_HNSW_fp64);

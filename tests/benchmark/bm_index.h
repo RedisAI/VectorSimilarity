@@ -39,10 +39,6 @@ protected:
 private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
-
-    // To be defined by the lowest class in hirerachy .cpp file
-    static const std::vector<const char *> GetIndexFiles();
-    static const std::vector<const char *> GetTestFiles();
 };
 
 template <typename index_type_t>
@@ -82,10 +78,7 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
 
     VecSimType type = index_type_t::get_index_type();
-
-    const std::vector<const char *> index_files = GetIndexFiles();
-    const std::vector<const char *> test_files = GetTestFiles();
-
+    
     BFParams bf_params = {.type = type,
                           .dim = dim,
                           .metric = VecSimMetric_Cosine,
@@ -105,7 +98,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                          .efConstruction = BM_VecSimGeneral::EF_C};
 
     // Initialize and load HNSW index for DBPedia data set.
-    indices.push_back(HNSWFactory::NewIndex(AttachRootPath(index_files.at(type)), &params));
+    indices.push_back(
+        HNSWFactory::NewIndex(AttachRootPath(BM_VecSimGeneral::hnsw_index_file), &params));
 
     auto *hnsw_index = CastToHNSW(indices[VecSimAlgo_HNSWLIB]);
     size_t ef_r = 10;
@@ -119,7 +113,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
-    loadTestVectors(AttachRootPath(test_files.at(type)), type);
+    loadTestVectors(AttachRootPath(BM_VecSimGeneral::test_queries_file), type);
 }
 
 template <typename index_type_t>
@@ -143,6 +137,3 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
         queries.push_back(query);
     }
 }
-
-#define VARIABLE_BATCH_SIZE_ARGS(initial_batch_size, num_batches)                                  \
-    ->Args({initial_batch_size, num_batches})->ArgNames({"batch initial size", "number of batches"})

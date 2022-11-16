@@ -12,23 +12,11 @@ size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
 
-template <typename index_type_t>
-const std::vector<const char *> BM_VecSimIndex<index_type_t>::GetIndexFiles() {
-    static const std::vector<const char *> v = {
-        "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1",
-        "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1"};
+const char *BM_VecSimGeneral::hnsw_index_file =
+    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+const char *BM_VecSimGeneral::test_queries_file =
+    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
-    return v;
-}
-
-template <typename index_type_t>
-const std::vector<const char *> BM_VecSimIndex<index_type_t>::GetTestFiles() {
-    static const std::vector<const char *> v = {
-        "tests/benchmark/data/DBpedia-test_vectors-n10k.raw",
-        "tests/benchmark/data/DBpedia-test_vectors-n10k.raw"};
-
-    return v;
-}
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
     // TODO write
@@ -50,18 +38,6 @@ void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
     }
 }
 
-// AddVector BM
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddVector_fp32, fp32_index_t)
-(benchmark::State &st) { AddVector(st); }
-
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddVector_fp64, fp64_index_t)
-(benchmark::State &st) { AddVector(st); }
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVector_fp32)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
-    ->Arg(VecSimAlgo_HNSWLIB);
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVector_fp64)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
-    ->Arg(VecSimAlgo_HNSWLIB);
+#include "bm_basics_define_n_register_fp32.h"
 
 BENCHMARK_MAIN();
