@@ -8,7 +8,7 @@ on:
 
 jobs:
   rocky8:
-    # if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
@@ -124,3 +124,17 @@ jobs:
       - name: unit tests
         run: make unit_test
 
+  arm:
+    if: github.event.label.name == 'multi-build' || github.event.label.name == 'arm'
+    runs-on: ubuntu-latest
+    name: Run build and test gpu
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: circle-ci job runner
+        id: curl-circle-ci
+        uses: Open-Source-Contrib/circle-ci-trigger-action@latest
+        with:
+          circle_ci_token: ${{ secrets.CIRCLE_CI_SECRET}}
+          circle_ci_job: build-arm
+          circle_ci_project_url: ${{ github.event.pull_request.head.ref }}
