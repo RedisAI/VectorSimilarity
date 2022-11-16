@@ -108,8 +108,6 @@ MAKE_J:=-j$(shell nproc)
 endif
 
 CMAKE_DIR=$(ROOT)
-CMAKE_TEST_DIR=$(ROOT)/tests/unit
-CMAKE_BENCHMARK_DIR=$(ROOT)/tests/benchmark
 
 ifeq ($(DEBUG),1)
 CMAKE_BUILD_TYPE=DEBUG
