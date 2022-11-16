@@ -4,6 +4,9 @@ on:
   pull_request:
     types:
       - labeled
+    branches-ignore:    
+      - '*docs'
+      - '*noci'
 
 
 jobs:
@@ -14,7 +17,7 @@ jobs:
       image: rockylinux:8
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh
       - name: unit tests
@@ -41,7 +44,7 @@ jobs:
       image: ubuntu:bionic
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh
       - name: unit tests
@@ -62,7 +65,7 @@ jobs:
       image: ubuntu:bionic
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh
       - name: unit tests
@@ -80,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: sudo .install/install_script.sh
       - name: unit tests
@@ -100,7 +103,7 @@ jobs:
       image: ubuntu:jammy
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh
       - name: unit tests
@@ -118,7 +121,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: .install/install_script.sh
       - name: unit tests
@@ -129,7 +132,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: circle-ci job runner
         id: curl-circle-ci
         uses: Open-Source-Contrib/circle-ci-trigger-action@latest
