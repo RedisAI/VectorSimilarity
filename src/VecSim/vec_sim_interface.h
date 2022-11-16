@@ -161,5 +161,4 @@ public:
     inline static void setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
         VecSimIndexInterface::timeoutCallback = callback;
     }
-
 };

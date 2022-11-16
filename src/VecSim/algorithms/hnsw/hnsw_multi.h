@@ -17,17 +17,14 @@ private:
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
-    virtual void AddToLabelLookup(labelType label, idType id) override {
-
-        setVectorId(label, id);
-    }
+    virtual void AddToLabelLookup(labelType label, idType id) override { setVectorId(label, id); }
 
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override {
-            // Checking if an element with the given label already exists.
-    // if not, add an empty vector under the new label.
+        // Checking if an element with the given label already exists.
+        // if not, add an empty vector under the new label.
         if (label_lookup_.find(label) == label_lookup_.end()) {
             label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
         }

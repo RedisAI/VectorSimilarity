@@ -25,7 +25,6 @@ typedef enum {
     VecSimType_FLOAT64,
     VecSimType_INT32,
     VecSimType_INT64,
-    VecSimType_INVALID
 } VecSimType;
 
 // Algorithm type/library.

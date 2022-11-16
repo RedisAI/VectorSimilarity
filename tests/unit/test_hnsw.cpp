@@ -1974,7 +1974,7 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
                          multilToString[i] + ".hnsw_v1";
 
         // Try to load with an invalid type
-        params.type = VecSimType_INVALID;
+        params.type = VecSimType_INT32;
         ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(file_name, &params), std::runtime_error,
                                  "Cannot load index: bad index data type");
         // Reatore value.
