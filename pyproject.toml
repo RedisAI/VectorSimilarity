@@ -35,7 +35,6 @@ hnswlib = "^0.5.2"
 pytest = "^6.2.4"
 scipy = "^1.6"
 h5py = "^3.7.0"
-pybind11 = {path = "deps/pybind11"}
 rltest = "0.5.4"
 
 

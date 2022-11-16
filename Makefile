@@ -1,4 +1,3 @@
-
 ifeq (n,$(findstring n,$(firstword -$(MAKEFLAGS))))
 DRY_RUN:=1
 else
@@ -98,7 +97,8 @@ endif
 FULL_VARIANT:=$(shell uname)-$(shell uname -m)-$(FLAVOR)
 BINROOT=$(ROOT)/bin/$(FULL_VARIANT)
 BINDIR=$(BINROOT)
-TARGET=$(BINDIR)/libVectorSimilarity.so
+TESTDIR=$(BINDIR)/unit_tests
+BENCHMARKDIR=$(BINDIR)/benchmark
 SRCDIR=src
 
 ifeq ($(SLOW),1)
@@ -107,14 +107,9 @@ else
 MAKE_J:=-j$(shell nproc)
 endif
 
-CMAKE_DIR=$(ROOT)/src
-
-CMAKE_FILES= \
-	src/CMakeLists.txt \
-	src/VecSim/spaces/CMakeLists.txt \
-	cmake/common.cmake \
-	cmake/gtest.cmake \
-	cmake/clang-sanitizers.cmake
+CMAKE_DIR=$(ROOT)
+CMAKE_TEST_DIR=$(ROOT)/tests/unit
+CMAKE_BENCHMARK_DIR=$(ROOT)/tests/benchmark
 
 ifeq ($(DEBUG),1)
 CMAKE_BUILD_TYPE=DEBUG
@@ -180,10 +175,13 @@ _CTEST_ARGS += \
 endif
 
 unit_test:
-	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
+	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 valgrind:
-	$(SHOW)$(MAKE) VG=1 build unit_test
+	$(SHOW)$(MAKE) VG=1 unit_test
 
 .PHONY: unit_test valgrind
 
@@ -216,8 +214,11 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	for bm_class in basics updated_index spaces batch_iterator; do \
-  		$(BINDIR)/benchmark/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
+  		$(BENCHMARKDIR)/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
   	done
 	$(SHOW)python3 -m tox -e benchmark
 
@@ -232,27 +233,59 @@ endif
 #----------------------------------------------------------------------------------------------
 
 check-format:
-	$(SHOW)./sbin/check-format.sh
+	$(SHOW)./check-format.sh
 
 format:
-	$(SHOW)FIX=1 ./sbin/check-format.sh
+	$(SHOW)FIX=1 ./check-format.sh
 
 .PHONY: check-format format
 
 COV_EXCLUDE_DIRS += bin tests
 COV_EXCLUDE+=$(foreach D,$(COV_EXCLUDE_DIRS),'$(realpath $(ROOT))/$(D)/*')
 
+COV_INFO=$(BINROOT)/cov.info
+COV_DIR=$(BINROOT)/cov
+COV_PROFDATA=$(COV_DIR)/cov.profdata
+
+define COVERAGE_RESET
+$(SHOW)set -e ;\
+echo "Starting coverage analysis." ;\
+mkdir -p $(COV_DIR) ;\
+lcov --directory $(BINROOT) --base-directory $(SRCDIR) -z
+endef
+
+
+define COVERAGE_COLLECT
+$(SHOW)set -e ;\
+echo "Collecting coverage data ..." ;\
+lcov --capture --directory $(BINROOT) --base-directory $(SRCDIR) --output-file $(COV_INFO);\
+lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE);\
+mv $(COV_INFO).1 $(COV_INFO)
+endef
+
+define COVERAGE_REPORT
+$(SHOW)set -e ;\
+lcov -l $(COV_INFO) ;\
+genhtml --legend --ignore-errors source -o $(COV_DIR) $(COV_INFO) > /dev/null 2>&1 ;\
+echo "Coverage info at $$(realpath $(COV_DIR))/index.html"
+endef
+
+define COVERAGE_COLLECT_REPORT
+$(COVERAGE_COLLECT)
+$(COVERAGE_REPORT)
+endef
+
 coverage:
 	$(SHOW)$(MAKE) build COV=1
 	$(SHOW)$(COVERAGE_RESET)
-	$(SHOW)$(MAKE) unit_test COV=1
+	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)
 
 show-cov:
 	$(SHOW)lcov -l $(COV_INFO)
 
 upload-cov:
-	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f bin/linux-x64-debug-cov/cov.info
+	$(SHOW)bash <(curl  https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f ${COV_INFO}
 
 .PHONY: coverage show-cov upload-cov
 
