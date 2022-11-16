@@ -1,0 +1,13 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+
+
+jobs:
+  build:
+    uses: ./.github/workflows/full-tests.yml@main
+
+  benchmark:
+    uses: ./.github/workflows/benchmark.yml@main

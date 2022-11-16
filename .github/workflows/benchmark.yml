@@ -1,0 +1,43 @@
+name: benchmark
+
+on:
+  workflow_call:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: mock
+        run: echo "RUNNING MOCK BENCHMARK"
+
+      # - name: Download pre-generated indices
+      #   timeout-minutes: 30
+      #   run: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+
+      # - name: Install benchmark dependencies
+      #   run: |
+      #        sudo apt update
+      #        sudo apt install python3-pip -y
+      #        sudo pip3 uninstall virtualenv
+      #        sudo pip3 install --upgrade pip PyYAML
+      #        pip3 install redisbench-admin
+
+      # - name: Benchmark
+      #   timeout-minutes: 180
+      #   run: bash -l -c "make benchmark"
+
+      # - name: Collect results
+      #   run: |
+      #       if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
+      #       for bm_class in basics updated_index spaces batch_iterator; do
+      #         redisbench-admin export \
+      #                     --results-format google.benchmark \
+      #                     --github_repo $CIRCLE_PROJECT_REPONAME \
+      #                     --github_org $CIRCLE_PROJECT_USERNAME \
+      #                     --github_branch $branch \
+      #                     --benchmark-result-file ${bm_class}_results.json
+      #       done
