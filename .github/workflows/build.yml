@@ -24,13 +24,6 @@ jobs:
         run: make unit_test
       - name: flow tests
         run: make flow_test
-      - name: valgrind
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: valgrind tests reports
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
 
   codecov:
     name: codecov job
