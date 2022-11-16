@@ -127,7 +127,6 @@ jobs:
   arm:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'arm'
     runs-on: ubuntu-latest
-    name: Run build and test gpu
 
     steps:
       - uses: actions/checkout@v2
