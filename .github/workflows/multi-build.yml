@@ -16,7 +16,7 @@ env:
   # github.event_name == 'workflow_call' || github.event.label.name == 'multi-build'
 
 jobs:
-  general check:
+  general-check:
     name: check if multi-build is required
     runs-on: ubuntu-latest
     outputs:
