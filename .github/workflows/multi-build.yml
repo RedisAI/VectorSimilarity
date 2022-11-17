@@ -17,7 +17,7 @@ jobs:
     outputs:
       globally-needed: ${{ steps.check.outputs.globally-needed }}
     steps:
-      - id: check
+      - name: check
         run: echo "globally-needed=false" >> $GITHUB_OUTPUT
           # if [[ '${{ github.event_name }}' == 'workflow_call' ]]; then
           #   echo "globally-needed=true" >> $GITHUB_OUTPUT
@@ -26,6 +26,9 @@ jobs:
           # else
           #   echo "globally-needed=false" >> $GITHUB_OUTPUT
           # fi
+      - name: run if needed
+        if: ${{ steps.check.outputs.globally-needed == 'true' }}
+        uses: ./.github/workflows/default.yml
 
   rocky8:
     needs: check
