@@ -1,8 +1,7 @@
 name: default action
 
 runs:
-  name: default build job
-  runs-on: ubuntu-latest
+  using: 'composite'
   steps:
     - name: checkout
       uses: actions/checkout@v3
@@ -21,13 +20,6 @@ runs:
     - name: flow tests
       run: make flow_test
 
-  name: codecov job
-  runs-on: ubuntu-latest
-  steps:
-    - name: checkout
-      uses: actions/checkout@v3
-    - name: install dependencies
-      run: sudo .install/install_script.sh
     - name: run codecov
       run: make coverage
     - name: Upload coverage to Codecov
