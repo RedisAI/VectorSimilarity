@@ -19,23 +19,19 @@ jobs:
     steps:
       - id: check
         run: |
-          if [[ '${{ github.event_name }}' == 'workflow_call' ]]; then
-            echo "globally-needed=false" >> $GITHUB_OUTPUT
-          elif [[ '${{ github.event.label.name }}' == 'multi-build' ]]; then
-            echo "globally-needed=false" >> $GITHUB_OUTPUT
+          if [[ '${{ github.event_name }}' == 'workflow_call' ]] || [[ '${{ github.event.label.name }}' == 'multi-build' ]]; then
+            echo "globally-needed=true" >> $GITHUB_OUTPUT
           else
             echo "globally-needed=false" >> $GITHUB_OUTPUT
           fi
 
   rocky8:
     needs: checks
-    if: needs.checks.outputs.globally-needed == 'false' || github.event.label.name == 'rocky8'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
     steps:
-      - name: print
-        run: echo ${{ needs.checks.outputs.globally-needed }}
       - name: checkout
         uses: actions/checkout@v3
       - name: install dependencies

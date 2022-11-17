@@ -1,6 +1,8 @@
 name: nightly
 
 on:
+  pull_request:
+    branches-ignore: ['*docs', '*noci'] # TODO: remove this line when the PR is ready to be merged
   schedule:
     - cron: '0 0 * * *'
 
