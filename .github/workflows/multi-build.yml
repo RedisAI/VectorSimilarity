@@ -29,7 +29,7 @@ jobs:
 
   rocky8:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'rocky8'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
