@@ -9,9 +9,12 @@ on:
       - '*docs'
       - '*noci'
 
+env:
+  DEFAULT_CHECK: github.event_name == 'workflow_call' || github.event.label.name == 'multi-build'
+
 jobs:
   rocky8:
-    if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
+    if: ${{ env.DEFAULT_CHECK }} || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
