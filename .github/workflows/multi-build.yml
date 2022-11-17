@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: check
         run: echo "globally-needed=false" >> $GITHUB_OUTPUT
+      - name: checkout
+        uses: actions/checkout@v3
       - name: run if needed
         if: ${{ steps.check.outputs.globally-needed }} == 'false'
         uses: ./.github/workflows/default.yml
