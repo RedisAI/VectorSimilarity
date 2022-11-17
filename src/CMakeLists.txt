@@ -55,13 +55,13 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 	VecSim/algorithms/hnsw/hnsw_factory.cpp
 	VecSim/algorithms/ngt/ngt_factory.cpp
     VecSim/algorithms/brute_force/vector_block.cpp
-	VecSim/algorithms/hnsw/visited_nodes_handler.cpp
     VecSim/vec_sim.cpp
     VecSim/vec_sim_interface.cpp
     VecSim/query_results.cpp
 	VecSim/info_iterator.cpp
     VecSim/query_result_struct.cpp
     VecSim/utils/vec_utils.cpp
+	VecSim/utils/visited_nodes_handler.cpp
     VecSim/memory/vecsim_malloc.cpp
     VecSim/memory/vecsim_base.cpp
   )

@@ -11,7 +11,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
+#include "VecSim/utils/visited_nodes_handler.h"
 #include <limits>
 
 using spaces::dist_func_t;

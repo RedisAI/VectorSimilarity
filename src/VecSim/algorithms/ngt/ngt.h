@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "../hnsw/visited_nodes_handler.h"
+#include "VecSim/utils/visited_nodes_handler.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
