@@ -9,4 +9,5 @@ on:
 
 jobs:
   multi-architectures:
-    uses: ./.github/workflows/multi-build.yml as multi-build
+    name: multi-build flow
+    uses: ./.github/workflows/multi-build.yml
