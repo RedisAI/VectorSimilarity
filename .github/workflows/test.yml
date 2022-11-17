@@ -1,0 +1,12 @@
+name: nightly
+
+on:
+  push:
+    branches: [main, '[0-9].[0-9]']
+  pull_request:
+    branches-ignore: ['*docs', '*noci']
+
+
+jobs:
+  multi-architectures:
+    uses: ./.github/workflows/multi-build.yml
