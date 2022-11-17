@@ -10,9 +10,30 @@ on:
       - '*noci'
 
 env:
-  DEFAULT_CHECK: github.event_name == 'workflow_call' || github.event.label.name == 'multi-build'
+  DEFAULT_CHECK:
+    type: boolean
+    default: true
+
+
+  # github.event_name == 'workflow_call' || github.event.label.name == 'multi-build'
 
 jobs:
+  check:
+    name: check if multi-build is required
+    runs-on: ubuntu-latest
+    outputs:
+      multi-build: ${{ steps.check.outputs.multi-build }}
+    steps:
+      - name: check if multi-build is required
+        id: check
+        run: |
+          if [[ ${{ github.event_name }} == 'workflow_call' ]]; then
+            echo "::set-output name=multi-build::true"
+          elif [[ ${{ github.event.label.name }} == 'multi-build' ]]; then
+            echo "::set-output name=multi-build::true"
+          else
+            echo "::set-output name=multi-build::false"
+          fi
   rocky8:
     if: ${{ env.DEFAULT_CHECK }} || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
