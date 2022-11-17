@@ -11,7 +11,7 @@
 #include "info_iterator_struct.h"
 
 #include <stddef.h>
-
+#include <stdexcept>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
