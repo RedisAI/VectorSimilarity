@@ -28,9 +28,9 @@ jobs:
         uses: actions/checkout@v3
       - name: check
         run: echo "globally-needed=false" >> $GITHUB_OUTPUT
-      - name: run if needed
-        if: ${{ steps.check.outputs.globally-needed }} == 'false'
-        uses: ./.github/workflows/default-action/
+      # - name: run if needed
+      #   if: ${{ steps.check.outputs.globally-needed }} == 'false'
+      #   uses: ./.github/workflows/default-action/
 
   rocky8:
     needs: check
