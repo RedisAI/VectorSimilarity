@@ -29,7 +29,7 @@ jobs:
 
   rocky8:
     needs: checks
-    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
+    if: needs.checks.outputs.globally-needed == 'false' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
@@ -59,7 +59,7 @@ jobs:
 
   bionic:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'bionic'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'bionic'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:bionic
@@ -80,7 +80,7 @@ jobs:
 
   xenial:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'xenial'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'xenial'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:bionic
@@ -101,7 +101,7 @@ jobs:
 
   focal:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'focal'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'focal'
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -120,7 +120,7 @@ jobs:
 
   jammy:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'jammy'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'jammy'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:jammy
@@ -141,7 +141,7 @@ jobs:
 
   macos:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'macos'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'macos'
     runs-on: macos-latest
     steps:
       - name: checkout
@@ -153,7 +153,7 @@ jobs:
 
   arm:
     needs: checks
-    if: ${{ needs.checks.outputs.globally-needed }} == 'true' || github.event.label.name == 'arm'
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'arm'
     runs-on: ubuntu-latest
 
     steps:
