@@ -104,13 +104,15 @@ commands:
           command: |
             bash -l -c "make benchmark"
             if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
-            for bm_class in basics updated_index spaces batch_iterator; do
-              redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo $CIRCLE_PROJECT_REPONAME \
-                          --github_org $CIRCLE_PROJECT_USERNAME \
-                          --github_branch $branch \
-                          --benchmark-result-file ${bm_class}_results.json
+            for bm_class in basics basics_multi updated_index updated_index_multi batch_iterator batch_iterator_multi; do
+              for type in fp32 fp64; do
+                redisbench-admin export \
+                            --results-format google.benchmark \
+                            --github_repo $CIRCLE_PROJECT_REPONAME \
+                            --github_org $CIRCLE_PROJECT_USERNAME \
+                            --github_branch $branch \
+                            --benchmark-result-file ${bm_class}_${type}_results.json
+              done
             done
           no_output_timeout: 180m
 
