@@ -178,7 +178,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
     switch (version) {
     case Serializer::EncodingVersion_V2: {
         // Algorithm type is only serialized from V2 up.
-        VecSimAlgo algo = VecSimAlgo_INVALID;
+        VecSimAlgo algo = VecSimAlgo_BF;
         Serializer::readBinaryPOD(input, algo);
         if (algo != VecSimAlgo_HNSWLIB) {
             input.close();

@@ -110,8 +110,6 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_BF:
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
-        default:
-            break;
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
@@ -125,9 +123,8 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
         return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->bfParams);
-    default:
-        return -1;
     }
+    return -1;
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
@@ -154,9 +151,8 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->bfParams);
-    default:
-        return -1;
     }
+    return -1;
 }
 
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
