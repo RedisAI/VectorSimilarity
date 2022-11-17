@@ -5,8 +5,8 @@
  */
 
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/hnsw/hnsw.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/algorithms/ngt/ngt.h"
+// #include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
@@ -116,26 +116,26 @@ protected:
 };
 
 // Currently supports only floats. TODO change after serializer refactoring
-class PyHNSWLibIndex : public PyVecSimIndex {
+class PyNGTLibIndex : public PyVecSimIndex {
 public:
-    PyHNSWLibIndex(const HNSWParams &hnsw_params) {
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+    PyNGTLibIndex(const NGTParams &ngt_params) {
+        VecSimParams params = {.algo = VecSimAlgo_NGT, .ngtParams = ngt_params};
         this->index = VecSimIndex_New(&params);
     }
 
     void setDefaultEf(size_t ef) {
-        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
-        hnsw->setEf(ef);
+        auto *ngt = reinterpret_cast<NGTIndex<float, float> *>(index);
+        ngt->setEf(ef);
     }
-    void saveIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.saveIndex(location);
-    }
+    // void saveIndex(const std::string &location) {
+    //     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
+    //     serializer.saveIndex(location);
+    // }
 
-    void loadIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.loadIndex(location);
-    }
+    // void loadIndex(const std::string &location) {
+    //     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
+    //     serializer.loadIndex(location);
+    // }
 };
 
 class PyBFIndex : public PyVecSimIndex {
@@ -150,6 +150,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::enum_<VecSimAlgo>(m, "VecSimAlgo")
         .value("VecSimAlgo_HNSWLIB", VecSimAlgo_HNSWLIB)
         .value("VecSimAlgo_BF", VecSimAlgo_BF)
+        .value("VecSimAlgo_NGT", VecSimAlgo_NGT)
         .export_values();
 
     py::enum_<VecSimType>(m, "VecSimType")
@@ -170,17 +171,18 @@ PYBIND11_MODULE(VecSim, m) {
         .value("BY_ID", BY_ID)
         .export_values();
 
-    py::class_<HNSWParams>(m, "HNSWParams")
+    py::class_<NGTParams>(m, "NGTParams")
         .def(py::init())
-        .def_readwrite("type", &HNSWParams::type)
-        .def_readwrite("dim", &HNSWParams::dim)
-        .def_readwrite("metric", &HNSWParams::metric)
-        .def_readwrite("multi", &HNSWParams::multi)
-        .def_readwrite("initialCapacity", &HNSWParams::initialCapacity)
-        .def_readwrite("M", &HNSWParams::M)
-        .def_readwrite("efConstruction", &HNSWParams::efConstruction)
-        .def_readwrite("efRuntime", &HNSWParams::efRuntime)
-        .def_readwrite("epsilon", &HNSWParams::epsilon);
+        .def_readwrite("type", &NGTParams::type)
+        .def_readwrite("dim", &NGTParams::dim)
+        .def_readwrite("metric", &NGTParams::metric)
+        .def_readwrite("multi", &NGTParams::multi)
+        .def_readwrite("initialCapacity", &NGTParams::initialCapacity)
+        .def_readwrite("M", &NGTParams::M)
+        .def_readwrite("maxPerLeaf", &NGTParams::maxPerLeaf)
+        .def_readwrite("efConstruction", &NGTParams::efConstruction)
+        .def_readwrite("efRuntime", &NGTParams::efRuntime)
+        .def_readwrite("epsilon", &NGTParams::epsilon);
 
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
@@ -194,18 +196,18 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
         .def_readwrite("algo", &VecSimParams::algo)
-        .def_readwrite("hnswParams", &VecSimParams::hnswParams)
+        .def_readwrite("ngtParams", &VecSimParams::ngtParams)
         .def_readwrite("bfParams", &VecSimParams::bfParams);
 
     py::class_<VecSimQueryParams> queryParams(m, "VecSimQueryParams");
 
     queryParams.def(py::init<>())
-        .def_readwrite("hnswRuntimeParams", &VecSimQueryParams::hnswRuntimeParams);
+        .def_readwrite("ngtRuntimeParams", &VecSimQueryParams::ngtRuntimeParams);
 
-    py::class_<HNSWRuntimeParams>(queryParams, "HNSWRuntimeParams")
+    py::class_<NGTRuntimeParams>(queryParams, "NGTRuntimeParams")
         .def(py::init<>())
-        .def_readwrite("efRuntime", &HNSWRuntimeParams::efRuntime)
-        .def_readwrite("epsilon", &HNSWRuntimeParams::epsilon);
+        .def_readwrite("efRuntime", &NGTRuntimeParams::efRuntime)
+        .def_readwrite("epsilon", &NGTRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
         .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
@@ -220,12 +222,12 @@ PYBIND11_MODULE(VecSim, m) {
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr);
 
-    py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
-        .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
+    py::class_<PyNGTLibIndex, PyVecSimIndex>(m, "NGTIndex")
+        .def(py::init([](const NGTParams &params) { return new PyNGTLibIndex(params); }),
              py::arg("params"))
-        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
-        .def("save_index", &PyHNSWLibIndex::saveIndex)
-        .def("load_index", &PyHNSWLibIndex::loadIndex);
+        .def("set_ef", &PyNGTLibIndex::setDefaultEf);
+        // .def("save_index", &PyNGTLibIndex::saveIndex)
+        // .def("load_index", &PyNGTLibIndex::loadIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
