@@ -14,6 +14,7 @@
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include <cassert>
+#include <stdexcept>
 #include "memory.h"
 
 extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback) {
