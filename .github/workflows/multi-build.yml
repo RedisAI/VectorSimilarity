@@ -27,12 +27,12 @@ jobs:
           #   echo "globally-needed=false" >> $GITHUB_OUTPUT
           # fi
       - name: run if needed
-        if: ${{ steps.check.outputs.globally-needed == 'true' }}
+        if: ${{ steps.check.outputs.globally-needed == 'false' }}
         uses: ./.github/workflows/default.yml
 
   rocky8:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'rocky8'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
@@ -60,7 +60,7 @@ jobs:
 
   bionic:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'bionic'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'bionic'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:bionic
@@ -81,7 +81,7 @@ jobs:
 
   xenial:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'xenial'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'xenial'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:bionic
@@ -102,7 +102,7 @@ jobs:
 
   focal:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'focal'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'focal'
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -121,7 +121,7 @@ jobs:
 
   jammy:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'jammy'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'jammy'
     runs-on: ubuntu-latest
     container:
       image: ubuntu:jammy
@@ -142,7 +142,7 @@ jobs:
 
   macos:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'macos'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'macos'
     runs-on: macos-latest
     steps:
       - name: checkout
@@ -154,7 +154,7 @@ jobs:
 
   arm:
     needs: check
-    if: ${{ needs.check.outputs.globally-needed }} || github.event.label.name == 'arm'
+    if: ${{ needs.check.outputs.globally-needed }} == 'true' || github.event.label.name == 'arm'
     runs-on: ubuntu-latest
 
     steps:
