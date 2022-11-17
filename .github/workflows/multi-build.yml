@@ -15,9 +15,9 @@ jobs:
     name: checks if multi-build is required
     runs-on: ubuntu-latest
     outputs:
-      globally-needed: ${{ steps.checks.outputs.globally-needed }}
+      globally-needed: ${{ steps.check.outputs.globally-needed }}
     steps:
-      - name: checks
+      - id: check
         run: |
           if [[ '${{ github.event_name }}' == 'workflow_call' ]]; then
             echo "globally-needed=false" >> $GITHUB_OUTPUT
@@ -35,7 +35,7 @@ jobs:
       image: rockylinux:8
     steps:
       - name: print
-        run: echo "${{ needs.checks.outputs.globally-needed }}"
+        run: echo ${{ needs.checks.outputs.globally-needed }}
       - name: checkout
         uses: actions/checkout@v3
       - name: install dependencies
