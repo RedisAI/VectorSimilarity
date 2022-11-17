@@ -1,6 +1,7 @@
-name: labels flow
+name: multi-build flow
 
 on:
+  workflow_call:
   pull_request:
     types:
       - labeled
@@ -9,10 +10,6 @@ on:
       - '*noci'
 
 jobs:
-  benchmark:
-    if: github.event.label.name == 'multi-build' || github.event.label.name == 'benchmark'
-    uses: ./.github/workflows/benchmark.yml
-
   rocky8:
     if: github.event.label.name == 'multi-build' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
