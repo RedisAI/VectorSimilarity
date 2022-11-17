@@ -33,7 +33,7 @@ jobs:
             echo "::set-output name=general-check::false"
           fi
   rocky8:
-    if: ${{ DEFAULT_CHECK }} || github.event.label.name == 'rocky8'
+    if: ${{ steps.check.outputs.general-check }} || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
