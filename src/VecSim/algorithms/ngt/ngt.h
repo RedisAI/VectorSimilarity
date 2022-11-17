@@ -36,22 +36,6 @@ typedef enum { INNER, LEAF } VPTNodeRole;
 template <typename DataType, typename DistType>
 class NGTIndex;
 
-template <typename DataType, typename DistType>
-struct DistanceComparator {
-    const void *pivot;
-    const dist_func_t<DistType> dist_func;
-    const size_t dim;
-    const NGTIndex<DataType, DistType> &idx;
-
-    DistanceComparator(const void *pivot, dist_func_t<DistType> df, size_t dim,
-                       NGTIndex<DataType, DistType> &idx)
-        : pivot(pivot), dist_func(df), dim(dim), idx(idx) {}
-    bool operator()(idType a, idType b) {
-        return dist_func(pivot, idx.getDataByInternalId(a), dim) <
-               dist_func(pivot, idx.getDataByInternalId(b), dim);
-    }
-};
-
 // should be able to access data by id;
 template <typename DataType, typename DistType>
 struct VPTNode : public VecsimBaseObject {
@@ -509,24 +493,34 @@ void NGTIndex<DataType, DistType>::splitLeaf(VPTNode<DataType, DistType> *node) 
     node->role = INNER;
 
     size_t i = getRandomIndex(node->size);
-    auto tmp = (*node_ids)[0];
-    (*node_ids)[0] = (*node_ids)[i];
-    (*node_ids)[i] = tmp;
-
-    auto distComp = DistanceComparator<DataType, DistType>(getDataByInternalId((*node_ids)[0]),
-                                                           this->dist_func, this->dim, *this);
-    auto med = node_ids->begin() + (node->size / 2);
-    std::nth_element(node_ids->begin() + 1, med, node_ids->end(), distComp);
-
-    node->pivot_id = (*node_ids)[0];
     node->own_pivot = false;
-    node->radius =
-        this->dist_func(getDataByInternalId(node->pivot_id), getDataByInternalId(*med), this->dim);
+    node->pivot_id = (*node_ids)[i];
+    (*node_ids)[i] = (*node_ids)[node->size - 1];
+    node_ids->pop_back();
+
+    std::vector<pair<DistType, idType>> dist_cache;
+    dist_cache.reserve(node->size);
+    dist_cache.emplace_back(0, node->pivot_id);
+    void *pivot_data = getDataByInternalId(node->pivot_id);
+    for (auto id : *node_ids) {
+        dist_cache.emplace_back(this->dist_func(pivot_data, getDataByInternalId(id), this->dim), id);
+    }
+    auto med = dist_cache.begin() + (node->size / 2);
+    std::nth_element(dist_cache.begin() + 1, med, dist_cache.end());
+
+    node->radius = med->first;
 
     auto left_ids = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-    left_ids->insert(left_ids->begin(), node_ids->begin(), med);
+    left_ids->reserve(1 + node->size / 2);
+    for (auto pair = dist_cache.begin(); pair != med; ++pair) {
+        left_ids->push_back(pair->second);
+    }
+
     auto right_ids = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-    right_ids->insert(right_ids->begin(), med, node_ids->end());
+    right_ids->reserve(1 + node->size / 2);
+    for (auto pair = med; pair != dist_cache.end(); ++pair) {
+        right_ids->push_back(pair->second);
+    }
 
     // After passing the ids to the left and the right, we can delete current vector.
     delete node_ids;
