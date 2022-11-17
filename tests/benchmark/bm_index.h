@@ -78,7 +78,7 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
 
     VecSimType type = index_type_t::get_index_type();
-    
+
     BFParams bf_params = {.type = type,
                           .dim = dim,
                           .metric = VecSimMetric_Cosine,

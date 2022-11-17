@@ -126,7 +126,7 @@ def test_recall_for_hnswlib_index_with_deletion():
     vectors = [vectors[i] for i in range(1, len(data), 2)]
 
     # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
-    hnsw_index.set_ef(50)
+    hnsw_index.set_ef_float(50)
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
@@ -304,9 +304,9 @@ def test_serialization():
 
     # Persist, delete and restore index.
     file_name = os.getcwd()+"/dump"
-    hnsw_index.save_index(file_name)
+    hnsw_index.save_index_float(file_name)
 
-    new_hnsw_index = HNSWIndex(file_name, hnswparams)
+    new_hnsw_index = HNSWIndex(file_name)
     os.remove(file_name)
     assert new_hnsw_index.index_size() == num_elements
 
@@ -421,7 +421,7 @@ def test_recall_for_hnsw_multi_value():
             vectors.append((i, vector))
 
     # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
-    hnsw_index.set_ef(50)
+    hnsw_index.set_ef_float(50)
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
