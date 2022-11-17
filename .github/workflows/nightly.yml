@@ -11,7 +11,7 @@ jobs:
   build:
     uses: ./.github/workflows/default.yml
 
-  build:
+  multi-architectures:
     uses: ./.github/workflows/multi-build.yml
 
   benchmark:
