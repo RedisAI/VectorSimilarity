@@ -22,15 +22,15 @@ jobs:
     outputs:
       globally-needed: ${{ steps.check.outputs.result }}
     steps:
-      id: check
-      run: |
-        if [[ ${{ github.event_name }} == 'workflow_call' ]]; then
-          echo "::set-output name=result::true"
-        elif [[ ${{ github.event.label.name }} == 'multi-build' ]]; then
-          echo "::set-output name=result::true"
-        else
-          echo "::set-output name=result::false"
-        fi
+      - id: check
+        run: |
+          if [[ ${{ github.event_name }} == 'workflow_call' ]]; then
+            echo "::set-output name=result::true"
+          elif [[ ${{ github.event.label.name }} == 'multi-build' ]]; then
+            echo "::set-output name=result::true"
+          else
+            echo "::set-output name=result::false"
+          fi
   rocky8:
     needs: check-global-condition
     if: ${{ needs.check-global-condition.outputs.globally-needed }} || github.event.label.name == 'rocky8'
