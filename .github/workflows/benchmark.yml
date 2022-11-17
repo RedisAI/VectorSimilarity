@@ -7,7 +7,7 @@ on:
 
 jobs:
   benchmark:
-    if: github.event_name == workflow_call || github.event.label.name == 'benchmark'
+    if: ${{ github.event_name == 'workflow_call' }} || github.event.label.name == 'benchmark'
     runs-on: ubuntu-latest
 
     steps:
