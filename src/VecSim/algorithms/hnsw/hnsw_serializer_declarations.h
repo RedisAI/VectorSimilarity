@@ -15,7 +15,6 @@ virtual void saveIndexIMP(std::ofstream &output) override;
 void restoreGraph(std::ifstream &input);
 
 private:
-virtual void AddToLabelLookup(labelType label, idType id) = 0;
 // Functions for index saving.
 void saveIndexFields(std::ofstream &output) const;
 void saveIndexFields_v2(std::ofstream &output) const;

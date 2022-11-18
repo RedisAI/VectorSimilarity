@@ -189,7 +189,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore the rest of the graph layers, along with the label and max_level lookups.
     for (size_t i = 0; i <= this->max_id; i++) {
         // Restore label lookup by getting the label from data_level0_memory_
-        AddToLabelLookup(getExternalLabel(i), i);
+        setVectorId(getExternalLabel(i), i);
 
         unsigned int linkListSize;
         readBinaryPOD(input, linkListSize);
