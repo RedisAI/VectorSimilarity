@@ -19,7 +19,8 @@ All of the algorithms in this library is designed to work inside RediSearch and 
 2. KNN queries - results can be ordered by score or ID.
 3. Iterator interface for consecutive KNN queries.
 4. Range queries
-5. 3rd party allocators
+5. Multiple vector indexing for the same label (multi value indexing)
+6. 3rd party allocators
 
 #### Datatypes SIMD support
 
@@ -36,7 +37,7 @@ Brute force comparison of the query vector `q` with the stored vectors. Vectors 
 
 
 ### HNSW
-Modified version of [hnswlib](https://github.com/nmslib/hnswlib). Modfied to accomodate the above feature set.
+Modified implementation of [hnswlib](https://github.com/nmslib/hnswlib). Modified to accommodate the above feature set.
 
 ## Build
 For building you will need:
