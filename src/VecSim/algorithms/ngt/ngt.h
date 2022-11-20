@@ -891,6 +891,9 @@ candidatesMaxHeap<DistType> NGTIndex<DataType, DistType>::searchGraph(
             this->visited_nodes_handler->tagNode(id, visited_tag);
         }
     }
+    while (top_candidates.size() > ef) {
+        top_candidates.pop();
+    }
 
     DistType lowerBound = top_candidates.top().first;
 
@@ -1519,6 +1522,9 @@ candidatesLabelsMaxHeap<DistType> *NGTIndex<DataType, DistType>::searchGraph_Wit
         top_candidates->emplace(dist, getExternalLabel(id));
         candidate_set.emplace(-dist, id);
         this->visited_nodes_handler->tagNode(id, visited_tag);
+    }
+    while (top_candidates.size() > ef) {
+        top_candidates.pop();
     }
 
     DistType lowerBound = top_candidates->top().first;
