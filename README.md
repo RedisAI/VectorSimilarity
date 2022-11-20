@@ -14,18 +14,29 @@ The API header files are `vec_sim.h` and `query_results.h`, which are located in
 
 ## Algorithms
 
-### Flat (Brute Force)
-Brute force comparison of the query vector `q` with the stored vectors. Vectors are stored in vector blocks, which are continues memory block 
-
-#### Supports:
+All of the algorithms in this library is designed to work inside RediSearch and supports the following features:
 1. In place insert, delete, update of vectors in the index.
-2. KNN queries
-3. Iterator interface 
+2. KNN queries - results can be ordered by score or ID.
+3. Iterator interface for consecutive KNN queries.
 4. Range queries
-5. 3rd patry allocators
+5. 3rd party allocators
+
+#### Datatypes SIMD support
+
+| Operation | x86_64 | arm64v8 | Apple silicone |
+|-----------|--------|---------|-----------------|
+| FP32 Internal product |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
+| FP32 L2 distance |SSE, AVX, AVX512| No SIMD support | No SIMD support |
+| FP64 Internal product |SSE, AVX, AVX512, AVX512DQ | No SIMD support | No SIMD support |
+| FP64 L2 distance |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
+
+### Flat (Brute Force)
+
+Brute force comparison of the query vector `q` with the stored vectors. Vectors are stored in vector blocks, which are contiguous memory block, with configurable size.
+
 
 ### HNSW
-
+Modified version of [hnswlib](https://github.com/nmslib/hnswlib). Modfied to accomodate the above feature set.
 
 ## Build
 For building you will need:
