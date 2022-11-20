@@ -1,8 +1,14 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include <cstddef>
 #include <string>
-#include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/hnsw/hnsw_single.h"
 
 // This struct is the return value of "checkIntegrity" methods (used for debugging).
 typedef struct HNSWIndexMetaData {

@@ -118,7 +118,7 @@ public:
 
 		for (size_t i = 0; i < data.size(); i++) {
 			VecSimIndex_AddVector(bf_index,
-					(const void *)reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByLabel(i), i);
+					(const void *)reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getDataByLabel(i), i);
 		}
 
 		std::vector<VecSimQueryResult_List> total_res(queries.size());
@@ -185,7 +185,7 @@ public:
 
 		for (size_t i = 0; i < data.size(); i++) {
 			VecSimIndex_AddVector(bf_index,
-					(const void *)reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getDataByLabel(i),
+					(const void *)reinterpret_cast<HNSWIndex_Single<float, float>  *>(hnsw_index)->getDataByLabel(i),
 					i);
 		}
 
@@ -272,7 +272,7 @@ public:
 
 		for (size_t i = 0; i < data.size(); i++) {
 			VecSimIndex_AddVector(bf_index,
-					(const void *)reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getDataByLabel(i),
+					(const void *)reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getDataByLabel(i),
 					i);
 		}
 		auto total_recall = computeRecall(total_res, bf_index, true);

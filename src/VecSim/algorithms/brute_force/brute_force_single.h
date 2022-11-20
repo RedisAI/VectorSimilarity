@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "brute_force.h"
@@ -17,6 +23,12 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
+
+    inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const override {
+        return std::unique_ptr<vecsim_stl::abstract_results_container>(
+            new (this->allocator) vecsim_stl::default_results_container(cap, this->allocator));
+    }
 
     inline size_t indexLabelCount() const override { return this->count; }
 
@@ -42,29 +54,20 @@ protected:
     }
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewPriorityQueue() override {
+    getNewMaxPriorityQueue() override {
         return new (this->allocator)
             vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
     }
 
     inline BF_BatchIterator<DataType, DistType> *
-    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) override {
+    newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
         return new (this->allocator)
             BFS_BatchIterator<DataType, DistType>(queryBlob, this, queryParams, this->allocator);
     }
 
 #ifdef BUILD_TESTS
-    // Allow the following tests to access the index private members.
-    friend class BruteForceTest_preferAdHocOptimization_Test;
-    friend class BruteForceTest_test_dynamic_bf_info_iterator_Test;
-    friend class BruteForceTest_resize_and_align_index_Test;
-    friend class BruteForceTest_brute_force_vector_update_test_Test;
-    friend class BruteForceTest_brute_force_reindexing_same_vector_Test;
-    friend class BruteForceTest_test_delete_swap_block_Test;
-    friend class BruteForceTest_brute_force_zero_minimal_capacity_Test;
-    friend class BruteForceTest_resize_and_align_index_largeInitialCapacity_Test;
-    friend class BruteForceTest_brute_force_empty_index_Test;
-    friend class BM_VecSimBasics_DeleteVectorBF_Benchmark;
+#include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
+
 #endif
 };
 

@@ -1,8 +1,17 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "test_utils.h"
 #include "gtest/gtest.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
+
+VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
+                                              QUERY_TYPE_RANGE};
 
 static bool allUniqueResults(VecSimQueryResult_List res) {
     size_t len = VecSimQueryResult_Len(res);
@@ -28,11 +37,16 @@ static bool allUniqueResults(VecSimQueryResult_List res) {
  * helper function to run Top K search and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
  */
+
+VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
+    VecSimQueryParams QueryParams = {.hnswRuntimeParams = RuntimeParams};
+    return QueryParams;
+}
+
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
-    VecSimQueryResult_List res =
-        VecSimIndex_TopKQuery(index, (const void *)query, k, params, order);
+    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), k);
     ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
@@ -209,6 +223,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
     VecSimQueryResult_List res =
         VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), expected_res_num);
+    ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {

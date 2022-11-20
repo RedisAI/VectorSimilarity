@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 #include "vec_sim_common.h"
 #include "query_results.h"
@@ -122,7 +128,7 @@ public:
      * @return Fresh batch iterator
      */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                                  VecSimQueryParams *queryParams) = 0;
+                                                  VecSimQueryParams *queryParams) const = 0;
 
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force

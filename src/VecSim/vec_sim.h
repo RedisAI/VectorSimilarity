@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #ifdef __cplusplus
@@ -95,11 +101,12 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * @param rparams array of raw params to resolve.
  * @param paramNum number of params in rparams (or number of parames in rparams to resolve).
  * @param qparams pointer to VecSimQueryParams struct to set.
- * @param hybrid indicates if query is hybrid or "standard" VSS query.
+ * @param query_type indicates if query is hybrid, range or "standard" VSS query.
  * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
  */
 VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
-                                            int paramNum, VecSimQueryParams *qparams, bool hybrid);
+                                            int paramNum, VecSimQueryParams *qparams,
+                                            VecsimQueryType query_type);
 
 /**
  * @brief Search for the k closest vectors to a given vector in the index. The results can be

@@ -1,10 +1,16 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include <VecSim/vec_sim.h>
 
 #include <utility>
 #include <map>
 #include "serialization.h"
 #include "VecSim/utils/vecsim_stl.h"
-#include "hnsw.h"
+#include "hnsw_single.h"
 #define HNSW_INVALID_META_DATA SIZE_MAX
 
 // Helper functions for serializing the index.
@@ -167,10 +173,11 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         hnsw_index->linkLists_, sizeof(void *) * hnsw_index->max_elements_);
     hnsw_index->element_levels_ =
         vecsim_stl::vector<size_t>(hnsw_index->max_elements_, hnsw_index->allocator);
-    hnsw_index->label_lookup_.clear();
+    reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->label_lookup_.clear();
 
     for (size_t i = 0; i <= hnsw_index->max_id; i++) {
-        hnsw_index->label_lookup_[hnsw_index->getExternalLabel(i)] = i;
+        reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)
+            ->label_lookup_[hnsw_index->getExternalLabel(i)] = i;
         unsigned int linkListSize;
         readBinaryPOD(input, linkListSize);
         if (linkListSize == 0) {

@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "visited_nodes_handler.h"
@@ -6,10 +12,10 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h" //newBatchIterator
 
 #include <deque>
 #include <memory>
@@ -30,7 +36,6 @@
 #define ENABLE_PARALLELIZATION_READ
 #endif
 
-using spaces::dist_func_t;
 using std::pair;
 
 #define HNSW_INVALID_ID    UINT_MAX
@@ -48,11 +53,11 @@ typedef idType linklistsizeint;
 template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
-using candidatesLabelsMaxHeap = vecsim_stl::max_priority_queue<DistType, labelType>;
+using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType> {
-private:
+protected:
     // Index build parameters
     size_t max_elements_;
     size_t M_;
@@ -93,7 +98,6 @@ private:
     char *data_level0_memory_;
     char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
-    vecsim_stl::unordered_map<labelType, idType> label_lookup_;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -108,13 +112,8 @@ private:
 #endif
 
 #ifdef BUILD_TESTS
-    // Allow the following test to access the index size private member.
     friend class HNSWIndexSerializer;
-    friend class HNSWTest_preferAdHocOptimization_Test;
-    friend class HNSWTest_test_dynamic_hnsw_info_iterator_Test;
-    friend class AllocatorTest_testIncomingEdgesSet_Test;
-    friend class AllocatorTest_test_hnsw_reclaim_memory_Test;
-    friend class HNSWTest_testSizeEstimation_Test;
+#include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 #endif
 
     HNSWIndex() = delete;                  // default constructor is disabled.
@@ -131,19 +130,19 @@ private:
                                  size_t Mcurmax, idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
                                  size_t *removed_links_num);
-    inline DistType processCandidate(idType curNodeId, const void *data_point, size_t layer,
-                                     size_t ef, tag_t visited_tag,
-                                     tag_t *elements_tags,
-                                     candidatesMaxHeap<DistType> &top_candidates,
-                                     candidatesMaxHeap<DistType> &candidates_set,
-                                     DistType lowerBound) const;
+    template <typename Identifier> // Either idType or labelType
+    inline DistType
+    processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
+                     tag_t visited_tag, tag_t *elements_tags,
+                     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+                     candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
     inline void processCandidate_RangeSearch(
-		    idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
-		    tag_t *elements_tags, VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
-		    double radius) const;
+        idType curNodeId, const void *data_point, size_t layer, double epsilon, tag_t visited_tag,
+        tag_t *elements_tags, std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
+        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, double radius) const;
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
-    candidatesLabelsMaxHeap<DistType>
+    candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
                                   void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
@@ -158,8 +157,19 @@ private:
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
-    inline void SwapLastIdWithDeletedId(idType element_internal_id,
-                                        idType last_element_internal_id);
+    inline void resizeIndex(size_t new_max_elements);
+    inline void SwapLastIdWithDeletedId(idType element_internal_id);
+
+    // Protected internal function that implements generic single vector insertion.
+    int appendVector(const void *vector_data, labelType label);
+
+    // Protected internal function that implements generic single vector deletion.
+    int removeVector(idType id);
+
+    inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
+                              DistType dist, idType id) const;
+    inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
+                              DistType dist, idType id) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -172,13 +182,12 @@ public:
     inline void setEpsilon(double epsilon);
     inline double getEpsilon() const;
     inline size_t indexSize() const override;
-    inline size_t indexLabelCount() const override;
     inline size_t getIndexCapacity() const;
     inline size_t getEfConstruction() const;
     inline size_t getM() const;
     inline size_t getMaxLevel() const;
-    inline size_t getEntryPointLabel() const;
     inline idType getEntryPointId() const;
+    inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
 #ifdef ENABLE_PARALLELIZATION_READ
@@ -186,23 +195,28 @@ public:
 #endif
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     char *getDataByInternalId(idType internal_id) const;
-	char *getDataByLabel(labelType label);
     inline linklistsizeint *get_linklist_at_level(idType internal_id, size_t level) const;
     inline unsigned short int getListCount(const linklistsizeint *ptr) const;
-    inline void resizeIndex(size_t new_max_elements);
-    int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
+
     VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
                                      VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
                                       VecSimQueryParams *queryParams) override;
+
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
+
+protected:
+    // inline label to id setters that need to be implemented by derived class
+    virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
+    getNewResultsContainer(size_t cap) const = 0;
+    virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
+    virtual inline void setVectorId(labelType label, idType id) = 0;
+    virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
 };
 
 /**
@@ -235,11 +249,6 @@ size_t HNSWIndex<DataType, DistType>::indexSize() const {
 }
 
 template <typename DataType, typename DistType>
-size_t HNSWIndex<DataType, DistType>::indexLabelCount() const {
-    return label_lookup_.size();
-}
-
-template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getIndexCapacity() const {
     return max_elements_;
 }
@@ -260,9 +269,9 @@ size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
 }
 
 template <typename DataType, typename DistType>
-size_t HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
+labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
     if (entrypoint_node_ != HNSW_INVALID_ID)
-        return (size_t)getExternalLabel(entrypoint_node_);
+        return getExternalLabel(entrypoint_node_);
     return SIZE_MAX;
 }
 
@@ -293,26 +302,10 @@ char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) con
 }
 
 template <typename DataType, typename DistType>
-char *HNSWIndex<DataType, DistType>::getDataByLabel(labelType label) {
-	idType internal_id = label_lookup_[label];
-	return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
-}
-
-template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(level_generator_)) * reverse_size;
     return (size_t)r;
-}
-
-template <typename DataType, typename DistType>
-double HNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
-                                                      const void *vector_data) const {
-    auto id = label_lookup_.find(label);
-    if (id == label_lookup_.end()) {
-        return INVALID_SCORE;
-    }
-    return this->dist_func(vector_data, getDataByInternalId(id->second), this->dim);
 }
 
 template <typename DataType, typename DistType>
@@ -425,12 +418,26 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 }
 
 template <typename DataType, typename DistType>
-DistType HNSWIndex<DataType, DistType>::processCandidate(idType curNodeId, const void *data_point,
-                                                 size_t layer, size_t ef, tag_t visited_tag,
-                                                 tag_t *elements_tags,
-                                                 candidatesMaxHeap<DistType> &top_candidates,
-                                                 candidatesMaxHeap<DistType> &candidate_set,
-                                                 DistType lowerBound) const {
+void HNSWIndex<DataType, DistType>::emplaceToHeap(
+    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
+    heap.emplace(dist, id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::emplaceToHeap(
+    vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
+    idType id) const {
+    heap.emplace(dist, getExternalLabel(id));
+}
+
+// This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
+// overloading to emplace correctly for both cases.
+template <typename DataType, typename DistType>
+template <typename Identifier>
+DistType HNSWIndex<DataType, DistType>::processCandidate(
+    idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag, tag_t *elements_tags,
+    vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+    candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -456,16 +463,15 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(idType curNodeId, const
         char *currObj1 = (getDataByInternalId(candidate_id));
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
-        if (top_candidates.size() < ef || lowerBound > dist1) {
+        if (lowerBound > dist1 || top_candidates.size() < ef) {
             candidate_set.emplace(-dist1, candidate_id);
 
-            top_candidates.emplace(dist1, candidate_id);
+            emplaceToHeap(top_candidates, dist1, candidate_id);
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
 
-            if (!top_candidates.empty())
-                lowerBound = top_candidates.top().first;
+            lowerBound = top_candidates.top().first;
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
@@ -478,8 +484,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(idType curNodeId, const
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
-    tag_t *elements_tags, VecSimQueryResult **results, candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range,
-    double radius) const {
+    tag_t *elements_tags, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
+    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -513,10 +519,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             // If the new candidate is in the requested radius, add it to the results set.
             if (candidate_dist <= radius_) {
-                auto new_result = VecSimQueryResult{};
-                VecSimQueryResult_SetId(new_result, getExternalLabel(candidate_id));
-                VecSimQueryResult_SetScore(new_result, candidate_dist);
-                *results = array_append(*results, new_result);
+                results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
         }
     }
@@ -549,7 +552,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
@@ -894,16 +897,14 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
-                                                            idType last_element_internal_id) {
+void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
     // swap label
-    labelType last_element_label = getExternalLabel(last_element_internal_id);
-    label_lookup_[last_element_label] = element_internal_id;
+    replaceIdOfLabel(getExternalLabel(max_id), element_internal_id, max_id);
 
     // swap neighbours
-    size_t last_element_top_level = element_levels_[last_element_internal_id];
+    size_t last_element_top_level = element_levels_[max_id];
     for (size_t level = 0; level <= last_element_top_level; level++) {
-        linklistsizeint *neighbours_list = get_linklist_at_level(last_element_internal_id, level);
+        linklistsizeint *neighbours_list = get_linklist_at_level(max_id, level);
         unsigned short neighbours_count = getListCount(neighbours_list);
         auto *neighbours = (idType *)(neighbours_list + 1);
 
@@ -918,7 +919,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             bool bidirectional_edge = false;
             for (size_t j = 0; j < neighbour_neighbours_count; j++) {
                 // if the edge is bidirectional, update for this neighbor
-                if (neighbour_neighbours[j] == last_element_internal_id) {
+                if (neighbour_neighbours[j] == max_id) {
                     bidirectional_edge = true;
                     neighbour_neighbours[j] = element_internal_id;
                     break;
@@ -930,7 +931,8 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
                 auto it = std::find(neighbour_incoming_edges->begin(),
-                                    neighbour_incoming_edges->end(), last_element_internal_id);
+                                    neighbour_incoming_edges->end(), max_id);
+                assert(it != neighbour_incoming_edges->end());
                 neighbour_incoming_edges->erase(it);
                 neighbour_incoming_edges->push_back(element_internal_id);
             }
@@ -938,7 +940,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 
         // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // updates.
-        auto *incoming_edges = getIncomingEdgesPtr(last_element_internal_id, level);
+        auto *incoming_edges = getIncomingEdgesPtr(max_id, level);
         for (auto incoming_edge : *incoming_edges) {
             linklistsizeint *incoming_neighbour_neighbours_list =
                 get_linklist_at_level(incoming_edge, level);
@@ -947,7 +949,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             auto *incoming_neighbour_neighbours =
                 (idType *)(incoming_neighbour_neighbours_list + 1);
             for (size_t j = 0; j < incoming_neighbour_neighbours_count; j++) {
-                if (incoming_neighbour_neighbours[j] == last_element_internal_id) {
+                if (incoming_neighbour_neighbours[j] == max_id) {
                     incoming_neighbour_neighbours[j] = element_internal_id;
                     break;
                 }
@@ -957,23 +959,24 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 
     // swap the last_id level 0 data, and invalidate the deleted id's data
     memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
-           data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
+           data_level0_memory_ + max_id * size_data_per_element_ + offsetLevel0_,
            size_data_per_element_);
-    memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ + offsetLevel0_,
-           0, size_data_per_element_);
+    memset(data_level0_memory_ + max_id * size_data_per_element_ + offsetLevel0_, 0,
+           size_data_per_element_);
 
     // swap pointer of higher levels links
-    linkLists_[element_internal_id] = linkLists_[last_element_internal_id];
-    linkLists_[last_element_internal_id] = nullptr;
+    linkLists_[element_internal_id] = linkLists_[max_id];
+    linkLists_[max_id] = nullptr;
 
     // swap top element level
-    element_levels_[element_internal_id] = element_levels_[last_element_internal_id];
-    element_levels_[last_element_internal_id] = HNSW_INVALID_LEVEL;
+    element_levels_[element_internal_id] = element_levels_[max_id];
+    element_levels_[max_id] = HNSW_INVALID_LEVEL;
 
-    if (last_element_internal_id == this->entrypoint_node_) {
+    if (max_id == this->entrypoint_node_) {
         this->entrypoint_node_ = element_internal_id;
     }
 }
+
 /* typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
@@ -993,7 +996,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                     params->blockSize, params->multi),
       max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
-      element_levels_(max_elements_, allocator), label_lookup_(max_elements_, allocator)
+      element_levels_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
       ,
@@ -1034,8 +1037,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     level_generator_.seed(random_seed);
 
     // data_level0_memory will look like this:
-    // -----4------ | -----4*M0----------- | ----8------------------| ------32------- | ----8---- |
-    // <links_len>  | <link_1> <link_2>... | <incoming_links_set> |   <data>        |  <label>
+    // | -----4------ | -----4*M0----------- | ----------8----------| --data_size_-- | ----8---- |
+    // | <links_len>  | <link_1> <link_2>... | <incoming_links_ptr> |     <data>     |  <label>  |
     if (maxM0_ > ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(idType)) + 1)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     size_links_level0_ = sizeof(linklistsizeint) + maxM0_ * sizeof(idType) + sizeof(void *);
@@ -1062,8 +1065,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     // The i-th entry in linkLists array points to max_level[i] (continuous)
     // chunks of memory, each one will look like this:
-    // -----4------ | -----4*M-------------- | ----8------------------|
-    // <links_len>  | <link_1> <link_2> ...  | <incoming_links_set>
+    // | -----4----- | -----4*M-------------- | ----------8--------- |
+    // | <links_len> | <link_1> <link_2> ...  | <incoming_links_ptr> |
     size_links_per_element_ = sizeof(linklistsizeint) + maxM_ * sizeof(idType) + sizeof(void *);
     // No need to test for overflow because we passed the test for incoming_links_offset0 and this
     // is less.
@@ -1093,7 +1096,7 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     element_levels_.resize(new_max_elements);
     element_levels_.shrink_to_fit();
-    label_lookup_.reserve(new_max_elements);
+    resizeLabelLookup(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
 #endif
@@ -1123,12 +1126,8 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::deleteVector(const labelType label) {
-    // check that the label actually exists in the graph, and update the number of elements.
-    if (label_lookup_.find(label) == label_lookup_.end()) {
-        return false;
-    }
-    idType element_internal_id = label_lookup_[label];
+int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
+
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
     // go over levels and repair connections
@@ -1192,21 +1191,19 @@ int HNSWIndex<DataType, DistType>::deleteVector(const labelType label) {
     }
 
     // Swap the last id with the deleted one, and invalidate the last id data.
-    idType last_element_internal_id = --cur_element_count;
-    --max_id;
-    label_lookup_.erase(label);
     if (element_levels_[element_internal_id] > 0) {
         this->allocator->free_allocation(linkLists_[element_internal_id]);
         linkLists_[element_internal_id] = nullptr;
     }
-    if (last_element_internal_id == element_internal_id) {
+    if (max_id == element_internal_id) {
         // we're deleting the last internal id, just invalidate data without swapping.
-        memset(data_level0_memory_ + last_element_internal_id * size_data_per_element_ +
-                   offsetLevel0_,
-               0, size_data_per_element_);
+        memset(data_level0_memory_ + max_id * size_data_per_element_ + offsetLevel0_, 0,
+               size_data_per_element_);
     } else {
-        SwapLastIdWithDeletedId(element_internal_id, last_element_internal_id);
+        SwapLastIdWithDeletedId(element_internal_id);
     }
+    --cur_element_count;
+    --max_id;
 
     // If we need to free a complete block & there is a least one block between the
     // capacity and the size.
@@ -1223,7 +1220,7 @@ int HNSWIndex<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
+int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
 
     idType cur_c;
     // choose randomly the maximum level in which the new element will be in the index.
@@ -1241,18 +1238,13 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
 
-        // Checking if an element with the given label already exists. if so, remove it.
-        if (label_lookup_.find(label) != label_lookup_.end()) {
-            // this should not occur in multi-threaded scenario
-			deleteVector(label);
-        }
         if (cur_element_count >= max_elements_) {
 	        // this should not occur in multi-threaded scenario
 	        size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
             resizeIndex(max_elements_ + vectors_to_add);
         }
-		cur_c = cur_element_count++;
-        label_lookup_[label] = cur_c;
+        cur_c = cur_element_count++;
+        setVectorId(label, cur_c);
         ids_in_process.insert(cur_c);
         element_levels_[cur_c] = element_max_level;
     }
@@ -1272,15 +1264,15 @@ int HNSWIndex<DataType, DistType>::addVector(const void *vector_data, const labe
            size_data_per_element_);
 
     // Initialisation of the data and label
-    memcpy(getExternalLabelPtr(cur_c), &label, sizeof(labelType));
+    setExternalLabel(cur_c, label);
     memcpy(getDataByInternalId(cur_c), vector_data, data_size_);
 
     if (element_max_level > 0) {
         linkLists_[cur_c] =
-            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level + 1);
+            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level);
         if (linkLists_[cur_c] == nullptr)
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
-        memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level + 1);
+        memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level);
     }
 
     // this condition only means that we are not inserting the first element.
@@ -1418,11 +1410,10 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
 }
 
 template <typename DataType, typename DistType>
-candidatesLabelsMaxHeap<DistType>
+candidatesLabelsMaxHeap<DistType> *
 HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                              size_t ef, size_t k, void *timeoutCtx,
                                                              VecSimQueryResult_Code *rc) const {
-    candidatesLabelsMaxHeap<DistType> results(this->allocator);
 
 #ifdef ENABLE_PARALLELIZATION_READ
     auto visited_nodes_handler =
@@ -1431,44 +1422,38 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
 
-    candidatesMaxHeap<DistType> top_candidates(this->allocator);
+    candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
 
     DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
     DistType lowerBound = dist;
-    top_candidates.emplace(dist, ep_id);
+    top_candidates->emplace(dist, getExternalLabel(ep_id));
     candidate_set.emplace(-dist, ep_id);
 
     visited_nodes_handler->tagNode(ep_id, visited_tag);
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
-        if ((-curr_el_pair.first) > lowerBound) {
+        if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
         if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
-            return results;
+            return top_candidates;
         }
         candidate_set.pop();
 
         lowerBound = processCandidate(curr_el_pair.second, data_point, 0, ef, visited_tag,
-                                      visited_nodes_handler->getElementsTags(), top_candidates,
-                                      candidate_set, lowerBound);
+                                      visited_nodes_handler->getElementsTags(), *top_candidates, candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION_READ
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes_handler);
 #endif
-    while (top_candidates.size() > k) {
-        top_candidates.pop();
-    }
-    while (top_candidates.size() > 0) {
-        auto &res = top_candidates.top();
-        results.emplace(res.first, getExternalLabel(res.second));
-        top_candidates.pop();
+    while (top_candidates->size() > k) {
+        top_candidates->pop();
     }
     *rc = VecSim_QueryResult_OK;
-    return results;
+    return top_candidates;
 }
 
 template <typename DataType, typename DistType>
@@ -1478,7 +1463,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
 
-    if (cur_element_count == 0) {
+    if (cur_element_count == 0 || k == 0) {
         rl.code = VecSim_QueryResult_OK;
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
@@ -1493,37 +1478,33 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         query_data = normalized_blob;
     }
     // Get original efRuntime and store it.
-    size_t originalEF = ef_;
+    size_t ef = ef_;
 
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
         if (queryParams->hnswRuntimeParams.efRuntime != 0) {
-            ef_ = queryParams->hnswRuntimeParams.efRuntime;
+            ef = queryParams->hnswRuntimeParams.efRuntime;
         }
     }
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
-        ef_ = originalEF;
         return rl;
     }
 
-    candidatesLabelsMaxHeap<DistType> results = searchBottomLayer_WithTimeout(
-        bottom_layer_ep, query_data, std::max(ef_, k), k, timeoutCtx, &rl.code);
+    // We now oun the results heap, we need to free (delete) it when we done
+    candidatesLabelsMaxHeap<DistType> *results = searchBottomLayer_WithTimeout(
+        bottom_layer_ep, query_data, std::max(ef, k), k, timeoutCtx, &rl.code);
 
-    // Restore efRuntime.
-    ef_ = originalEF;
-
-    if (VecSim_OK != rl.code) {
-        return rl;
+    if (VecSim_OK == rl.code) {
+        rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
+        for (int i = (int)results->size() - 1; i >= 0; --i) {
+            VecSimQueryResult_SetId(rl.results[i], results->top().second);
+            VecSimQueryResult_SetScore(rl.results[i], results->top().first);
+            results->pop();
+        }
     }
-
-    rl.results = array_new_len<VecSimQueryResult>(results.size(), results.size());
-    for (int i = (int)results.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], results.top().second);
-        VecSimQueryResult_SetScore(rl.results[i], results.top().first);
-        results.pop();
-    }
+    delete results;
     return rl;
 }
 
@@ -1532,7 +1513,8 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
 
-    auto *results = array_new<VecSimQueryResult>(10); // arbitrary initial cap.
+    *rc = VecSim_QueryResult_OK;
+    auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
 #ifdef ENABLE_PARALLELIZATION_READ
     auto visited_nodes_handler =
@@ -1548,10 +1530,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 
     if (ep_dist <= radius) {
         // Entry-point is within the radius - add it to the results.
-        auto new_result = VecSimQueryResult{};
-        VecSimQueryResult_SetId(new_result, getExternalLabel(ep_id));
-        VecSimQueryResult_SetScore(new_result, ep_dist);
-        results = array_append(results, new_result);
+        res_container->emplace(getExternalLabel(ep_id), ep_dist);
         dynamic_range = radius; // to ensure that dyn_range >= radius.
     }
 
@@ -1570,7 +1549,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         }
         if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
-            return results;
+            break;
         }
         candidate_set.pop();
 
@@ -1585,15 +1564,13 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         // requested radius.
         // Here we send the radius as double to match the function arguments type.
         processCandidate_RangeSearch(curr_el_pair.second, data_point, 0, epsilon, visited_tag,
-                                     visited_nodes_handler->getElementsTags(), &results,
-                                     candidate_set, dynamic_range_search_boundaries, radius);
+                                     visited_nodes_handler->getElementsTags(), res_container, candidate_set, dynamic_range_search_boundaries,
+                                     radius);
     }
 #ifdef ENABLE_PARALLELIZATION_READ
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes_handler);
 #endif
-
-    *rc = VecSim_QueryResult_OK;
-    return results;
+    return res_container->get_results();
 }
 
 template <typename DataType, typename DistType>
@@ -1617,45 +1594,26 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
         query_data = normalized_blob;
     }
 
-    double originalEpsilon = epsilon_;
+    double epsilon = epsilon_;
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
         if (queryParams->hnswRuntimeParams.epsilon != 0.0) {
-            epsilon_ = queryParams->hnswRuntimeParams.epsilon;
+            epsilon = queryParams->hnswRuntimeParams.epsilon;
         }
     }
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
-        epsilon_ = originalEpsilon;
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
-    rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, this->epsilon_,
-                                                    radius, timeoutCtx, &rl.code);
+    rl.results = searchRangeBottomLayer_WithTimeout(bottom_layer_ep, query_data, epsilon, radius,
+                                                    timeoutCtx, &rl.code);
 
-    // Restore the default epsilon.
-    epsilon_ = originalEpsilon;
     return rl;
-}
-
-template <typename DataType, typename DistType>
-VecSimBatchIterator *
-HNSWIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
-                                                VecSimQueryParams *queryParams) {
-    // As this is the only supported type, we always allocate 4 bytes for every element in the
-    // vector.
-    assert(this->vecType == VecSimType_FLOAT32);
-    auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
-    memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
-    // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
-    return HNSWFactory::newBatchIterator(queryBlobCopy, queryParams, this->allocator, this);
 }
 
 template <typename DataType, typename DistType>
@@ -1708,7 +1666,7 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
+                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.isMulti}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                          .fieldType = INFOFIELD_UINT64,
@@ -1765,7 +1723,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     }
     size_t d = this->dim;
     size_t M = this->getM();
-    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)index_size;
+    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;
 
     // node 0

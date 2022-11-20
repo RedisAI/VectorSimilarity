@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "space_aux.h"
 #if defined(M1)
 
@@ -14,8 +20,11 @@ Arch_Optimization getArchitectureOptimization() {
 #ifdef CPU_FEATURES_ARCH_X86_64
 #include "cpuinfo_x86.h"
     cpu_features::X86Features features = cpu_features::GetX86Info().features;
+    if (features.avx512dq) {
+        return ARCH_OPT_AVX512_DQ;
+    }
     if (features.avx512f) {
-        return ARCH_OPT_AVX512;
+        return ARCH_OPT_AVX512_F;
     } else if (features.avx || features.avx2) {
         return ARCH_OPT_AVX;
     } else if (features.sse || features.sse2 || features.sse3 || features.sse4_1 ||

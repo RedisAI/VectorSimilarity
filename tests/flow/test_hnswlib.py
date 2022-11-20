@@ -1,3 +1,7 @@
+# Copyright Redis Ltd. 2021 - present
+# Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+# the Server Side Public License v1 (SSPLv1).
+
 import os
 from common import *
 import hnswlib
@@ -377,6 +381,145 @@ def test_range_query():
 
         assert max(hnsw_distances[0]) <= radius
         recalls[epsilon_rt] = res_num/len(actual_results)
+
+    # Expect higher recalls for higher epsilon values.
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
+
+    # Expect zero results for radius==0
+    hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
+    assert len(hnsw_labels[0]) == 0
+
+
+def test_recall_for_hnsw_multi_value():
+    dim = 16
+    num_labels = 1000
+    num_per_label = 16
+    M = 16
+    efConstruction = 100
+
+    num_queries = 10
+    k=10
+    efRuntime = 0
+
+    num_elements = num_labels * num_per_label
+
+    hnswparams = HNSWParams()
+    hnswparams.M = M
+    hnswparams.efConstruction = efConstruction
+    hnswparams.initialCapacity = num_elements
+    hnswparams.efRuntime = efRuntime
+    hnswparams.dim = dim
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.metric = VecSimMetric_Cosine
+    hnswparams.multi = True
+
+    hnsw_index = HNSWIndex(hnswparams)
+
+    data = np.float32(np.random.random((num_labels, dim)))
+    vectors = []
+    for i, vector in enumerate(data):
+        for _ in range(num_per_label):
+            hnsw_index.add_vector(vector, i)
+            vectors.append((i, vector))
+
+    # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
+    hnsw_index.set_ef(50)
+    query_data = np.float32(np.random.random((num_queries, dim)))
+    correct = 0
+    for target_vector in query_data:
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+        assert(len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
+
+        # sort distances of every vector from the target vector and get actual k nearest vectors
+        dists = {}
+        for key, vec in vectors:
+            # Setting or updating the score for each label. If it's the first time we calculate a score for a label,
+            # dists.get(key, 3) will return 3, which is more than a Cosine score can be,
+            # so we will choose the actual score the first time.
+            dists[key] = min(spatial.distance.cosine(target_vector, vec), dists.get(key, 3)) # cosine distance is always <= 2
+
+        dists = list(dists.items())
+        dists = sorted(dists, key=lambda pair: pair[1])[:k]
+        keys = [key for key, _ in dists]
+
+        for label in hnswlib_labels[0]:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct+=1
+                    break
+
+    # Measure recall
+    recall = float(correct)/(k*num_queries)
+    print("\nrecall is: \n", recall)
+    assert(recall > 0.9)
+
+
+def test_multi_range_query():
+    dim = 100
+    num_labels = 20000
+    per_label = 5
+
+    epsilon = 0.01
+
+    num_elements = num_labels * per_label
+
+    params = VecSimParams()
+    hnswparams = HNSWParams()
+
+    params.algo = VecSimAlgo_HNSWLIB
+
+    hnswparams.dim = dim
+    hnswparams.metric = VecSimMetric_L2
+    hnswparams.multi = True
+    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.M = 32
+    hnswparams.efConstruction = 200
+    hnswparams.initialCapacity = num_elements
+    hnswparams.epsilon = epsilon
+
+    params.hnswParams = hnswparams
+    index = VecSimIndex(params)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    vectors = []
+    for label, vecs in enumerate(data):
+        for vector in vecs:
+            index.add_vector(vector, label)
+            vectors.append((label, vector))
+
+    query_data = np.float32(np.random.random((1, dim)))
+
+    radius = 13.0
+    recalls = {}
+    # calculate distances of the labels in the index
+    dists = {}
+    for key, vec in vectors:
+        dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
+
+    dists = list(dists.items())
+    dists = sorted(dists, key=lambda pair: pair[1])
+    keys = [key for key, dist in dists if dist <= radius]
+
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+        end = time.time()
+        res_num = len(hnsw_labels[0])
+
+        print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+              f' got {res_num} results, which are {res_num/len(keys)} of the entire results in the range.')
+
+        # Compare the number of vectors that are actually within the range to the returned results.
+        assert np.all(np.isin(hnsw_labels, np.array(keys)))
+
+        # Asserts that all the results are unique
+        assert len(hnsw_labels[0]) == len(np.unique(hnsw_labels[0]))
+
+        assert max(hnsw_distances[0]) <= radius
+        recalls[epsilon_rt] = res_num/len(keys)
 
     # Expect higher recalls for higher epsilon values.
     assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]

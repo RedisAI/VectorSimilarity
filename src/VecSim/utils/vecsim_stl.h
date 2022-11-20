@@ -1,8 +1,15 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "VecSim/memory/vecsim_base.h"
 #include <vector>
 #include <set>
+#include <unordered_set>
 #include <unordered_map>
 #include <queue>
 
@@ -68,6 +75,20 @@ class set : public VecsimBaseObject, public std::set<T, std::less<T>, VecsimSTLA
 public:
     explicit set(const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc), std::set<T, std::less<T>, VecsimSTLAllocator<T>>(alloc) {}
+};
+
+template <typename T>
+class unordered_set
+    : public VecsimBaseObject,
+      public std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>> {
+public:
+    explicit unordered_set(const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc),
+          std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(alloc) {}
+    explicit unordered_set(size_t n_bucket, const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc),
+          std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
+                                                                                       alloc) {}
 };
 
 } // namespace vecsim_stl

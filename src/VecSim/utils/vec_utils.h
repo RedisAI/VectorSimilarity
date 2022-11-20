@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include <stdlib.h>
@@ -55,6 +61,8 @@ void sort_results_by_id(VecSimQueryResult_List results);
 void sort_results_by_score(VecSimQueryResult_List results);
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
+
+VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
 
 const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo);
 

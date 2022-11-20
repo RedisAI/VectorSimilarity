@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "VecSim/vec_sim_common.h"   // enum VecSimMetric
@@ -18,14 +24,17 @@ using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
 enum CalculationGuideline {
     NO_OPTIMIZATION = 0,
-    Ext16 = 1,          // dim % 16 == 0
-    Ext4 = 2,           // dim % 4 == 0
-    ExtResiduals16 = 3, // dim > 16 && dim % 16 < 4
-    ExtResiduals4 = 4,  // dim > 4
+    SPLIT_TO_512_BITS = 1,     // FP32 -> dim % 16 == 0, FP64 -> dim % 8 == 0
+    SPLIT_TO_512_128_BITS = 2, // FP32 -> dim % 4 == 0, FP64 -> dim % 2 == 0
+    SPLIT_TO_512_BITS_WITH_RESIDUALS =
+        3, // FP32 ->  dim > 16 && dim % 16 < 4, FP64 -> dim > 8 && dim % 8 < 2,
+    SPLIT_TO_512_128_BITS_WITH_RESIDUALS = 4, // FP32 ->dim > 4, FP64 -> dim > 2
 };
 
-CalculationGuideline GetCalculationGuideline(size_t dim);
+CalculationGuideline FP32_GetCalculationGuideline(size_t dim);
+CalculationGuideline FP64_GetCalculationGuideline(size_t dim);
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
+void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func);
 
 } // namespace spaces

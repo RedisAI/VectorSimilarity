@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #ifdef __cplusplus
@@ -52,6 +58,7 @@ typedef enum {
     VecSimParamResolverErr_BadValue,
     VecSimParamResolverErr_InvalidPolicy_NExits,
     VecSimParamResolverErr_InvalidPolicy_NHybrid,
+    VecSimParamResolverErr_InvalidPolicy_NRange,
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize,
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime
 } VecSimResolveCode;
@@ -110,6 +117,13 @@ typedef enum {
     RANGE_QUERY, // Run range query, to return all vectors that are within a given range from the
                  // query vector.
 } VecSearchMode;
+
+typedef enum {
+    QUERY_TYPE_NONE, // Use when no params are given.
+    QUERY_TYPE_KNN,
+    QUERY_TYPE_HYBRID,
+    QUERY_TYPE_RANGE,
+} VecsimQueryType;
 
 /**
  * @brief Query Runtime parameters.

@@ -1,24 +1,42 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/batch_iterator.h"
 
 struct VecSimQueryResult_Iterator {
-    VecSimQueryResult *curr_result;
+    VecSimQueryResult *results_arr;
     size_t index;
     size_t results_len;
 
     explicit VecSimQueryResult_Iterator(VecSimQueryResult_List results_array)
-        : curr_result(results_array.results), index(0),
+        : results_arr(results_array.results), index(0),
           results_len(array_len(results_array.results)) {}
 };
 
 extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List rl) { return array_len(rl.results); }
 
+extern "C" VecSimQueryResult *VecSimQueryResult_GetArray(VecSimQueryResult_List rl) {
+    return rl.results;
+}
+
+extern "C" size_t VecSimQueryResult_ArrayLen(VecSimQueryResult *rl) { return array_len(rl); }
+
 extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
     if (rl.results) {
         array_free(rl.results);
-        rl.results = NULL;
+        rl.results = nullptr;
+    }
+}
+
+extern "C" void VecSimQueryResult_FreeArray(VecSimQueryResult *rl) {
+    if (rl) {
+        array_free(rl);
     }
 }
 
@@ -35,7 +53,7 @@ extern "C" VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_I
     if (iterator->index == iterator->results_len) {
         return nullptr;
     }
-    VecSimQueryResult *item = iterator->curr_result++;
+    VecSimQueryResult *item = iterator->results_arr + iterator->index;
     iterator->index++;
 
     return item;
@@ -52,11 +70,15 @@ extern "C" double VecSimQueryResult_GetScore(const VecSimQueryResult *res) {
     if (res == nullptr) {
         return INVALID_SCORE; // "NaN"
     }
-    return (double)res->score;
+    return res->score;
 }
 
 extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator) {
     delete iterator;
+}
+
+extern "C" void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator) {
+    iterator->index = 0;
 }
 
 /********************** batch iterator API ***************************/
@@ -69,7 +91,7 @@ bool VecSimBatchIterator_HasNext(VecSimBatchIterator *iterator) { return !iterat
 
 void VecSimBatchIterator_Free(VecSimBatchIterator *iterator) {
     // Batch iterator might be deleted after the index, so it should keep the allocator before
-    // deleteing.
+    // deleting.
     auto allocator = iterator->getAllocator();
     delete iterator;
 }
