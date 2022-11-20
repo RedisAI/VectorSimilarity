@@ -82,7 +82,9 @@ void BM_VecSimBasics::Initialize() {
                                                       .dim = BM_VecSimBasics::dim,
                                                       .metric = VecSimMetric_Cosine,
                                                       .initialCapacity = BM_VecSimBasics::n_vectors,
-                                                      .blockSize = BM_VecSimBasics::block_size}};
+                                                      .blockSize = BM_VecSimBasics::block_size,
+                                                      .M = BM_VecSimBasics::M * 2, // HNSW multiply M in construction
+                                                      .efConstruction = BM_VecSimBasics::EF_C}};
     BM_VecSimBasics::ngt_index = VecSimIndex_New(&ngt_params);
 
     // Add the same vectors to Flat index.
