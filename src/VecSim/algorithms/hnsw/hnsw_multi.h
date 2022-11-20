@@ -51,6 +51,8 @@ public:
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
+    inline int markDelete(labelType label) override;
+    inline int unmarkDelete(labelType label) override;
 };
 
 /**
@@ -73,8 +75,10 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
-        dist = (dist < d) ? dist : d;
+        if (!this->isMarkedDeleted(id)) {
+            DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+            dist = (dist < d) ? dist : d;
+        }
     }
 
     return dist;
@@ -145,4 +149,38 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);
+}
+
+/**
+ * Marks an element with the given label deleted, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
+    auto search = label_lookup_.find(label);
+    if (search == label_lookup_.end()) {
+        return false;
+    }
+
+    for (idType id : search->second) {
+        this->markDeletedInternal(id);
+    }
+    return true;
+}
+
+/**
+ * Remove the deleted mark of the node, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Multi<DataType, DistType>::unmarkDelete(labelType label) {
+    auto search = label_lookup_.find(label);
+    if (search == label_lookup_.end()) {
+        return false;
+    }
+
+    for (idType id : search->second) {
+        this->unmarkDeletedInternal(id);
+    }
+    return true;
 }

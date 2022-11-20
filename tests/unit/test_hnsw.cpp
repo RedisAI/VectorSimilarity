@@ -629,6 +629,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
+    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
     this->CastToHNSW(index)->cur_element_count = 1e6;
     auto &label_lookup = this->CastToHNSW_Single(index)->label_lookup_;
     for (size_t i = 0; i < 1e6; i++) {
@@ -650,6 +651,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    this->CastToHNSW(index)->cur_element_count = actual_element_count;
     VecSimIndex_Free(index);
 }
 TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {
@@ -866,15 +868,14 @@ TYPED_TEST(HNSWTest, hnsw_test_inf_score) {
 
 // Tests VecSimIndex_New failure on bad M parameter. Should return null.
 TYPED_TEST(HNSWTest, hnsw_bad_params) {
-    size_t n = 1000000;
-    size_t dim = 2;
+    size_t n = 10000000;
+    size_t dim = 10000000;
     size_t bad_M[] = {
-        1,         // Will fail because 1/log(M).
-        100000000, // Will fail on this->allocator->allocate(max_elements_ * size_data_per_element_)
-        SIZE_MAX,  // Will fail on M * 2 overflow.
-        SIZE_MAX / 2, // Will fail on M * 2 overflow.
-        SIZE_MAX / 4  // Will fail on size_links_level0_ calculation:
-                      // sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *)
+        1,          // Will fail because 1/log(M).
+        100000000,  // Will fail on M * 2 overflow.
+        UINT16_MAX, // Will fail on M * 2 overflow.
+        UINT16_MAX /
+            2, // Will fail on this->allocator->callocate(max_elements_ * size_data_per_element_)
     };
     size_t len = sizeof(bad_M) / sizeof(size_t);
 
@@ -890,7 +891,7 @@ TYPED_TEST(HNSWTest, hnsw_bad_params) {
 
         VecSimIndex *index = this->CreateNewIndex(params);
 
-        ASSERT_TRUE(index == NULL);
+        ASSERT_TRUE(index == NULL) << "Failed on M=" << bad_M[i];
     }
 }
 
@@ -1943,4 +1944,88 @@ TEST_F(HNSWGeneralTest, hnsw_serialization_v1) {
     remove(file_name.c_str());
     VecSimIndex_Free(restored_index);
     serializer.reset();
+}
+
+TYPED_TEST(HNSWTest, mark_delete) {
+    size_t n = 100;
+    size_t k = 11;
+    size_t dim = 4;
+    VecSimBatchIterator *batchIterator;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // Try marking and unmarking non-existing label
+    ASSERT_NO_THROW(this->CastToHNSW(index)->markDelete(0));
+    ASSERT_NO_THROW(this->CastToHNSW(index)->unmarkDelete(0));
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, n / 2);
+
+    // Search for k results around the middle. expect to find them.
+    auto verify_res = [&](size_t id, double score, size_t index) {
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        ASSERT_EQ(diff_id, (index + 1) / 2);
+        ASSERT_EQ(score, (4 * ((index + 1) / 2) * ((index + 1) / 2)));
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    runRangeQueryTest(index, query, dim * k * k / 4 - 1, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
+
+    // Mark as deleted the k odd vectors around the middle
+    for (labelType label = 0; label < n; label++)
+        if (label % 2)
+            this->CastToHNSW(index)->markDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Add a new vector, make sure it has no link to a deleted vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
+    for (size_t level = 0; level <= this->CastToHNSW(index)->element_levels_[n]; level++) {
+        auto links = this->CastToHNSW(index)->get_linklist_at_level(n, level);
+        idType *neighbors = (idType *)(links + 1);
+        for (size_t idx = 0; idx < *links; idx++) {
+            ASSERT_TRUE(neighbors[idx] % 2 == 0)
+                << "Got a link to " << neighbors[idx] << " on level " << level;
+        }
+    }
+
+    // Search for k results around the middle. expect to find only even results.
+    auto verify_res_even = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id % 2, 0);
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        size_t expected_id = index % 2 ? index + 1 : index;
+        ASSERT_EQ(diff_id, expected_id);
+        ASSERT_EQ(score, (4 * expected_id * expected_id));
+    };
+    runTopKSearchTest(index, query, k, verify_res_even);
+    runRangeQueryTest(index, query, dim * k * k - 1, verify_res_even, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
+    VecSimBatchIterator_Free(batchIterator);
+
+    // Unmark the previously marked vectors.
+    for (labelType label = 0; label < n; label++)
+        if (label % 2)
+            this->CastToHNSW(index)->unmarkDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+
+    // Search for k results around the middle again. expect to find the same results we found in the
+    // first search.
+    runTopKSearchTest(index, query, k, verify_res);
+    runRangeQueryTest(index, query, dim * k * k / 4 - 1, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
+
+    VecSimIndex_Free(index);
 }

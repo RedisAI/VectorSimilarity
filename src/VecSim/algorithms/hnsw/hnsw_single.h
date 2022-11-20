@@ -49,6 +49,8 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
 	char *getDataByLabel(labelType label) const;
+	inline int markDelete(labelType label) override;
+	inline int unmarkDelete(labelType label) override;
 };
 
 /**
@@ -64,7 +66,7 @@ template <typename DataType, typename DistType>
 double HNSWIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
                                                              const void *vector_data) const {
     auto id = label_lookup_.find(label);
-    if (id == label_lookup_.end()) {
+    if (id == label_lookup_.end() || this->isMarkedDeleted(id->second)) {
         return INVALID_SCORE;
     }
     return this->dist_func(vector_data, this->getDataByInternalId(id->second), this->dim);
@@ -130,4 +132,34 @@ template <typename DataType, typename DistType>
 char *HNSWIndex_Single<DataType, DistType>::getDataByLabel(labelType label) const {
 	idType internal_id = this->label_lookup_.at(label);
 	return (this->data_level0_memory_ + internal_id * this->size_data_per_element_ + this->offsetData_);
+}
+
+/**
+ * Marks an element with the given label deleted, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
+	auto search = label_lookup_.find(label);
+	if (search == label_lookup_.end()) {
+		return false;
+	}
+
+	this->markDeletedInternal(search->second);
+	return true;
+}
+
+/**
+ * Remove the deleted mark of the node, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Single<DataType, DistType>::unmarkDelete(labelType label) {
+	auto search = label_lookup_.find(label);
+	if (search == label_lookup_.end()) {
+		return false;
+	}
+
+	this->unmarkDeletedInternal(search->second);
+	return true;
 }

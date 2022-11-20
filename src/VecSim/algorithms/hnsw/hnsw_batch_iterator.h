@@ -36,6 +36,8 @@ protected:
     candidatesMinHeap<labelType> top_candidates_extras;
     candidatesMinHeap<idType> candidates;
 
+    template <bool has_marked_deleted>
+    VecSimQueryResult_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
     candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryResult_Code *rc);
     virtual inline VecSimQueryResult_List
     prepareResults(candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) = 0;
@@ -91,36 +93,9 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
-candidatesLabelsMaxHeap<DistType> *
-HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
-
-    candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
-    if (this->entry_point == HNSW_INVALID_ID) {
-        this->depleted = true;
-        return top_candidates;
-    }
-
-    // In the first iteration, add the entry point to the empty candidates set.
-    if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
-        this->candidates.empty()) {
-        DistType dist = dist_func(this->getQueryBlob(),
-                                  this->index->getDataByInternalId(this->entry_point), dim);
-        this->lower_bound = dist;
-        this->visitNode(this->entry_point);
-        candidates.emplace(dist, this->entry_point);
-    }
-    // Checks that we didn't got timeout between iterations.
-    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-        *rc = VecSim_QueryResult_TimedOut;
-        return top_candidates;
-    }
-
-    // Move extras from previous iteration to the top candidates.
-    fillFromExtras(top_candidates);
-    if (top_candidates->size() == this->ef) {
-        return top_candidates;
-    }
-
+template <bool has_marked_deleted>
+VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
+    candidatesLabelsMaxHeap<DistType> *top_candidates) {
     while (!candidates.empty()) {
         DistType curr_node_dist = candidates.top().first;
         idType curr_node_id = candidates.top().second;
@@ -130,19 +105,19 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
             break;
         }
         if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
-            *rc = VecSim_QueryResult_TimedOut;
-            return top_candidates;
+            return VecSim_QueryResult_TimedOut;
         }
         // Checks if we need to add the current id to the top_candidates heap,
         // and updates the extras heap accordingly.
-        updateHeaps(top_candidates, curr_node_dist, curr_node_id);
+        if (!has_marked_deleted || !index->isMarkedDeleted(curr_node_id))
+            updateHeaps(top_candidates, curr_node_dist, curr_node_id);
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
         linklistsizeint *cur_node_links_header =
             this->index->get_linklist_at_level(curr_node_id, 0);
         unsigned short links_num = this->index->getListCount(cur_node_links_header);
-        auto *node_links = (linklistsizeint *)(cur_node_links_header + 1);
+        auto *node_links = (idType *)(cur_node_links_header + 1);
 
         __builtin_prefetch(visited_list->getElementsTags() + *node_links);
         __builtin_prefetch(index->getDataByInternalId(*node_links));
@@ -165,6 +140,47 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
             __builtin_prefetch(index->get_linklist_at_level(candidates.top().second, 0));
         }
     }
+    return VecSim_QueryResult_OK;
+}
+
+template <typename DataType, typename DistType>
+candidatesLabelsMaxHeap<DistType> *
+HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
+
+    candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
+    if (this->entry_point == HNSW_INVALID_ID) {
+        this->depleted = true;
+        return top_candidates;
+    }
+
+    // In the first iteration, add the entry point to the empty candidates set.
+    if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
+        this->candidates.empty()) {
+        if (!index->isMarkedDeleted(this->entry_point)) {
+            this->lower_bound = dist_func(this->getQueryBlob(),
+                                          this->index->getDataByInternalId(this->entry_point), dim);
+        } else {
+            this->lower_bound = std::numeric_limits<DistType>::max();
+        }
+        this->visitNode(this->entry_point);
+        candidates.emplace(this->lower_bound, this->entry_point);
+    }
+    // Checks that we didn't got timeout between iterations.
+    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        *rc = VecSim_QueryResult_TimedOut;
+        return top_candidates;
+    }
+
+    // Move extras from previous iteration to the top candidates.
+    fillFromExtras(top_candidates);
+    if (top_candidates->size() == this->ef) {
+        return top_candidates;
+    }
+
+    if (index->getNumMarkedDeleted())
+        *rc = this->scanGraphInternal<true>(top_candidates);
+    else
+        *rc = this->scanGraphInternal<false>(top_candidates);
 
     // If we found fewer results than wanted, mark the search as depleted.
     if (top_candidates->size() < this->ef) {
