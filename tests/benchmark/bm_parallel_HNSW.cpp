@@ -281,6 +281,119 @@ public:
 		VecSimIndex_Free(hnsw_index);
 		VecSimIndex_Free(bf_index);
 	}
+
+	/*
+	 * 1. insert 500K vectors (in parallel)
+	 * 2. do parallel search/update - 4 threads are searching, 4 threads are updating. recall is measured w.r.t updated
+	 * data.
+	 */
+	void run_parallel_update_benchmark_delete_alone() {
+		cout << "\n***Starting parallel updating + searching benchmark where delete operations are executed alone"
+				" using " << n_threads << " threads***" << endl;
+		auto hnsw_index = VecSimIndex_New(&hnswParams);
+		auto bf_index = VecSimIndex_New(&bfParams);
+
+		std::vector<VecSimQueryResult_List> total_res(queries.size());
+		atomic_int q_counter(0);
+
+		cout << "Creating an HNSW index of size " << data.size() / 2 << " with dim=" << hnswParams.hnswParams.dim
+		     << " with parallel indexing"  << endl;
+		auto started = std::chrono::high_resolution_clock::now();
+
+#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, k, cout) default(none)
+		{
+			int myID = omp_get_thread_num();
+#pragma omp critical
+			cout << "Thread " << myID << " started indexing vectors..." << endl;
+#pragma omp for schedule(dynamic) nowait
+			for (size_t i = 0; i < data.size() / 2; i++) {
+				VecSimIndex_AddVector(hnsw_index, (const void *)data[i].data(), i);
+			}
+#pragma omp critical
+			cout << "Thread " << myID << " done indexing vectors" << endl;
+		}
+
+		auto done = std::chrono::high_resolution_clock::now();
+		assert(VecSimIndex_IndexSize(hnsw_index) == data.size() / 2);
+		std::cout << "Total build time is "
+		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
+		          << " ms" << std::endl;
+		std::cout << "Max gap between number of vectors whose indexing began to the number"
+		             " of vectors whose indexing finished and available for search is: "
+		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+
+		// Staring phase 2 - parallel read/update
+		cout << "Updating " << data.size() / 2 << " vectors with dim=" << hnswParams.hnswParams.dim
+		     << " in parallel. After 2 seconds, we start running " << queries.size()
+		     << " queries in parallel"  << endl;
+		size_t last_inserted_label = data.size()/2;
+
+		started = std::chrono::high_resolution_clock::now();
+#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, last_inserted_label) default(none)
+		{
+			int myID = omp_get_thread_num();
+			if (myID % 2) {
+#pragma omp critical
+				cout << "Thread " << myID << " started updating vectors..." << endl;
+#pragma omp for schedule(dynamic) nowait
+				for (size_t i = data.size() / 2; i < data.size(); i++) {
+#pragma omp critical
+{
+				cout << "i is " << i << endl;
+				last_inserted_label = i;
+				// delete job runs alone
+				VecSimIndex_DeleteVector(hnsw_index, i - data.size() / 2);
+}
+				VecSimIndex_AddVector(hnsw_index, (const void *)data[i].data(), i);
+				}
+#pragma omp critical
+				cout << "Thread " << myID << " done updating vectors" << endl;
+			} else {
+				std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+#pragma omp critical
+				cout << "Thread " << myID << " start running queries, index size upon search starts: "
+				     << VecSimIndex_IndexSize(hnsw_index) << " and max label is: " <<
+					 last_inserted_label << endl;
+				while (true) {
+					size_t next_val = q_counter++;
+					if (next_val >= queries.size()) {
+						break;
+					}
+					auto hnsw_results =
+							VecSimIndex_TopKQuery(hnsw_index, queries[next_val].data(), k, nullptr, BY_SCORE);
+					total_res[next_val] = hnsw_results;
+				}
+#pragma omp critical
+				cout << "Thread " << myID << " start running queries, index size upon search starts: "
+				     << VecSimIndex_IndexSize(hnsw_index) << " and max label is: " <<
+					 last_inserted_label << endl;
+			}
+		}
+		done = std::chrono::high_resolution_clock::now();
+		assert(VecSimIndex_IndexSize(hnsw_index) == data.size() / 2);
+		std::cout << "Total update/search time is "
+		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
+		          << " ms" << std::endl;
+		std::cout << "Max gap between number of vectors whose indexing began to the number"
+		             " of vectors whose indexing finished and available for search is: "
+		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+
+		auto serializer =
+				HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
+		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
+		serializer.reset();
+
+		for (size_t i = data.size() / 2; i < data.size(); i++) {
+			VecSimIndex_AddVector(bf_index,
+			                      (const void *)reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getDataByLabel(i),
+			                      i);
+		}
+		auto total_recall = computeRecall(total_res, bf_index, true);
+		cout << "Total recall is: " << total_recall << endl;
+
+		VecSimIndex_Free(hnsw_index);
+		VecSimIndex_Free(bf_index);
+	}
 };
 
 
@@ -307,7 +420,9 @@ int main() {
 					.blockSize = n}};
 
 	auto bm = BM_ParallelHNSW(params, bf_params, n_threads, n_queries, k);
-    bm.run_parallel_indexing_benchmark();
-	bm.run_parallel_search_benchmark();
-	bm.run_all_parallel_benchmark();
+//  bm.run_parallel_indexing_benchmark();
+//	bm.run_parallel_search_benchmark();
+//	bm.run_all_parallel_benchmark();
+	bm.run_parallel_update_benchmark_delete_alone();
+
 }

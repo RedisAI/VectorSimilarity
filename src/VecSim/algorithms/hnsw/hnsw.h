@@ -50,6 +50,11 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
+typedef struct repairJob {
+	idType internal_id;
+	size_t level;
+} repairJob;
+
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>, public VecSimIndexTombstone {
 protected:
@@ -84,7 +89,6 @@ protected:
     // internal ids are being kept as a continuous sequence [0, 1, ..,, cur_element_count-1].
     // We can remove this field completely if we change the serialization version, as the decoding
     // relies on this field.
-    idType max_id;
     size_t maxlevel_;
 	std::set<idType> ids_in_process;
 
@@ -101,8 +105,8 @@ protected:
     size_t pool_initial_size;
 #endif
 #ifdef ENABLE_PARALLELIZATION
-    mutable std::mutex global;
-    std::mutex cur_element_count_guard_;
+    mutable std::mutex entry_point_guard_;
+    std::mutex index_data_guard_;
     mutable std::vector<std::mutex> link_list_locks_;
 #endif
 
@@ -177,6 +181,7 @@ public:
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
 
+	idType max_id;
 	size_t max_gap;  // For stats/debugging
     inline void setEf(size_t ef);
     inline size_t getEf() const;
@@ -211,6 +216,10 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline void unmarkDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
+
+	void repairConnectionsForDeletion_POC(
+			idType neighbour_id, size_t level);
+	std::vector<repairJob> removeVector_POC(const idType element_internal_id);
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
@@ -821,6 +830,139 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 }
 
 template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
+		idType node_id, size_t level) {
+
+	candidatesMaxHeap<DistType> candidates(this->allocator);
+	vecsim_stl::vector<bool> node_orig_neighbours_set(cur_element_count, false,
+	                                                       this->allocator);
+	vecsim_stl::vector<bool> candidates_set(cur_element_count, false,
+	                                                       this->allocator);
+	vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
+
+	// Go over the repaired node neighbors
+	std::unique_lock<std::mutex> node_lock(this->link_list_locks_[node_id]);
+	linklistsizeint *node_neighbours_list = get_linklist_at_level(node_id, level);
+	unsigned short node_neighbours_count = getListCount(node_neighbours_list);
+	auto *node_neighbours = (idType *)(node_neighbours_list + 1);
+	for (size_t j = 0; j < node_neighbours_count; j++) {
+		node_orig_neighbours_set[node_neighbours[j]] = true;
+		// Don't add the removed element to the candidates.
+		if (isMarkedDeleted(node_neighbours[j])) {
+			deleted_neighbors.push_back(node_neighbours[j]);
+			continue;
+		}
+		candidates_set[node_neighbours[j]] = true;
+		candidates.emplace(this->dist_func(getDataByInternalId(node_id),
+		                                   getDataByInternalId(node_neighbours[j]), this->dim),
+		                   node_neighbours[j]);
+	}
+	node_lock.unlock();
+
+	// Go over the deleted nodes and collect their neighbors to the candidates set
+	for (idType deleted_neighbor_id: deleted_neighbors) {
+		std::unique_lock<std::mutex> neighbor_lock(this->link_list_locks_[node_id]);
+		linklistsizeint *neighbor_neighbours_list = get_linklist_at_level(deleted_neighbor_id, level);
+		unsigned short neighbor_neighbours_count = getListCount(node_neighbours_list);
+		auto *neighbor_neighbours = (idType *)(neighbor_neighbours_list + 1);
+
+		for (size_t j = 0; j < neighbor_neighbours_count; j++) {
+			// Don't add the removed element to the candidates, nor nodes that are already in the
+			// candidates set, nor the node itself.
+			if (isMarkedDeleted(neighbor_neighbours[j]) || candidates[neighbor_neighbours[j]] ||
+					neighbor_neighbours[j] == node_id) {
+				continue;
+			}
+			candidates_set[neighbor_neighbours[j]] = true;
+			candidates.emplace(this->dist_func(getDataByInternalId(node_id),
+			                                   getDataByInternalId(neighbor_neighbours[j]), this->dim),
+			                   neighbor_neighbours[j]);
+		}
+	}
+
+	size_t Mcurmax = level ? maxM_ : maxM0_;
+	size_t removed_links_num;
+	idType removed_links[node_neighbours_count];
+	node_lock.lock();
+	removeExtraLinks(node_neighbours_list, candidates, Mcurmax, node_neighbours,
+	                 node_orig_neighbours_set, removed_links, &removed_links_num);
+
+	std::sort(removed_links,removed_links + removed_links_num);
+
+	// remove node id from the incoming list of nodes for his neighbours that were chosen to remove
+	for (size_t i = 0; i < removed_links_num; i++) {
+		idType removed_node_id = removed_links[i];
+		node_lock.unlock();
+		std::unique_lock<std::mutex> removed_node_lock;
+		idType lower_id = node_id < removed_node_id ? node_id : removed_node_id;
+		if (lower_id == node_id) {
+			node_lock.lock();
+			removed_node_lock = std::unique_lock<std::mutex>(link_list_locks_[removed_node_id]);
+		} else {
+			removed_node_lock = std::unique_lock<std::mutex>(link_list_locks_[removed_node_id]);
+			node_lock.lock();
+		}
+
+		auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
+		auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node_id, level);
+		// if the removed node id (the node's neighbour to be removed)
+		// wasn't pointing to the node (edge was one directional),
+		// we should remove it from the removed node's incoming edges.
+		// otherwise, edge turned from bidirectional to one directional,
+		// and it should be saved in the node's incoming edges.
+		auto it = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(), node_id);
+		if (it != removed_node_incoming_edges->end()) {
+			removed_node_incoming_edges->erase(it);
+		} else {
+			node_incoming_edges->push_back(node_id);
+		}
+	}
+
+	// updates for the new edges created
+	unsigned short updated_links_num = getListCount(node_neighbours_list);
+	for (size_t i = 0; i < updated_links_num; i++) {
+		idType new_neighbor_id = node_neighbours[i];
+		if (node_orig_neighbours_set[new_neighbor_id] || isMarkedDeleted(new_neighbor_id)) {
+			continue;
+		}
+
+		node_lock.unlock();
+		std::unique_lock<std::mutex> new_neighbor_lock;
+		idType lower_id = node_id < new_neighbor_id ? node_id : new_neighbor_id;
+		if (lower_id == node_id) {
+			node_lock.lock();
+			new_neighbor_lock = std::unique_lock<std::mutex>(link_list_locks_[new_neighbor_id]);
+		} else {
+			new_neighbor_lock = std::unique_lock<std::mutex>(link_list_locks_[new_neighbor_id]);
+			node_lock.lock();
+		}
+
+		auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
+		auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(new_neighbor_id, level);
+
+		// if the new neighbor node has an edge to the node as well, remove it
+		// from the incoming nodes of the node
+		// otherwise, need to update the edge as incoming in the new neighbor's incoming edges set.
+		linklistsizeint *new_neighbor_links_list = get_linklist_at_level(new_neighbor_id, level);
+		unsigned short new_neighbor_links_size = getListCount(new_neighbor_links_list);
+		auto *new_neighbor_links = (idType *)(new_neighbor_links_list + 1);
+		bool bidirectional_edge = false;
+		for (size_t j = 0; j < new_neighbor_links_size; j++) {
+			if (new_neighbor_links[j] == node_id) {
+				node_incoming_edges->erase(std::find(node_incoming_edges->begin(),
+				                                     node_incoming_edges->end(),
+													 node_id));
+				bidirectional_edge = true;
+				break;
+			}
+		}
+		if (!bidirectional_edge) {
+			new_neighbor_incoming_edges->push_back(node_id);
+		}
+	}
+}
+
+template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     idType element_internal_id, idType neighbour_id, linklistsizeint *neighbours_list,
     linklistsizeint *neighbour_neighbours_list, size_t level,
@@ -1268,6 +1410,75 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
 }
 
 template <typename DataType, typename DistType>
+std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(const idType element_internal_id) {
+
+	// Assumed this vector was already marked as deleted...
+	auto repair_jobs = std::vector<repairJob>();
+	vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
+
+	// go over levels and collect nodes to repair
+	std::unique_lock<std::mutex> temp_lock(index_data_guard_);
+	size_t element_top_level = element_levels_[element_internal_id];
+	temp_lock.unlock();
+
+	for (size_t level = 0; level <= element_top_level; level++) {
+		std::vector<idType> neighbors_copy;
+		std::unique_lock<std::mutex> element_lock(link_list_locks_[element_internal_id]);
+
+		linklistsizeint *neighbours_list = get_linklist_at_level(element_internal_id, level);
+		unsigned short neighbours_count = getListCount(neighbours_list);
+		auto *neighbours = (idType *)(neighbours_list + 1);
+		// reset the neighbours' bitmap for the current level.
+		neighbours_bitmap.assign(cur_element_count, false);
+		// store the deleted element's neighbours set in a bitmap for fast access.
+		for (size_t j = 0; j < neighbours_count; j++) {
+			neighbours_bitmap[neighbours[j]] = true;
+			neighbors_copy.push_back(neighbours[j]);
+		}
+		element_lock.unlock();
+
+		// go over the neighbours that also points back to the removed point and make a local
+		// repair.
+		for (auto neighbour_id : neighbors_copy) {
+			std::unique_lock<std::mutex> neighbor_lock(link_list_locks_[neighbour_id]);
+			linklistsizeint *neighbour_neighbours_list = get_linklist_at_level(neighbour_id, level);
+			unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours_list);
+
+			auto *neighbour_neighbours = (idType *)(neighbour_neighbours_list + 1);
+			bool bidirectional_edge = false;
+			for (size_t j = 0; j < neighbour_neighbours_count; j++) {
+				// if the edge is bidirectional, do repair for this neighbor
+				if (neighbour_neighbours[j] == element_internal_id && !isMarkedDeleted(neighbour_neighbours[j])) {
+					bidirectional_edge = true;
+					repair_jobs.push_back(repairJob {.internal_id = neighbour_id, .level = level});
+					break;
+				}
+			}
+			if (!bidirectional_edge) {
+				auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+				neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
+				                                          neighbour_incoming_edges->end(),
+				                                          element_internal_id));
+			}
+		}
+
+		// next, go over the rest of incoming edges (the ones that are not bidirectional) and make
+		// repairs.
+		element_lock.lock();
+		auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
+		for (auto incoming_edge : *incoming_edges) {
+			if (!isMarkedDeleted(incoming_edge)) {
+				repair_jobs.push_back(repairJob{.internal_id = incoming_edge, .level = level});
+			}
+		}
+		element_lock.lock();
+		// Do delete in swap job, in case that other job is performing changes in this set in the meantime.
+		//delete incoming_edges;
+	}
+	return repair_jobs;
+}
+
+template <typename DataType, typename DistType>
 int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
 
     idType cur_c;
@@ -1283,11 +1494,11 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     {
 #ifdef ENABLE_PARALLELIZATION
-        std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
+        std::unique_lock<std::mutex> templock_curr(index_data_guard_);
 #endif
 
         if (cur_element_count >= max_elements_) {
-	        // this should not occur in multi-threaded scenario
+	        // this should not occur in multithreaded scenario
 	        size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
             resizeIndex(max_elements_ + vectors_to_add);
         }
@@ -1298,7 +1509,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     }
 
 #ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> entry_point_lock(global);
+    std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
 #endif
     size_t maxlevelcopy = maxlevel_;
     size_t currObj = entrypoint_node_;
@@ -1401,7 +1612,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         maxlevel_ = element_max_level;
     }
 #ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> lock(cur_element_count_guard_);
+    std::unique_lock<std::mutex> lock(index_data_guard_);
     if (cur_c == *ids_in_process.begin()) {
         max_id = cur_c;
     }
@@ -1419,7 +1630,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                                                           VecSimQueryResult_Code *rc) const {
 
 #ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> lock(global);
+    std::unique_lock<std::mutex> lock(entry_point_guard_);
 #endif
     if (cur_element_count == 0) {
         return entrypoint_node_;

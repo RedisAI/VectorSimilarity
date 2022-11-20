@@ -94,11 +94,17 @@ void HNSWIndex_Single<DataType, DistType>::resizeLabelLookup(size_t new_max_elem
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
     // check that the label actually exists in the graph, and update the number of elements.
+#ifdef ENABLE_PARALLELIZATION
+	std::unique_lock<std::mutex> temp_lock(this->index_data_guard_);
+#endif
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return false;
     }
     idType element_internal_id = label_lookup_[label];
     label_lookup_.erase(label);
+#ifdef ENABLE_PARALLELIZATION
+	temp_lock.unlock();
+#endif
     return this->removeVector(element_internal_id);
 }
 
@@ -107,9 +113,10 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                     const labelType label) {
 
     // Checking if an element with the given label already exists. if so, remove it.
-    if (label_lookup_.find(label) != label_lookup_.end()) {
-        deleteVector(label);
-    }
+	// in multithreaded scenario - this should not happen
+//    if (label_lookup_.find(label) != label_lookup_.end()) {
+//        deleteVector(label);
+//    }
 
     return this->appendVector(vector_data, label);
 }
