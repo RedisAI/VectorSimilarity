@@ -503,7 +503,8 @@ void NGTIndex<DataType, DistType>::splitLeaf(VPTNode<DataType, DistType> *node) 
     dist_cache.emplace_back(0, node->pivot_id);
     void *pivot_data = getDataByInternalId(node->pivot_id);
     for (auto id : *node_ids) {
-        dist_cache.emplace_back(this->dist_func(pivot_data, getDataByInternalId(id), this->dim), id);
+        dist_cache.emplace_back(this->dist_func(pivot_data, getDataByInternalId(id), this->dim),
+                                id);
     }
     auto med = dist_cache.begin() + (node->size / 2);
     std::nth_element(dist_cache.begin() + 1, med, dist_cache.end());

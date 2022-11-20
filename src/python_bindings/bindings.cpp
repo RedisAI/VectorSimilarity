@@ -128,13 +128,13 @@ public:
         ngt->setEf(ef);
     }
     // void saveIndex(const std::string &location) {
-    //     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-    //     serializer.saveIndex(location);
+    //     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>
+    //     *>(index)); serializer.saveIndex(location);
     // }
 
     // void loadIndex(const std::string &location) {
-    //     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-    //     serializer.loadIndex(location);
+    //     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>
+    //     *>(index)); serializer.loadIndex(location);
     // }
 };
 
@@ -226,8 +226,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init([](const NGTParams &params) { return new PyNGTLibIndex(params); }),
              py::arg("params"))
         .def("set_ef", &PyNGTLibIndex::setDefaultEf);
-        // .def("save_index", &PyNGTLibIndex::saveIndex)
-        // .def("load_index", &PyNGTLibIndex::loadIndex);
+    // .def("save_index", &PyNGTLibIndex::saveIndex)
+    // .def("load_index", &PyNGTLibIndex::loadIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
