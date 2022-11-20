@@ -1523,8 +1523,8 @@ candidatesLabelsMaxHeap<DistType> *NGTIndex<DataType, DistType>::searchGraph_Wit
         candidate_set.emplace(-dist, id);
         this->visited_nodes_handler->tagNode(id, visited_tag);
     }
-    while (top_candidates.size() > ef) {
-        top_candidates.pop();
+    while (top_candidates->size() > ef) {
+        top_candidates->pop();
     }
 
     DistType lowerBound = top_candidates->top().first;
