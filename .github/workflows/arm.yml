@@ -1,10 +1,6 @@
-name: benchmark
+name: arm flow
 
-on:
-  workflow_call:
-  pull_request:
-    types:
-      - labeled
+on: workflow_call # TODO: add pull_request-labeled with "arm" label when specifying a label is supported
 
 jobs:
   start-runner:
@@ -29,59 +25,26 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 region AMI
           ec2-image-id: ami-050b6fdb9f05d7b32
-          ec2-instance-type: m5d.large
+          ec2-instance-type: t4g.nano
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
-          # iam-role-name: my-role-name # optional, requires additional permissions
-          # aws-resource-tags: > # optional, requires additional permissions
-          #   [
-          #     {"Key": "Name", "Value": "ec2-github-runner"},
-          #     {"Key": "GitHubRepository", "Value": "${{ github.repository }}"}
-          #   ]
 
-
-  benchmark:
-    name: Run the benchmarks on the runner
+  arm:
     needs: start-runner # required to start the main job when the runner is ready
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
       - name: checkout
         uses: actions/checkout@v3
-
-      # TODO: remove "--no-check-certificate" when possible
-      - name: Download pre-generated indices
-        timeout-minutes: 60
-        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-
-      - name: Install benchmark dependencies
-        run: |
-             sudo apt update
-             sudo apt install python3-pip -y
-             sudo pip3 uninstall virtualenv
-             sudo pip3 install --upgrade pip PyYAML
-             pip3 install redisbench-admin
-
-      - name: Benchmark
-        timeout-minutes: 180
-        run: bash -l -c "make benchmark"
-
-      - name: Collect results
-      # TODO: verify --github_rep flag can get the full repo name
-        run: |
-            for bm_class in basics updated_index spaces batch_iterator; do
-              redisbench-admin export \
-                          --results-format google.benchmark \
-                          --github_repo ${{ github.repository }} \
-                          --github_org ${{ github.repository_owner }} \
-                          --github_branch ${{ github.ref }} \
-                          --benchmark-result-file ${bm_class}_results.json
-            done
+      - name: install dependencies
+        run: sudo .install/install_script.sh
+      - name: unit tests
+        run: make unit_test
 
   stop-runner:
     name: Stop self-hosted EC2 runner
     needs:
       - start-runner # required to get output from the start-runner job
-      - benchmark # required to wait when the main job is done
+      - arm # required to wait when the main job is done
     runs-on: ubuntu-latest
     if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
     steps:

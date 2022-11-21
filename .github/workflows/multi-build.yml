@@ -19,7 +19,7 @@ jobs:
     steps:
       - id: check
         run: |
-          if [[ '${{ github.event_name }}' == 'workflow_call' ]] || [[ '${{ github.event.label.name }}' == 'multi-build' ]]; then
+          if [[ '${{ github.event_name }}' == 'workflow_call' ]] || [[ github.event.label.name == 'multi-build' ]]; then
             echo "globally-needed=true" >> $GITHUB_OUTPUT
           else
             echo "globally-needed=false" >> $GITHUB_OUTPUT
@@ -29,135 +29,54 @@ jobs:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
     runs-on: ubuntu-latest
-    container:
-      image: rockylinux:8
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: install dependencies
-        run: .install/install_script.sh
-      - name: unit tests
-        run: |
-          export CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
-          export CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
-          make unit_test
-      - name: valgrind
-        run: |
-          export CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
-          export CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
-          make valgrind
-      - name: Archive valgrind tests reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: valgrind tests reports
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
-
+      - name: Run rocky8 flow
+        uses: ./.github/workflows/rocky8.yml
 
   bionic:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'bionic'
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:bionic
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: install dependencies
-        run: .install/install_script.sh
-      - name: unit tests
-        run: make unit_test
-      - name: valgrind
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: valgrind tests reports
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+      - name: Run bionic flow
+        uses: ./.github/workflows/bionic.yml
 
   xenial:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'xenial'
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:bionic
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: install dependencies
-        run: .install/install_script.sh
-      - name: unit tests
-        run: make unit_test
-      - name: valgrind
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: valgrind tests reports
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+      - name: run xenial flow
+        uses: ./.github/workflows/xenial.yml
 
   focal:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'focal'
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: install dependencies
-        run: sudo .install/install_script.sh
-      - name: unit tests
-        run: make unit_test
-      - name: valgrind
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: valgrind tests reports
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+      - name: Run focal flow
+        uses: ./.github/workflows/focal.yml
 
   jammy:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'jammy'
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:jammy
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: install dependencies
-        run: .install/install_script.sh
-      - name: unit tests
-        run: make unit_test
-      - name: valgrind
-        run: make valgrind
-      - name: Archive valgrind tests reports
-        uses: actions/upload-artifact@v3
-        with:
-          name: valgrind tests reports
-          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
+      - name: Run jammy flow
+        uses: ./.github/workflows/jammy.yml
 
   macos:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'macos'
     runs-on: macos-latest
     steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: install dependencies
-        run: .install/install_script.sh
-      - name: unit tests
-        run: make unit_test
+      - name: Run macos flow
+        uses: ./.github/workflows/macos.yml
 
   arm:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'arm'
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
-      - name: circle-ci job runner
-        id: curl-circle-ci
-        uses: Open-Source-Contrib/circle-ci-trigger-action@latest
-        with:
-          circle_ci_token: ${{ secrets.CIRCLE_CI_SECRET}}
-          circle_ci_job: build-arm
-          circle_ci_project_url: ${{ github.event.pull_request.head.ref }}
+      - name: Run arm flow
+        uses: ./.github/workflows/arm.yml
