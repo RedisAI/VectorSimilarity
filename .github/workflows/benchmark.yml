@@ -50,7 +50,7 @@ jobs:
 
       - name: Download pre-generated indices
         timeout-minutes: 60
-        run: wget -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+        run: wget --no-check-certificate -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Install benchmark dependencies
         run: |
