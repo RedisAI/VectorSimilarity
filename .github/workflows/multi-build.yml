@@ -28,55 +28,34 @@ jobs:
   rocky8:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run rocky8 flow
-        uses: ./.github/workflows/rocky8.yml
+    uses: ./.github/workflows/rocky8.yml
 
   bionic:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'bionic'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run bionic flow
-        uses: ./.github/workflows/bionic.yml
+    uses: ./.github/workflows/bionic.yml
 
   xenial:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'xenial'
-    runs-on: ubuntu-latest
-    steps:
-      - name: run xenial flow
-        uses: ./.github/workflows/xenial.yml
+    uses: ./.github/workflows/xenial.yml
 
   focal:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'focal'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run focal flow
-        uses: ./.github/workflows/focal.yml
+    uses: ./.github/workflows/focal.yml
 
   jammy:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'jammy'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run jammy flow
-        uses: ./.github/workflows/jammy.yml
+    uses: ./.github/workflows/jammy.yml
 
   macos:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'macos'
-    runs-on: macos-latest
-    steps:
-      - name: Run macos flow
-        uses: ./.github/workflows/macos.yml
+    uses: ./.github/workflows/macos.yml
 
   arm:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'arm'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run arm flow
-        uses: ./.github/workflows/arm.yml
+    uses: ./.github/workflows/arm.yml
