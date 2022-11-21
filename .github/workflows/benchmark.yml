@@ -50,7 +50,7 @@ jobs:
 
       - name: Download pre-generated indices
         timeout-minutes: 60
-        run: wget --no-check-certificate -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+        run: wget --no-check-certificate --show-progress -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Install benchmark dependencies
         run: |
@@ -65,7 +65,7 @@ jobs:
         run: bash -l -c "make benchmark"
 
       - name: Collect results
-      # TOD: verify --github_rep flag can get the full repo name
+      # TODO: verify --github_rep flag can get the full repo name
         run: |
             for bm_class in basics updated_index spaces batch_iterator; do
               redisbench-admin export \
