@@ -59,3 +59,4 @@ jobs:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'arm'
     uses: ./.github/workflows/arm.yml
+    secrets: inherit
