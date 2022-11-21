@@ -29,7 +29,7 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 region AMI
           ec2-image-id: ami-050b6fdb9f05d7b32
-          ec2-instance-type: t3.large
+          ec2-instance-type: m5d.large
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
           # iam-role-name: my-role-name # optional, requires additional permissions
@@ -50,7 +50,7 @@ jobs:
 
       - name: Download pre-generated indices
         timeout-minutes: 60
-        run: wget --no-check-certificate --show-progress -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Install benchmark dependencies
         run: |
