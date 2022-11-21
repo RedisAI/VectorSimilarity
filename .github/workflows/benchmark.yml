@@ -29,7 +29,7 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 region AMI
           ec2-image-id: ami-050b6fdb9f05d7b32
-          ec2-instance-type: m5d.large
+          ec2-instance-type: c5d.large
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
           # iam-role-name: my-role-name # optional, requires additional permissions
