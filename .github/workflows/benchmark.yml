@@ -70,20 +70,6 @@ jobs:
                           --benchmark-result-file ${bm_class}_results.json
             done
 
-  printer:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Print github context
-        run: echo "${{ toJSON(github) }}"
-      - name: Print github repository context
-        run: echo "${{ toJSON(github.repository) }}"
-      - name: Print github repository specific context
-        run: |
-            echo "${{ github.repository }}"
-            echo "${{ github.event.repository.name }}"
-            echo "${{ github.event.repository.owner }}"
-            echo "${{ github.repository_owner }}"
-
   stop-runner:
     name: Stop self-hosted EC2 runner
     needs:
