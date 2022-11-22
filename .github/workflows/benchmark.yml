@@ -42,9 +42,9 @@ jobs:
         uses: actions/checkout@v3
 
       # TODO: remove "--no-check-certificate" when possible
-      - name: Download pre-generated indices
-        timeout-minutes: 20
-        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+      # - name: Download pre-generated indices
+      #   timeout-minutes: 20
+      #   run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Install benchmark dependencies
       # setuptools
@@ -55,20 +55,38 @@ jobs:
              pip3 install redisbench-admin
              pip3 install -r requirements.txt
 
-      - name: Benchmark
-        timeout-minutes: 180
+      # - name: Benchmark
+      #   timeout-minutes: 180
+      #   run: bash -l -c "make benchmark"
+
+      - name: Benchmark Mock
         run: bash -l -c "make benchmark"
 
       - name: Collect results
         run: |
-            for bm_class in basics updated_index spaces batch_iterator; do
+            for bm_class in .github/workflows/mock ; do
               redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo ${{ github.event.repository.name }} \
                           --github_org ${{ github.repository_owner }} \
-                          --github_branch ${{ github.ref }} \
+                          --github_branch ${{ github.head_ref || github.ref_name }} \
+                          --github_sha ${{ github.sha }} \
+                          --github_actor ${{ github.triggering_actor }} \
                           --benchmark-result-file ${bm_class}_results.json
             done
+
+  printer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print github variables
+        run: |
+            echo "--github_repo ${{ github.event.repository.name }}"
+            echo "--github_org ${{ github.repository_owner }}"
+            echo "--github_branch ${{ github.head_ref || github.ref_name }}"
+            echo "--github_branch alt ${{ github.ref_name }}"
+            echo "--github_sha ${{ github.sha }}"
+            echo "--github_actor ${{ github.triggering_actor }}"
+            echo "--github_actor alt ${{ github.actor }}"
 
   stop-runner:
     name: Stop self-hosted EC2 runner
