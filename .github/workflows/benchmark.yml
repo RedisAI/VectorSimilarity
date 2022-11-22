@@ -59,16 +59,22 @@ jobs:
         run: bash -l -c "make benchmark"
 
       - name: Collect results
-      # TODO: verify --github_rep flag can get the full repo name
+      # Not passing --github_repo parameter, because gi
         run: |
             for bm_class in basics updated_index spaces batch_iterator; do
               redisbench-admin export \
                           --results-format google.benchmark \
-                          --github_repo ${{ github.repository }} \
-                          --github_org ${{ github.repository_owner }} \
+                          --github_repo ${{ github.repository.name }} \
+                          --github_org ${{ github.repository.owner }} \
                           --github_branch ${{ github.ref }} \
                           --benchmark-result-file ${bm_class}_results.json
             done
+
+  printer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print github context
+        run: echo "${{ toJSON(github) }}"
 
   stop-runner:
     name: Stop self-hosted EC2 runner
