@@ -51,15 +51,14 @@ jobs:
              .install/install_script.sh
              sudo apt install python3-pip -y
              pip3 uninstall virtualenv
-             pip3 install --upgrade pip PyYAML
-             pip3 install tox poetry setuptools redisbench-admin
+             pip3 install --upgrade pip PyYAML setuptools
+             pip3 install tox poetry redisbench-admin
 
       - name: Benchmark
         timeout-minutes: 180
         run: bash -l -c "make benchmark"
 
       - name: Collect results
-      # Not passing --github_repo parameter, because gi
         run: |
             for bm_class in basics updated_index spaces batch_iterator; do
               redisbench-admin export \
