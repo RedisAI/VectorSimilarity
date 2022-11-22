@@ -49,10 +49,10 @@ jobs:
       - name: Install benchmark dependencies
         run: |
              .install/install_script.sh
-             sudo apt install python3-pip -y
-             pip3 uninstall virtualenv
-             pip3 install --upgrade pip PyYAML setuptools
-             pip3 install tox poetry redisbench-admin
+            #  sudo apt install python3-pip -y
+             pip3 install --upgrade pip PyYAML #setuptools
+             pip3 install redisbench-admin
+             pip3 install -r requirements.txt
 
       - name: Benchmark
         timeout-minutes: 180
