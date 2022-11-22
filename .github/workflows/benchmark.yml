@@ -70,7 +70,6 @@ jobs:
                           --github_repo ${{ github.event.repository.name }} \
                           --github_org ${{ github.repository_owner }} \
                           --github_branch ${{ github.head_ref || github.ref_name }} \
-                          --github_sha ${{ github.sha }} \
                           --github_actor ${{ github.triggering_actor }} \
                           --benchmark-result-file ${bm_class}_results.json
             done
@@ -84,7 +83,6 @@ jobs:
             echo "--github_org ${{ github.repository_owner }}"
             echo "--github_branch ${{ github.head_ref || github.ref_name }}"
             echo "--github_branch alt ${{ github.ref_name }}"
-            echo "--github_sha ${{ github.sha }}"
             echo "--github_actor ${{ github.triggering_actor }}"
             echo "--github_actor alt ${{ github.actor }}"
 
