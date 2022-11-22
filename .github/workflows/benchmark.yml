@@ -61,6 +61,7 @@ jobs:
       - name: Collect results
         run: |
             for bm_class in basics updated_index spaces batch_iterator ; do
+              cat ${bm_class}_results.json;
               redisbench-admin export \
                           --results-format google.benchmark \
                           --redistimeseries_host ${{ secrets.PERFORMANCE_RTS_HOST }} \
