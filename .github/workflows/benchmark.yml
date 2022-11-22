@@ -64,8 +64,8 @@ jobs:
             for bm_class in basics updated_index spaces batch_iterator; do
               redisbench-admin export \
                           --results-format google.benchmark \
-                          --github_repo ${{ github.repository.name }} \
-                          --github_org ${{ github.repository.owner }} \
+                          --github_repo ${{ github.event.repository.name }} \
+                          --github_org ${{ github.repository_owner }} \
                           --github_branch ${{ github.ref }} \
                           --benchmark-result-file ${bm_class}_results.json
             done
@@ -80,9 +80,8 @@ jobs:
       - name: Print github repository specific context
         run: |
             echo "${{ github.repository }}"
-            echo "${{ github.repository.name }}"
-            echo "${{ github.repository.owner }}"
-            echo "${{ github.repository_name }}"
+            echo "${{ github.event.repository.name }}"
+            echo "${{ github.event.repository.owner }}"
             echo "${{ github.repository_owner }}"
 
   stop-runner:
