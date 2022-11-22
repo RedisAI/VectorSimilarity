@@ -51,8 +51,8 @@ jobs:
              .install/install_script.sh
              sudo apt install python3-pip -y
              pip3 uninstall virtualenv
-             pip3 install --upgrade pip PyYAML tox poetry
-             pip3 install redisbench-admin
+             pip3 install --upgrade pip PyYAML
+             pip3 install tox poetry setuptools redisbench-admin
 
       - name: Benchmark
         timeout-minutes: 180
