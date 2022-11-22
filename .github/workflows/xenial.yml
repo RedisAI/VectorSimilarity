@@ -6,7 +6,7 @@ jobs:
   xenial:
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:bionic
+      image: ubuntu:xenial
     steps:
       - name: checkout
         uses: actions/checkout@v3
