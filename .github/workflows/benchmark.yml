@@ -47,9 +47,10 @@ jobs:
         run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Install benchmark dependencies
-            #  sudo apt install python3-pip -y #setuptools
+      # setuptools
         run: |
              .install/install_script.sh
+             sudo apt install python3-pip -y
              pip3 install --upgrade pip PyYAML
              pip3 install redisbench-admin
              pip3 install -r requirements.txt
