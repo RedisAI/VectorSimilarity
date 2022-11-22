@@ -75,6 +75,15 @@ jobs:
     steps:
       - name: Print github context
         run: echo "${{ toJSON(github) }}"
+      - name: Print github repository context
+        run: echo "${{ toJSON(github.repository) }}"
+      - name: Print github repository specific context
+        run: |
+            echo "${{ github.repository }}"
+            echo "${{ github.repository.name }}"
+            echo "${{ github.repository.owner }}"
+            echo "${{ github.repository_name }}"
+            echo "${{ github.repository_owner }}"
 
   stop-runner:
     name: Stop self-hosted EC2 runner
