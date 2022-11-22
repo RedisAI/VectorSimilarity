@@ -29,7 +29,7 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ami-0ba430d4b7b64de57
-          ec2-instance-type: m5d.large
+          ec2-instance-type: r6i.large
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
@@ -63,7 +63,6 @@ jobs:
             for bm_class in basics updated_index spaces batch_iterator ; do
               cat ${bm_class}_results.json;
               redisbench-admin export \
-                          --results-format google.benchmark \
                           --redistimeseries_host ${{ secrets.PERFORMANCE_RTS_HOST }} \
                           --redistimeseries_port ${{ secrets.PERFORMANCE_RTS_PORT }} \
                           --redistimeseries_pass ${{ secrets.PERFORMANCE_RTS_AUTH }} \
@@ -71,6 +70,7 @@ jobs:
                           --github_org ${{ github.repository_owner }} \
                           --github_branch ${{ github.head_ref || github.ref_name }} \
                           --github_actor ${{ github.triggering_actor }} \
+                          --results-format google.benchmark \
                           --benchmark-result-file ${bm_class}_results.json
             done
 
