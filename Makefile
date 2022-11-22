@@ -215,9 +215,9 @@ benchmark:
 	$(SHOW)mkdir -p $(BINDIR)
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
 	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
-	# for bm_class in basics updated_index spaces batch_iterator; do \
-  	# 	$(BENCHMARKDIR)/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
-  	# done
+	for bm_class in basics updated_index spaces batch_iterator; do \
+  		$(BENCHMARKDIR)/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
+  	done
 	$(SHOW)python3 -m tox -e benchmark
 
 toxenv:
