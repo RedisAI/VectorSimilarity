@@ -60,11 +60,11 @@ jobs:
       #   run: bash -l -c "make benchmark"
 
       - name: Benchmark Mock
-        run: bash -l -c "make benchmark"
+        run: echo "Benchmark Mock" && mv .github/workflows/mock_results.json .
 
       - name: Collect results
         run: |
-            for bm_class in .github/workflows/mock ; do
+            for bm_class in mock ; do
               redisbench-admin export \
                           --results-format google.benchmark \
                           --github_repo ${{ github.event.repository.name }} \
