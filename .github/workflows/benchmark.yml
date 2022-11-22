@@ -49,7 +49,7 @@ jobs:
       - name: Install benchmark dependencies
       # setuptools
         run: |
-             .install/install_script.sh
+             sudo .install/install_script.sh
              sudo apt install python3-pip -y
              pip3 install --upgrade pip PyYAML
              pip3 install redisbench-admin
