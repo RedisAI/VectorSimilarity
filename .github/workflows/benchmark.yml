@@ -55,7 +55,7 @@ jobs:
              pip3 install -r requirements.txt
 
       - name: Benchmark
-        timeout-hours: 2
+        timeout-minutes: 120
         run: bash -l -c "make benchmark"
 
       - name: Collect results
