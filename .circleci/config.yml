@@ -88,6 +88,12 @@ commands:
   benchmark:
     steps:
       - run:
+          name: Run the benchmarks on the runner
+          command: |
+            echo "Runner lscpu: $(lscpu)"
+            echo "Runner lsmem: $(lsmem)"
+            echo "Runner nproc: $(nproc)"
+      - run:
           name: Download pre-generated indices
           command: wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
           no_output_timeout: 30m
