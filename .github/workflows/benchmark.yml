@@ -47,6 +47,15 @@ jobs:
           echo "Runner lsmem: $(lsmem)"
           echo "Runner nproc: $(nproc)"
 
+      - name: stress test
+        run: |
+          sudo apt-get install stress-ng -qqy
+          uptime
+          stress-ng -c 1 --timeout 60s --metrics-brief
+          uptime
+          stress-ng --stream 1 -t 60 --metrics-brief
+          uptime
+
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
