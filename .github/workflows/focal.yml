@@ -5,6 +5,8 @@ on: workflow_call # TODO: add pull_request-labeled with "focal" label when speci
 jobs:
   focal:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:focal
     steps:
       - name: checkout
         uses: actions/checkout@v3

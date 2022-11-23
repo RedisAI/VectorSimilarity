@@ -59,17 +59,16 @@ jobs:
         run: bash -l -c "make benchmark"
 
       - name: Collect results
-        run: |
-            < tests/benchmark/benchmarks.txt xargs -I {} redisbench-admin export \
-                        --redistimeseries_host ${{ secrets.PERFORMANCE_RTS_HOST }} \
-                        --redistimeseries_port ${{ secrets.PERFORMANCE_RTS_PORT }} \
-                        --redistimeseries_pass ${{ secrets.PERFORMANCE_RTS_AUTH }} \
-                        --github_repo ${{ github.event.repository.name }} \
-                        --github_org ${{ github.repository_owner }} \
-                        --github_branch ${{ github.head_ref || github.ref_name }} \
-                        --github_actor ${{ github.triggering_actor }} \
-                        --results-format google.benchmark \
-                        --benchmark-result-file {}_results.json
+        run: < tests/benchmark/benchmarks.txt xargs -I {} redisbench-admin export  \
+             --redistimeseries_host   ${{ secrets.PERFORMANCE_RTS_HOST }}          \
+             --redistimeseries_port   ${{ secrets.PERFORMANCE_RTS_PORT }}          \
+             --redistimeseries_pass   ${{ secrets.PERFORMANCE_RTS_AUTH }}          \
+             --github_repo            ${{ github.event.repository.name }}          \
+             --github_org             ${{ github.repository_owner }}               \
+             --github_branch          ${{ github.head_ref || github.ref_name }}    \
+             --github_actor           ${{ github.triggering_actor }}               \
+             --results-format         google.benchmark                             \
+             --benchmark-result-file  {}_results.json
 
   stop-runner:
     name: Stop self-hosted EC2 runner
