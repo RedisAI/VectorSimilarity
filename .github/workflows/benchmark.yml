@@ -41,6 +41,12 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
 
+      - name: Print runner info
+        run: |
+          echo "Runner lscpu: $(lscpu)"
+          echo "Runner lsmem: $(lsmem)"
+          echo "Runner nproc: $(nproc)"
+
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
