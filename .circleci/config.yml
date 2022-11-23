@@ -321,7 +321,7 @@ jobs:
   run-benchmarks:
     # Run on the same machine - for steady benchmarks
     machine:
-      image: ubuntu-2004:202010-01
+      image: ubuntu-2204:2022.10.2
     resource_class: large
     steps:
       - setup-ubuntu-sudo
@@ -329,6 +329,9 @@ jobs:
       - abort_for_noci
       - checkout-all
       - install-prerequisites
+      - run:
+          name: UNAME
+          command: uname -a
       - run:
           name: Build
           command: bash -l -c "make build"
