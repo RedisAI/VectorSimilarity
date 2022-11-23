@@ -7,10 +7,10 @@ on:
 
 jobs:
   build:
-    uses: ./.github/workflows/default.yml@main
+    uses: ./.github/workflows/default.yml
 
   multi-architectures:
-    uses: ./.github/workflows/multi-build.yml@main
+    uses: ./.github/workflows/multi-build.yml
 
   benchmark:
-    uses: ./.github/workflows/benchmark.yml@main
+    uses: ./.github/workflows/benchmark.yml
