@@ -46,6 +46,7 @@ jobs:
           echo "Runner lscpu: $(lscpu)"
           echo "Runner lsmem: $(lsmem)"
           echo "Runner nproc: $(nproc)"
+          echo "Runner uname: $(uname -a)"
 
       - name: stress test
         run: |
