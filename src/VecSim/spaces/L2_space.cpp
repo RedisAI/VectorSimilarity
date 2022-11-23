@@ -21,6 +21,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 #elif defined(__x86_64__)
 
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
+    Arch_Optimization arch_opt = getArchitectureOptimization();
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
@@ -69,6 +70,7 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
 #elif defined(__x86_64__)
 
     CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
+    Arch_Optimization arch_opt = getArchitectureOptimization();
     switch (arch_opt) {
     case ARCH_OPT_NONE:
         break;
