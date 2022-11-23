@@ -49,6 +49,7 @@ jobs:
 
       - name: stress test
         run: |
+          sudo apt-get update
           sudo apt-get install stress-ng -qqy
           uptime
           stress-ng -c 1 --timeout 60s --metrics-brief
