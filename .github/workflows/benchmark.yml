@@ -57,6 +57,8 @@ jobs:
           uptime
           stress-ng --stream 1 -t 60 --metrics-brief
           uptime
+          stress-ng --ipsec-mb=1 -t 60 --metrics-brief
+          uptime
 
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
