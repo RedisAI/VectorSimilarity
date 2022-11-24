@@ -1857,7 +1857,7 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
     double epsilon = 0.004;
     size_t blockSize = 1;
     bool is_multi[] = {false, true};
-    std::string multilToString[] = {"single", "multi_100labels_"};
+    std::string multiToString[] = {"single", "multi_100labels_"};
 
     HNSWParams params{.type = TypeParam::get_index_type(),
                       .dim = dim,
@@ -1890,8 +1890,8 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
         }
 
         auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
-                         VecSimType_ToString(TypeParam::get_index_type()) + "_" +
-                         multilToString[i] + ".hnsw_v2";
+                         VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
+                         ".hnsw_v2";
 
         // Save the index with the default version (V2).
         hnsw_index->saveIndex(file_name);
@@ -1958,7 +1958,7 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
     size_t ef_serialized = 10;
     size_t ef_param = 12;
     bool is_multi[] = {false, true};
-    std::string multilToString[] = {"single", "multi_100labels_"};
+    std::string multiToString[] = {"single", "multi_100labels_"};
 
     HNSWParams params{.type = TypeParam::get_index_type(),
                       .dim = dim,
@@ -1971,14 +1971,14 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         params.multi = is_multi[i];
 
         auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10_" +
-                         VecSimType_ToString(TypeParam::get_index_type()) + "_" +
-                         multilToString[i] + ".hnsw_v1";
+                         VecSimType_ToString(TypeParam::get_index_type()) + "_" + multiToString[i] +
+                         ".hnsw_v1";
 
         // Try to load with an invalid type
         params.type = VecSimType_INT32;
         ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(file_name, &params), std::runtime_error,
                                  "Cannot load index: bad index data type");
-        // Reatore value.
+        // Restore value.
         params.type = TypeParam::get_index_type();
 
         // Create new index from file
@@ -1996,7 +1996,7 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
 
         ASSERT_EQ(info2.hnswInfo.isMulti, is_multi[i]);
 
-        // Check it was intialized with the default blockSize value.
+        // Check it was initalized with the default blockSize value.
         ASSERT_EQ(info2.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
 
         // Check that ef is taken from file and not from @params.
@@ -2010,7 +2010,7 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         ASSERT_EQ(info2.hnswInfo.type, TypeParam::get_index_type());
         ASSERT_EQ(info2.hnswInfo.dim, dim);
         ASSERT_EQ(info2.hnswInfo.indexLabelCount, n_labels[i]);
-        // Check it was intialized with the default epsilon value.
+        // Check it was initalized with the default epsilon value.
         ASSERT_EQ(info2.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
 
         // Check the functionality of the loaded index.

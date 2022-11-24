@@ -1,4 +1,5 @@
 #pragma once
+
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
                                          std::shared_ptr<VecSimAllocator> allocator,
@@ -16,8 +17,15 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // levels value than the loaded index.
     level_generator_.seed(200);
 
-    visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
+#ifdef ENABLE_PARALLELIZATION
+    this->pool_initial_size = 1;
+    this->visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (this->allocator)
+            VisitedNodesHandlerPool(this->pool_initial_size, max_elements_, this->allocator));
+#else
+    this->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
+#endif
 
     data_level0_memory_ =
         (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
@@ -28,25 +36,19 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     if (linkLists_ == nullptr)
         throw std::runtime_error("Not enough memory: HNSWIndex failed to allocate linklists");
 }
+
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
-
     this->saveIndexFields(output);
     this->saveGraph(output);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::fieldsValidation() const {
-    if (this->M_ > SIZE_MAX / 2)
+    if (this->M_ > UINT16_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
     if (this->M_ <= 1)
         throw std::runtime_error("HNSW index parameter M cannot be 1 or 0");
-    if (this->maxM0_ >
-            ((SIZE_MAX - sizeof(void *) - sizeof(linklistsizeint)) / sizeof(idType)) + 1 ||
-        this->size_links_level0_ > SIZE_MAX - data_size_ - sizeof(labelType)) {
-
-        throw std::runtime_error("HNSW index parameter M is too large: argument overflow");
-    }
 }
 
 template <typename DataType, typename DistType>
@@ -60,45 +62,47 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->getAllocationSize();
-    size_t connections_checked = 0, double_connections = 0;
-    std::vector<int> inbound_connections_num(this->max_id + 1, 0);
+    size_t connections_checked = 0, double_connections = 0, num_deleted = 0;
+    std::vector<int> inbound_connections_num(this->cur_element_count, 0);
     size_t incoming_edges_sets_sizes = 0;
-    if (this->max_id != HNSW_INVALID_ID) {
-        for (size_t i = 0; i <= this->max_id; i++) {
-            for (size_t l = 0; l <= this->element_levels_[i]; l++) {
-                linklistsizeint *ll_cur = this->get_linklist_at_level(i, l);
-                unsigned int size = this->getListCount(ll_cur);
-                auto *data = (idType *)(ll_cur + 1);
-                std::set<idType> s;
-                for (unsigned int j = 0; j < size; j++) {
-                    // Check if we found an invalid neighbor.
-                    if (data[j] > this->max_id || data[j] == i) {
-                        res.valid_state = false;
-                        return res;
-                    }
-                    inbound_connections_num[data[j]]++;
-                    s.insert(data[j]);
-                    connections_checked++;
-
-                    // Check if this connection is bidirectional.
-                    linklistsizeint *ll_other = this->get_linklist_at_level(data[j], l);
-                    int size_other = this->getListCount(ll_other);
-                    auto *data_other = (idType *)(ll_other + 1);
-                    for (int r = 0; r < size_other; r++) {
-                        if (data_other[r] == (idType)i) {
-                            double_connections++;
-                            break;
-                        }
-                    }
-                }
-                // Check if a certain neighbor appeared more than once.
-                if (s.size() != size) {
-                    res.valid_state = false;
+    for (size_t i = 0; i < this->cur_element_count; i++) {
+        if (this->isMarkedDeleted(i)) {
+            num_deleted++;
+        }
+        for (size_t l = 0; l <= this->element_levels_[i]; l++) {
+            linkListSize *ll_cur = this->get_linklist_at_level(i, l);
+            unsigned int size = this->getListCount(ll_cur);
+            auto *data = (idType *)(ll_cur + 1);
+            std::set<idType> s;
+            for (unsigned int j = 0; j < size; j++) {
+                // Check if we found an invalid neighbor.
+                if (data[j] >= this->cur_element_count || data[j] == i) {
                     return res;
                 }
-                incoming_edges_sets_sizes += this->getIncomingEdgesPtr(i, l)->size();
+                inbound_connections_num[data[j]]++;
+                s.insert(data[j]);
+                connections_checked++;
+
+                // Check if this connection is bidirectional.
+                linkListSize *ll_other = this->get_linklist_at_level(data[j], l);
+                int size_other = this->getListCount(ll_other);
+                auto *data_other = (idType *)(ll_other + 1);
+                for (int r = 0; r < size_other; r++) {
+                    if (data_other[r] == (idType)i) {
+                        double_connections++;
+                        break;
+                    }
+                }
             }
+            // Check if a certain neighbor appeared more than once.
+            if (s.size() != size) {
+                return res;
+            }
+            incoming_edges_sets_sizes += this->getIncomingEdgesPtr(i, l)->size();
         }
+    }
+    if (num_deleted != this->num_marked_deleted) {
+        return res;
     }
     res.double_connections = double_connections;
     res.unidirectional_connections = incoming_edges_sets_sizes;
@@ -111,9 +115,9 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             ? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
             : 0;
     if (incoming_edges_sets_sizes + double_connections != connections_checked) {
-        res.valid_state = false;
         return res;
     }
+
     res.valid_state = true;
     return res;
 }
@@ -148,7 +152,12 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 
     // Restore index state
     readBinaryPOD(input, this->cur_element_count);
-    readBinaryPOD(input, this->max_id);
+    if (this->m_version == EncodingVersion_V1) {
+        input.ignore(sizeof(idType)); // skip max_id value
+        this->num_marked_deleted = 0;
+    } else {
+        readBinaryPOD(input, this->num_marked_deleted);
+    }
     readBinaryPOD(input, this->maxlevel_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
@@ -163,18 +172,55 @@ void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
         // Skip sizeof(unsigned long) bytes
         input.ignore(sizeof(unsigned long));
     }
-
     // for V2 and up we don't serialize the level generator, so we just return and
     // continue to read the file.
 }
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::restoreGraph_V1_fixes() {
+    // Fix offsets from V1 to V2
+    size_t old_size_links_per_element_ = this->size_links_per_element_;
+    this->size_links_per_element_ -= sizeof(idType) - sizeof(linkListSize);
+    this->incoming_links_offset -= sizeof(idType) - sizeof(linkListSize);
+
+    char *data = this->data_level0_memory_;
+    for (idType i = 0; i < this->cur_element_count; i++) {
+        // Restore level 0 number of links
+        // In V1 linkListSize was of the same size as idType, so we need to fix it.
+        // V1 did not have the elementFlags, so we need set all flags to 0.
+        idType lls = *(idType *)data;
+        *(get_linklist0(i)) = (linkListSize)lls;
+        *(get_flags(i)) = 0;
+        data += this->size_data_per_element_;
+
+        // Restore level 1+ links
+        // We need to fix the offset of the linkListSize.
+        size_t llSize = this->element_levels_[i] * this->size_links_per_element_;
+        if (llSize) {
+            char *levels_data = (char *)this->allocator->allocate(llSize);
+            for (size_t offset = 0; offset < this->element_levels_[i]; offset++) {
+                // Copy links without the linkListSize
+                // sizeof(linkListSize) == New offset size
+                // sizeof(idType) == Old offset size
+                memcpy(levels_data + offset * this->size_links_per_element_ + sizeof(linkListSize),
+                       this->linkLists_[i] + offset * old_size_links_per_element_ + sizeof(idType),
+                       this->size_links_per_element_ - sizeof(linkListSize));
+                // Copy linkListSize (from idType to linkListSize)
+                *(linkListSize *)(levels_data + offset * this->size_links_per_element_) =
+                    *(idType *)(this->linkLists_[i] + offset * old_size_links_per_element_);
+            }
+            // Free old links and set new links
+            this->allocator->free_allocation(this->linkLists_[i]);
+            this->linkLists_[i] = levels_data;
+        }
+    }
+}
+
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
     input.read(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
-    if (this->max_id == HNSW_INVALID_ID) {
-        return; // Index is empty.
-    }
-    for (size_t i = 0; i <= this->max_id; i++) {
+    for (idType i = 0; i < this->cur_element_count; i++) {
         auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
         unsigned int incoming_edges_len;
         readBinaryPOD(input, incoming_edges_len);
@@ -187,23 +233,29 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         this->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
     }
     // Restore the rest of the graph layers, along with the label and max_level lookups.
-    for (size_t i = 0; i <= this->max_id; i++) {
+    for (idType i = 0; i < this->cur_element_count; i++) {
         // Restore label lookup by getting the label from data_level0_memory_
         setVectorId(getExternalLabel(i), i);
 
-        unsigned int linkListSize;
-        readBinaryPOD(input, linkListSize);
+        linkListSize linkList_size;
+        if (this->m_version == EncodingVersion_V1) {
+            idType lls;
+            readBinaryPOD(input, lls);
+            linkList_size = (linkListSize)lls;
+        } else {
+            readBinaryPOD(input, linkList_size);
+        }
 
-        if (linkListSize == 0) {
+        if (linkList_size == 0) {
             this->element_levels_[i] = 0;
             this->linkLists_[i] = nullptr;
         } else {
-            this->element_levels_[i] = linkListSize / this->size_links_per_element_;
-            this->linkLists_[i] = (char *)this->allocator->allocate(linkListSize);
+            this->element_levels_[i] = linkList_size / this->size_links_per_element_;
+            this->linkLists_[i] = (char *)this->allocator->allocate(linkList_size);
             if (this->linkLists_[i] == nullptr)
                 throw std::runtime_error(
                     "Not enough memory: loadIndex failed to allocate linklist");
-            input.read(this->linkLists_[i], linkListSize);
+            input.read(this->linkLists_[i], linkList_size);
             for (size_t j = 1; j <= this->element_levels_[i]; j++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
@@ -219,7 +271,11 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             }
         }
     }
+    if (this->m_version == EncodingVersion_V1) {
+        restoreGraph_V1_fixes();
+    }
 }
+
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveIndexFields_v2(std::ofstream &output) const {
     // From v2 and up write also algorithm type and vec_sim_index data members.
@@ -262,19 +318,18 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
 
     // Save index state
     writeBinaryPOD(output, this->cur_element_count);
-    writeBinaryPOD(output, this->max_id);
+    writeBinaryPOD(output, this->num_marked_deleted);
     writeBinaryPOD(output, this->maxlevel_);
     writeBinaryPOD(output, this->entrypoint_node_);
 }
+
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // Save level 0 data (graph layer 0 + labels + vectors data)
     output.write(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
-    if (this->max_id == HNSW_INVALID_ID) {
-        return; // Index is empty.
-    }
+
     // Save the incoming edge sets.
-    for (size_t i = 0; i <= this->max_id; i++) {
+    for (size_t i = 0; i < this->cur_element_count; i++) {
         auto *incoming_edges_ptr = this->getIncomingEdgesPtr(i, 0);
         unsigned int set_size = incoming_edges_ptr->size();
         writeBinaryPOD(output, set_size);
@@ -287,13 +342,13 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // Save all graph layers other than layer 0: for every id of a vector in the graph,
     // store (<size>, data), where <size> is the data size, and the data is the concatenated
     // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
-    for (size_t i = 0; i <= this->max_id; i++) {
-        unsigned int linkListSize = this->element_levels_[i] > 0
-                                        ? this->size_links_per_element_ * this->element_levels_[i]
-                                        : 0;
-        writeBinaryPOD(output, linkListSize);
-        if (linkListSize)
-            output.write(this->linkLists_[i], linkListSize);
+    for (size_t i = 0; i < this->cur_element_count; i++) {
+        linkListSize linkList_size = this->element_levels_[i] > 0
+                                         ? this->size_links_per_element_ * this->element_levels_[i]
+                                         : 0;
+        writeBinaryPOD(output, linkList_size);
+        if (linkList_size)
+            output.write(this->linkLists_[i], linkList_size);
         for (size_t j = 1; j <= this->element_levels_[i]; j++) {
             auto *incoming_edges_ptr = this->getIncomingEdgesPtr(i, j);
             unsigned int set_size = incoming_edges_ptr->size();

@@ -50,10 +50,12 @@ using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, la
 
 template <typename DataType, typename DistType>
 #ifdef BUILD_TESTS
-class HNSWIndex : public VecSimIndexAbstract<DistType>, public VecSimIndexTombstone,
+class HNSWIndex : public VecSimIndexAbstract<DistType>,
+                  public VecSimIndexTombstone,
                   public Serializer
 #else
-class HNSWIndex : public VecSimIndexAbstract<DistType>, public VecSimIndexTombstone
+class HNSWIndex : public VecSimIndexAbstract<DistType>,
+                  public VecSimIndexTombstone
 #endif
 {
 protected:

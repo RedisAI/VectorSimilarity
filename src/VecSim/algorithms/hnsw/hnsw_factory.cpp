@@ -133,7 +133,7 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  std::shared_ptr<VecSimAllocator> allocator,
                                                  Serializer::EncodingVersion version) {
-    VecSimIndex *index = nullptr;
+    HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
         index =
@@ -142,7 +142,7 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
         index =
             new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
 
-    reinterpret_cast<HNSWIndex<DataType, DistType> *>(index)->restoreGraph(input);
+    index->restoreGraph(input);
 
     return index;
 }
