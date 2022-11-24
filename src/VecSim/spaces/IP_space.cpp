@@ -14,19 +14,17 @@
 #include "VecSim/spaces/IP/IP_SSE.h"
 
 namespace spaces {
-dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
+dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
 #if defined(M1)
 #elif defined(__x86_64__)
 
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
-    Arch_Optimization arch_opt = getArchitectureOptimization();
+
     switch (arch_opt) {
-    case ARCH_OPT_NONE:
-        break;
-    case ARCH_OPT_AVX512_F:
     case ARCH_OPT_AVX512_DQ:
+    case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
     {
         static dist_func_t<float> dist_funcs[] = {
@@ -57,23 +55,22 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
         ret_dist_func = dist_funcs[optimization_type];
     } break;
 #endif
+    case ARCH_OPT_NONE:
+        break;
     } // switch
 #endif // __x86_64__
     return ret_dist_func;
 }
 
-dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, Arch_Optimization arch_opt) {
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
 #if defined(M1)
 #elif defined(__x86_64__)
 
     CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
-    Arch_Optimization arch_opt = getArchitectureOptimization();
 
     switch (arch_opt) {
-    case ARCH_OPT_NONE:
-        break;
     case ARCH_OPT_AVX512_DQ:
 #ifdef __AVX512DQ__
     {
@@ -121,6 +118,8 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
         ret_dist_func = dist_funcs[optimization_type];
     } break;
 #endif
+    case ARCH_OPT_NONE:
+        break;
     } // switch
 #endif // __x86_64__ */
     return ret_dist_func;
