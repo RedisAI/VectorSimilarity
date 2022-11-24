@@ -128,7 +128,7 @@ def test_recall_for_hnswlib_index_with_deletion():
     vectors = [vectors[i] for i in range(1, len(data), 2)]
 
     # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
-    hnsw_index.set_ef_float(50, data_type)
+    hnsw_index.set_ef(50, data_type)
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
