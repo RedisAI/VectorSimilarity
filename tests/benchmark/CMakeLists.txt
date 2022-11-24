@@ -4,10 +4,10 @@ message("# VectorSimilarity_Benchmark binroot: " ${binroot})
 
 project(VectorSimilarity_Benchmark)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-g -fopenmp")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -fopenmp")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -fopenmp -pthread")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -fopenmp -pthread")
 set(CMAKE_CXX_FLAGS "-fopenmp")
 
 enable_testing()

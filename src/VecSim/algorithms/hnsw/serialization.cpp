@@ -321,6 +321,9 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 	size_t incoming_edges_sets_sizes = 0;
 	if (hnsw_index->max_id != HNSW_INVALID_ID) {
 		for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
+			if (hnsw_index->isMarkedDeleted(i)) {
+				continue;
+			}
 			for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
 				linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
 				unsigned int size = hnsw_index->getListCount(ll_cur);
@@ -329,8 +332,12 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 				for (unsigned int j = 0; j < size; j++) {
 					// Check if we found an invalid neighbor.
 					if (data[j] >= hnsw_index->cur_element_count || data[j] == i) {
+						std::cout << i << " has invalid neighbor " << data[j] << std::endl;
 						res.valid_state = false;
-						return res;
+					}
+					if (hnsw_index->isMarkedDeleted(data[j])) {
+						res.valid_state = false;
+						std::cout << i << " is pointing to a deleted neighbor " << data[j] << " in level " << l << std::endl;
 					}
 					inbound_connections_num[data[j]]++;
 					inbound_connections[data[j]][l].push_back(i);
@@ -350,13 +357,16 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 				}
 				// Check if a certain neighbor appeared more than once.
 				if (s.size() != size) {
+					std::cout << i << " has a neighbor that appears more than once" << std::endl;
 					res.valid_state = false;
-					return res;
 				}
 				incoming_edges_sets_sizes += hnsw_index->getIncomingEdgesPtr(i, l)->size();
 			}
 		}
 		for (idType i = 0; i < hnsw_index->cur_element_count; i++) {
+			if (hnsw_index->isMarkedDeleted(i)) {
+				continue;
+			}
 			for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
 				auto inbound_cons = inbound_connections[i][l];
 				for (auto con: inbound_cons) {
@@ -377,10 +387,14 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 					}
 					if (!found) {
 						res.valid_state = false;
-						return res;
+						std::cout << i << " has an incoming edge from " << con << " that is neither bidirectional nor"
+																					" in its incoming edges set" << std::endl;
 					}
 				}
 				for (auto con: *hnsw_index->getIncomingEdgesPtr(i, l)) {
+					if (hnsw_index->isMarkedDeleted(con)) {
+						std::cout << i << " holds an incoming edge from " << con << " which has deleted" << std::endl;
+					}
 					if (std::find(inbound_cons.begin(), inbound_cons.end(), con) ==
 					    inbound_cons.end()) {
 						res.valid_state = false;

@@ -49,6 +49,9 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
 	char *getDataByLabel(labelType label) const;
+	inline idType getInternalIdByLabel(labelType label) override {
+		return label_lookup_[label];
+	}
 	inline int markDelete(labelType label) override;
 	inline int unmarkDelete(labelType label) override;
 };
@@ -94,17 +97,11 @@ void HNSWIndex_Single<DataType, DistType>::resizeLabelLookup(size_t new_max_elem
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
     // check that the label actually exists in the graph, and update the number of elements.
-#ifdef ENABLE_PARALLELIZATION
-	std::unique_lock<std::mutex> temp_lock(this->index_data_guard_);
-#endif
     if (label_lookup_.find(label) == label_lookup_.end()) {
         return false;
     }
     idType element_internal_id = label_lookup_[label];
     label_lookup_.erase(label);
-#ifdef ENABLE_PARALLELIZATION
-	temp_lock.unlock();
-#endif
     return this->removeVector(element_internal_id);
 }
 

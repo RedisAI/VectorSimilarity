@@ -53,6 +53,9 @@ public:
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline int markDelete(labelType label) override;
     inline int unmarkDelete(labelType label) override;
+	idType getInternalIdByLabel(labelType label) override {
+		return 1; // mock
+	}
 };
 
 /**
