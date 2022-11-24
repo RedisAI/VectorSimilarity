@@ -43,15 +43,15 @@ jobs:
 
       - name: Print runner info
         run: |
-          echo "Runner lscpu: $(lscpu)"
-          echo "Runner lsmem: $(lsmem)"
-          echo "Runner nproc: $(nproc)"
-          echo "Runner uname: $(uname -a)"
+          printf "Runner lscpu:\n$(lscpu)\n"
+          printf "Runner lsmem:\n$(lsmem)\n"
+          printf "Runner nproc:\n$(nproc)\n"
+          printf "Runner uname:\n$(uname -a)\n"
 
       - name: stress test
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install stress-ng -qqy
+          sudo apt update -qq
+          sudo apt install stress-ng -qqy
           uptime
           stress-ng -c 1 --timeout 60s --metrics-brief
           uptime
