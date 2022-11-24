@@ -70,10 +70,6 @@ jobs:
              pip3 install --upgrade pip PyYAML setuptools
              pip3 install redisbench-admin
              pip3 install -r requirements.txt
-             mkdir -p deps
-             cd deps
-             git clone https://github.com/RedisLabsModules/readies.git
-             ./sbin/system-setup.py
 
       - name: Benchmark
         timeout-minutes: 120
