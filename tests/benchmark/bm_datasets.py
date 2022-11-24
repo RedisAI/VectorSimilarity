@@ -68,11 +68,8 @@ def populate_save_index(hnsw_index, index_file_name, data_type, X_train):
     for i, vector in enumerate(X_train):
         hnsw_index.add_vector(vector, i)
     print('Built index time:', (time.time() - t0)/60, "minutes")
-    if data_type == VecSimType_FLOAT32:
-        hnsw_index.save_index_float(index_file_name)
-    elif data_type == VecSimType_FLOAT64:
-        raise TypeError("Uncomment the line below that calls save_index_double")
-#        hnsw_index.save_index_double(index_file_name)
+    hnsw_index.save_index(index_file_name, data_type)
+
 
 
 def measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_queries, k, ef_runtime):
@@ -94,11 +91,7 @@ def measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_quer
     assert bf_index.index_size() == hnsw_index.index_size()
 
     # Measure recall and times
-    if data_type == VecSimType_FLOAT32:
-        hnsw_index.set_ef_float(ef_runtime)
-    elif data_type == VecSimType_FLOAT64:
-        raise TypeError("measure_recall_per_second: Uncomment the line below that calls set_ef_double")
-    #    hnsw_index.set_ef_double(ef_runtime)
+    hnsw_index.set_ef(ef_runtime, data_type)
 
     print("\nRunning queries with ef_runtime =", ef_runtime, "...")
     correct = 0

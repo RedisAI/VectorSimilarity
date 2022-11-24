@@ -103,13 +103,15 @@ def test_recall_for_hnswlib_index_with_deletion():
     k=10
     efRuntime = 0
 
+    data_type = VecSimType_FLOAT32
+
     hnswparams = HNSWParams()
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
     hnswparams.efRuntime = efRuntime
     hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.type = data_type
     hnswparams.metric = VecSimMetric_L2
 
     hnsw_index = HNSWIndex(hnswparams)
@@ -126,7 +128,7 @@ def test_recall_for_hnswlib_index_with_deletion():
     vectors = [vectors[i] for i in range(1, len(data), 2)]
 
     # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
-    hnsw_index.set_ef_float(50)
+    hnsw_index.set_ef_float(50, data_type)
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
@@ -264,13 +266,15 @@ def test_serialization():
     k = 10
     efRuntime = 50
 
+    data_type = VecSimType_FLOAT32
+
     hnswparams = HNSWParams()
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
     hnswparams.efRuntime = efRuntime
     hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.type = data_type
     hnswparams.metric = VecSimMetric_L2
 
     hnsw_index = HNSWIndex(hnswparams)
@@ -304,7 +308,7 @@ def test_serialization():
 
     # Persist, delete and restore index.
     file_name = os.getcwd()+"/dump"
-    hnsw_index.save_index_float(file_name)
+    hnsw_index.save_index(file_name, data_type)
 
     new_hnsw_index = HNSWIndex(file_name)
     os.remove(file_name)
@@ -401,13 +405,15 @@ def test_recall_for_hnsw_multi_value():
 
     num_elements = num_labels * num_per_label
 
+    data_type = VecSimType_FLOAT32
+
     hnswparams = HNSWParams()
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
     hnswparams.efRuntime = efRuntime
     hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.type = data_type
     hnswparams.metric = VecSimMetric_Cosine
     hnswparams.multi = True
 
@@ -421,7 +427,7 @@ def test_recall_for_hnsw_multi_value():
             vectors.append((i, vector))
 
     # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
-    hnsw_index.set_ef_float(50)
+    hnsw_index.set_ef(50, data_type)
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:

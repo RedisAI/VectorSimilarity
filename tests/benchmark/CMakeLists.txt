@@ -11,47 +11,19 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 enable_testing()
 
-# Batch iterator benchmarks for single value index
-add_executable(bm_batch_iterator_fp32 bm_batch_iterator_single_fp32.cpp bm_utils.cpp)
-target_link_libraries(bm_batch_iterator_fp32 VectorSimilarity benchmark::benchmark)
+set(BM_SET bm_basics bm_updated_index bm_batch_iterator)
+set(INDEX_TYPE single multi)
+set(DATA_TYPE fp32 fp64)
 
-add_executable(bm_batch_iterator_fp64 bm_batch_iterator_single_fp64.cpp bm_utils.cpp)
-target_link_libraries(bm_batch_iterator_fp64 VectorSimilarity benchmark::benchmark)
-
-# Batch iterator benchmarks for multi value index
-add_executable(bm_batch_iterator_multi_fp32 bm_batch_iterator_multi_fp32.cpp bm_utils.cpp)
-target_link_libraries(bm_batch_iterator_multi_fp32 VectorSimilarity benchmark::benchmark)
-
-add_executable(bm_batch_iterator_multi_fp64 bm_batch_iterator_multi_fp64.cpp bm_utils.cpp)
-target_link_libraries(bm_batch_iterator_multi_fp64 VectorSimilarity benchmark::benchmark)
-
-# Basic benchmarks for single value index
-add_executable(bm_basics_fp32 bm_basics_single_fp32.cpp bm_utils.cpp)
-target_link_libraries(bm_basics_fp32 VectorSimilarity benchmark::benchmark)
-
-add_executable(bm_basics_fp64 bm_basics_single_fp64.cpp bm_utils.cpp)
-target_link_libraries(bm_basics_fp64 VectorSimilarity benchmark::benchmark)
-
-# Basic benchmarks for multi value index
-add_executable(bm_basics_multi_fp32 bm_basics_multi_fp32.cpp bm_utils.cpp)
-target_link_libraries(bm_basics_multi_fp32 VectorSimilarity benchmark::benchmark)
-
-add_executable(bm_basics_multi_fp64 bm_basics_multi_fp64.cpp bm_utils.cpp)
-target_link_libraries(bm_basics_multi_fp64 VectorSimilarity benchmark::benchmark)
-
-# Basic benchmarks for updated single value index
-add_executable(bm_updated_index_fp32 bm_updated_index_single_fp32.cpp  bm_utils.cpp)
-target_link_libraries(bm_updated_index_fp32 VectorSimilarity benchmark::benchmark)
-
-add_executable(bm_updated_index_fp64 bm_updated_index_single_fp64.cpp  bm_utils.cpp)
-target_link_libraries(bm_updated_index_fp64 VectorSimilarity benchmark::benchmark)
-
-# Basic benchmarks for updated multi value index
-add_executable(bm_updated_index_multi_fp32 bm_updated_index_multi_fp32.cpp bm_utils.cpp)
-target_link_libraries(bm_updated_index_multi_fp32 VectorSimilarity benchmark::benchmark)
-
-add_executable(bm_updated_index_multi_fp64 bm_updated_index_multi_fp64.cpp bm_utils.cpp)
-target_link_libraries(bm_updated_index_multi_fp64 VectorSimilarity benchmark::benchmark)
+foreach(bm_set IN LISTS BM_SET)
+	foreach(index_type IN LISTS INDEX_TYPE)
+		foreach(data_type IN LISTS DATA_TYPE)
+			set(bm_test ${bm_set}_${index_type}_${data_type})
+			add_executable(${bm_test} ${bm_test}.cpp bm_utils.cpp)
+			target_link_libraries(${bm_test} VectorSimilarity benchmark::benchmark)
+		endforeach(data_type IN LISTS DATA_TYPE)
+	endforeach(index_type IN LISTS INDEX_TYPE)
+endforeach(bm_set IN LISTS BM_SET)
 
 #########################################################################################
 # Passed this line we have optimization enabled by the compiler.                        #

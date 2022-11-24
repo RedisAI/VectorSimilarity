@@ -127,14 +127,31 @@ public:
     PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
         this->index = HNSWFactory::NewIndex(location, hnsw_params);
     }
+    void setDefaultEf(size_t ef, VecSimType data_type) {
+        if (data_type == VecSimType_FLOAT32) {
+            setDefaultEfImp<float>(ef);
+        } else if (data_type == VecSimType_FLOAT64) {
+            setDefaultEfImp<double>(ef);
+        }
+    }
+
+    void saveIndex(const std::string &location, VecSimType data_type) {
+        if (data_type == VecSimType_FLOAT32) {
+            saveIndexImp<float>(location);
+        } else if (data_type == VecSimType_FLOAT64) {
+            saveIndexImp<double>(location);
+        }
+    }
+
+private:
     template <typename DataType, typename DistType = DataType>
-    void setDefaultEf(size_t ef) {
+    inline void setDefaultEfImp(size_t ef) {
         auto *hnsw = reinterpret_cast<HNSWIndex<DataType, DistType> *>(index);
         hnsw->setEf(ef);
     }
 
     template <typename DataType, typename DistType = DataType>
-    void saveIndex(const std::string &location) {
+    inline void saveIndexImp(const std::string &location) {
         auto *hnsw = reinterpret_cast<HNSWIndex<DataType, DistType> *>(index);
         hnsw->saveIndex(location);
     }
@@ -229,10 +246,8 @@ PYBIND11_MODULE(VecSim, m) {
                  return new PyHNSWLibIndex(location, params);
              }),
              py::arg("location"), py::arg("params") = nullptr)
-        .def("set_ef_float", &PyHNSWLibIndex::setDefaultEf<float>)
-        .def("set_ef_double", &PyHNSWLibIndex::setDefaultEf<double>)
-        .def("save_index_float", &PyHNSWLibIndex::saveIndex<float>)
-        .def("save_index_double", &PyHNSWLibIndex::saveIndex<double>);
+        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
+        .def("save_index", &PyHNSWLibIndex::saveIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

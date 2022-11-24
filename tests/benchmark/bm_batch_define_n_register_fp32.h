@@ -1,7 +1,8 @@
 
 /**************************************
   Define and register benchmarks for batch itertor with index of data type fp32
-  NOTE: benchmarks tests order is important. Please add new benchmarks at the end of the file.
+  NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
+the file.
 ***************************************/
 
 // Fixed size batch BF

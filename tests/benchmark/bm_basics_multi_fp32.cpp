@@ -1,7 +1,7 @@
 #include "bm_basics.h"
 
 /**************************************
-  Basic tests for single value index.
+  Basic tests for multi value index.
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = true;
@@ -19,7 +19,6 @@ const char *BM_VecSimGeneral::test_queries_file =
 
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
-    // TODO write
     // Add a new vector from the test vectors in every iteration.
     size_t iter = 0;
     size_t new_id = VecSimIndex_IndexSize(INDICES[st.range(0)]);

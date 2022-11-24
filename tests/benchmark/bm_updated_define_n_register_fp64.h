@@ -1,6 +1,7 @@
 /**************************************
   Define and register tests for updated index
-  NOTE: benchmarks tests order is important. Please add new benchmarks at the end of the file.
+  NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
+the file.
 ***************************************/
 // Memory BF before
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_FLAT_fp64, fp64_index_t)

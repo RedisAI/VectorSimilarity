@@ -102,9 +102,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 #define REGISTER_Range_BF(BM_FUNC)                                                                 \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->Arg(20)                                                                                  \
-        ->ArgName("radiusX100")                                                                    \
         ->Arg(35)                                                                                  \
-        ->ArgName("radiusX100")                                                                    \
         ->Arg(50)                                                                                  \
         ->ArgName("radiusX100")                                                                    \
         ->Unit(benchmark::kMillisecond)
@@ -117,14 +115,15 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 // will be the given arg divided by 1000.
 #define REGISTER_Range_HNSW(BM_FUNC)                                                               \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
-        ->HNSW_RANGE_ARGS(20, 1)                                                                   \
-        ->HNSW_RANGE_ARGS(20, 10)                                                                  \
-        ->HNSW_RANGE_ARGS(20, 100)                                                                 \
-        ->HNSW_RANGE_ARGS(35, 1)                                                                   \
-        ->HNSW_RANGE_ARGS(35, 10)                                                                  \
-        ->HNSW_RANGE_ARGS(35, 100)                                                                 \
-        ->HNSW_RANGE_ARGS(50, 1)                                                                   \
-        ->HNSW_RANGE_ARGS(50, 10)                                                                  \
-        ->HNSW_RANGE_ARGS(50, 100)                                                                 \
+        ->Args({20, 1})                                                                            \
+        ->Args({20, 10})                                                                           \
+        ->Args({20, 100})                                                                          \
+        ->Args({35, 1})                                                                            \
+        ->Args({35, 10})                                                                           \
+        ->Args({35, 100})                                                                          \
+        ->Args({50, 1})                                                                            \
+        ->Args({50, 10})                                                                           \
+        ->Args({50, 100})                                                                          \
+        ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
         ->Iterations(100)                                                                          \
         ->Unit(benchmark::kMillisecond)

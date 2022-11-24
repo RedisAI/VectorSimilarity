@@ -1,7 +1,8 @@
 
 /**************************************
   Define and register tests
-  NOTE: benchmarks tests order is important. Please add new benchmarks at the end of the file.
+  NOTE: benchmarks' tests order can affect their results. Please add new benchmarks at the end of
+the file.
 ***************************************/
 
 // Memory BF

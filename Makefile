@@ -274,9 +274,13 @@ mod_test:
 
 benchmark:
 
-	for bm_class in basics basics_multi updated_index updated_index_multi batch_iterator batch_iterator_multi; do \
-		for type in fp32 fp64; do \
-  			$(BINDIR)/benchmark/bm_$${bm_class}_$${type} --benchmark_out=$${bm_class}_$${type}_results.json --benchmark_out_format=json; \
+	for bm_class in basics updated_index batch_iterator; do \
+		for type in single multi; do \
+			for data_type in fp32 fp64; do \
+				BM_TEST_NAME=$${bm_class}_$${type}_$${data_type}; \
+				echo $$BM_TEST_NAME; \
+				$(BINDIR)/benchmark/bm_$$BM_TEST_NAME --benchmark_out=$$BM_TEST_NAME_results.json --benchmark_out_format=json; \
+			done \
 		done \
 	done
 
