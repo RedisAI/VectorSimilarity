@@ -96,11 +96,14 @@ commands:
       - run:
           name: Run stress test
           command: |
+            sudo apt-get update -qq
             sudo apt-get install stress-ng -qqy
             uptime
             stress-ng -c 1 --timeout 60s --metrics-brief
             uptime
             stress-ng --stream 1 -t 60 --metrics-brief
+            uptime
+            stress-ng --ipsec-mb=1 -t 60 --metrics-brief
             uptime
 
       - run:
@@ -329,9 +332,6 @@ jobs:
       - abort_for_noci
       - checkout-all
       - install-prerequisites
-      - run:
-          name: UNAME
-          command: uname -a
       - run:
           name: Build
           command: bash -l -c "make build"
