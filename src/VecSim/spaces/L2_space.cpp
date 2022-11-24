@@ -14,7 +14,7 @@
 #include "VecSim/spaces/L2/L2_SSE.h"
 namespace spaces {
 
-dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, Arch_Optimization arch_opt) {
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
 #if defined(M1)
@@ -63,7 +63,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, Arch_Optimization arch_opt) {
     return ret_dist_func;
 }
 
-dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, Arch_Optimization arch_opt) {
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<double> ret_dist_func = FP64_L2Sqr;
 #if defined(M1)
