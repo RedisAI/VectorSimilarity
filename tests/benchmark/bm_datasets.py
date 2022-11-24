@@ -58,17 +58,17 @@ def load_or_create_hnsw_index(dataset, index_file_name, is_multi, data_type, ef_
         return HNSWIndex(index_file_name, hnswparams)
 
     hnsw_index = HNSWIndex(hnswparams)
-    populate_save_index(hnsw_index, index_file_name, data_type, X_train)
+    populate_save_index(hnsw_index, index_file_name, X_train)
     return hnsw_index
 
 
-def populate_save_index(hnsw_index, index_file_name, data_type, X_train):
+def populate_save_index(hnsw_index, index_file_name, X_train):
     # Insert vectors one by one.
     t0 = time.time()
     for i, vector in enumerate(X_train):
         hnsw_index.add_vector(vector, i)
     print('Built index time:', (time.time() - t0)/60, "minutes")
-    hnsw_index.save_index(index_file_name, data_type)
+    hnsw_index.save_index(index_file_name)
 
 
 
@@ -91,7 +91,7 @@ def measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_quer
     assert bf_index.index_size() == hnsw_index.index_size()
 
     # Measure recall and times
-    hnsw_index.set_ef(ef_runtime, data_type)
+    hnsw_index.set_ef(ef_runtime)
 
     print("\nRunning queries with ef_runtime =", ef_runtime, "...")
     correct = 0

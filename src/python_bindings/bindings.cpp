@@ -127,7 +127,8 @@ public:
     PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
         this->index = HNSWFactory::NewIndex(location, hnsw_params);
     }
-    void setDefaultEf(size_t ef, VecSimType data_type) {
+    void setDefaultEf(size_t ef) {
+        VecSimType data_type = this->index->info().hnswInfo.type;
         if (data_type == VecSimType_FLOAT32) {
             setDefaultEfImp<float>(ef);
         } else if (data_type == VecSimType_FLOAT64) {
@@ -135,7 +136,8 @@ public:
         }
     }
 
-    void saveIndex(const std::string &location, VecSimType data_type) {
+    void saveIndex(const std::string &location) {
+        VecSimType data_type = this->index->info().hnswInfo.type;
         if (data_type == VecSimType_FLOAT32) {
             saveIndexImp<float>(location);
         } else if (data_type == VecSimType_FLOAT64) {
