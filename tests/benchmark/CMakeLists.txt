@@ -18,10 +18,10 @@ target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
 add_executable(bm_updated_index bm_updated_index.cpp bm_utils.cpp)
 target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
 
-# ########################################################################################
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Passed this line we have optimization enabled by the compiler.                        #
 # Adding files to complie after this line will have an effect on the resulted binaries. #
-# ########################################################################################
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 add_library(bm_spaces_class bm_spaces_class.cpp)
 target_link_libraries(bm_spaces_class benchmark::benchmark)
 
