@@ -421,7 +421,7 @@ public:
 	 * data.
 	 */
 	void run_parallel_update_benchmark_with_repair_jobs() {
-		cout << "\n***Starting parallel updating + searching benchmark where delete operations are executed alone"
+		cout << "\n***Starting parallel updating + searching benchmark where delete operations are executed with repair jobs"
 		        " using " << n_threads << " threads***" << endl;
 		auto hnsw_index = VecSimIndex_New(&hnswParams);
 		auto bf_index = VecSimIndex_New(&bfParams);
@@ -439,7 +439,7 @@ public:
 #pragma omp critical
 			cout << "Thread " << myID << " started indexing vectors..." << endl;
 #pragma omp for schedule(dynamic) nowait
-			for (size_t i = 0; i < data.size() / 2; i++) {
+			for (size_t i = 0; i < data.size()/2; i++) {
 				VecSimIndex_AddVector(hnsw_index, (const void *)data[i].data(), i);
 			}
 #pragma omp critical
@@ -447,7 +447,7 @@ public:
 		}
 
 		auto done = std::chrono::high_resolution_clock::now();
-		assert(VecSimIndex_IndexSize(hnsw_index) == data.size() / 2);
+		assert(VecSimIndex_IndexSize(hnsw_index) == data.size()/2);
 		std::cout << "Total build time is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
@@ -461,72 +461,122 @@ public:
 
 		// Staring phase 2 - parallel read/update
 		size_t sleep_time = 5;
-		cout << "\nUpdating " << data.size() / 2 << " vectors with dim=" << hnswParams.hnswParams.dim
-		     << " in parallel. After " << sleep_time << " seconds, we start running " << queries.size()
-		     << " queries in parallel"  << endl;
-		size_t last_inserted_label = data.size()/2;
+		cout << "\nDeleting " << data.size() / 2 << " vectors with dim=" << hnswParams.hnswParams.dim
+		     << " in parallel"  << endl;
+
+		std::vector<repairJob> all_jobs;
 
 		started = std::chrono::high_resolution_clock::now();
-#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, last_inserted_label, sleep_time) default(none)
+#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, all_jobs, sleep_time) default(none)
 		{
 			int myID = omp_get_thread_num();
-			if (myID % 2) {
 #pragma omp critical
-				cout << "Thread " << myID << " started updating vectors..." << endl;
+			cout << "Thread " << myID << " updating vectors" << endl;
 #pragma omp for schedule(dynamic) nowait
-				for (size_t i = data.size() / 2; i < data.size(); i++) {
-					// collect repair jobs and apply them.
-					auto jobs = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->removeVector_POC(i - data.size() / 2);
-#pragma omp critical
-					last_inserted_label = i;
-					for (auto job : jobs) {
-						reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(job.internal_id, job.level);
-					}
-					VecSimIndex_AddVector(hnsw_index, (const void *) data[i].data(), i);
+			for (size_t i = 0; i < data.size() / 2; i++) {
+				auto repair_jobs = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->removeVector_POC(i);
+//#pragma omp critical
+//				all_jobs.insert(all_jobs.end(), repair_jobs.begin(), repair_jobs.end());
+				for (auto job : repair_jobs) {
+					reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(
+							job.internal_id, job.level);
 				}
-#pragma omp critical
-				cout << "Thread " << myID << " done updating vectors" << endl;
-			} else {
-				std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
-#pragma omp critical
-				cout << "Thread " << myID << " start running queries, index size upon search starts: "
-				     << VecSimIndex_IndexSize(hnsw_index) << " and max label is: " <<
-				     last_inserted_label << endl;
-				while (true) {
-					size_t next_val = q_counter++;
-					if (next_val >= queries.size()) {
-						break;
-					}
-					auto hnsw_results =
-							VecSimIndex_TopKQuery(hnsw_index, queries[next_val].data(), k, nullptr, BY_SCORE);
-					total_res[next_val] = hnsw_results;
-				}
-#pragma omp critical
-				cout << "Thread " << myID << " done running queries, index size upon search ends: "
-				     << VecSimIndex_IndexSize(hnsw_index) << " and max label is: " <<
-				     last_inserted_label << endl;
+				VecSimIndex_AddVector(hnsw_index, (const void *) data[i + data.size() / 2].data(),
+				                      i + data.size() / 2);
 			}
 		}
 		done = std::chrono::high_resolution_clock::now();
-		assert(VecSimIndex_IndexSize(hnsw_index) == data.size() / 2);
-		std::cout << "Total update/search time is "
+		assert(VecSimIndex_IndexSize(hnsw_index) == data.size()/2);
+		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << std::endl;
+		std::cout << "Total update time is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
 		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
 
+//		started = std::chrono::high_resolution_clock::now();
+//#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, all_jobs, sleep_time) default(none)
+//		{
+//			int myID = omp_get_thread_num();
+//			if (myID % 2 == 0) {
+//#pragma omp critical
+//				cout << "Thread " << myID << " adding vectors:" << endl;
+//#pragma omp for schedule(dynamic) nowait
+//				for (size_t i = 0; i < data.size() / 2; i++) {
+//					VecSimIndex_AddVector(hnsw_index, (const void *) data[i + data.size() / 2].data(),
+//					                      i + data.size() / 2);
+//				}
+//#pragma omp critical
+//				cout << "Thread " << myID << " done inserting" << endl;
+//			} else {
+//				std::this_thread::sleep_for(std::chrono::seconds(5));
+//#pragma omp critical
+//				cout << "Thread " << myID << " is repairing:" << endl;
+//				while (true) {
+//					size_t next_val = q_counter++;
+//					if (next_val >= all_jobs.size()) {
+//						break;
+//					}
+//					auto job = all_jobs[next_val];
+//					if (reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->isMarkedDeleted(job.internal_id)) {
+//						continue;
+//					}
+//					reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(
+//							job.internal_id, job.level);
+//				}
+//#pragma omp critical
+//				cout << "Thread " << myID << " done repairing when index size is " << VecSimIndex_IndexSize(hnsw_index) << endl;
+//			}
+//		}
+//		done = std::chrono::high_resolution_clock::now();
+//		assert(VecSimIndex_IndexSize(hnsw_index) == data.size() / 2);
+//		std::cout << "Total delete and repair jobs time is "
+//		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
+//		          << " ms" << std::endl;
+//		std::cout << "Max gap between number of vectors whose indexing began to the number"
+//		             " of vectors whose indexing finished and available for search is: "
+//		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+
+//		cout << "\nApplying " << all_jobs.size() << " repair jobs: " << endl;
+//
+//		started = std::chrono::high_resolution_clock::now();
+//#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, all_jobs, sleep_time) default(none)
+//		{
+//			int myID = omp_get_thread_num();
+//#pragma omp critical
+//			cout << "Thread " << myID << " applying repair jobs" << endl;
+//#pragma omp for schedule(dynamic) nowait
+//			for (size_t i = 0; i < all_jobs.size(); i++) {
+//				auto repair_job = all_jobs[i];
+//				if (reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->isMarkedDeleted(repair_job.internal_id)) {
+//					continue;
+//				}
+//				reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(repair_job.internal_id, repair_job.level);
+//			}
+//		}
+//		done = std::chrono::high_resolution_clock::now();
+//		assert(VecSimIndex_IndexSize(hnsw_index) == data.size() / 2);
+//
+//		std::cout << "Total repair jobs time is "
+//		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
+//		          << " ms" << std::endl;
+//		std::cout << "Max gap between number of vectors whose indexing began to the number"
+//		             " of vectors whose indexing finished and available for search is: "
+//		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+
 		serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
 		serializer.reset();
 
-		for (size_t i = data.size() / 2; i < data.size(); i++) {
-			VecSimIndex_AddVector(bf_index,
-			                      (const void *)reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getDataByLabel(i),
-			                      i);
-		}
-		auto total_recall = computeRecall(total_res, bf_index, true);
-		cout << "Total recall is: " << total_recall << endl;
+//
+//		for (size_t i = data.size() / 2; i < data.size(); i++) {
+//			VecSimIndex_AddVector(bf_index,
+//			                      (const void *)reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getDataByLabel(i),
+//			                      i);
+//		}
+//		auto total_recall = computeRecall(total_res, bf_index, true);
+//		cout << "Total recall is: " << total_recall << endl;
 
 		VecSimIndex_Free(hnsw_index);
 		VecSimIndex_Free(bf_index);
@@ -558,9 +608,9 @@ int main() {
 					.blockSize = n}};
 
 	auto bm = BM_ParallelHNSW(params, bf_params, n_threads, n_queries, k);
-    bm.run_parallel_indexing_benchmark();
-	bm.run_parallel_search_benchmark();
-	bm.run_all_parallel_benchmark();
-	bm.run_parallel_update_benchmark_delete_alone();
+//    bm.run_parallel_indexing_benchmark();
+//	bm.run_parallel_search_benchmark();
+//	bm.run_all_parallel_benchmark();
+//	bm.run_parallel_update_benchmark_delete_alone();
 	bm.run_parallel_update_benchmark_with_repair_jobs();
 }

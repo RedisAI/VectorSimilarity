@@ -370,10 +370,11 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 			for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
 				auto inbound_cons = inbound_connections[i][l];
 				for (auto con: inbound_cons) {
+					bool unidirectional = false;
 					auto it = std::find(hnsw_index->getIncomingEdgesPtr(i, l)->begin(),
 					                    hnsw_index->getIncomingEdgesPtr(i, l)->end(), con);
 					if (it != hnsw_index->getIncomingEdgesPtr(i, l)->end()) {
-						continue;
+						unidirectional = true;
 					}
 					auto node_ll = hnsw_index->get_linklist_at_level(i, l);
 					auto node_ll_len = hnsw_index->getListCount(node_ll);
@@ -385,18 +386,30 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 							break;
 						}
 					}
-					if (!found) {
+					if (unidirectional && found) {
+						res.valid_state = false;
+						std::cout << i << " has an incoming edge from " << con << " that is both bidirectional and"
+						                                                          " in its incoming edges set" << std::endl;
+					}
+					if (!found && !unidirectional) {
 						res.valid_state = false;
 						std::cout << i << " has an incoming edge from " << con << " that is neither bidirectional nor"
 																					" in its incoming edges set" << std::endl;
 					}
 				}
+				auto *incoming_edges_vec = hnsw_index->getIncomingEdgesPtr(i, l);
+				std::sort(incoming_edges_vec->begin(), incoming_edges_vec->end());
+				if (std::adjacent_find(incoming_edges_vec->begin(), incoming_edges_vec->end()) != incoming_edges_vec->end()) {
+					std::cout << i << " incoming edges set in level " << l << " is not unique" << std::endl;
+				}
 				for (auto con: *hnsw_index->getIncomingEdgesPtr(i, l)) {
 					if (hnsw_index->isMarkedDeleted(con)) {
 						std::cout << i << " holds an incoming edge from " << con << " which has deleted" << std::endl;
+						continue;
 					}
 					if (std::find(inbound_cons.begin(), inbound_cons.end(), con) ==
 					    inbound_cons.end()) {
+						std::cout << i << " holds an incoming edge from " << con << " which doesn't exist" << std::endl;
 						res.valid_state = false;
 						res.incoming_edges_mismatch++;
 					}
