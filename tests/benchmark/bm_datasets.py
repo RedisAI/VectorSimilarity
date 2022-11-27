@@ -33,7 +33,8 @@ def get_data_set(dataset_name):
 
 
 # Create an HNSW index from dataset based on specific params.
-def create_hnsw_index(dataset, ef_construction, M):
+def load_or_create_hnsw_index(dataset, index_file_name, ef_construction, M):
+
     X_train = np.array(dataset['train'])
     distance = dataset.attrs['distance']
     dimension = int(dataset.attrs['dimension']) if 'dimension' in dataset.attrs else len(X_train[0])
@@ -48,15 +49,21 @@ def create_hnsw_index(dataset, ef_construction, M):
     hnswparams.dim = dimension
     hnswparams.type = VecSimType_FLOAT32
     hnswparams.metric = get_vecsim_metric(distance)
-    return HNSWIndex(hnswparams)
+    hnswparams.multi = False
+
+     # If we are using existing index, we load the index from the existing file.
+    if os.path.exists(index_file_name):
+        print(index_file_name, "already exist. Remove index file first to override it")
+        # We need @params to load V1 files.
+        return HNSWIndex(index_file_name, hnswparams)
+
+    hnsw_index = HNSWIndex(hnswparams)
+    populate_save_index(hnsw_index, index_file_name, X_train)
+    return hnsw_index
 
 
 def populate_save_index(hnsw_index, index_file_name, X_train):
-    if os.path.exists(index_file_name):
-        print("Index already exist. Remove index file first to override it")
-        hnsw_index.load_index(index_file_name)
-        return
-    # Build the index by inserting vectors to it one by one.
+    # Insert vectors one by one.
     t0 = time.time()
     for i, vector in enumerate(X_train):
         hnsw_index.add_vector(vector, i)
@@ -105,10 +112,9 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
 def run_benchmark(dataset_name, ef_construction, M, ef_values, k=10):
     print("\nRunning benchmark for:", dataset_name)
     dataset = get_data_set(dataset_name)
-    hnsw_index = create_hnsw_index(dataset, ef_construction, M)
     index_file_name = os.path.join('data', '%s-M=%s-ef=%s.hnsw' % (dataset_name, M, ef_construction))
-    # If we are using existing index, we just take the existing file.
-    populate_save_index(hnsw_index, index_file_name, np.array(dataset['train']))
+    hnsw_index = load_or_create_hnsw_index(dataset, index_file_name, ef_construction, M)
+   
     for ef_runtime in ef_values:
         measure_recall_per_second(hnsw_index, dataset, num_queries=1000, k=k, ef_runtime=ef_runtime)
 

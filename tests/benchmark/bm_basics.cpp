@@ -10,7 +10,6 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "bm_utils.h"
 
@@ -75,12 +74,11 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, DeleteVectorHNSW)(benchmark::State &st) {
     size_t id_to_remove = 0;
     double memory_delta = 0;
     size_t iter = 0;
+    auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     for (auto _ : st) {
         st.PauseTiming();
         auto removed_vec = std::vector<float>(dim);
-        memcpy(removed_vec.data(),
-               reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)
-                   ->getDataByInternalId(id_to_remove),
+        memcpy(removed_vec.data(), hnsw_index_casted->getDataByInternalId(id_to_remove),
                dim * sizeof(float));
         blobs.push_back(removed_vec);
         st.ResumeTiming();
