@@ -17,6 +17,11 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 
+#ifdef BUILD_TESTS
+#include "hnsw_serialization_utils.h"
+#include "VecSim/utils/serializer.h"
+#endif
+
 #include <deque>
 #include <memory>
 #include <cassert>
@@ -49,7 +54,13 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
 template <typename DataType, typename DistType>
-class HNSWIndex : public VecSimIndexAbstract<DistType> {
+#ifdef BUILD_TESTS
+class HNSWIndex : public VecSimIndexAbstract<DistType>,
+                  public Serializer
+#else
+class HNSWIndex : public VecSimIndexAbstract<DistType>
+#endif
+{
 protected:
     // Index build parameters
     size_t max_elements_;
@@ -102,10 +113,12 @@ protected:
 #endif
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
+
+#include "hnsw_serializer_declarations.h"
 #endif
 
+protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline void setExternalLabel(idType internal_id, labelType label);
@@ -1034,7 +1047,7 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
             VisitedNodesHandlerPool(this->pool_initial_size, new_max_elements, this->allocator));
     std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
 #else
-    visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
+    visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
     // Reallocate base layer
@@ -1543,7 +1556,7 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
     info.hnswInfo.indexLabelCount = this->indexLabelCount();
     info.hnswInfo.max_level = this->getMaxLevel();
     info.hnswInfo.entrypoint = this->getEntryPointLabel();
-    info.hnswInfo.memory = this->allocator->getAllocationSize();
+    info.hnswInfo.memory = this->getAllocationSize();
     info.hnswInfo.last_mode = this->last_mode;
     return info;
 }
@@ -1756,3 +1769,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
         res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
 }
+
+#ifdef BUILD_TESTS
+#include "hnsw_serializer.h"
+#endif
