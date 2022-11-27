@@ -6,12 +6,12 @@
 
 #include "bm_spaces_class.h"
 
-BM_VecSimSpaces::BM_VecSimSpaces() {
+BM_VecSimSpaces_FP32::BM_VecSimSpaces_FP32() {
     rng.seed(47);
     opt = getArchitectureOptimization();
 }
 
-void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {
+void BM_VecSimSpaces_FP32::SetUp(const ::benchmark::State &state) {
     dim = state.range(0);
     v1 = new float[dim];
     v2 = new float[dim];
@@ -22,7 +22,7 @@ void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {
     }
 }
 
-void BM_VecSimSpaces::TearDown(const ::benchmark::State &state) {
+void BM_VecSimSpaces_FP32::TearDown(const ::benchmark::State &state) {
     delete v1;
     delete v2;
 }

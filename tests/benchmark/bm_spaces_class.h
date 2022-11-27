@@ -11,7 +11,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/space_aux.h"
 
-class BM_VecSimSpaces : public benchmark::Fixture {
+class BM_VecSimSpaces_FP32 : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
@@ -19,8 +19,8 @@ protected:
     Arch_Optimization opt;
 
 public:
-    BM_VecSimSpaces();
-    ~BM_VecSimSpaces() {}
+    BM_VecSimSpaces_FP32();
+    ~BM_VecSimSpaces_FP32() {}
 
     void SetUp(const ::benchmark::State &state);
     void TearDown(const ::benchmark::State &state);
