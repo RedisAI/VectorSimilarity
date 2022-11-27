@@ -48,9 +48,16 @@ jobs:
           printf "Runner nproc:\n$(nproc)\n"
           printf "Runner uname:\n$(uname -a)\n"
 
+      - name: Install benchmark dependencies
+        run: |
+             sudo .install/install_script.sh
+             sudo apt install python3-pip -y
+             pip3 install --upgrade pip PyYAML setuptools
+             pip3 install redisbench-admin
+             pip3 install -r requirements.txt
+
       - name: stress test
         run: |
-          sudo apt update -qq
           sudo apt install stress-ng -qqy
           uptime
           stress-ng -c 1 --timeout 60s --metrics-brief
@@ -59,14 +66,6 @@ jobs:
           uptime
           stress-ng --ipsec-mb=1 -t 60 --metrics-brief
           uptime
-
-      - name: Install benchmark dependencies
-        run: |
-             sudo .install/install_script.sh
-             sudo apt install python3-pip -y
-             pip3 install --upgrade pip PyYAML setuptools
-             pip3 install redisbench-admin
-             pip3 install -r requirements.txt
 
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
