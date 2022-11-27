@@ -22,6 +22,41 @@ public:
 };
 
 template <typename index_type_t>
+void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
+    // Add a new vector from the test vectors in every iteration.
+    size_t iter = 0;
+
+    size_t index_size = N_VECTORS;
+    size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
+
+    // In a single vector per label index, index size should equal label count.
+    size_t vec_per_label = index_size % initial_label_count == 0
+                               ? index_size / initial_label_count
+                               : index_size / initial_label_count + 1;
+    size_t vec_id = initial_label_count * vec_per_label;
+    size_t memory_delta = 0;
+
+    for (auto _ : st) {
+        memory_delta += VecSimIndex_AddVector(
+            INDICES[st.range(0)], QUERIES[iter % N_QUERIES].data(), vec_id / vec_per_label);
+        vec_id++;
+        iter++;
+    }
+    st.counters["memory"] = (double)memory_delta / (double)iter;
+
+    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + iter);
+
+    // Clean-up all the new vectors to restore the index size to its original value.
+
+    size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    for (size_t id = initial_label_count; id < new_label_count; id++) {
+        VecSimIndex_DeleteVector(INDICES[st.range(0)], id);
+    }
+
+    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
+}
+
+template <typename index_type_t>
 template <typename algo_t>
 void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State &st) {
     // Remove a different vector in every execution.
@@ -106,9 +141,6 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         ->Arg(50)                                                                                  \
         ->ArgName("radiusX100")                                                                    \
         ->Unit(benchmark::kMillisecond)
-
-#define HNSW_RANGE_ARGS(radius, epsilon)                                                           \
-    Args({radius, epsilon})->ArgNames({"radiusX100", "epsilonX1000"})
 
 // {radius*100, epsilon*1000}
 // The actual radius will be the given arg divided by 100, and the actual epsilon values
