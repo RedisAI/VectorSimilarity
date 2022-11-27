@@ -1374,7 +1374,7 @@ TYPED_TEST(BruteForceTest, testSizeEstimation) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
     estimation = EstimateElementSize(params) * bs;
@@ -1399,7 +1399,7 @@ TYPED_TEST(BruteForceTest, testInitialSizeEstimationWithInitialCapacity) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
     VecSimIndex_Free(index);
