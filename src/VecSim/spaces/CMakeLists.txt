@@ -51,7 +51,7 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 
 # Here we are compiling the space selectors with the relevant optimization flag.
-add_library(VectorSimilaritySpaces
+add_library(VectorSimilaritySpaces SHARED
 	space_aux.cpp
 	L2_space.cpp
 	IP_space.cpp

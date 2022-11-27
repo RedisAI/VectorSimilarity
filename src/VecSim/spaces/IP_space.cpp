@@ -5,16 +5,14 @@
  */
 
 #include "VecSim/spaces/IP_space.h"
-#include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/IP/IP.h"
-#include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP/IP_AVX512DQ.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
 
 namespace spaces {
-dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
+dist_func_t<float> IP_FP32_GetDistFunc(size_t dim) {
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
 #if defined(M1)
@@ -62,7 +60,7 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     return ret_dist_func;
 }
 
-dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim) {
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
 #if defined(M1)
