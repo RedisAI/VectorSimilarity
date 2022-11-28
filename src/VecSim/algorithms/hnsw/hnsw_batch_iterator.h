@@ -104,7 +104,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
         if (curr_node_dist > this->lower_bound && top_candidates->size() >= this->ef) {
             break;
         }
-        if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+        if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
             return VecSim_QueryResult_TimedOut;
         }
         // Checks if we need to add the current id to the top_candidates heap,
@@ -164,7 +164,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
         candidates.emplace(this->lower_bound, this->entry_point);
     }
     // Checks that we didn't got timeout between iterations.
-    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
         *rc = VecSim_QueryResult_TimedOut;
         return top_candidates;
     }
