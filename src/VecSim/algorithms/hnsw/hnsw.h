@@ -153,6 +153,10 @@ protected:
     inline idType mutuallyConnectNewElement(idType cur_c,
                                             candidatesMaxHeap<DistType> &top_candidates,
                                             size_t level);
+    template <bool with_timeout>
+    void greedilySearchLevel(const void *vector_data, size_t level, idType &curObj,
+                             DistType &curDist, void *timeoutCtx = nullptr,
+                             VecSimQueryResult_Code *rc = nullptr) const;
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       linkListSize *neighbours_list,
                                       linkListSize *neighbour_neighbours_list, size_t level,
@@ -968,6 +972,41 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     }
 }
 
+template <typename DataType, typename DistType>
+template <bool with_timeout>
+void HNSWIndex<DataType, DistType>::greedilySearchLevel(const void *vector_data, size_t level,
+                                                        idType &curObj, DistType &curDist,
+                                                        void *timeoutCtx,
+                                                        VecSimQueryResult_Code *rc) const {
+    bool changed = true;
+    while (changed) {
+        if (with_timeout && __builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+            *rc = VecSim_QueryResult_TimedOut;
+            curObj = HNSW_INVALID_ID;
+            return;
+        }
+        changed = false;
+#ifdef ENABLE_PARALLELIZATION
+        std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
+#endif
+        linkListSize *node_ll = get_linklist(curObj, level);
+        linkListSize links_count = getListCount(node_ll);
+
+        auto *node_links = (idType *)(node_ll + 1);
+        for (int i = 0; i < links_count; i++) {
+            idType candidate = node_links[i];
+            assert(candidate < this->cur_element_count && "candidate error: out of index range");
+
+            DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
+            if (d < curDist) {
+                curDist = d;
+                curObj = candidate;
+                changed = true;
+            }
+        }
+    }
+}
+
 /* typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
@@ -1244,7 +1283,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     if (element_max_level <= maxlevelcopy)
         entry_point_lock.unlock();
 #endif
-    size_t currObj = entrypoint_node_;
+    idType currObj = entrypoint_node_;
 
     memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
@@ -1263,52 +1302,40 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
+        DistType cur_dist = std::numeric_limits<DistType>::max();
         if (element_max_level < maxlevelcopy) {
-            DistType cur_dist =
-                this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
+            cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
                 // a greedy search in the graph starting from the entry point
                 // at each level, and move on with the closest element we can find.
                 // When there is no improvement to do, we take a step down.
-                bool changed = true;
-                while (changed) {
-                    changed = false;
-                    unsigned short *data;
-#ifdef ENABLE_PARALLELIZATION
-                    std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
-#endif
-                    data = get_linklist(currObj, level);
-                    int size = getListCount(data);
-
-                    auto *datal = (idType *)(data + 1);
-                    for (int i = 0; i < size; i++) {
-                        idType cand = datal[i];
-                        if (cand < 0 || cand > max_elements_)
-                            throw std::runtime_error(
-                                "candidate error: candidate id is out of index range");
-
-                        DistType d =
-                            this->dist_func(vector_data, getDataByInternalId(cand), this->dim);
-                        if (d < cur_dist) {
-                            cur_dist = d;
-                            currObj = cand;
-                            changed = true;
-                        }
-                    }
-                }
+                greedilySearchLevel<false>(vector_data, level, currObj, cur_dist);
             }
         }
 
-        for (size_t level = std::min(element_max_level, maxlevelcopy); (int)level >= 0; level--) {
-            if (level > maxlevelcopy || level < 0) // possible?
-                throw std::runtime_error("Level error");
-            if (this->num_marked_deleted) {
+        auto max_common_level = std::min(element_max_level, maxlevelcopy);
+        if (this->num_marked_deleted) {
+            if (cur_dist == std::numeric_limits<DistType>::max()) {
+                cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
+            }
+            for (size_t level = max_common_level; (int)level >= 0; level--) {
+
                 candidatesMaxHeap<DistType> top_candidates =
                     searchLayer<true>(currObj, vector_data, level, ef_construction_);
-                currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
-            } else {
+                if (top_candidates.empty()) {
+                    greedilySearchLevel<false>(vector_data, level, currObj, cur_dist);
+                    setIncomingEdgesPtr(cur_c, level,
+                                        new (this->allocator)
+                                            vecsim_stl::vector<idType>(this->allocator));
+                } else {
+                    currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
+                }
+            }
+        } else {
+            for (size_t level = max_common_level; (int)level >= 0; level--) {
+
                 candidatesMaxHeap<DistType> top_candidates =
                     searchLayer<false>(currObj, vector_data, level, ef_construction_);
                 currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
@@ -1342,6 +1369,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const {
+    *rc = VecSim_QueryResult_OK;
 
     if (cur_element_count == 0) {
         return entrypoint_node_;
@@ -1349,32 +1377,9 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     idType currObj = entrypoint_node_;
     DistType cur_dist =
         this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
-    for (size_t level = maxlevel_; level > 0; level--) {
-        bool changed = true;
-        while (changed) {
-            if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
-                *rc = VecSim_QueryResult_TimedOut;
-                return HNSW_INVALID_ID;
-            }
-            changed = false;
-            linkListSize *node_ll = get_linklist(currObj, level);
-            unsigned short links_count = getListCount(node_ll);
-            auto *node_links = (idType *)(node_ll + 1);
-            for (int i = 0; i < links_count; i++) {
-                idType candidate = node_links[i];
-                if (candidate > max_elements_)
-                    throw std::runtime_error("candidate error: out of index range");
-
-                DistType d = this->dist_func(query_data, getDataByInternalId(candidate), this->dim);
-                if (d < cur_dist) {
-                    cur_dist = d;
-                    currObj = candidate;
-                    changed = true;
-                }
-            }
-        }
+    for (size_t level = maxlevel_; level > 0 && currObj != HNSW_INVALID_ID; level--) {
+        greedilySearchLevel<true>(query_data, level, currObj, cur_dist, timeoutCtx, rc);
     }
-    *rc = VecSim_QueryResult_OK;
     return currObj;
 }
 
