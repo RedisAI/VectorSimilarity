@@ -10,8 +10,6 @@
 #include "VecSim/spaces/L2_space.h"
 namespace spaces {
 
-const Arch_Optimization arch_opt = getArchitectureOptimization();
-
 /*** Defined in spaces.h
  //optimization are defined according to
  // num_bits_per_iteration / bits_count_per_element
@@ -55,25 +53,29 @@ CalculationGuideline FP64_GetCalculationGuideline(size_t dim) {
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func) {
 
+    static const Arch_Optimization arch_opt = getArchitectureOptimization();
+
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
-        *index_dist_func = IP_FP32_GetDistFunc(dim);
+        *index_dist_func = IP_FP32_GetDistFunc(dim, arch_opt);
 
     } else if (metric == VecSimMetric_L2) {
 
-        *index_dist_func = L2_FP32_GetDistFunc(dim);
+        *index_dist_func = L2_FP32_GetDistFunc(dim, arch_opt);
     }
 }
 
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func) {
 
+    static const Arch_Optimization arch_opt = getArchitectureOptimization();
+
     if (metric == VecSimMetric_Cosine || metric == VecSimMetric_IP) {
 
-        *index_dist_func = IP_FP64_GetDistFunc(dim);
+        *index_dist_func = IP_FP64_GetDistFunc(dim, arch_opt);
 
     } else if (metric == VecSimMetric_L2) {
 
-        *index_dist_func = L2_FP64_GetDistFunc(dim);
+        *index_dist_func = L2_FP64_GetDistFunc(dim, arch_opt);
     }
 }
 

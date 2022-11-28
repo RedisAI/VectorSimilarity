@@ -10,8 +10,6 @@
 #include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
 namespace spaces {
 
-extern const Arch_Optimization arch_opt;
-
 template <typename RET_TYPE>
 using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
