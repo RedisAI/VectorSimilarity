@@ -980,7 +980,8 @@ void HNSWIndex<DataType, DistType>::greedilySearchLevel(const void *vector_data,
                                                         VecSimQueryResult_Code *rc) const {
     bool changed = true;
     while (changed) {
-        if (with_timeout && __builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (with_timeout &&
+            __builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
             *rc = VecSim_QueryResult_TimedOut;
             curObj = HNSW_INVALID_ID;
             return;
