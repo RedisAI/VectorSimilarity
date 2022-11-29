@@ -1,16 +1,11 @@
 name: benchmark
 
-on:
-  workflow_call:
-  pull_request:
-    types:
-      - labeled
+on: workflow_call # TODO: add pull_request-labeled with "benchmark" label when specifying a label is supported
 
 jobs:
   start-runner:
     name: Start self-hosted EC2 runner
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_call'  || github.event.label.name == 'benchmark'
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
