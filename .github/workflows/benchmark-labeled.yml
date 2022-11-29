@@ -13,3 +13,4 @@ jobs:
     runs-on: ubuntu-latest
     if:  github.event.label.name == 'benchmark'
     uses: ./.github/workflows/benchmark.yml
+    secrets: inherit
