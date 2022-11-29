@@ -10,12 +10,6 @@ jobs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
     steps:
-      - name: Print github info
-        run: |
-          echo "github.event_name: ${{ github.event_name }}"
-          echo "github.event.label.name: ${{ github.event.label.name }}"
-          echo "github.event.pull_request.labels: ${{ toJSON(github.event.pull_request.labels) }}"
-          echo "${{ toJSON(github) }}"
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
