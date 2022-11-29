@@ -2070,9 +2070,9 @@ TYPED_TEST(HNSWTest, markDelete) {
     // Add a new vector, make sure it has no link to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
     for (size_t level = 0; level <= this->CastToHNSW(index)->element_levels_[n]; level++) {
-        auto links = this->CastToHNSW(index)->get_linklist_at_level(n, level);
-        idType *neighbors = (idType *)(links + 1);
-        for (size_t idx = 0; idx < *links; idx++) {
+        idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
+        linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
+        for (size_t idx = 0; idx < size; idx++) {
             ASSERT_TRUE(neighbors[idx] % 2 == 0)
                 << "Got a link to " << neighbors[idx] << " on level " << level;
         }

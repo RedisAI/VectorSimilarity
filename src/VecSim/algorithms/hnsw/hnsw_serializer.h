@@ -70,25 +70,23 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             num_deleted++;
         }
         for (size_t l = 0; l <= this->element_levels_[i]; l++) {
-            linkListSize *ll_cur = this->get_linklist_at_level(i, l);
-            unsigned int size = this->getListCount(ll_cur);
-            auto *data = (idType *)(ll_cur + 1);
+            idType *cur_links = this->get_linklist_at_level(i, l);
+            linkListSize size = this->getListCount(cur_links);
             std::set<idType> s;
             for (unsigned int j = 0; j < size; j++) {
                 // Check if we found an invalid neighbor.
-                if (data[j] >= this->cur_element_count || data[j] == i) {
+                if (cur_links[j] >= this->cur_element_count || cur_links[j] == i) {
                     return res;
                 }
-                inbound_connections_num[data[j]]++;
-                s.insert(data[j]);
+                inbound_connections_num[cur_links[j]]++;
+                s.insert(cur_links[j]);
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                linkListSize *ll_other = this->get_linklist_at_level(data[j], l);
-                int size_other = this->getListCount(ll_other);
-                auto *data_other = (idType *)(ll_other + 1);
+                idType *other_links = this->get_linklist_at_level(cur_links[j], l);
+                linkListSize size_other = this->getListCount(other_links);
                 for (int r = 0; r < size_other; r++) {
-                    if (data_other[r] == (idType)i) {
+                    if (other_links[r] == (idType)i) {
                         double_connections++;
                         break;
                     }
@@ -189,8 +187,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph_V1_fixes() {
         // In V1 linkListSize was of the same size as idType, so we need to fix it.
         // V1 did not have the elementFlags, so we need set all flags to 0.
         idType lls = *(idType *)data;
-        *(get_linklist0(i)) = (linkListSize)lls;
-        *(get_flags(i)) = 0;
+        *(linkListSize *)(data + sizeof(elementFlags)) = (linkListSize)lls;
+        *(elementFlags *)(data) = (elementFlags)0;
         data += this->size_data_per_element_;
 
         // Restore level 1+ links
