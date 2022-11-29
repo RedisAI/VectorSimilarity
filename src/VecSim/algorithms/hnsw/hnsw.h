@@ -426,7 +426,7 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
     size_t removed_idx = 0;
     size_t link_idx = 0;
 
-    while (orig_candidates.size() > 0) {
+    while (candidates.size() > 0) {
         if (orig_candidates.top().second != candidates.top().second) {
             if (neighbors_bitmap[orig_candidates.top().second]) {
                 removed_links[removed_idx++] = orig_candidates.top().second;
@@ -437,6 +437,12 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
             candidates.pop();
             orig_candidates.pop();
         }
+    }
+    while (orig_candidates.size() > 0) {
+        if (neighbors_bitmap[orig_candidates.top().second]) {
+            removed_links[removed_idx++] = orig_candidates.top().second;
+        }
+        orig_candidates.pop();
     }
     setListCount(node_neighbors, link_idx);
     *removed_links_num = removed_idx;
@@ -658,9 +664,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     idType cur_c, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
     size_t Mcurmax = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(top_candidates, M_);
-    if (top_candidates.size() > M_)
-        throw std::runtime_error(
-            "Should be not be more than M_ candidates returned by the heuristic");
+    assert(top_candidates.size() <= M_ &&
+           "Should be not be more than M_ candidates returned by the heuristic");
 
     vecsim_stl::vector<idType> selectedNeighbors(this->allocator);
     selectedNeighbors.reserve(M_);
@@ -674,8 +679,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         idType *ll_cur = get_linklist_at_level(cur_c, level);
         assert(getListCount(ll_cur) == 0 &&
                "The newly inserted element should have blank link list");
-        const linkListSize size = selectedNeighbors.size();
-        setListCount(ll_cur, size);
+        setListCount(ll_cur, selectedNeighbors.size());
 
         for (auto cur_neighbor = selectedNeighbors.rbegin();
              cur_neighbor != selectedNeighbors.rend(); ++cur_neighbor) {
@@ -701,12 +705,10 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         idType *neighbor_neighbors = get_linklist_at_level(selectedNeighbor, level);
         linkListSize sz_link_list_other = getListCount(neighbor_neighbors);
 
-        if (sz_link_list_other > Mcurmax)
-            throw std::runtime_error("Bad value of sz_link_list_other");
-        if (selectedNeighbor == cur_c)
-            throw std::runtime_error("Trying to connect an element to itself");
-        if (level > element_levels_[selectedNeighbor])
-            throw std::runtime_error("Trying to make a link on a non-existent level");
+        assert(sz_link_list_other <= Mcurmax && "Bad value of sz_link_list_other");
+        assert(selectedNeighbor != cur_c && "Trying to connect an element to itself");
+        assert(level <= element_levels_[selectedNeighbor] &&
+               "Trying to make a link on a non-existent level");
 
         // If the selected neighbor can add another link (hasn't reached the max) - add it.
         if (sz_link_list_other < Mcurmax) {
@@ -758,7 +760,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
                 auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(),
                                     selectedNeighbor);
                 if (it != node_incoming_edges->end()) {
-                    node_incoming_edges->erase(it);
+                    *it = node_incoming_edges->back();
+                    node_incoming_edges->pop_back();
                 } else {
                     neighbour_incoming_edges->push_back(node_id);
                 }
@@ -825,7 +828,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         // and it should be saved in the neighbor's incoming edges.
         auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), neighbour_id);
         if (it != node_incoming_edges->end()) {
-            node_incoming_edges->erase(it);
+            *it = node_incoming_edges->back();
+            node_incoming_edges->pop_back();
         } else {
             neighbour_incoming_edges->push_back(node_id);
         }
@@ -846,9 +850,11 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
+                    auto it = std::find(neighbour_incoming_edges->begin(),
                                                               neighbour_incoming_edges->end(),
-                                                              node_id));
+                                                              node_id);
+                    *it = neighbour_incoming_edges->back();
+                    neighbour_incoming_edges->pop_back();
                     bidirectional_edge = true;
                     break;
                 }
@@ -926,8 +932,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
                 auto it = std::find(neighbour_incoming_edges->begin(),
                                     neighbour_incoming_edges->end(), cur_element_count);
                 assert(it != neighbour_incoming_edges->end());
-                neighbour_incoming_edges->erase(it);
-                neighbour_incoming_edges->push_back(element_internal_id);
+                *it = element_internal_id;
             }
         }
 
@@ -1185,9 +1190,10 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                          neighbour_incoming_edges->end(),
-                                                          element_internal_id));
+                auto it = std::find(neighbour_incoming_edges->begin(),
+                                    neighbour_incoming_edges->end(), element_internal_id);
+                *it = neighbour_incoming_edges->back();
+                neighbour_incoming_edges->pop_back();
             }
         }
 
@@ -1724,9 +1730,9 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();
-    if (subsetSize > index_size) {
-        throw std::runtime_error("internal error: subset size cannot be larger than index size");
-    }
+    assert(subsetSize <= index_size &&
+           "internal error: subset size cannot be larger than index size");
+
     size_t d = this->dim;
     size_t M = this->getM();
     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
