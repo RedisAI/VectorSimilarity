@@ -10,7 +10,7 @@ on: # TODO: delete this file when specifying a label is supported
 
 jobs:
   invoker:
-    runs-on: ubuntu-latest
+    name: labeled benchmark invoker
     if: github.event.label.name == 'benchmark'
     uses: ./.github/workflows/benchmark.yml
     secrets: inherit
