@@ -9,8 +9,7 @@ on: # TODO: delete this file when specifying a label is supported
       - '*noci'
 
 jobs:
-  invoker:
-    name: labeled benchmark invoker
+  Invoker:
     if: github.event.label.name == 'benchmark'
     uses: ./.github/workflows/benchmark.yml
     secrets: inherit
