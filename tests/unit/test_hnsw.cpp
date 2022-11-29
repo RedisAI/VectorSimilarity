@@ -2059,13 +2059,28 @@ TYPED_TEST(HNSWTest, markDelete) {
     runBatchIteratorSearchTest(batchIterator, k, verify_res);
     VecSimBatchIterator_Free(batchIterator);
 
-    // Mark as deleted the k odd vectors around the middle
+    unsigned char ep_reminder = index->info().hnswInfo.entrypoint % 2;
+    // Mark as deleted half of the vectors, including the entrypoint.
     for (labelType label = 0; label < n; label++)
-        if (label % 2)
+        if (label % 2 == ep_reminder)
             this->CastToHNSW(index)->markDelete(label);
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Search for k results around the middle. expect to find only even results.
+    auto verify_res_half = [&](size_t id, double score, size_t index) {
+        ASSERT_NE(id % 2, ep_reminder);
+        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
+        size_t expected_id = index % 2 ? index + 1 : index;
+        ASSERT_EQ(diff_id, expected_id);
+        ASSERT_EQ(score, (dim * expected_id * expected_id));
+    };
+    runTopKSearchTest(index, query, k, verify_res_half);
+    runRangeQueryTest(index, query, dim * k * k - 1, verify_res_half, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_half);
+    VecSimBatchIterator_Free(batchIterator);
 
     // Add a new vector, make sure it has no link to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
@@ -2073,40 +2088,69 @@ TYPED_TEST(HNSWTest, markDelete) {
         idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
         linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
         for (size_t idx = 0; idx < size; idx++) {
-            ASSERT_TRUE(neighbors[idx] % 2 == 0)
+            ASSERT_TRUE(neighbors[idx] % 2 != ep_reminder)
                 << "Got a link to " << neighbors[idx] << " on level " << level;
         }
     }
 
-    // Search for k results around the middle. expect to find only even results.
-    auto verify_res_even = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id % 2, 0);
-        size_t diff_id = (id > 50) ? (id - 50) : (50 - id);
-        size_t expected_id = index % 2 ? index + 1 : index;
-        ASSERT_EQ(diff_id, expected_id);
-        ASSERT_EQ(score, (4 * expected_id * expected_id));
-    };
-    runTopKSearchTest(index, query, k, verify_res_even);
-    runRangeQueryTest(index, query, dim * k * k - 1, verify_res_even, k, BY_SCORE);
-    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-    runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
-    VecSimBatchIterator_Free(batchIterator);
-
     // Unmark the previously marked vectors.
     for (labelType label = 0; label < n; label++)
-        if (label % 2)
+        if (label % 2 == ep_reminder)
             this->CastToHNSW(index)->unmarkDelete(label);
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
 
-    // Search for k results around the middle again. expect to find the same results we found in the
-    // first search.
+    // Search for k results around the middle again. expect to find the same results we
+    // found in the first search.
     runTopKSearchTest(index, query, k, verify_res);
     runRangeQueryTest(index, query, dim * k * k / 4 - 1, verify_res, k, BY_SCORE);
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     runBatchIteratorSearchTest(batchIterator, k, verify_res);
     VecSimBatchIterator_Free(batchIterator);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, allMarkedDeletedLevel) {
+    size_t dim = 4;
+    size_t M = 2;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    size_t num_multi_layered = 0;
+    labelType max_id = 0;
+
+    // Add vectors to the index until we have 10 multi-layered vectors.
+    do {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, max_id, max_id);
+        if (this->CastToHNSW(index)->element_levels_[max_id] > 0) {
+            num_multi_layered++;
+        }
+        max_id++;
+    } while (num_multi_layered < 10);
+
+    // Mark all vectors with multi-layers as deleted.
+    for (labelType label = 0; label < max_id; label++) {
+        if (this->CastToHNSW(index)->element_levels_[label] > 0) {
+            this->CastToHNSW(index)->markDelete(label);
+        }
+    }
+
+    size_t max_level = index->info().hnswInfo.max_level;
+
+    // Re-add a new vector until its level is equal to the max level of the index.
+    do {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, max_id, max_id);
+    } while (this->CastToHNSW(index)->element_levels_[max_id] < max_level);
+
+    // If we passed the previous loop, it means that we successfully added a vector without invalid
+    // memory access.
+
+    // For completeness, we also check index integrity.
+    ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
 
     VecSimIndex_Free(index);
 }

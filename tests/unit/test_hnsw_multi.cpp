@@ -1684,9 +1684,10 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     runBatchIteratorSearchTest(batchIterator, k, verify_res);
     VecSimBatchIterator_Free(batchIterator);
 
-    // Mark as deleted the first k odd vectors.
+    unsigned char ep_reminder = index->info().hnswInfo.entrypoint % 2;
+    // Mark as deleted half of the vectors including the entrypoint.
     for (labelType label = 0; label < n_labels; label++)
-        if (label % 2)
+        if (label % 2 == ep_reminder)
             this->CastToHNSW(index)->markDelete(label);
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
@@ -1699,14 +1700,14 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
         idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
         linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
         for (size_t idx = 0; idx < size; idx++) {
-            ASSERT_TRUE((neighbors[idx] / per_label) % 2 == 0)
+            ASSERT_TRUE((neighbors[idx] / per_label) % 2 != ep_reminder)
                 << "Got a link to " << neighbors[idx] << " on level " << level;
         }
     }
 
     // Search for k results around the middle. expect to find only even results.
     auto verify_res_even = [&](size_t id, double score, size_t idx) {
-        ASSERT_EQ(id % 2, 0);
+        ASSERT_NE(id % 2, ep_reminder);
         ASSERT_EQ(id, idx * 2);
         ASSERT_EQ(score, dim * per_label * per_label * id * id);
         auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
@@ -1718,7 +1719,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     };
     runTopKSearchTest(index, query, k, verify_res_even);
     // with only even vectors, this is the element of the k-th vector from the origin.
-    size_t even_el = all_element * 2;
+    size_t even_el = all_element * 2 + (1 - ep_reminder);
     runRangeQueryTest(index, query, dim * even_el * even_el, verify_res_even, k, BY_SCORE);
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
@@ -1726,7 +1727,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
 
     // Unmark the previously marked vectors.
     for (labelType label = 0; label < n_labels; label++)
-        if (label % 2)
+        if (label % 2 == ep_reminder)
             this->CastToHNSW(index)->unmarkDelete(label);
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
