@@ -157,6 +157,9 @@ protected:
     inline idType mutuallyConnectNewElement(idType cur_c,
                                             candidatesMaxHeap<DistType> &top_candidates,
                                             size_t level);
+	inline idType mutuallyConnectNewElement_POC(idType cur_c,
+	                                        candidatesMaxHeap<DistType> &top_candidates,
+	                                        size_t level);
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       linklistsizeint *neighbours_list,
                                       linklistsizeint *neighbour_neighbours_list, size_t level,
@@ -735,11 +738,6 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             throw std::runtime_error("Trying to connect an element to itself");
         if (level > element_levels_[selectedNeighbor])
             throw std::runtime_error("Trying to make a link on a non-existent level");
-		if (isMarkedDeleted(selectedNeighbor)) {
-			std::cout << "The neighbor " << selectedNeighbor << " of the new node " << cur_c << " has marked deleted"
-			          << std::endl;
-			continue;
-		}
 
         // get the array of neighbours - for the current neighbour
         auto *neighbor_neighbors = (idType *)(ll_other + 1);
@@ -871,6 +869,202 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 }
 
 template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement_POC (
+		idType cur_c, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
+
+	// The maximum number of neighbors allowed for an existing neighbor (not new).
+	size_t max_M_cur = level ? maxM_ : maxM0_;
+	getNeighborsByHeuristic2(top_candidates, M_);
+	if (top_candidates.size() > M_) {
+		throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+	}
+	vecsim_stl::vector<idType> selected_neighbors(this->allocator);
+	selected_neighbors.reserve(M_);
+	while (!top_candidates.empty()) {
+		selected_neighbors.push_back(top_candidates.top().second);
+		top_candidates.pop();
+	}
+
+	// The closest vector that has found to be returned (and start the scan from it in the next level).
+	auto next_closest_entry_point = selected_neighbors.back();
+
+	linklistsizeint *cur_node_neighbors_list = get_linklist_at_level(cur_c, level);
+	if (*cur_node_neighbors_list) {
+		std::cout << "The newly inserted element " << cur_c << " should have blank link list" << std::endl;
+		throw std::runtime_error("Non empty link list for a new node");
+	}
+	auto *cur_node_neighbors_array = (idType *)(cur_node_neighbors_list + 1);
+
+	// Create the incoming edges for the new node in the current level.
+	auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+	setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
+
+	for (idType selected_neighbor : selected_neighbors) {
+		std::unique_lock<std::mutex> node_lock;
+		std::unique_lock<std::mutex> neighbor_lock;
+		idType lower_id = (cur_c < selected_neighbor) ? cur_c : selected_neighbor;
+
+		if (lower_id == cur_c) {
+			node_lock = std::unique_lock<std::mutex>(link_list_locks_[cur_c]);
+			neighbor_lock = std::unique_lock<std::mutex>(link_list_locks_[selected_neighbor]);
+		} else {
+			neighbor_lock = std::unique_lock<std::mutex>(link_list_locks_[selected_neighbor]);
+			node_lock = std::unique_lock<std::mutex>(link_list_locks_[cur_c]);
+		}
+
+		// get the updated count - this may change between iterations due to releasing the lock.
+		linklistsizeint cur_node_neighbors_count = getListCount(cur_node_neighbors_list);
+
+		linklistsizeint *neighbor_neighbors_list = get_linklist_at_level(selected_neighbor, level);
+		linklistsizeint neighbor_neighbors_count = getListCount(neighbor_neighbors_list);
+		auto *neighbor_neighbors_array = (idType *)(neighbor_neighbors_list + 1);
+
+		if (cur_node_neighbors_count == max_M_cur) {
+			std::cout << "new node " << cur_c << "cannot add more neighbor than " << max_M_cur << std::endl;
+			continue;
+		}
+
+		// validations...
+		if (cur_node_neighbors_count > max_M_cur) {
+			std::cout << "new node " << cur_c << "has more neighbors than its capacity: " << max_M_cur << std::endl;
+			throw std::runtime_error("Neighbors number exceeds limit");
+		}
+		if (neighbor_neighbors_count > max_M_cur) {
+			std::cout << "neighbor " << selected_neighbor << "has more neighbors than its capacity: " << max_M_cur << std::endl;
+			throw std::runtime_error("Neighbors number exceeds limit");
+		}
+		if (selected_neighbor == cur_c) {
+			std::cout << "trying to connect " << selected_neighbor << "to itself in level " << level << std::endl;
+			throw std::runtime_error("Trying to connect an element to itself");
+		}
+
+		// If one of the two nodes has already deleted - skip the operation.
+		if (isMarkedDeleted(cur_c) || isMarkedDeleted(selected_neighbor)) {
+			continue;
+		}
+		// if the neighbor's neighbors list has the capacity to add the new node, make the update and finish.
+		if (neighbor_neighbors_count < max_M_cur) {
+			cur_node_neighbors_array[cur_node_neighbors_count] = selected_neighbor;
+			setListCount(cur_node_neighbors_list, cur_node_neighbors_count + 1);
+			neighbor_neighbors_array[neighbor_neighbors_count] = cur_c;
+			setListCount(neighbor_neighbors_list, neighbor_neighbors_count + 1);
+			continue;
+		}
+
+		// Otherwise - we need to re-evaluate the neighbor's neighbors.
+		// We collect all the existing neighbors and the new node as candidates.
+		candidatesMaxHeap<DistType> candidates(this->allocator);
+		DistType dist_cur_node_neighbor = this->dist_func(getDataByInternalId(cur_c),
+		                                 getDataByInternalId(selected_neighbor), this->dim);
+		candidates.emplace(dist_cur_node_neighbor, cur_c);
+		for (size_t j = 0; j < neighbor_neighbors_count; j++) {
+			candidates.emplace(this->dist_func(getDataByInternalId(neighbor_neighbors_array[j]),
+			                                   getDataByInternalId(selected_neighbor), this->dim),
+			                   neighbor_neighbors_array[j]);
+		}
+		std::vector<idType> nodes_to_update;
+		auto orig_candidates = candidates;
+
+		// candidates will store the newly selected neighbours (for the neighbor).
+		getNeighborsByHeuristic2(candidates, max_M_cur);
+
+		// Go over the original candidates set, and save the ones chosen to be removed to update later on.
+		bool cur_node_chosen = false;
+		while (orig_candidates.size() > 0) {
+			idType orig_candidate = orig_candidates.top().second;
+			if (orig_candidate != candidates.top().second) {
+				if (orig_candidate != cur_c) {
+					nodes_to_update.push_back(orig_candidate);
+				}
+				orig_candidates.pop();
+			} else {
+				candidates.pop();
+				orig_candidates.pop();
+				if (orig_candidate == cur_c) {
+					cur_node_chosen = true;
+				}
+			}
+		}
+
+		// acquire all relevant locks for making the updates for the selected neighbor - all its removed
+		// neighbors, along with the neighbors itself and the cur node.
+		// but first, we release the node and neighbors lock to avoid deadlocks.
+		node_lock.unlock();
+		neighbor_lock.unlock();
+
+		nodes_to_update.push_back(selected_neighbor);
+		nodes_to_update.push_back(cur_c);
+
+		std::sort(nodes_to_update.begin(), nodes_to_update.end());
+		size_t nodes_to_update_count = nodes_to_update.size();
+		std::unique_lock<std::mutex> locks[nodes_to_update_count];
+		for (size_t i = 0; i < nodes_to_update_count; i++) {
+			locks[i] = std::unique_lock<std::mutex>(link_list_locks_[nodes_to_update[i]]);
+		}
+
+		auto *neighbour_incoming_edges = getIncomingEdgesPtr(selected_neighbor, level);
+		// Sort the current neighbor's neighbors (after reacquiring the locks) for fast lookup.
+		neighbor_neighbors_count = getListCount(neighbor_neighbors_list);
+		//std::sort(neighbor_neighbors_array, neighbor_neighbors_array + neighbor_neighbors_count);
+
+		size_t neighbour_neighbours_idx = 0;
+		bool update_cur_node_required = true;
+		for (size_t i = 0; i < neighbor_neighbors_count; i++) {
+			if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), neighbor_neighbors_array[i])) {
+				// the neighbor is not in the "to_update" nodes list - leave it as is.
+				neighbor_neighbors_array[neighbour_neighbours_idx++] = neighbor_neighbors_array[i];
+				continue;
+			} else if (neighbor_neighbors_array[i] == cur_c) {
+				// the new node is somehow got into the neighbor's neighbours in the meantime - leave it as is.
+				neighbor_neighbors_array[neighbour_neighbours_idx++] = neighbor_neighbors_array[i];
+				update_cur_node_required = false;
+				continue;
+			}
+			// Now we know that we are looking at a node to be removed from the neighbor's neighbors.
+			auto removed_node = neighbor_neighbors_array[i];
+			if (isMarkedDeleted(selected_neighbor) || isMarkedDeleted(removed_node)) {
+				// we don't make updates here for deleted nodes to avoid inconsistency.
+				continue;
+			}
+			auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node, level);
+			// Perform the mutual update:
+			// if the removed node id (the neighbour's neighbour to be removed)
+			// wasn't pointing to the neighbour (i.e., the edge was uni-directional),
+			// we should remove the current neighbor from the node's incoming edges.
+			// otherwise, the edge turned from bidirectional to uni-directional, so we insert it to the neighbour's
+			// incoming edges set.
+			// Note: we assume that every update is performed atomically mutually, so it should be sufficient to look
+			// at the removed node's incoming edges set alone.
+			auto it = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(),
+			                    selected_neighbor);
+			if (it != removed_node_incoming_edges->end()) {
+				removed_node_incoming_edges->erase(it);
+			} else {
+				neighbour_incoming_edges->push_back(removed_node);
+			}
+		}
+
+		cur_node_neighbors_count = getListCount(cur_node_neighbors_list);
+		if (update_cur_node_required && cur_node_neighbors_count < max_M_cur &&
+			!isMarkedDeleted(cur_c) && !isMarkedDeleted(selected_neighbor)) {
+			// update the connection between the new node and the neighbor.
+			cur_node_neighbors_array[cur_node_neighbors_count++] = selected_neighbor;
+			setListCount(cur_node_neighbors_list, cur_node_neighbors_count);
+			if (cur_node_chosen && neighbour_neighbours_idx < max_M_cur) {
+				// connection is mutual - both new node and the selected neighbor in each other's list.
+				neighbor_neighbors_array[neighbour_neighbours_idx++] = cur_c;
+			} else {
+				// unidirectional connection - put the new node in the neighbour's incoming edges.
+				neighbour_incoming_edges->push_back(cur_c);
+			}
+		}
+		// Done updating the neighbor's neighbors.
+		setListCount(neighbor_neighbors_list, neighbour_neighbours_idx);
+	}
+	return next_closest_entry_point;
+}
+
+template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 		idType node_id, size_t level) {
 
@@ -919,172 +1113,120 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 		}
 	}
 
-	size_t Mcurmax = level ? maxM_ : maxM0_;
-	size_t removed_links_num;
-	idType removed_links[node_neighbours_count];
-	node_lock.lock();
+	// Hold 3 sets of nodes - all the original neighbors at that point to later (potentially) update,
+	// subset of these which are the chosen neighbors nodes, and a subset of the original neighbors that are going to be removed.
+	std::vector<idType> nodes_to_update;
+	std::vector<idType> chosen_neighbors;
+	std::vector<idType> neighbors_to_remove;
+
+	auto orig_candidates = candidates;
+
+	// candidates will store the newly selected neighbours (for the node).
+	size_t max_M_cur = level ? maxM_ : maxM0_;
+	getNeighborsByHeuristic2(candidates, max_M_cur);
+
+	while (orig_candidates.size() > 0) {
+		idType orig_candidate = orig_candidates.top().second;
+		if (orig_candidate != candidates.top().second) {
+			if (node_orig_neighbours_set[orig_candidate]) {
+				neighbors_to_remove.push_back(orig_candidate);
+				nodes_to_update.push_back(orig_candidate);
+			}
+			orig_candidates.pop();
+		} else {
+			chosen_neighbors.push_back(orig_candidate);
+			nodes_to_update.push_back(orig_candidate);
+			candidates.pop();
+			orig_candidates.pop();
+		}
+	}
+
+	// acquire the required locks for the updates, after sorting the nodes to update (to avoid deadlocks)
+	nodes_to_update.push_back(node_id);
+	std::sort(nodes_to_update.begin(), nodes_to_update.end());
+	size_t nodes_to_update_count = nodes_to_update.size();
+	std::unique_lock<std::mutex> locks[nodes_to_update_count];
+	for (size_t i = 0; i < nodes_to_update_count; i++) {
+		locks[i] = std::unique_lock<std::mutex>(link_list_locks_[nodes_to_update[i]]);
+	}
+
 	if (isMarkedDeleted(node_id)) {
-		node_lock.unlock();
 		return;
 	}
-	removeExtraLinks(node_neighbours_list, candidates, Mcurmax, node_neighbours,
-	                 node_orig_neighbours_set, removed_links, &removed_links_num);
-
-	// updates for the new edges created
-	vecsim_stl::vector<idType> new_neighbors(this->allocator);
-	unsigned short updated_links_num = getListCount(node_neighbours_list);
-	for (size_t i = 0; i < updated_links_num; i++) {
-		idType new_neighbor_id = node_neighbours[i];
-		if (node_orig_neighbours_set[new_neighbor_id] || isMarkedDeleted(new_neighbor_id)) {
-			continue;
-		}
-		new_neighbors.push_back(new_neighbor_id);
-	}
-	node_lock.unlock();
-
-	// Sort every array and merge the arrays
-	std::sort(new_neighbors.begin(), new_neighbors.end());
-	std::sort(removed_links, removed_links + removed_links_num);
-
-	idType modified_nodes[removed_links_num + new_neighbors.size()];
-	size_t i_new=0, i_remove=0, i_merged=0;
-	while (i_new < new_neighbors.size() && i_remove < removed_links_num) {
-		if (new_neighbors[i_new] < removed_links[i_remove]) {
-			modified_nodes[i_merged++] = new_neighbors[i_new++];
-		} else {
-			modified_nodes[i_merged++] = removed_links[i_remove++];
-		}
-	}
-	// store the remaining elements in the arrays.
-	while (i_new < new_neighbors.size()) {
-		modified_nodes[i_merged++] = new_neighbors[i_new++];
-	}
-	while (i_remove < removed_links_num) {
-		modified_nodes[i_merged++] = removed_links[i_remove++];
-	}
-
-	// take locks in the sorted order
-	std::unique_lock<std::mutex> modified_nodes_locks[i_merged];
-	bool node_lock_acquired = false;
-	for (size_t i = 0; i < i_merged; i++) {
-		if (modified_nodes[i] > node_id && !node_lock_acquired) {
-			node_lock.lock();
-			node_lock_acquired = true;
-		}
-		modified_nodes_locks[i] =
-				std::unique_lock<std::mutex>(link_list_locks_[modified_nodes[i]]);
-	}
-	if (!node_lock_acquired) {
-		node_lock.lock();
-	}
-
-	// get the updated node's neighbors list count (as there might have been changes in the meantime)
+	auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
 	node_neighbours_count = getListCount(node_neighbours_list);
-	std::sort(node_neighbours, node_neighbours + node_neighbours_count);
 
-	// remove node id from the incoming list of nodes for his neighbours that were chosen to remove
-	for (size_t i = 0; i < removed_links_num; i++) {
-		idType removed_node_id = removed_links[i];
-		// skip in case that this node id was brought back to be a neighbor by another thread
-		if (std::binary_search(node_neighbours, node_neighbours + node_neighbours_count, removed_node_id)) {
-			std::cout << removed_node_id << " was brought back into " << node_id << " neighbors" << std::endl;
-			//modified_nodes_locks[removed_node_id].unlock();
+	// Sort the removed sets for fast lookup.
+	std::sort(neighbors_to_remove.begin(), neighbors_to_remove.end());
+
+	// Perform mutual updates:
+	size_t node_neighbours_idx = 0;
+	for (size_t i = 0; i < node_neighbours_count; i++) {
+		if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), node_neighbours[i]) &&
+			!isMarkedDeleted(node_neighbours[i])) {
+			// the repaired node added a new neighbor that we didn't account for before in the meantime - leave it as is.
+			node_neighbours[node_neighbours_idx++] = node_neighbours[i];
 			continue;
 		}
-
-		auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
-		auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node_id, level);
-		// if the removed node id (the node's neighbour to be removed)
-		// wasn't pointing to the node (edge was one directional),
-		// we should remove it from the removed node's incoming edges.
-		// otherwise, edge turned from bidirectional to one directional,
-		// and it should be saved in the node's incoming edges.
-		linklistsizeint *removed_neighbor_links_list = get_linklist_at_level(removed_node_id, level);
-		unsigned short removed_neighbor_links_size = getListCount(removed_neighbor_links_list);
-		auto *removed_neighbor_links = (idType *)(removed_neighbor_links_list + 1);
-		if (std::find(removed_neighbor_links, removed_neighbor_links + removed_neighbor_links_size, node_id)
-			!= removed_neighbor_links + removed_neighbor_links_size) {
-			// found the node_id as a neighbor - if it is not in the incoming edges - insert it
-			auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), removed_node_id);
-			if (it == node_incoming_edges->end()) {
-				node_incoming_edges->push_back(removed_node_id);
-			}
-			it = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(), node_id);
-			if (it != removed_node_incoming_edges->end()) {
-				removed_node_incoming_edges->erase(it);
-			}
-		} else {
-			// node_id is not a neighbor - it should be in neither of the incoming edges sets
-			auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), removed_node_id);
-			if (it != node_incoming_edges->end()) {
-				node_incoming_edges->erase(it);
-			}
-			it = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(), node_id);
-			if (it != removed_node_incoming_edges->end()) {
-				removed_node_incoming_edges->erase(it);
-			}
+		auto it = std::find(chosen_neighbors.begin(), chosen_neighbors.end(), node_neighbours[i]);
+		if (it != chosen_neighbors.end()) {
+			// a chosen neighbor is already connected to the node - leave it as is.
+			node_neighbours[node_neighbours_idx++] = node_neighbours[i];
+			chosen_neighbors.erase(it);
+			continue;
 		}
-//
-//		auto it = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(), node_id);
-//		if (it != removed_node_incoming_edges->end()) {
-//			removed_node_incoming_edges->erase(it);
-//		} else {
-//			node_incoming_edges->push_back(removed_node_id);
-//		}
-		//modified_nodes_locks[removed_node_id].unlock();
+		// Now we know that we are looking at a neighbor that needs to be removed.
+		auto removed_node = node_neighbours[i];
+		if (isMarkedDeleted(removed_node)) {
+			// we don't make updates here for deleted nodes to avoid inconsistency.
+			continue;
+		}
+		auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node, level);
+		// Perform the mutual update:
+		// if the removed node id (the node's neighbour to be removed)
+		// wasn't pointing to the node (i.e., the edge was uni-directional),
+		// we should remove the current neighbor from the node's incoming edges.
+		// otherwise, the edge turned from bidirectional to uni-directional, so we insert it to the neighbour's
+		// incoming edges set.
+		// Note: we assume that every update is performed atomically mutually, so it should be sufficient to look
+		// at the removed node's incoming edges set alone.
+		auto it2 = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(),
+		                    node_id);
+		if (it2 != removed_node_incoming_edges->end()) {
+			removed_node_incoming_edges->erase(it2);
+		} else {
+			node_incoming_edges->push_back(removed_node);
+		}
 	}
 
-	for (idType new_neighbor_id : new_neighbors) {
-		// skip in case that this neighbor was removed from node id's neighbor's list by another thread
-		if (!std::binary_search(node_neighbours, node_neighbours + node_neighbours_count, new_neighbor_id)) {
-			//std::cout << new_neighbor_id << " was removed from " << node_id << " neighbors" << std::endl;
-			//modified_nodes_locks[new_neighbor_id].unlock();
+	// Go over the chosen new neighbors that are not connected yet and perform updates.
+	for (auto chosen_id : chosen_neighbors) {
+		if (node_neighbours_idx == max_M_cur) {
+			// Cannot add more new neighbors, we reached the capacity.
+			std::cout << "couldn't add all the chosen new nodes upon updating " << node_id << std::endl;
+			break;
+		}
+		// We don't make update for deleted nodes.
+		if (isMarkedDeleted(chosen_id)) {
 			continue;
 		}
-
-		auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(new_neighbor_id, level);
-		auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
-		// if the new neighbor node has an edge to the node as well, remove it from the incoming nodes of the node,
-		// otherwise, need to update the edge as incoming in the new neighbor's incoming edges set.
-		linklistsizeint *new_neighbor_links_list = get_linklist_at_level(new_neighbor_id, level);
-		unsigned short new_neighbor_links_size = getListCount(new_neighbor_links_list);
-		auto *new_neighbor_links = (idType *)(new_neighbor_links_list + 1);
-
-		// Anyway, this should not be an incoming edge.
-		auto it = std::find(node_incoming_edges->begin(),
-		                    node_incoming_edges->end(),
-		                    new_neighbor_id);
+		auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(chosen_id, level);
+		node_neighbours[node_neighbours_idx++] = chosen_id;
+		// If the node is in the chosen new node incoming edges, there is a unidirectional connection
+		// from the chosen node to the repaired node that turns into bidirectional. Then, remove it from
+		// the incoming edges set. Otherwise, the edge is created unidirectional, so we add it to the
+		// unidirectional edges set.
+		// Note: we assume that all updates occur mutually and atomically, then can rely on this assumption.
+		auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(),
+		               chosen_id);
 		if (it != node_incoming_edges->end()) {
 			node_incoming_edges->erase(it);
+		} else {
+			new_neighbor_incoming_edges->push_back(node_id);
 		}
-
-		bool bidirectional_edge = false;
-		for (size_t j = 0; j < new_neighbor_links_size; j++) {
-			if (new_neighbor_links[j] == node_id) {
-				it = std::find(new_neighbor_incoming_edges->begin(),
-				               new_neighbor_incoming_edges->end(),
-				               node_id);
-				if (it != new_neighbor_incoming_edges->end()) {
-					new_neighbor_incoming_edges->erase(it);
-				}
-//				else {
-//					std::cout << node_id << " was already deleted from " << new_neighbor_id << " incoming edges" << std::endl;
-//				}
-				bidirectional_edge = true;
-				break;
-			}
-		}
-		if (!bidirectional_edge) {
-			if (std::find(new_neighbor_incoming_edges->begin(),
-			              new_neighbor_incoming_edges->end(),
-			              node_id) != new_neighbor_incoming_edges->end()) {
-//				std::cout << node_id << " is already in " << new_neighbor_id << " incoming set" << std::endl;
-			} else {
-				new_neighbor_incoming_edges->push_back(node_id);
-			}
-		}
-		//modified_nodes_locks[new_neighbor_id].unlock();
 	}
+	// Done updating the neighbor's neighbors.
+	setListCount(node_neighbours_list, node_neighbours_idx);
 }
 
 template <typename DataType, typename DistType>
@@ -1589,9 +1731,9 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 				if (it != neighbour_incoming_edges->end()) {
 					neighbour_incoming_edges->erase(it);
 				}
-//				else {
-//					std::cout << element_internal_id << " was already deleted from " << neighbour_id << " incoming edges" << std::endl;
-//				}
+				else {
+					std::cout << element_internal_id << " was already deleted from " << neighbour_id << " incoming edges" << std::endl;
+				}
 			}
 		}
 
@@ -1715,7 +1857,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
                 candidatesMaxHeap<DistType> top_candidates =
                     searchLayer<true>(currObj, vector_data, level, ef_construction_);
 				if (!top_candidates.empty()) {
-					currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
+					currObj = mutuallyConnectNewElement_POC(cur_c, top_candidates, level);
 				} else {
 					auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
 					setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
@@ -1723,7 +1865,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
             } else {
                 candidatesMaxHeap<DistType> top_candidates =
                     searchLayer<false>(currObj, vector_data, level, ef_construction_);
-                currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
+                currObj = mutuallyConnectNewElement_POC(cur_c, top_candidates, level);
             }
         }
 
