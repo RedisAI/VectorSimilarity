@@ -31,6 +31,6 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
 target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if(VECSIM_BUILD_TESTS)
-    add_library(VectorSimilaritySerialization algorithms/hnsw/serialization.cpp)
-    target_link_libraries(VectorSimilarity VectorSimilaritySerialization)
+    add_library(VectorSimilaritySerializer utils/serializer.cpp)
+    target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()
