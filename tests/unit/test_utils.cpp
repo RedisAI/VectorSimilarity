@@ -73,6 +73,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
         expected_n_res = n_res;
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), expected_n_res);
+    ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {

@@ -14,6 +14,9 @@ virtual void saveIndexIMP(std::ofstream &output) override;
 // used by index factory to load nodes connections
 void restoreGraph(std::ifstream &input);
 
+// used to fix V1 index to V2 (current version)
+void restoreGraph_V1_fixes();
+
 private:
 // Functions for index saving.
 void saveIndexFields(std::ofstream &output) const;

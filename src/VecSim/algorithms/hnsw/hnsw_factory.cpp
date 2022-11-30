@@ -69,7 +69,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     // Explicit allocation calls - always allocate a header.
     est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
 
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *);
+    size_t size_links_level0 =
+        sizeof(elementFlags) + sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
         size_links_level0 + params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
     est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
@@ -79,9 +80,9 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
 size_t EstimateElementSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *) +
+    size_t size_links_level0 = sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *) +
                                sizeof(vecsim_stl::vector<idType>);
-    size_t size_links_higher_level = sizeof(linklistsizeint) + M * sizeof(idType) + sizeof(void *) +
+    size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) +
                                      sizeof(vecsim_stl::vector<idType>);
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
@@ -132,7 +133,7 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  std::shared_ptr<VecSimAllocator> allocator,
                                                  Serializer::EncodingVersion version) {
-    VecSimIndex *index = nullptr;
+    HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
         index =
@@ -141,7 +142,7 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
         index =
             new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
 
-    reinterpret_cast<HNSWIndex<DataType, DistType> *>(index)->restoreGraph(input);
+    index->restoreGraph(input);
 
     return index;
 }
