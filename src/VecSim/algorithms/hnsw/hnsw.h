@@ -90,7 +90,9 @@ protected:
     idType entrypoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
+public: // TODO: revert to protected
     vecsim_stl::vector<size_t> element_levels_;
+protected:
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
