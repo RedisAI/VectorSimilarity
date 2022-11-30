@@ -1297,7 +1297,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
-        DistType cur_dist;
+        DistType cur_dist = std::numeric_limits<DistType>::max();
         if (element_max_level < maxlevelcopy) {
             cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
