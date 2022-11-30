@@ -1297,7 +1297,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
-        DistType cur_dist = std::numeric_limits<DistType>::quiet_NaN();
+        DistType cur_dist;
         if (element_max_level < maxlevelcopy) {
             cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
             for (size_t level = maxlevelcopy; level > element_max_level; level--) {
@@ -1312,7 +1312,8 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
         auto max_common_level = std::min(element_max_level, maxlevelcopy);
         if (this->num_marked_deleted) {
-            if (std::isnan(cur_dist)) {
+            if (element_max_level >= maxlevelcopy) {
+                // `cur_dist` is not initialized yet.
                 cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
             }
             for (size_t level = max_common_level; (int)level >= 0; level--) {
