@@ -54,6 +54,8 @@ public:
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
+    inline int markDelete(labelType label) override;
+    inline int unmarkDelete(labelType label) override;
 };
 
 /**
@@ -69,7 +71,7 @@ template <typename DataType, typename DistType>
 double HNSWIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
                                                              const void *vector_data) const {
     auto id = label_lookup_.find(label);
-    if (id == label_lookup_.end()) {
+    if (id == label_lookup_.end() || this->isMarkedDeleted(id->second)) {
         return INVALID_SCORE;
     }
     return this->dist_func(vector_data, this->getDataByInternalId(id->second), this->dim);
@@ -129,4 +131,34 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);
+}
+
+/**
+ * Marks an element with the given label deleted, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
+    auto search = label_lookup_.find(label);
+    if (search == label_lookup_.end()) {
+        return false;
+    }
+
+    this->markDeletedInternal(search->second);
+    return true;
+}
+
+/**
+ * Remove the deleted mark of the node, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Single<DataType, DistType>::unmarkDelete(labelType label) {
+    auto search = label_lookup_.find(label);
+    if (search == label_lookup_.end()) {
+        return false;
+    }
+
+    this->unmarkDeletedInternal(search->second);
+    return true;
 }
