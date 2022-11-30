@@ -8,8 +8,7 @@
 #include "bm_utils.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
-std::vector<std::vector<float>> load_test_vectors(const char *path, size_t n_queries,
-                       size_t dim) {
+std::vector<std::vector<float>> load_test_vectors(const char *path, size_t n_queries, size_t dim) {
     auto location = std::string(std::string(getenv("ROOT")));
     auto file_name = location + "/" + path;
 
@@ -48,8 +47,8 @@ void BM_VecSimBasics::Initialize() {
                          .blockSize = BM_VecSimBasics::block_size};
 
     // Generate index from file.
-    VecSimIndex *data = HNSWFactory::NewIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file),
-                                       &params);
+    VecSimIndex *data = HNSWFactory::NewIndex(
+        GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file), &params);
     VecSimParams hnsw_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
     BM_VecSimBasics::hnsw_index = VecSimIndex_New(&hnsw_params);
 
@@ -74,8 +73,8 @@ void BM_VecSimBasics::Initialize() {
     VecSimIndex_Free(data);
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
-    BM_VecSimBasics::queries = load_test_vectors(BM_VecSimBasics::test_vectors_file, BM_VecSimBasics::n_queries,
-                      BM_VecSimBasics::dim);
+    BM_VecSimBasics::queries = load_test_vectors(BM_VecSimBasics::test_vectors_file,
+                                                 BM_VecSimBasics::n_queries, BM_VecSimBasics::dim);
 }
 
 void BM_VecSimBasics::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,

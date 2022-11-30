@@ -173,8 +173,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
         total_res += VecSimQueryResult_Len(hnsw_results);
 
         // Measure recall:
-        auto bf_results = VecSimIndex_RangeQuery(bf_index, queries[iter % n_queries].data(),
-                                                 radius, nullptr, BY_ID);
+        auto bf_results = VecSimIndex_RangeQuery(bf_index, queries[iter % n_queries].data(), radius,
+                                                 nullptr, BY_ID);
         total_res_bf += VecSimQueryResult_Len(bf_results);
 
         VecSimQueryResult_Free(bf_results);
@@ -207,10 +207,10 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, HNSW_Stats)(benchmark::State &st) {
     size_t total_l = 0;
     size_t count = 0;
 
-    HNSWIndex<float, float> *hnsw =
-        reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
+    HNSWIndex<float, float> *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
 
-    for (auto _ : st) {}
+    for (auto _ : st) {
+    }
     for (idType id = 0; id < n_vectors; id++) {
         if (hnsw->element_levels_[id] >= level) {
             size_t l = hnsw->getListCount(hnsw->get_linklist_at_level(id, level));
@@ -226,7 +226,13 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, HNSW_Stats)(benchmark::State &st) {
     st.counters["NUM"] = count;
 }
 
-BENCHMARK_REGISTER_F(BM_VecSimBasics, HNSW_Stats)->Iterations(1)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Arg(4);
+BENCHMARK_REGISTER_F(BM_VecSimBasics, HNSW_Stats)
+    ->Iterations(1)
+    ->Arg(0)
+    ->Arg(1)
+    ->Arg(2)
+    ->Arg(3)
+    ->Arg(4);
 
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_FLAT)->Iterations(1);
 BENCHMARK_REGISTER_F(BM_VecSimBasics, Memory_HNSW)->Iterations(1);
