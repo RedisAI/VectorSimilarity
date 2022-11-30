@@ -44,7 +44,9 @@ void BM_VecSimBasics::Initialize() {
                          .dim = BM_VecSimBasics::dim,
                          .metric = VecSimMetric_Cosine,
                          .multi = false,
-                         .blockSize = BM_VecSimBasics::block_size};
+                         .blockSize = BM_VecSimBasics::block_size,
+                         .M = BM_VecSimBasics::M,
+                         .efConstruction = BM_VecSimBasics::EF_C};
 
     // Generate index from file.
     VecSimIndex *data = HNSWFactory::NewIndex(
