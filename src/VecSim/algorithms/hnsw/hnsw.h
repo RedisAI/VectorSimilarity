@@ -780,18 +780,18 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     idType element_internal_id, idType neighbour_id, idType *neighbours,
-    idType *neighbour_neighbours, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
+    idType *neighbour_neighbours, size_t level,
+    vecsim_stl::vector<bool> &neighbour_neighbours_bitmap) {
 
     const void *neighbour_data = getDataByInternalId(neighbour_id);
 
     // add the deleted element's neighbour's original neighbors in the candidates.
-    vecsim_stl::vector<bool> neighbour_orig_neighbours_set(cur_element_count, false,
-                                                           this->allocator);
+    neighbour_neighbours_bitmap.assign(cur_element_count, false); // reset the bitmap
     linkListSize neighbour_neighbours_count = getListCount(neighbour_neighbours);
     linkListSize element_idx = neighbour_neighbours_count;
 
     for (size_t i = 0; i < neighbour_neighbours_count; i++) {
-        neighbour_orig_neighbours_set[neighbour_neighbours[i]] = true;
+        neighbour_neighbours_bitmap[neighbour_neighbours[i]] = true;
         if (neighbour_neighbours[i] == element_internal_id) {
             element_idx = i;
         }
@@ -803,26 +803,29 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     candidatesMaxHeap<DistType> candidates(this->allocator);
     linkListSize neighbours_count = getListCount(neighbours);
 
-    assert(!neighbour_orig_neighbours_set[neighbour_id]);
-    neighbour_orig_neighbours_set[neighbour_id] = true; // Temporary, to avoid adding it to the
-                                                        // candidates.
+    // Temporarily add the neighbour to the neighbours list, so don't add it to the candidates.
+    assert(!neighbour_neighbours_bitmap[neighbour_id]);
+    neighbour_neighbours_bitmap[neighbour_id] = true;
     for (size_t j = 0; j < neighbours_count; j++) {
-        // Don't put the neighbor itself in his own candidates
-        if (neighbour_orig_neighbours_set[neighbours[j]]) {
+        // Add only the neighbours that weren't already neighbours of the current neighbour.
+        if (neighbour_neighbours_bitmap[neighbours[j]]) {
             continue;
         }
         candidates.emplace(
             this->dist_func(getDataByInternalId(neighbours[j]), neighbour_data, this->dim),
             neighbours[j]);
     }
-    neighbour_orig_neighbours_set[neighbour_id] = false;
+    neighbour_neighbours_bitmap[neighbour_id] = false;
 
     if (candidates.empty()) {
         // No candidates to replace the deleted element with. Just remove it.
-        for (linkListSize i = element_idx; i < neighbour_neighbours_count - 1; i++) {
-            neighbour_neighbours[i] = neighbour_neighbours[i + 1];
-        }
-        setListCount(neighbour_neighbours, neighbour_neighbours_count - 1);
+        // for (linkListSize i = element_idx; i < neighbour_neighbours_count - 1; i++) {
+        //     neighbour_neighbours[i] = neighbour_neighbours[i + 1];
+        // }
+        neighbour_neighbours_count--;
+        memmove(neighbour_neighbours + element_idx, neighbour_neighbours + element_idx + 1,
+                (neighbour_neighbours_count - element_idx) * sizeof(idType));
+        setListCount(neighbour_neighbours, neighbour_neighbours_count);
         return;
     }
 
@@ -842,17 +845,19 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     } while (j > 0 && d >= lower_limit);
 
     if (element_idx < j) {
-        // the deleted element was in the neighbour's neighbours list. remove it.
+        // the deleted element wasn't reached. Remove it.
         j--;
-        for (size_t i = element_idx; i < j; i++) {
-            neighbour_neighbours[i] = neighbour_neighbours[i + 1];
-        }
+        memmove(neighbour_neighbours + element_idx, neighbour_neighbours + element_idx + 1,
+                (j - element_idx) * sizeof(idType));
+        // for (size_t i = element_idx; i < j; i++) {
+        //     neighbour_neighbours[i] = neighbour_neighbours[i + 1];
+        // }
     }
 
     size_t Mcurmax = level ? maxM_ : maxM0_;
     size_t removed_links_num;
     idType removed_links[neighbour_neighbours_count];
-    removeExtraLinks(candidates, Mcurmax, j, neighbour_neighbours, neighbour_orig_neighbours_set,
+    removeExtraLinks(candidates, Mcurmax, j, neighbour_neighbours, neighbour_neighbours_bitmap,
                      removed_links, &removed_links_num);
 
     // remove neighbour id from the incoming list of nodes for his
@@ -881,7 +886,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     linkListSize updated_links_num = getListCount(neighbour_neighbours);
     for (size_t i = 0; i < updated_links_num; i++) {
         idType node_id = neighbour_neighbours[i];
-        if (!neighbour_orig_neighbours_set[node_id]) {
+        if (!neighbour_neighbours_bitmap[node_id]) {
             auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
             // if the node has an edge to the neighbour as well, remove it
             // from the incoming nodes of the neighbour
@@ -1203,12 +1208,7 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
     for (size_t level = 0; level <= element_top_level; level++) {
         idType *neighbours = get_linklist_at_level(element_internal_id, level);
         linkListSize neighbours_count = getListCount(neighbours);
-        // reset the neighbours' bitmap for the current level.
-        neighbours_bitmap.assign(cur_element_count, false);
-        // store the deleted element's neighbours set in a bitmap for fast access.
-        for (size_t j = 0; j < neighbours_count; j++) {
-            neighbours_bitmap[neighbours[j]] = true;
-        }
+
         // go over the neighbours that also points back to the removed point and make a local
         // repair.
         for (size_t i = 0; i < neighbours_count; i++) {
