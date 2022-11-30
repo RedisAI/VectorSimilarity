@@ -210,6 +210,8 @@ typedef enum {
     VecSim_QueryResult_TimedOut,
 } VecSimQueryResult_Code;
 
+#define VECSIM_TIMEOUT(ctx) (__builtin_expect(VecSimIndexInterface::timeoutCallback(ctx), false))
+
 #ifdef __cplusplus
 }
 #endif

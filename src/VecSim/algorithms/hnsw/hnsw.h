@@ -980,8 +980,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
                                                       VecSimQueryResult_Code *rc) const {
     bool changed;
     do {
-        if (with_timeout &&
-            __builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (with_timeout && VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
             curObj = HNSW_INVALID_ID;
             return;
@@ -1423,7 +1422,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }
@@ -1548,7 +1547,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
             break;
         }

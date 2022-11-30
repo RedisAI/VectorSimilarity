@@ -217,7 +217,7 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
     size_t len = block->getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
-        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
