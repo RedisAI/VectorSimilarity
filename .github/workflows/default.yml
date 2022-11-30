@@ -1,17 +1,19 @@
-name: build
+name: default flow
 
 on:
   push:
     branches: [main, '[0-9].[0-9]']
   pull_request:
     branches-ignore: ['*docs', '*noci']
-  schedule:
-    - cron: "0 0 * * *"
+  workflow_call:
 
 jobs:
   build:
     name: default build job
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: checkout
         uses: actions/checkout@v3
@@ -35,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: install dependencies
         run: sudo .install/install_script.sh
       - name: run codecov
@@ -45,5 +47,3 @@ jobs:
         with:
           files: /bin/Linux-x86_64-debug/cov.info
           fail_ci_if_error: true
-
-
