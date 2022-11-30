@@ -90,8 +90,10 @@ protected:
     idType entrypoint_node_;
     char *data_level0_memory_;
     char **linkLists_;
+
 public: // TODO: revert to protected
     vecsim_stl::vector<size_t> element_levels_;
+
 protected:
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
@@ -782,60 +784,68 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
     const void *neighbour_data = getDataByInternalId(neighbour_id);
 
+    // add the deleted element's neighbour's original neighbors in the candidates.
+    vecsim_stl::vector<bool> neighbour_orig_neighbours_set(cur_element_count, false,
+                                                           this->allocator);
+    linkListSize neighbour_neighbours_count = getListCount(neighbour_neighbours);
+    linkListSize element_idx = neighbour_neighbours_count;
+
+    for (size_t i = 0; i < neighbour_neighbours_count; i++) {
+        neighbour_orig_neighbours_set[neighbour_neighbours[i]] = true;
+        if (neighbour_neighbours[i] == element_internal_id) {
+            element_idx = i;
+        }
+    }
+    assert(element_idx < neighbour_neighbours_count &&
+           "The deleted element wasn't found in the neighbour's neighbours");
+
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<DistType> candidates(this->allocator);
     linkListSize neighbours_count = getListCount(neighbours);
+
+    assert(!neighbour_orig_neighbours_set[neighbour_id]);
+    neighbour_orig_neighbours_set[neighbour_id] = true; // Temporary, to avoid adding it to the
+                                                        // candidates.
     for (size_t j = 0; j < neighbours_count; j++) {
         // Don't put the neighbor itself in his own candidates
-        if (neighbours[j] == neighbour_id) {
+        if (neighbour_orig_neighbours_set[neighbours[j]]) {
             continue;
         }
         candidates.emplace(
             this->dist_func(getDataByInternalId(neighbours[j]), neighbour_data, this->dim),
             neighbours[j]);
     }
-    DistType lower_limit;
-    if (neighbours_count > 1) {
-        lower_limit = candidates.top().first;
-    } else {
-        lower_limit = std::numeric_limits<DistType>::lowest();
+    neighbour_orig_neighbours_set[neighbour_id] = false;
+
+    if (candidates.empty()) {
+        // No candidates to replace the deleted element with. Just remove it.
+        for (linkListSize i = element_idx; i < neighbour_neighbours_count - 1; i++) {
+            neighbour_neighbours[i] = neighbour_neighbours[i + 1];
+        }
+        setListCount(neighbour_neighbours, neighbour_neighbours_count - 1);
+        return;
     }
 
-    // add the deleted element's neighbour's original neighbors in the candidates.
-    vecsim_stl::vector<bool> neighbour_orig_neighbours_set(cur_element_count, false,
-                                                           this->allocator);
-    linkListSize neighbour_neighbours_count = getListCount(neighbour_neighbours);
+    DistType lower_limit = candidates.top().first;
+
     size_t j = neighbour_neighbours_count;
-    DistType d;
-    bool found = false;
+    DistType d = lower_limit;
     do {
         j--;
-        d = this->dist_func(getDataByInternalId(neighbour_neighbours[j]),
-                            neighbour_data, this->dim);
-        neighbour_orig_neighbours_set[neighbour_neighbours[j]] = true;
-        // Don't add the removed element to the candidates, nor nodes that are already in the
-        // candidates set.
-        if (neighbours_bitmap[neighbour_neighbours[j]] ||
-            neighbour_neighbours[j] == element_internal_id) {
-            if (neighbour_neighbours[j] == element_internal_id) {
-                found = true;
-            }
+        // Don't add the removed element to the candidates.
+        if (j == element_idx) {
             continue;
         }
+        d = this->dist_func(getDataByInternalId(neighbour_neighbours[j]), neighbour_data,
+                            this->dim);
         candidates.emplace(d, neighbour_neighbours[j]);
     } while (j > 0 && d >= lower_limit);
 
-    if (!found) {
-        size_t i = 0;
-        while (i < j && neighbour_neighbours[i] != element_internal_id) {
-            i++;
-        }
-        if (i < j) {
-            // the deleted element was in the neighbour's neighbours list. remove it.
-            for (; i < j; i++) {
-                neighbour_neighbours[i] = neighbour_neighbours[i + 1];
-            }
-            j--;
+    if (element_idx < j) {
+        // the deleted element was in the neighbour's neighbours list. remove it.
+        j--;
+        for (size_t i = element_idx; i < j; i++) {
+            neighbour_neighbours[i] = neighbour_neighbours[i + 1];
         }
     }
 
