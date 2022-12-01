@@ -806,14 +806,16 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     // Temporarily add the neighbour to the neighbours list, so don't add it to the candidates.
     assert(!neighbour_neighbours_bitmap[neighbour_id]);
     neighbour_neighbours_bitmap[neighbour_id] = true;
+
+    DistType lower_limit = std::numeric_limits<DistType>::max();
     for (size_t j = 0; j < neighbours_count; j++) {
         // Add only the neighbours that weren't already neighbours of the current neighbour.
         if (neighbour_neighbours_bitmap[neighbours[j]]) {
             continue;
         }
-        candidates.emplace(
-            this->dist_func(getDataByInternalId(neighbours[j]), neighbour_data, this->dim),
-            neighbours[j]);
+        DistType d = this->dist_func(getDataByInternalId(neighbours[j]), neighbour_data, this->dim);
+        candidates.emplace(d, neighbours[j]);
+        lower_limit = std::min(lower_limit, d);
     }
     neighbour_neighbours_bitmap[neighbour_id] = false;
 
@@ -828,8 +830,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         setListCount(neighbour_neighbours, neighbour_neighbours_count);
         return;
     }
-
-    DistType lower_limit = candidates.top().first;
 
     size_t j = neighbour_neighbours_count;
     DistType d = lower_limit;
