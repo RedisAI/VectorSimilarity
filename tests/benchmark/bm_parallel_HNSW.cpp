@@ -112,6 +112,8 @@ public:
 		std::cout << "Total build time is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
+		     " and the capacity is " << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() << endl;
 
 		auto serializer =
 				HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
@@ -184,7 +186,8 @@ public:
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
 		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
-
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
+		     " and the capacity is " << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() << endl;
 		for (size_t i = 0; i < data.size(); i++) {
 			VecSimIndex_AddVector(bf_index,
 					(const void *)reinterpret_cast<HNSWIndex_Single<float, float>  *>(hnsw_index)->getDataByLabel(i),
@@ -332,6 +335,11 @@ public:
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
 		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory  <<
+		" and the capacity is " << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() << endl;
+		auto serializer =
+				HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
+		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
 
 		// Staring phase 2 - parallel read/update
 		size_t sleep_time = 20;
@@ -394,9 +402,10 @@ public:
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
 		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
+		" and the capacity is " << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() << endl;
 
-		auto serializer =
-				HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
+		serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
 		serializer.reset();
 
@@ -454,6 +463,8 @@ public:
 		auto serializer =
 				HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory << " and the capacity is "
+		<< reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() <<endl;
 		serializer.reset();
 
 		// Staring phase 2 - parallel read/update
@@ -508,13 +519,28 @@ public:
 	}
 		done = std::chrono::high_resolution_clock::now();
 		assert(VecSimIndex_IndexSize(hnsw_index) == data.size()/2);
-		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << std::endl;
-		std::cout << "Total update time is "
+		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
+		<< VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
+		std::cout << "Total update time (without swapping) is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
 		             " of vectors whose indexing finished and available for search is: "
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory << endl;
+
+		started = std::chrono::high_resolution_clock::now();
+		for (size_t i = 0; i < data.size()/2; i++) {
+			reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(i);
+		}
+		done = std::chrono::high_resolution_clock::now();
+		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
+		          << VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
+		std::cout << "Total swap and clean time is "
+		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
+		          << " ms" << std::endl;
+		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
+		" and the capacity is " << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() << endl;
 
 		serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
@@ -547,7 +573,7 @@ int main() {
 					.dim = dim,
 					.metric = VecSimMetric_Cosine,
 					.initialCapacity = n,
-					.blockSize = n,
+					.blockSize = 1024,
 					.efRuntime = 200}};
 
 	VecSimParams bf_params{.algo = VecSimAlgo_BF,
@@ -559,8 +585,8 @@ int main() {
 
 	auto bm = BM_ParallelHNSW(params, bf_params, n_threads, n_queries, k);
     bm.run_parallel_indexing_benchmark();
-	bm.run_parallel_search_benchmark();
-	bm.run_all_parallel_benchmark();
+//	bm.run_parallel_search_benchmark();
+//	bm.run_all_parallel_benchmark();
 	bm.run_parallel_update_benchmark_delete_alone();
 	bm.run_parallel_update_benchmark_with_repair_jobs();
 }

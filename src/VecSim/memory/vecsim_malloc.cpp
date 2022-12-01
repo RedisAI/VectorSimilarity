@@ -9,6 +9,7 @@
 #include <memory>
 #include <string.h>
 #include <sys/param.h>
+#include <iostream>
 
 std::shared_ptr<VecSimAllocator> VecSimAllocator::newVecsimAllocator() {
     std::shared_ptr<VecSimAllocator> allocator(new VecSimAllocator());
@@ -29,7 +30,7 @@ void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
 void *VecSimAllocator::allocate(size_t size) {
     size_t *ptr = (size_t *)vecsim_malloc(size + allocation_header_size);
     if (ptr) {
-        *this->allocated.get() += size + allocation_header_size;
+        *this->allocated += (size + allocation_header_size);
         *ptr = size;
         return ptr + 1;
     }
@@ -56,7 +57,7 @@ void VecSimAllocator::free_allocation(void *p) {
     if (!p)
         return;
     size_t *ptr = ((size_t *)p) - 1;
-    *this->allocated.get() -= (ptr[0] + allocation_header_size);
+	*this->allocated -= (ptr[0] + allocation_header_size);
     vecsim_free(ptr);
 }
 
@@ -64,7 +65,7 @@ void *VecSimAllocator::callocate(size_t size) {
     size_t *ptr = (size_t *)vecsim_calloc(1, size + allocation_header_size);
 
     if (ptr) {
-        *this->allocated.get() += size + allocation_header_size;
+        *this->allocated += size + allocation_header_size;
         *ptr = size;
         return ptr + 1;
     }

@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <memory>
 #include <cstring>
+#include <atomic>
 
 struct VecSimAllocator {
     // Allow global vecsim memory functions to access this class.
@@ -18,13 +19,13 @@ struct VecSimAllocator {
     friend inline void vecsim_free(void *p);
 
 private:
-    std::shared_ptr<uint64_t> allocated;
+    std::shared_ptr<std::atomic_int> allocated;
 
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
     static VecSimMemoryFunctions memFunctions;
 
-    VecSimAllocator() : allocated(std::make_shared<uint64_t>(sizeof(VecSimAllocator))) {}
+    VecSimAllocator() : allocated(std::make_shared<std::atomic_int>(sizeof(VecSimAllocator))) {}
 
 public:
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();

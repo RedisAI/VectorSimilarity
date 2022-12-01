@@ -213,11 +213,10 @@ void HNSWIndexSerializer::restoreGraph(std::ifstream &input) {
         hnsw_index->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
     }
 
-#ifdef ENABLE_PARALLELIZATION_
-    pool_initial_size = pool_initial_size;
-    visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
-        new (this->allocator)
-            VisitedNodesHandlerPool(pool_initial_size, max_elements_, this->allocator));
+#ifdef ENABLE_PARALLELIZATION_READ
+    hnsw_index->visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
+        new (hnsw_index->allocator)
+            VisitedNodesHandlerPool(1, hnsw_index->max_elements_, hnsw_index->allocator));
 #else
     hnsw_index->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
         new (hnsw_index->allocator)
@@ -319,12 +318,16 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 	std::vector<std::map<size_t, std::vector<size_t>>> inbound_connections(
 			hnsw_index->cur_element_count);
 	size_t incoming_edges_sets_sizes = 0;
+	std::map<size_t, size_t> incoming_edges_hist;
+	size_t total_nodes_in_levels_GT_zero = 0;
 	if (hnsw_index->max_id != HNSW_INVALID_ID) {
 		for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
 			if (hnsw_index->isMarkedDeleted(i)) {
 				continue;
 			}
-			for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
+			size_t max_element_level = hnsw_index->element_levels_[i];
+			total_nodes_in_levels_GT_zero += max_element_level;
+			for (size_t l = 0; l <= max_element_level; l++) {
 				linklistsizeint *ll_cur = hnsw_index->get_linklist_at_level(i, l);
 				unsigned int size = hnsw_index->getListCount(ll_cur);
 				auto *data = (idType *) (ll_cur + 1);
@@ -398,6 +401,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 					}
 				}
 				auto *incoming_edges_vec = hnsw_index->getIncomingEdgesPtr(i, l);
+				incoming_edges_hist[incoming_edges_vec->capacity()]++;
 				std::sort(incoming_edges_vec->begin(), incoming_edges_vec->end());
 				if (std::adjacent_find(incoming_edges_vec->begin(), incoming_edges_vec->end()) != incoming_edges_vec->end()) {
 					std::cout << i << " incoming edges set in level " << l << " is not unique" << std::endl;
@@ -433,5 +437,14 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 		return res;
 	}
 	res.valid_state = true;
+	std::cout << "incoming edges hist " << std::endl;
+	size_t accumulated_cap_sum = 0;
+	for (auto it: incoming_edges_hist) {
+		//std::cout << "there are " << it.second << " sets with capacity of " << it.first << std::endl;
+		accumulated_cap_sum += it.first * it.second;
+	}
+	std::cout << "total incoming edges caps: " << accumulated_cap_sum << std::endl;
+	std::cout << "total nodes in level higher than 0: " << total_nodes_in_levels_GT_zero << std::endl;
+	//std::cout << "num of visited nodes handlers: " << hnsw_index->visited_nodes_handler_pool->pool.size() << std::endl;
 	return res;
 }

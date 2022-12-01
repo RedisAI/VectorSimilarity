@@ -164,6 +164,7 @@ typedef struct {
             bool isMulti;            // Determines if the index should multi-index or not.
             size_t dim;              // Vector size (dimension).
             VecSearchMode last_mode; // The mode in which the last query ran.
+            size_t numDeleted;
         } hnswInfo;
         struct {
             size_t indexSize;        // Current count of vectors.

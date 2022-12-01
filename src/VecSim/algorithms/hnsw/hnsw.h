@@ -97,12 +97,13 @@ protected:
     char *data_level0_memory_;
     char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
-    std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION_READ
     std::unique_ptr<VisitedNodesHandlerPool> visited_nodes_handler_pool;
     size_t pool_initial_size;
+#else
+	std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 #endif
 #ifdef ENABLE_PARALLELIZATION
     mutable std::mutex entry_point_guard_;
@@ -223,7 +224,7 @@ public:
 	void repairConnectionsForDeletion_POC(
 			idType neighbour_id, size_t level);
 	std::vector<repairJob> removeVector_POC(labelType label);
-
+	void SwapJob_POC(idType element_id);
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
@@ -593,8 +594,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
                                            size_t ef) const {
 
 #ifdef ENABLE_PARALLELIZATION_READ
-    auto visited_nodes_handler =
-        this->visited_nodes_handler_pool->getAvailableVisitedNodesHandler();
+    auto visited_nodes_handler = getVisitedList();
 #endif
 
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
@@ -972,7 +972,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement_POC (
 		bool cur_node_chosen = false;
 		while (orig_candidates.size() > 0) {
 			idType orig_candidate = orig_candidates.top().second;
-			if (orig_candidate != candidates.top().second) {
+			if (candidates.empty() || orig_candidate != candidates.top().second) {
 				if (orig_candidate != cur_c) {
 					nodes_to_update.push_back(orig_candidate);
 				}
@@ -1554,7 +1554,7 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     element_levels_.shrink_to_fit();
     resizeLabelLookup(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
-    std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+	link_list_locks_ = std::vector<std::mutex>(new_max_elements);
 #endif
 #ifdef ENABLE_PARALLELIZATION_READ
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
@@ -1678,6 +1678,55 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
 }
 
 template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::SwapJob_POC(idType element_id) {
+
+	// free the incoming edges set in every level.
+	size_t element_top_level = element_levels_[element_id];
+	for (size_t level = 0; level <= element_top_level; level++) {
+		auto *incoming_edges = getIncomingEdgesPtr(element_id, level);
+		delete incoming_edges;
+	}
+
+	// replace the entry point with another one, if we are deleting the current entry point.
+	if (element_id == entrypoint_node_) {
+		if (element_top_level != maxlevel_) {
+			std::cout << "error " << element_id << "is entry point in level " << element_top_level << "while max level is " << maxlevel_ << std::endl;
+		}
+		replaceEntryPoint();
+	}
+	// We can say now that the element was deleted
+	--cur_element_count;
+	--max_id;
+	--this->num_marked_deleted;
+
+	// Swap the last id with the deleted one, and invalidate the last id data.
+	if (element_levels_[element_id] > 0) {
+		this->allocator->free_allocation(linkLists_[element_id]);
+		linkLists_[element_id] = nullptr;
+	}
+	if (cur_element_count == element_id) {
+		// we're deleting the last internal id, just invalidate data without swapping.
+		memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
+		       size_data_per_element_);
+	} else {
+		SwapLastIdWithDeletedId(element_id);
+	}
+
+	// If we need to free a complete block & there is a least one block between the
+	// capacity and the size.
+	if (cur_element_count % this->blockSize == 0 &&
+	    cur_element_count + this->blockSize <= max_elements_) {
+
+		// Check if the capacity is aligned to block size.
+		size_t extra_space_to_free = max_elements_ % this->blockSize;
+
+		// Remove one block from the capacity.
+		this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
+	}
+}
+
+
+template <typename DataType, typename DistType>
 std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType label) {
 
 	// Assumed this vector was already marked as deleted...
@@ -1730,8 +1779,7 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 				                    element_internal_id);
 				if (it != neighbour_incoming_edges->end()) {
 					neighbour_incoming_edges->erase(it);
-				}
-				else {
+				} else {
 					std::cout << element_internal_id << " was already deleted from " << neighbour_id << " incoming edges" << std::endl;
 				}
 			}
@@ -1757,7 +1805,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     idType cur_c;
     // choose randomly the maximum level in which the new element will be in the index.
-    size_t element_max_level = getRandomLevel(mult_);
+    int element_max_level = getRandomLevel(mult_);
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1785,11 +1833,11 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
 #endif
-    size_t maxlevelcopy = maxlevel_;
+    int maxlevelcopy = (int)maxlevel_;
     size_t currObj = entrypoint_node_;
 
 #ifdef ENABLE_PARALLELIZATION
-    if (element_max_level <= (size_t)maxlevelcopy)
+    if (element_max_level <= maxlevelcopy)
         entry_point_lock.unlock();
 #endif
 
@@ -1813,7 +1861,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         if (element_max_level < maxlevelcopy) {
             DistType cur_dist =
                 this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
-            for (size_t level = maxlevelcopy; level > element_max_level; level--) {
+            for (int level = maxlevelcopy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
                 // a greedy search in the graph starting from the entry point
@@ -1850,7 +1898,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
             }
         }
 
-        for (size_t level = std::min(element_max_level, maxlevelcopy); (int)level >= 0; level--) {
+        for (int level = std::min(element_max_level, maxlevelcopy); (int)level >= 0; level--) {
             if (level > maxlevelcopy || level < 0) // possible?
                 throw std::runtime_error("Level error");
             if (this->num_marked_deleted) {
@@ -1874,7 +1922,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
             entrypoint_node_ = cur_c;
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
-            for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
+            for (int level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
@@ -1883,7 +1931,11 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     } else {
         // Do nothing for the first element
         entrypoint_node_ = cur_c;
-        for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
+		if (maxlevel_ != HNSW_INVALID_LEVEL) {
+			throw std::runtime_error("we should get here only when we insert the first element to the graph, but"
+									 "max level is not INVALID");
+		}
+        for (int level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
@@ -2203,6 +2255,7 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
     info.hnswInfo.entrypoint = this->getEntryPointLabel();
     info.hnswInfo.memory = this->allocator->getAllocationSize();
     info.hnswInfo.last_mode = this->last_mode;
+	info.hnswInfo.numDeleted = this->num_marked_deleted;
     return info;
 }
 
