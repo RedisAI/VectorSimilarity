@@ -124,6 +124,7 @@ protected:
     inline idType *get_linklist0(idType internal_id) const;
     inline idType *get_linklist(idType internal_id, size_t level) const;
     inline void setListCount(idType *list, linkListSize size);
+    inline void setListCount2(idType *list, linkListSize size);
     inline void removeExtraLinks(candidatesMaxHeap<DistType> candidates, size_t Mcurmax,
                                  size_t link_idx, idType *node_neighbors,
                                  const vecsim_stl::vector<bool> &bitmap, idType *removed_links,
@@ -200,6 +201,7 @@ public:
     char *getDataByInternalId(idType internal_id) const;
     inline idType *get_linklist_at_level(idType internal_id, size_t level) const;
     inline linkListSize getListCount(const idType *list) const;
+    inline linkListSize getListCount2(const idType *list) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
 
@@ -358,7 +360,7 @@ template <typename DataType, typename DistType>
 idType *HNSWIndex<DataType, DistType>::get_linklist(idType internal_id, size_t level) const {
     // links offset at level >0 is `sizeof(linkListSize)` from the start of the element metadata
     return (idType *)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
-                      sizeof(linkListSize));
+                      sizeof(linkListSize) + sizeof(linkListSize));
 }
 
 template <typename DataType, typename DistType>
@@ -375,6 +377,16 @@ linkListSize HNSWIndex<DataType, DistType>::getListCount(const idType *list) con
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::setListCount(idType *list, const linkListSize size) {
     *(((linkListSize *)list) - 1) = size;
+}
+
+template <typename DataType, typename DistType>
+linkListSize HNSWIndex<DataType, DistType>::getListCount2(const idType *list) const {
+    return *(((linkListSize *)list) - 2);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::setListCount2(idType *list, const linkListSize size) {
+    *(((linkListSize *)list) - 2) = size;
 }
 
 template <typename DataType, typename DistType>
@@ -449,6 +461,7 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
         orig_candidates.pop();
     }
     setListCount(node_neighbors, link_idx);
+    setListCount2(node_neighbors, 0);
     *removed_links_num = removed_idx;
 }
 
@@ -684,6 +697,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         assert(getListCount(ll_cur) == 0 &&
                "The newly inserted element should have blank link list");
         setListCount(ll_cur, selectedNeighbors.size());
+        setListCount2(ll_cur, 0);
 
         for (auto cur_neighbor = selectedNeighbors.rbegin();
              cur_neighbor != selectedNeighbors.rend(); ++cur_neighbor) {
@@ -708,6 +722,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 #endif
         idType *neighbor_neighbors = get_linklist_at_level(selectedNeighbor, level);
         linkListSize sz_link_list_other = getListCount(neighbor_neighbors);
+        linkListSize sz_un_ver_other = getListCount2(neighbor_neighbors);
 
         assert(sz_link_list_other <= Mcurmax && "Bad value of sz_link_list_other");
         assert(selectedNeighbor != cur_c && "Trying to connect an element to itself");
@@ -715,9 +730,10 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
                "Trying to make a link on a non-existent level");
 
         // If the selected neighbor can add another link (hasn't reached the max) - add it.
-        if (/*sz_link_list_other < Mcurmax*/ sz_link_list_other == 0) {
+        if (sz_link_list_other < Mcurmax && 2 * sz_un_ver_other < sz_link_list_other) {
             neighbor_neighbors[sz_link_list_other] = cur_c;
             setListCount(neighbor_neighbors, sz_link_list_other + 1);
+            setListCount2(neighbor_neighbors, sz_un_ver_other + 1);
         } else {
             // try finding "weak" elements to replace it with the new one with the heuristic:
             candidatesMaxHeap<DistType> candidates(this->allocator);
@@ -731,13 +747,23 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             neighbors_bitmap[cur_c] = true;
             size_t j = sz_link_list_other;
             DistType d;
-            do {
+            while (sz_un_ver_other > 0) {
                 j--;
+                sz_un_ver_other--;
                 d = this->dist_func(getDataByInternalId(neighbor_neighbors[j]),
                                     getDataByInternalId(selectedNeighbor), this->dim);
                 candidates.emplace(d, neighbor_neighbors[j]);
                 neighbors_bitmap[neighbor_neighbors[j]] = true;
-            } while (j > 0 && d >= d_max);
+            }
+            if (j > 0) {
+                do {
+                    j--;
+                    d = this->dist_func(getDataByInternalId(neighbor_neighbors[j]),
+                                        getDataByInternalId(selectedNeighbor), this->dim);
+                    candidates.emplace(d, neighbor_neighbors[j]);
+                    neighbors_bitmap[neighbor_neighbors[j]] = true;
+                } while (j > 0 && d >= d_max);
+            }
 
             idType removed_links[sz_link_list_other - j + 1];
             size_t removed_links_num;
@@ -799,6 +825,15 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     assert(element_idx < neighbour_neighbours_count &&
            "The deleted element wasn't found in the neighbour's neighbours");
 
+    linkListSize neighbour_un_ver_count = getListCount2(neighbour_neighbours);
+    if (neighbour_neighbours_count - neighbour_un_ver_count <= element_idx) {
+        // Easy come, easy go...
+        neighbour_neighbours[element_idx] = neighbour_neighbours[neighbour_neighbours_count - 1];
+        setListCount(neighbour_neighbours, neighbour_neighbours_count - 1);
+        setListCount2(neighbour_neighbours, neighbour_un_ver_count - 1);
+        return;
+    }
+
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<DistType> candidates(this->allocator);
     linkListSize neighbours_count = getListCount(neighbours);
@@ -808,6 +843,11 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     neighbour_neighbours_bitmap[neighbour_id] = true;
 
     DistType lower_limit = std::numeric_limits<DistType>::max();
+    for (size_t i = neighbour_neighbours_count - neighbour_un_ver_count; i < neighbour_neighbours_count; i++) {
+        DistType d = this->dist_func(neighbour_data, getDataByInternalId(neighbour_neighbours[i]), this->dim);
+        candidates.emplace(d, neighbour_neighbours[i]);
+        lower_limit = std::min(lower_limit, d);
+    }
     for (size_t j = 0; j < neighbours_count; j++) {
         // Add only the neighbours that weren't already neighbours of the current neighbour.
         if (neighbour_neighbours_bitmap[neighbours[j]]) {
@@ -831,7 +871,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         return;
     }
 
-    size_t j = neighbour_neighbours_count;
+    size_t j = neighbour_neighbours_count - neighbour_un_ver_count;
     DistType d = lower_limit;
     do {
         j--;
@@ -892,7 +932,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             // from the incoming nodes of the neighbour
             // otherwise, need to update the edge as incoming.
             idType *node_links = get_linklist_at_level(node_id, level);
-            unsigned short node_links_size = getListCount(node_links);
+            linkListSize node_links_size = getListCount(node_links);
 
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
@@ -1144,10 +1184,10 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // chunks of memory, each one will look like this:
     // | -----2----- | -----4*M-------------- | ----------8--------- |
     // | <links_len> | <link_1> <link_2> ...  | <incoming_links_ptr> |
-    size_links_per_element_ = sizeof(linkListSize) + maxM_ * sizeof(idType) + sizeof(void *);
+    size_links_per_element_ = sizeof(linkListSize) + sizeof(linkListSize) + maxM_ * sizeof(idType) + sizeof(void *);
     // No need to test for overflow because we passed the test for incoming_links_offset0 and this
     // is less.
-    incoming_links_offset = maxM_ * sizeof(idType) + sizeof(linkListSize);
+    incoming_links_offset = maxM_ * sizeof(idType) + sizeof(linkListSize) + sizeof(linkListSize);
 }
 
 template <typename DataType, typename DistType>
