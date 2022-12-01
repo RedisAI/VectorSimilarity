@@ -11,32 +11,42 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/space_aux.h"
 
-class BM_VecSimSpaces_FP32 : public benchmark::Fixture {
+template <typename data_type>
+class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
-    float *v1, *v2;
+    data_type *v1, *v2;
     Arch_Optimization opt;
 
 public:
-    BM_VecSimSpaces_FP32();
-    ~BM_VecSimSpaces_FP32() {}
+    BM_VecSimSpaces();
+    ~BM_VecSimSpaces() {}
 
     void SetUp(const ::benchmark::State &state);
     void TearDown(const ::benchmark::State &state);
 };
 
-class BM_VecSimSpaces_FP64 : public benchmark::Fixture {
-protected:
-    std::mt19937 rng;
-    size_t dim;
-    double *v1, *v2;
-    Arch_Optimization opt;
+template <typename data_type>
+BM_VecSimSpaces<data_type>::BM_VecSimSpaces() {
+    rng.seed(47);
+    opt = getArchitectureOptimization();
+}
 
-public:
-    BM_VecSimSpaces_FP64();
-    ~BM_VecSimSpaces_FP64() {}
+template <typename data_type>
+void BM_VecSimSpaces<data_type>::SetUp(const ::benchmark::State &state) {
+    dim = state.range(0);
+    v1 = new data_type[dim];
+    v2 = new data_type[dim];
+    std::uniform_real_distribution<double> distrib(-1.0, 1.0);
+    for (size_t i = 0; i < dim; i++) {
+        v1[i] = (data_type)distrib(rng);
+        v2[i] = (data_type)distrib(rng);
+    }
+}
 
-    void SetUp(const ::benchmark::State &state);
-    void TearDown(const ::benchmark::State &state);
-};
+template <typename data_type>
+void BM_VecSimSpaces<data_type>::TearDown(const ::benchmark::State &state) {
+    delete v1;
+    delete v2;
+}

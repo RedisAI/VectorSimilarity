@@ -17,29 +17,14 @@ BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_HNSW_fp64)->Iterations(1);
 // AddVector
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddVector_fp64, fp64_index_t)
 (benchmark::State &st) { AddVector(st); }
-BENCHMARK_REGISTER_F(BM_VecSimBasics, AddVector_fp64)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
-    ->Arg(VecSimAlgo_HNSWLIB);
+REGISTER_AddVector(AddVector_fp64, VecSimAlgo_BF);
+REGISTER_AddVector(AddVector_fp64, VecSimAlgo_HNSWLIB);
 
 // DeleteVector
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteVector_fp64, fp64_index_t)
-(benchmark::State &st) {
-    if (VecSimAlgo_BF == st.range(0)) {
-        DeleteVector<BruteForceIndex<double, double>>(
-            reinterpret_cast<BruteForceIndex<double, double> *>(
-                BM_VecSimIndex<fp64_index_t>::indices[VecSimAlgo_BF]),
-            st);
-    } else if (VecSimAlgo_HNSWLIB == st.range(0)) {
-        DeleteVector<HNSWIndex<double, double>>(
-            reinterpret_cast<HNSWIndex<double, double> *>(
-                BM_VecSimIndex<fp64_index_t>::indices[VecSimAlgo_HNSWLIB]),
-            st);
-    }
-}
-
-BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteVector_fp64)
-    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_BF)
-    ->Arg(VecSimAlgo_HNSWLIB);
+DEFINE_DELETE_VECTOR_BF(fp64, double, double)
+REGISTER_DeleteVector(DeleteVector_BF_fp64);
+DEFINE_DELETE_VECTOR_HNSW(fp64, double, double)
+REGISTER_DeleteVector(DeleteVector_HNSW_fp64);
 
 // TopK BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_BF_fp64, fp64_index_t)

@@ -107,8 +107,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        // char *blob = GetHNSWDataByInternalId(i);
-        char *blob = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getDataByInternalId(i);
+        char *blob = GetHNSWDataByInternalId(i);
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, i);
     }
 

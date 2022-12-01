@@ -77,7 +77,7 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
                          .blockSize = BM_VecSimGeneral::block_size};
 
     // Generate index from file.
-    // This index will be inserted after the basic indices at indices[VecSimAlfo_HNSWLIB +
+    // This index will be inserted after the basic indices at indices[VecSimAlgo_HNSWLIB +
     // update_offset]
     INDICES.push_back(
         HNSWFactory::NewIndex(BM_INDEX::AttachRootPath(updated_hnsw_index_file), &params));

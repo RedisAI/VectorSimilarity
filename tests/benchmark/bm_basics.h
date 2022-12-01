@@ -159,3 +159,24 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
         ->Iterations(100)                                                                          \
         ->Unit(benchmark::kMillisecond)
+
+#define REGISTER_AddVector(BM_FUNC, VecSimAlgo)                                                    \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
+        ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo)                                                     \
+        ->ArgName(#VecSimAlgo)
+
+#define DEFINE_DELETE_VECTOR(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)    \
+    BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
+        DeleteVector<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                            \
+            reinterpret_cast<INDEX_NAME<DATA_TYPE, DIST_TYPE> *>(                                  \
+                BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
+            st);                                                                                   \
+    }
+#define DEFINE_DELETE_VECTOR_BF(FP_TYPE, DATA_TYPE, DIST_TYPE)                                     \
+    DEFINE_DELETE_VECTOR(DeleteVector_BF_##FP_TYPE, FP_TYPE##_index_t, BruteForceIndex, DATA_TYPE, \
+                         DIST_TYPE, VecSimAlgo_BF)
+#define DEFINE_DELETE_VECTOR_HNSW(FP_TYPE, DATA_TYPE, DIST_TYPE)                                   \
+    DEFINE_DELETE_VECTOR(DeleteVector_HNSW_##FP_TYPE, FP_TYPE##_index_t, HNSWIndex, DATA_TYPE,     \
+                         DIST_TYPE, VecSimAlgo_HNSWLIB)
+#define REGISTER_DeleteVector(BM_FUNC)                                                             \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)->UNIT_AND_ITERATIONS
