@@ -152,6 +152,8 @@ protected:
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
+    void getNeighborsByHeuristic2_fast(candidatesMaxHeap<DistType> &top_candidates, size_t M,
+                                       const vecsim_stl::vector<bool> &checked_bitmap);
     inline idType mutuallyConnectNewElement(idType cur_c,
                                             candidatesMaxHeap<DistType> &top_candidates,
                                             size_t level);
@@ -424,7 +426,7 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 
     auto orig_candidates = candidates;
     // candidates will store the newly selected neighbours (for the relevant node).
-    getNeighborsByHeuristic2(candidates, Mcurmax - link_idx);
+    getNeighborsByHeuristic2_fast(candidates, Mcurmax - link_idx, neighbors_bitmap);
 
     // check the diff in the link list, save the neighbours
     // that were chosen to be removed, and update the new neighbours
@@ -648,11 +650,78 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
             DistType candidate_to_selected_dist =
                 this->dist_func(getDataByInternalId(second_pair.second),
                                 getDataByInternalId(current_pair.second), this->dim);
-            if (candidate_to_selected_dist - second_pair.first < candidate_to_query_dist) {
+            if (candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
             }
         }
+        if (good) {
+            return_list.push_back(current_pair);
+        }
+    }
+
+    for (pair<DistType, idType> current_pair : return_list) {
+        top_candidates.emplace(-current_pair.first, current_pair.second);
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_fast(
+    candidatesMaxHeap<DistType> &top_candidates, const size_t M,
+    const vecsim_stl::vector<bool> &checked_bitmap) {
+    if (top_candidates.size() < M) {
+        return;
+    }
+
+    candidatesMaxHeap<DistType> queue_closest(this->allocator);
+    vecsim_stl::vector<pair<DistType, idType>> return_list(this->allocator);
+    while (top_candidates.size() > 0) {
+        // the distance is saved negatively to have the queue ordered such that first is closer
+        // (higher).
+        queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
+        top_candidates.pop();
+    }
+
+    while (queue_closest.size()) {
+        if (return_list.size() >= M)
+            break;
+        pair<DistType, idType> current_pair = queue_closest.top();
+        DistType candidate_to_query_dist = -current_pair.first;
+        queue_closest.pop();
+        bool good = true;
+
+        // a candidate is "good" to become a neighbour, unless we find
+        // another item that was already selected to the neighbours set which is closer
+        // to both q and the candidate than the distance between the candidate and q.
+        if (checked_bitmap[current_pair.second]) {
+            // If the candidate was already checked, it means that it was already selected and needs
+            // to be checked only against unchecked candidates in the current return list.
+            for (pair<DistType, idType> second_pair : return_list) {
+                if (checked_bitmap[second_pair.second]) {
+                    continue;
+                }
+                DistType candidate_to_selected_dist =
+                    this->dist_func(getDataByInternalId(second_pair.second),
+                                    getDataByInternalId(current_pair.second), this->dim);
+                if (candidate_to_selected_dist < candidate_to_query_dist) {
+                    good = false;
+                    break;
+                }
+            }
+        } else {
+            // If the candidate was not checked, it means that it was not selected and needs to be
+            // checked against all the candidates in the current return list.
+            for (pair<DistType, idType> second_pair : return_list) {
+                DistType candidate_to_selected_dist =
+                    this->dist_func(getDataByInternalId(second_pair.second),
+                                    getDataByInternalId(current_pair.second), this->dim);
+                if (candidate_to_selected_dist < candidate_to_query_dist) {
+                    good = false;
+                    break;
+                }
+            }
+        }
+
         if (good) {
             return_list.push_back(current_pair);
         }
