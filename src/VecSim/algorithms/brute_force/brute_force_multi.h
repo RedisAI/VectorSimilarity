@@ -32,7 +32,22 @@ public:
         return std::unique_ptr<vecsim_stl::abstract_results_container>(
             new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
     }
+#ifdef BUILD_TESTS
+    void GetDataByLabel(labelType label, size_t &vector_count_output,
+                        std::vector<std::vector<DataType>> &vectors_output) {
 
+        auto ids = labelToIdsLookup.find(label);
+
+        size_t vector_count = 0;
+        for (idType id : ids->second) {
+            auto vec = std::vector<DataType>(this->dim);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
+            vectors_output.push_back(vec);
+            ++vector_count;
+        }
+        vector_count_output = vector_count;
+    }
+#endif
 private:
     // inline definitions
 

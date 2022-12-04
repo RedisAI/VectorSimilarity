@@ -12,13 +12,21 @@ public:
     // Different implementation for multi and single.
     static void AddVector(benchmark::State &st);
 
-    // we Pass a specific index pointer instead of VecSimIndex * so we can use getDataByInternalId
+    // we Pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
     // which is not known to VecSimIndex class.
     template <typename algo_t>
     static void DeleteVector(algo_t *index, benchmark::State &st);
 
     static void Range_BF(benchmark::State &st);
     static void Range_HNSW(benchmark::State &st);
+
+private:
+    // Proxy struct to save deleted vectors
+    struct LabelData {
+        LabelData() : vectors_data(0){};
+        size_t vectors_count;
+        std::vector<std::vector<data_t>> vectors_data;
+    };
 };
 
 template <typename index_type_t>
@@ -47,7 +55,8 @@ void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
     assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + iter);
 
     // Clean-up all the new vectors to restore the index size to its original value.
-
+    // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
+    // the new vectors added under the same label will be removed in one call.
     size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
     for (size_t id = initial_label_count; id < new_label_count; id++) {
         VecSimIndex_DeleteVector(INDICES[st.range(0)], id);
@@ -55,32 +64,43 @@ void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
 
     assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
 }
-
 template <typename index_type_t>
 template <typename algo_t>
 void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State &st) {
     // Remove a different vector in every execution.
-    std::vector<std::vector<data_t>> blobs;
-    size_t id_to_remove = 0;
+    size_t label_to_remove = 0;
     double memory_delta = 0;
-    size_t iter = 0;
+    size_t removed_vectors_count = 0;
+    std::vector<LabelData> labels_data;
 
     for (auto _ : st) {
         st.PauseTiming();
-        auto removed_vec = std::vector<data_t>(DIM);
-        memcpy(removed_vec.data(), index->getDataByInternalId(id_to_remove), DIM * sizeof(data_t));
-        blobs.push_back(removed_vec);
+        // Get label id(s) data.
+        LabelData data;
+        index->GetDataByLabel(label_to_remove, data.vectors_count, data.vectors_data);
+
+        labels_data.push_back(data);
+
         st.ResumeTiming();
 
-        iter++;
-        auto delta = (double)VecSimIndex_DeleteVector(index, id_to_remove++);
+        // Delete label
+        auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
         memory_delta += delta;
     }
-    st.counters["memory"] = memory_delta / (double)iter;
+
+    // Avg. memory delta per vector equals the total memory delta divided by the number
+    // of deleted vectors.
+    st.counters["memory"] = memory_delta / (double)removed_vectors_count;
 
     // Restore index state.
-    for (size_t i = 0; i < blobs.size(); i++) {
-        VecSimIndex_AddVector(index, blobs[i].data(), i);
+    // For rem_label in removed_labels
+    for (size_t label_idx = 0; label_idx < labels_data.size(); label_idx++) {
+        size_t vec_count = labels_data[label_idx].vectors_count;
+        // For vector in rem_label
+        for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
+            VecSimIndex_AddVector(index, labels_data[label_idx].vectors_data[vec_idx].data(),
+                                  label_idx);
+        }
     }
 }
 
@@ -165,6 +185,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo)                                                     \
         ->ArgName(#VecSimAlgo)
 
+// DeleteVector define and register macros
 #define DEFINE_DELETE_VECTOR(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)    \
     BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
         DeleteVector<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                            \
@@ -172,11 +193,5 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
                 BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
             st);                                                                                   \
     }
-#define DEFINE_DELETE_VECTOR_BF(FP_TYPE, DATA_TYPE, DIST_TYPE)                                     \
-    DEFINE_DELETE_VECTOR(DeleteVector_BF_##FP_TYPE, FP_TYPE##_index_t, BruteForceIndex, DATA_TYPE, \
-                         DIST_TYPE, VecSimAlgo_BF)
-#define DEFINE_DELETE_VECTOR_HNSW(FP_TYPE, DATA_TYPE, DIST_TYPE)                                   \
-    DEFINE_DELETE_VECTOR(DeleteVector_HNSW_##FP_TYPE, FP_TYPE##_index_t, HNSWIndex, DATA_TYPE,     \
-                         DIST_TYPE, VecSimAlgo_HNSWLIB)
 #define REGISTER_DeleteVector(BM_FUNC)                                                             \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)->UNIT_AND_ITERATIONS

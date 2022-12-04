@@ -35,7 +35,6 @@
 #define BENCHMARK_DISTANCE_F_FP64(arch, settings, func)                                            \
     BENCHMARK_DISTANCE_F(FP64, arch, settings, func, double)
 
-
 // Dimensions for functions that satisfy optimizations on dim % 16 == 0 (fp32) or dim % 8 == 0
 // (fp64)
 #define EXACT_PARAMS_MULT16DIM Arg(16)->Arg(128)->Arg(400)

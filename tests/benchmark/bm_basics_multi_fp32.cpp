@@ -1,4 +1,6 @@
 #include "bm_basics.h"
+#include "VecSim/algorithms/brute_force/brute_force_multi.h"
+#include "VecSim/algorithms/hnsw/hnsw_multi.h"
 
 /**************************************
   Basic tests for multi value index.
@@ -17,6 +19,10 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
+DEFINE_DELETE_VECTOR(DeleteVector_BF_FP32, fp32_index_t, BruteForceIndex_Multi, float, float,
+                     VecSimAlgo_BF)
+DEFINE_DELETE_VECTOR(DeleteVector_HNSW_FP32, fp32_index_t, HNSWIndex_Multi, float, float,
+                     VecSimAlgo_HNSWLIB)
 #include "bm_basics_define_n_register_fp32.h"
 
 BENCHMARK_MAIN();

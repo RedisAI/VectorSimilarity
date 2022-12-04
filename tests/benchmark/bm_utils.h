@@ -13,7 +13,7 @@
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
-#include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "bm_definitions.h"
 
@@ -32,6 +32,7 @@ protected:
     static size_t n_vectors;
 
     static bool is_multi;
+
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;

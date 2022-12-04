@@ -108,7 +108,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         char *blob = GetHNSWDataByInternalId(i);
-        VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, i);
+        // Fot multi value indices, the internal is not necessarily equal the label.
+        size_t label = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
+        VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.

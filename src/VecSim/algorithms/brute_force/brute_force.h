@@ -59,6 +59,7 @@ protected:
 
     // Private internal function that implements generic single vector deletion.
     virtual int removeVector(idType id);
+
     inline DataType *getDataByInternalId(idType id) const {
         return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
     }

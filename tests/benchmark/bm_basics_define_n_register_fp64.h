@@ -20,11 +20,9 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddVector_fp64, fp64_index_t)
 REGISTER_AddVector(AddVector_fp64, VecSimAlgo_BF);
 REGISTER_AddVector(AddVector_fp64, VecSimAlgo_HNSWLIB);
 
-// DeleteVector
-DEFINE_DELETE_VECTOR_BF(fp64, double, double)
-REGISTER_DeleteVector(DeleteVector_BF_fp64);
-DEFINE_DELETE_VECTOR_HNSW(fp64, double, double)
-REGISTER_DeleteVector(DeleteVector_HNSW_fp64);
+// DeleteVector Registration. Definition is placed in the .cpp file.
+REGISTER_DeleteVector(DeleteVector_BF_FP64);
+REGISTER_DeleteVector(DeleteVector_HNSW_FP64);
 
 // TopK BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, TopK_BF_fp64, fp64_index_t)
