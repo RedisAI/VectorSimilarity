@@ -648,7 +648,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
             DistType candidate_to_selected_dist =
                 this->dist_func(getDataByInternalId(second_pair.second),
                                 getDataByInternalId(current_pair.second), this->dim);
-            if (candidate_to_selected_dist < candidate_to_query_dist) {
+            if (2 * candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
             }
