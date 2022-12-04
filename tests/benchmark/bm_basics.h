@@ -82,6 +82,7 @@ void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State
         labels_data.push_back(data);
 
         st.ResumeTiming();
+        removed_vectors_count += data.vectors_count;
 
         // Delete label
         auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
