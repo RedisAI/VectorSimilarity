@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get upgrade -yqq
 apt-get dist-upgrade -yqq
