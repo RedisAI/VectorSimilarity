@@ -68,7 +68,7 @@ jobs:
 
       - name: Benchmark
         timeout-minutes: 120
-        run: bash -l -c "make benchmark"
+        run: make benchmark
 
       - name: Collect results
         run: |
