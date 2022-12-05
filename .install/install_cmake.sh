@@ -1,5 +1,5 @@
 #!/bin/bash
-version=3.24.3
+version=3.25.1
 processor=$(uname -p)
 OS_TYPE=$(uname -s)
 
