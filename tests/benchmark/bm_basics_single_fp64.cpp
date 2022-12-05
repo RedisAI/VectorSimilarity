@@ -14,9 +14,9 @@ size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
 
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";
+    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512_fp64.hnsw_v2";
 const char *BM_VecSimGeneral::test_queries_file =
-    "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
+    "tests/benchmark/data/DBpedia-test_vectors-n10k_fp64.raw";
 
 DEFINE_DELETE_VECTOR(DeleteVector_BF_FP64, fp64_index_t, BruteForceIndex_Single, double, double,
                      VecSimAlgo_BF)

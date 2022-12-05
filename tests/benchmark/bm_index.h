@@ -25,20 +25,10 @@ protected:
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
     }
 
-    template <typename IndexParams>
-    static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
-        VecSimParams params = CreateParams(index_params);
-        return VecSimIndex_New(&params);
-    }
-    static void loadTestVectors(const std::string &test_file, VecSimType type);
-
-    static inline std::string AttachRootPath(std::string file_name) {
-        return std::string(getenv("ROOT")) + "/" + file_name;
-    }
-
 private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
+    static void loadTestVectors(const std::string &test_file, VecSimType type);
 };
 
 template <typename index_type_t>

@@ -57,4 +57,14 @@ protected:
         VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
         return params;
     }
+
+    template <typename IndexParams>
+    static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
+        VecSimParams params = CreateParams(index_params);
+        return VecSimIndex_New(&params);
+    }
+
+    static inline std::string AttachRootPath(std::string file_name) {
+        return std::string(getenv("ROOT")) + "/" + file_name;
+    }
 };

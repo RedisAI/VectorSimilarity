@@ -74,17 +74,63 @@ class PyVecSimIndex {
 public:
     PyVecSimIndex() {}
 
-    PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
+    PyVecSimIndex(const VecSimParams &params) {
+        index = VecSimIndex_New(&params);
+        if (params.algo == VecSimAlgo_BF) {
+            data_type = params.bfParams.type;
+        } else if (params.algo == VecSimAlgo_HNSWLIB) {
+            data_type = params.hnswParams.type;
+        }
+    }
 
     void addVector(py::object input, size_t id) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        VecSimIndex_AddVector(index, (void *)items.data(0), id);
+        if (this->data_type == VecSimType_FLOAT32) {
+            addVectorImp<float>(input, id);
+        } else if (this->data_type == VecSimType_FLOAT64) {
+            addVectorImp<double>(input, id);
+        }
     }
 
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
+        if (this->data_type == VecSimType_FLOAT32) {
+            return knnImp<float>(input, k, query_params);
+        } else if (this->data_type == VecSimType_FLOAT64) {
+            return knnImp<double>(input, k, query_params);
+        }
+    }
+
+    py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
+        if (this->data_type == VecSimType_FLOAT32) {
+            return rangeImp<float>(input, radius, query_params);
+        } else if (this->data_type == VecSimType_FLOAT64) {
+            return rangeImp<double>(input, radius, query_params);
+        }
+    }
+
+    size_t indexSize() { return VecSimIndex_IndexSize(index); }
+
+    PyBatchIterator createBatchIterator(py::object &query_blob, VecSimQueryParams *query_params) {
+        if (this->data_type == VecSimType_FLOAT32) {
+            return createBatchIteratorImp<float>(query_blob, query_params);
+        } else if (this->data_type == VecSimType_FLOAT64) {
+            return createBatchIteratorImp<double>(query_blob, query_params);
+        }
+    }
+
+    virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
+
+private:
+    template <typename DataType>
+    inline void addVectorImp(py::object input, size_t id) {
+        py::array_t<DataType, py::array::c_style | py::array::forcecast> items(input);
+        VecSimIndex_AddVector(index, (void *)items.data(0), id);
+    }
+
+    template <typename DataType>
+    inline py::object knnImp(py::object input, size_t k, VecSimQueryParams *query_params) {
+        py::array_t<DataType, py::array::c_style | py::array::forcecast> items(input);
         VecSimQueryResult_List res =
             VecSimIndex_TopKQuery(index, (void *)items.data(0), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
@@ -94,25 +140,24 @@ public:
         return wrap_results(res, k);
     }
 
-    py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
+    template <typename DataType>
+    inline py::object rangeImp(py::object input, double radius, VecSimQueryParams *query_params) {
+        py::array_t<DataType, py::array::c_style | py::array::forcecast> items(input);
         VecSimQueryResult_List res =
             VecSimIndex_RangeQuery(index, (void *)items.data(0), radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
-    size_t indexSize() { return VecSimIndex_IndexSize(index); }
-
-    PyBatchIterator createBatchIterator(py::object &query_blob, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-        float *vector_data = (float *)items.data(0);
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, query_params));
+    template <typename DataType>
+    inline PyBatchIterator createBatchIteratorImp(py::object &query_blob,
+                                                  VecSimQueryParams *query_params) {
+        py::array_t<DataType, py::array::c_style | py::array::forcecast> items(query_blob);
+        return PyBatchIterator(VecSimBatchIterator_New(index, (void *)items.data(0), query_params));
     }
-
-    virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
 protected:
     VecSimIndex *index;
+    VecSimType data_type;
 };
 
 // Currently supports only floats. TODO change after serializer refactoring
@@ -121,26 +166,26 @@ public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = VecSimIndex_New(&params);
+        this->data_type = hnsw_params.type;
     }
 
     // @params is required only in V1.
     PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
         this->index = HNSWFactory::NewIndex(location, hnsw_params);
+        this->data_type = this->index->info().hnswInfo.type;
     }
     void setDefaultEf(size_t ef) {
-        VecSimType data_type = this->index->info().hnswInfo.type;
-        if (data_type == VecSimType_FLOAT32) {
+        if (this->data_type == VecSimType_FLOAT32) {
             setDefaultEfImp<float>(ef);
-        } else if (data_type == VecSimType_FLOAT64) {
+        } else if (this->data_type == VecSimType_FLOAT64) {
             setDefaultEfImp<double>(ef);
         }
     }
 
     void saveIndex(const std::string &location) {
-        VecSimType data_type = this->index->info().hnswInfo.type;
-        if (data_type == VecSimType_FLOAT32) {
+        if (this->data_type == VecSimType_FLOAT32) {
             saveIndexImp<float>(location);
-        } else if (data_type == VecSimType_FLOAT64) {
+        } else if (this->data_type == VecSimType_FLOAT64) {
             saveIndexImp<double>(location);
         }
     }
@@ -164,6 +209,7 @@ public:
     PyBFIndex(const BFParams &bf_params) {
         VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bf_params};
         this->index = VecSimIndex_New(&params);
+        this->data_type = bf_params.type;
     }
 };
 
