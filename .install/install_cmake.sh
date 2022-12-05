@@ -5,7 +5,7 @@ OS_TYPE=$(uname -s)
 
 if [[ $OS_TYPE = 'Darwin' ]]
 then
-    brew install cmake@${version}
+    brew install cmake
 else
     if [[ $processor = 'x86_64' ]]
     then
