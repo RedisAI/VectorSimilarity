@@ -13,7 +13,7 @@ enable_testing()
 
 set(BM_SET bm_basics bm_updated_index bm_batch_iterator)
 set(INDEX_TYPE single multi)
-set(DATA_TYPE fp32 fp64)
+set(DATA_TYPE fp32)
 
 foreach(bm_set IN LISTS BM_SET)
 	foreach(index_type IN LISTS INDEX_TYPE)

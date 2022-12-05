@@ -12,7 +12,6 @@ struct IndexType {
 };
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
-using fp64_index_t = IndexType<VecSimType_FLOAT64, double, double>;
 
 using Offset_t = unsigned short;
 

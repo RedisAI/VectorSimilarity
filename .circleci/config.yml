@@ -106,7 +106,7 @@ commands:
             if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
             for bm_class in basics updated_index batch_iterator; do \
               for type in single multi; do \
-                for data_type in fp32 fp64; do \
+                for data_type in fp32; do \
                   redisbench-admin export \
                               --results-format google.benchmark \
                               --github_repo $CIRCLE_PROJECT_REPONAME \
@@ -451,3 +451,5 @@ workflows:
           parameters:
 #              san-type: [address, memory]
             san-type: [address]
+
+# VS Code Extension Version: 1.2.1
