@@ -429,6 +429,16 @@ public:
 	void run_parallel_update_benchmark_with_repair_jobs() {
 		cout << "\n***Starting parallel updating + searching benchmark where delete operations are executed with repair jobs"
 		        " using " << n_threads << " threads***" << endl;
+
+		// Set the global r/w lock to prefer writers.
+		std::shared_mutex guard;
+		auto *handle = (pthread_rwlock_t *)guard.native_handle();
+		pthread_rwlock_t rwlock_prefer_writers;
+		pthread_rwlockattr_t attr;
+		pthread_rwlockattr_setkind_np(&attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+		pthread_rwlock_init(&rwlock_prefer_writers, &attr);
+		*handle = rwlock_prefer_writers;
+
 		auto hnsw_index = VecSimIndex_New(&hnswParams);
 		auto bf_index = VecSimIndex_New(&bfParams);
 
@@ -451,7 +461,6 @@ public:
 #pragma omp critical
 			cout << "Thread " << myID << " done indexing vectors" << endl;
 		}
-
 		auto done = std::chrono::high_resolution_clock::now();
 		assert(VecSimIndex_IndexSize(hnsw_index) == data.size()/2);
 		std::cout << "Total build time is "
@@ -473,10 +482,11 @@ public:
 		     << " in parallel"  << endl;
 
 		size_t last_inserted_label = data.size()/2;
-		std::vector<repairJob> all_jobs;
+		// Holds an indicator for whether the deleted item is ready for eviction.
+		std::unordered_set<idType> swap_jobs_ready;
 
 		started = std::chrono::high_resolution_clock::now();
-#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, all_jobs, sleep_time, last_inserted_label) default(none)
+#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, swap_jobs_ready, sleep_time, last_inserted_label, guard, serializer) default(none)
 		{
 			int myID = omp_get_thread_num();
 			if (myID % 2 == 0) {
@@ -484,17 +494,31 @@ public:
 				cout << "Thread " << myID << " updating vectors" << endl;
 #pragma omp for schedule(dynamic) nowait
 				for (size_t i = 0; i < data.size() / 2; i++) {
+					guard.lock_shared();
 					auto repair_jobs = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->removeVector_POC(i);
 					for (auto job: repair_jobs) {
 						reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(
 								job.internal_id, job.level);
 					}
+#pragma omp critical
+					swap_jobs_ready.insert(i);
 					VecSimIndex_AddVector(hnsw_index, (const void *) data[i + data.size() / 2].data(),
 					                      i + data.size() / 2);
+					guard.unlock_shared();
 #pragma omp critical
 					last_inserted_label = i + data.size() / 2;
+
+					if (i % 1000 == 999) {
+						guard.lock();
+						for (auto it : swap_jobs_ready) {
+							reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it);
+						}
+//						serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
+//						cout << "Checking index integrity after " << i << " deletions and swapping: " << serializer.checkIntegrity().valid_state << endl;
+						swap_jobs_ready.clear();
+						guard.unlock();
+					}
 				}
-#pragma omp critical
 				cout << "Thread " << myID << " done updating vectors" << endl;
 			} else {
 				std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
@@ -507,8 +531,10 @@ public:
 				if (next_val >= queries.size()) {
 					break;
 				}
+				guard.lock_shared();
 				auto hnsw_results =
 						VecSimIndex_TopKQuery(hnsw_index, queries[next_val].data(), k, nullptr, BY_SCORE);
+				guard.unlock_shared();
 				total_res[next_val] = hnsw_results;
 			}
 #pragma omp critical
@@ -521,7 +547,7 @@ public:
 		assert(VecSimIndex_IndexSize(hnsw_index) == data.size()/2);
 		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
 		<< VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
-		std::cout << "Total update time (without swapping) is "
+		std::cout << "Total update time is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
@@ -529,19 +555,21 @@ public:
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
 		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory << endl;
 
-		started = std::chrono::high_resolution_clock::now();
-		for (size_t i = 0; i < data.size()/2; i++) {
-			reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(i);
+		if (!swap_jobs_ready.empty()) {
+			started = std::chrono::high_resolution_clock::now();
+			for (auto it: swap_jobs_ready) {
+				reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it);
+			}
+			done = std::chrono::high_resolution_clock::now();
+			std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
+			          << VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
+			std::cout << "Total swap and clean time of " << swap_jobs_ready.size() << "leftovers is "
+			          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
+			          << " ms" << std::endl;
+			cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
+			     " and the capacity is " << reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getIndexCapacity()
+			     << endl;
 		}
-		done = std::chrono::high_resolution_clock::now();
-		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
-		          << VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
-		std::cout << "Total swap and clean time is "
-		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
-		          << " ms" << std::endl;
-		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
-		" and the capacity is " << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->getIndexCapacity() << endl;
-
 		serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 		cout << "Checking index integrity: " << serializer.checkIntegrity().valid_state << endl;
 		serializer.reset();
@@ -584,7 +612,7 @@ int main() {
 					.blockSize = n}};
 
 	auto bm = BM_ParallelHNSW(params, bf_params, n_threads, n_queries, k);
-    bm.run_parallel_indexing_benchmark();
+//    bm.run_parallel_indexing_benchmark();
 //	bm.run_parallel_search_benchmark();
 //	bm.run_all_parallel_benchmark();
 	bm.run_parallel_update_benchmark_delete_alone();

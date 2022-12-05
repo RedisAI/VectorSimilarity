@@ -320,9 +320,11 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 	size_t incoming_edges_sets_sizes = 0;
 	std::map<size_t, size_t> incoming_edges_hist;
 	size_t total_nodes_in_levels_GT_zero = 0;
+	size_t num_deleted = 0;
 	if (hnsw_index->max_id != HNSW_INVALID_ID) {
 		for (size_t i = 0; i < hnsw_index->cur_element_count; i++) {
 			if (hnsw_index->isMarkedDeleted(i)) {
+				num_deleted++;
 				continue;
 			}
 			size_t max_element_level = hnsw_index->element_levels_[i];
@@ -437,14 +439,16 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 		return res;
 	}
 	res.valid_state = true;
-	std::cout << "incoming edges hist " << std::endl;
+
 	size_t accumulated_cap_sum = 0;
 	for (auto it: incoming_edges_hist) {
 		//std::cout << "there are " << it.second << " sets with capacity of " << it.first << std::endl;
 		accumulated_cap_sum += it.first * it.second;
 	}
-	std::cout << "total incoming edges caps: " << accumulated_cap_sum << std::endl;
+	std::cout << "\ntotal incoming edges caps: " << accumulated_cap_sum << std::endl;
 	std::cout << "total nodes in level higher than 0: " << total_nodes_in_levels_GT_zero << std::endl;
+	std::cout << "max id is: " << hnsw_index->max_id << std::endl;
+	std::cout << "cur elements count is: " << hnsw_index->cur_element_count << " with " << num_deleted << " marked deleted" << std::endl;
 	//std::cout << "num of visited nodes handlers: " << hnsw_index->visited_nodes_handler_pool->pool.size() << std::endl;
 	return res;
 }

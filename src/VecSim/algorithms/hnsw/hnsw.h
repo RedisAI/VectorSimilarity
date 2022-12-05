@@ -1096,7 +1096,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 	for (idType deleted_neighbor_id: deleted_neighbors) {
 		std::unique_lock<std::mutex> neighbor_lock(this->link_list_locks_[deleted_neighbor_id]);
 		linklistsizeint *neighbor_neighbours_list = get_linklist_at_level(deleted_neighbor_id, level);
-		unsigned short neighbor_neighbours_count = getListCount(node_neighbours_list);
+		linklistsizeint neighbor_neighbours_count = getListCount(neighbor_neighbours_list);
 		auto *neighbor_neighbours = (idType *)(neighbor_neighbours_list + 1);
 
 		for (size_t j = 0; j < neighbor_neighbours_count; j++) {
@@ -1352,6 +1352,9 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             }
         }
     }
+	if (element_levels_[entrypoint_node_] != maxlevel_) {
+		throw std::runtime_error("Invalid new entry point was chosen");
+	}
 }
 
 template <typename DataType, typename DistType>
@@ -1714,15 +1717,15 @@ void HNSWIndex<DataType, DistType>::SwapJob_POC(idType element_id) {
 
 	// If we need to free a complete block & there is a least one block between the
 	// capacity and the size.
-	if (cur_element_count % this->blockSize == 0 &&
-	    cur_element_count + this->blockSize <= max_elements_) {
-
-		// Check if the capacity is aligned to block size.
-		size_t extra_space_to_free = max_elements_ % this->blockSize;
-
-		// Remove one block from the capacity.
-		this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
-	}
+//	if (cur_element_count % this->blockSize == 0 &&
+//	    cur_element_count + this->blockSize <= max_elements_) {
+//
+//		// Check if the capacity is aligned to block size.
+//		size_t extra_space_to_free = max_elements_ % this->blockSize;
+//
+//		// Remove one block from the capacity.
+//		this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
+//	}
 }
 
 
@@ -1766,9 +1769,7 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 				// if the edge is bidirectional, do repair for this neighbor
 				if (neighbour_neighbours[j] == element_internal_id) {
 					bidirectional_edge = true;
-					if (!isMarkedDeleted(neighbour_id)) {
-						repair_jobs.push_back(repairJob{.internal_id = neighbour_id, .level = level});
-					}
+					repair_jobs.push_back(repairJob{.internal_id = neighbour_id, .level = level});
 					break;
 				}
 			}
@@ -1790,9 +1791,7 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 		element_lock.lock();
 		auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
 		for (auto incoming_edge : *incoming_edges) {
-			if (!isMarkedDeleted(incoming_edge)) {
-				repair_jobs.push_back(repairJob{.internal_id = incoming_edge, .level = level});
-			}
+			repair_jobs.push_back(repairJob{.internal_id = incoming_edge, .level = level});
 		}
 		// Do delete in swap job, in case that other job is performing changes in this set in the meantime.
 		//delete incoming_edges;
@@ -1814,27 +1813,27 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         vector_data = normalized_blob;
     }
 
-    {
-#ifdef ENABLE_PARALLELIZATION
-        std::unique_lock<std::mutex> templock_curr(index_data_guard_);
-#endif
+
+    std::unique_lock<std::mutex> templock_curr(index_data_guard_);
 
 //        if (cur_element_count >= max_elements_) {
 //	        // this should not occur in multithreaded scenario
 //	        size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
 //            resizeIndex(max_elements_ + vectors_to_add);
 //        }
-        cur_c = cur_element_count++;
-        setVectorId(label, cur_c);
-        ids_in_process.insert(cur_c);
-        element_levels_[cur_c] = element_max_level;
-    }
+    cur_c = cur_element_count++;
+    setVectorId(label, cur_c);
+    ids_in_process.insert(cur_c);
+    element_levels_[cur_c] = element_max_level;
+	templock_curr.unlock();
 
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
-#endif
-    int maxlevelcopy = (int)maxlevel_;
+	std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
+
+	int maxlevelcopy = (int)maxlevel_;
     size_t currObj = entrypoint_node_;
+//	if ((int)currObj >= 0 && element_levels_[currObj] != maxlevel_) {
+//		throw std::runtime_error("bad entry point - incompatible with max level");
+//	}
 
 #ifdef ENABLE_PARALLELIZATION
     if (element_max_level <= maxlevelcopy)
