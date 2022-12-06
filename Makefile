@@ -216,7 +216,7 @@ benchmark:
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
 	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	$(ROOT)/tests/benchmark/benchmarks.sh | xargs -I {} bash -lc \
-		"printf "\nRunning {} \n"; $(BENCHMARKDIR)/bm_{} --benchmark_out_format=json --benchmark_out={}_results.json || exit 255"
+		"$(BENCHMARKDIR)/bm_{} --benchmark_out_format=json --benchmark_out={}_results.json || exit 255"
 	$(SHOW)python3 -m tox -e benchmark
 
 toxenv:
