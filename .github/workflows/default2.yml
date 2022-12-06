@@ -55,6 +55,9 @@ jobs:
         run: make check-format
       - name: unit tests
         run: make unit_test
+      - run: |
+          CPATH=$pythonLocation/include/python3.8
+          echo "CPATH=$CPATH" >> $GITHUB_ENV
       - name: flow tests
         run: make flow_test
 
@@ -69,7 +72,6 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           files: /bin/Linux-x86_64-debug/cov.info
-          fail_ci_if_error: true
 
   stop-runner:
     name: Stop self-hosted EC2 runner
