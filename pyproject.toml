@@ -34,7 +34,6 @@ hnswlib = "^0.6.2"
 pytest = "^6.2.4"
 scipy = "^1.9.1"
 h5py = "^3.7.0"
-rltest = "0.5.4"
 
 
 [build-system]
