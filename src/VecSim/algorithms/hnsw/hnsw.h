@@ -53,6 +53,7 @@ using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, la
 typedef struct repairJob {
 	idType internal_id;
 	size_t level;
+	idType associated_deleted_id;
 } repairJob;
 
 template <typename DataType, typename DistType>
@@ -1769,7 +1770,7 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 				// if the edge is bidirectional, do repair for this neighbor
 				if (neighbour_neighbours[j] == element_internal_id) {
 					bidirectional_edge = true;
-					repair_jobs.push_back(repairJob{.internal_id = neighbour_id, .level = level});
+					repair_jobs.push_back(repairJob{.internal_id = neighbour_id, .level = level, .associated_deleted_id = element_internal_id});
 					break;
 				}
 			}
@@ -1791,7 +1792,7 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 		element_lock.lock();
 		auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
 		for (auto incoming_edge : *incoming_edges) {
-			repair_jobs.push_back(repairJob{.internal_id = incoming_edge, .level = level});
+			repair_jobs.push_back(repairJob{.internal_id = incoming_edge, .level = level, .associated_deleted_id = element_internal_id});
 		}
 		// Do delete in swap job, in case that other job is performing changes in this set in the meantime.
 		//delete incoming_edges;

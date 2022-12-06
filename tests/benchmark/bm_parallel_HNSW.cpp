@@ -12,7 +12,6 @@
 #include <pthread.h>
 #include <shared_mutex>
 
-using std::atomic_int;
 using std::cout;
 using std::endl;
 
@@ -126,7 +125,7 @@ public:
 		}
 
 		std::vector<VecSimQueryResult_List> total_res(queries.size());
-		atomic_int q_counter(0);
+		std::atomic_int q_counter(0);
 
 		cout << "Running " << queries.size() << " queries using " << n_threads << " threads..." << endl;
 		started = std::chrono::high_resolution_clock::now();
@@ -224,7 +223,7 @@ public:
 		auto bf_index = VecSimIndex_New(&bfParams);
 
 		std::vector<VecSimQueryResult_List> total_res(queries.size());
-		atomic_int q_counter(0);
+		std::atomic_int q_counter(0);
 
 		cout << "Creating an HNSW index of size " << data.size() << " with dim=" << hnswParams.hnswParams.dim
 		     << " with parallel indexing. After 4 seconds, we start running " << queries.size()
@@ -308,7 +307,7 @@ public:
 		auto bf_index = VecSimIndex_New(&bfParams);
 
 		std::vector<VecSimQueryResult_List> total_res(queries.size());
-		atomic_int q_counter(0);
+		std::atomic_int q_counter(0);
 
 		cout << "Creating an HNSW index of size " << data.size() / 2 << " with dim=" << hnswParams.hnswParams.dim
 		     << " with parallel indexing"  << endl;
@@ -443,7 +442,7 @@ public:
 		auto bf_index = VecSimIndex_New(&bfParams);
 
 		std::vector<VecSimQueryResult_List> total_res(queries.size());
-		atomic_int q_counter(0);
+		std::atomic_int q_counter(0);
 
 		cout << "Creating an HNSW index of size " << data.size() / 2 << " with dim=" << hnswParams.hnswParams.dim
 		     << " with parallel indexing"  << endl;
@@ -482,44 +481,66 @@ public:
 		     << " in parallel"  << endl;
 
 		size_t last_inserted_label = data.size()/2;
+
 		// Holds an indicator for whether the deleted item is ready for eviction.
-		std::unordered_set<idType> swap_jobs_ready;
+		std::unordered_map<idType, long> swap_jobs;
+		std::deque<repairJob> all_jobs;
+		std::mutex jobs_queue_guard;
 
 		started = std::chrono::high_resolution_clock::now();
-#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, swap_jobs_ready, sleep_time, last_inserted_label, guard, serializer) default(none)
+#pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, swap_jobs, \
+		sleep_time, last_inserted_label, guard, serializer, all_jobs, jobs_queue_guard) default(none)
 		{
 			int myID = omp_get_thread_num();
-			if (myID % 2 == 0) {
-#pragma omp critical
-				cout << "Thread " << myID << " updating vectors" << endl;
-#pragma omp for schedule(dynamic) nowait
+			if (myID == 0) {
 				for (size_t i = 0; i < data.size() / 2; i++) {
 					guard.lock_shared();
 					auto repair_jobs = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->removeVector_POC(i);
-					for (auto job: repair_jobs) {
-						reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(
-								job.internal_id, job.level);
-					}
-#pragma omp critical
-					swap_jobs_ready.insert(i);
 					VecSimIndex_AddVector(hnsw_index, (const void *) data[i + data.size() / 2].data(),
 					                      i + data.size() / 2);
 					guard.unlock_shared();
-#pragma omp critical
-					last_inserted_label = i + data.size() / 2;
+					swap_jobs.insert({i, repair_jobs.size()});
+
+					jobs_queue_guard.lock();
+					last_inserted_label++;
+					all_jobs.insert(all_jobs.end(), repair_jobs.begin(), repair_jobs.end());
+					jobs_queue_guard.unlock();
 
 					if (i % 1000 == 999) {
 						guard.lock();
-						for (auto it : swap_jobs_ready) {
-							reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it);
+						std::vector<idType> to_remove;
+						for (auto &it : swap_jobs) {
+							if (it.second == 0) {
+								to_remove.push_back(it.first);
+								reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
+							}
 						}
 //						serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 //						cout << "Checking index integrity after " << i << " deletions and swapping: " << serializer.checkIntegrity().valid_state << endl;
-						swap_jobs_ready.clear();
+						for (auto it : to_remove) {
+							swap_jobs.erase(it);
+						}
 						guard.unlock();
 					}
 				}
-				cout << "Thread " << myID << " done updating vectors" << endl;
+			} else if (myID >= 1 && myID < 6) {
+#pragma omp critical
+				cout << "Thread " << myID << " repairing vectors" << endl;
+				while (true) {
+					jobs_queue_guard.lock();
+					if (swap_jobs.empty() && last_inserted_label == data.size()-1) {
+						break;
+					}
+					auto job = all_jobs.front();
+					all_jobs.pop_front();
+					jobs_queue_guard.unlock();
+
+					guard.lock_shared();
+					reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(job.internal_id, job.level);
+					__atomic_fetch_sub(&(swap_jobs[job.associated_deleted_id]), 1, __ATOMIC_RELAXED);
+					guard.unlock_shared();
+				}
+				cout << "Thread " << myID << " done repairing nodes" << endl;
 			} else {
 				std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
 #pragma omp critical
@@ -555,15 +576,15 @@ public:
 		          << reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index)->max_gap << std::endl;
 		cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory << endl;
 
-		if (!swap_jobs_ready.empty()) {
+		if (!swap_jobs.empty()) {
 			started = std::chrono::high_resolution_clock::now();
-			for (auto it: swap_jobs_ready) {
-				reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it);
+			for (auto &it: swap_jobs) {
+				reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
 			}
 			done = std::chrono::high_resolution_clock::now();
 			std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
 			          << VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
-			std::cout << "Total swap and clean time of " << swap_jobs_ready.size() << "leftovers is "
+			std::cout << "Total swap and clean time of " << swap_jobs.size() << "leftovers is "
 			          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 			          << " ms" << std::endl;
 			cout << "Index memory is : " << VecSimIndex_Info(hnsw_index).hnswInfo.memory <<
@@ -615,6 +636,6 @@ int main() {
 //    bm.run_parallel_indexing_benchmark();
 //	bm.run_parallel_search_benchmark();
 //	bm.run_all_parallel_benchmark();
-	bm.run_parallel_update_benchmark_delete_alone();
+//	bm.run_parallel_update_benchmark_delete_alone();
 	bm.run_parallel_update_benchmark_with_repair_jobs();
 }
