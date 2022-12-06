@@ -46,7 +46,7 @@ jobs:
       - name: setup python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.11'
       - name: install dependencies
         run: sudo .install/install_script.sh
       - name: install python packages
@@ -55,9 +55,6 @@ jobs:
         run: make check-format
       - name: unit tests
         run: make unit_test
-      - run: |
-          CPATH=$pythonLocation/include/python3.8
-          echo "CPATH=$CPATH" >> $GITHUB_ENV
       - name: flow tests
         run: make flow_test
 
