@@ -112,11 +112,11 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     int64_t expectedAllocationDelta = 0;
     expectedAllocationDelta +=
         sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta +=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
+        sizeof(DataBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
     expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
@@ -132,12 +132,12 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationDelta = 0;
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
-    expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
+    expectedAllocationDelta += sizeof(DataBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta += sizeof(labelType); // resize idToLabelMapping
     expectedAllocationDelta +=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // keep the vector in the vector block
     expectedAllocationDelta +=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
+        sizeof(DataBlock *) + vecsimAllocationOverhead; // Keep the allocated vector block
     expectedAllocationDelta +=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // keep the mapping
     // Assert that the additional allocated delta did occur, and it is limited, as some STL
@@ -154,10 +154,10 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
 
     int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
     expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // Free the vector in the vector block
-    expectedAllocationDelta -= sizeof(VectorBlock *);         // remove from vectorBlocks vector
+    expectedAllocationDelta -= sizeof(DataBlock *);           // remove from vectorBlocks vector
     expectedAllocationDelta -= sizeof(labelType);             // resize idToLabelMapping
     expectedAllocationDelta -=
         sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
@@ -178,9 +178,9 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
 
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
     expectedAllocationDelta -=
-        (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
+        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
-        sizeof(VectorBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
+        sizeof(DataBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
     expectedAllocationDelta -=
         sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
     expectedAllocationDelta -= (sizeof(TEST_DATA_T) * dim +

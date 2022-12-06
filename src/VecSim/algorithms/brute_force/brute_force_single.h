@@ -38,11 +38,11 @@ protected:
     inline void updateVector(idType id, const void *vector_data) {
 
         // Get the vector block
-        VectorBlock *vectorBlock = this->getVectorVectorBlock(id);
+        DataBlock *vectorBlock = this->getVectorVectorBlock(id);
         size_t index = BruteForceIndex<DataType, DistType>::getVectorRelativeIndex(id);
 
         // Update vector data in the block.
-        vectorBlock->updateVector(index, vector_data);
+        vectorBlock->updateElement(index, vector_data);
     }
 
     inline void setVectorId(labelType label, idType id) override {
