@@ -2,6 +2,7 @@
 if(NOT DEFINED root)
 	get_filename_component(root ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
 endif()
+
 message("# VectorSimilarity_ModuleTest root:" ${root})
 message("# VectorSimilarity_ModuleTest binroot:" ${binroot})
 

@@ -1,0 +1,14 @@
+name: macos flow
+
+on: workflow_call # TODO: add pull_request-labeled with "macos" label when specifying a label is supported
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: make unit_test
