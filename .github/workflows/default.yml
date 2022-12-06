@@ -1,10 +1,10 @@
 name: default flow
 
 on:
-  # push:
-  #   branches: [main, '[0-9].[0-9]']
-  # pull_request:
-  #   branches-ignore: ['*docs', '*noci']
+  push:
+    branches: [main, '[0-9].[0-9]']
+  pull_request:
+    branches-ignore: ['*docs', '*noci']
   workflow_call:
 
 jobs:
@@ -32,9 +32,37 @@ jobs:
       - name: flow tests
         run: make flow_test
 
+  start-runner:
+    needs: build
+    name: Start self-hosted EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          # Ubuntu 20.04 AMI
+          ec2-image-id: ami-0f4feb99425e13b50
+          ec2-instance-type: t2.xlarge
+          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
+
+
   codecov:
     name: codecov job
-    runs-on: ubuntu-latest
+    needs: start-runner # required to start the main job when the runner is ready
+    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
       - name: checkout
         uses: actions/checkout@v3
@@ -46,4 +74,25 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           files: /bin/Linux-x86_64-debug/cov.info
-          fail_ci_if_error: true
+
+  stop-runner:
+    name: Stop self-hosted EC2 runner
+    needs:
+      - start-runner # required to get output from the start-runner job
+      - codecov
+    runs-on: ubuntu-latest
+    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
