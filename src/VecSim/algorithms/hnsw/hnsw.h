@@ -426,7 +426,9 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
     size_t removed_idx = 0;
     size_t link_idx = 0;
 
-    while (orig_candidates.size() > 0) {
+    // candidates is a subset of orig_candidates, and will always get empty before or with
+    // orig_candidates
+    while (candidates.size() > 0) {
         if (orig_candidates.top().second != candidates.top().second) {
             if (neighbors_bitmap[orig_candidates.top().second]) {
                 removed_links[removed_idx++] = orig_candidates.top().second;
@@ -437,6 +439,13 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
             candidates.pop();
             orig_candidates.pop();
         }
+    }
+    // the rest of the orig_candidates are the ones that were removed (if any).
+    while (orig_candidates.size() > 0) {
+        if (neighbors_bitmap[orig_candidates.top().second]) {
+            removed_links[removed_idx++] = orig_candidates.top().second;
+        }
+        orig_candidates.pop();
     }
     setListCount(node_neighbors, link_idx);
     *removed_links_num = removed_idx;
