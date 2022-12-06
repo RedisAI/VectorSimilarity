@@ -440,7 +440,8 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
             orig_candidates.pop();
         }
     }
-    // the rest of the orig_candidates are the ones that were removed (if any).
+    // the rest of the candidates in `orig_candidates` are the ones that were removed from
+    // `candidates` by the heuristic (if any left).
     while (orig_candidates.size() > 0) {
         if (neighbors_bitmap[orig_candidates.top().second]) {
             removed_links[removed_idx++] = orig_candidates.top().second;
