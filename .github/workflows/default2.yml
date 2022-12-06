@@ -29,7 +29,7 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 20.04 AMI
           ec2-image-id: ami-0f4feb99425e13b50
-          ec2-instance-type: t2.small
+          ec2-instance-type: t2.xlarge	
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
