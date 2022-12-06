@@ -284,7 +284,8 @@ benchmark:
 		done \
 	done
 
-	$(BINDIR)/benchmark/bm_spaces --benchmark_out=spaces_results.json --benchmark_out_format=json; 
+	$(BINDIR)/benchmark/bm_spaces_fp32 --benchmark_out=spaces_fp32_results.json --benchmark_out_format=json; 
+	$(BINDIR)/benchmark/bm_spaces_fp64 --benchmark_out=spaces_fp64_results.json --benchmark_out_format=json; 
 
 
 	$(SHOW)python3 -m tox -e benchmark

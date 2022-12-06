@@ -30,6 +30,16 @@ endforeach(bm_set IN LISTS BM_SET)
 # Adding files to complie after this line will have an effect on the resulted binaries. #
 #########################################################################################
 
+# First we compile the spaces benchmarks class so it won't include any compiler flags
+# that are not supported by the hardware. 
+
+set(DATA_TYPE fp32 fp64)
+
+foreach(data_type IN LISTS DATA_TYPE)
+	add_library(bm_spaces_class_${data_type} bm_spaces_class_${data_type}.cpp)
+	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
+endforeach(data_type IN LISTS DATA_TYPE)
+
 include(CheckCXXCompilerFlag)
 # TODO: Remove this once cpu_features get support for M1
 if(NOT APPLE)
@@ -66,5 +76,8 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
-add_executable(bm_spaces bm_spaces.cpp)
-target_link_libraries(bm_spaces VectorSimilarity benchmark::benchmark)
+foreach(data_type IN LISTS DATA_TYPE)
+	add_executable(bm_spaces_${data_type} bm_spaces_${data_type}.cpp)
+	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark bm_spaces_class_${data_type})
+endforeach()
+

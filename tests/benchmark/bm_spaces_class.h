@@ -11,12 +11,11 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/space_aux.h"
 
-template <typename data_type>
 class BM_VecSimSpaces : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
-    data_type *v1, *v2;
+    DATA_TYPE *v1, *v2;
     Arch_Optimization opt;
 
 public:
@@ -27,26 +26,23 @@ public:
     void TearDown(const ::benchmark::State &state);
 };
 
-template <typename data_type>
-BM_VecSimSpaces<data_type>::BM_VecSimSpaces() {
+BM_VecSimSpaces::BM_VecSimSpaces() {
     rng.seed(47);
     opt = getArchitectureOptimization();
 }
 
-template <typename data_type>
-void BM_VecSimSpaces<data_type>::SetUp(const ::benchmark::State &state) {
+void BM_VecSimSpaces::SetUp(const ::benchmark::State &state) {
     dim = state.range(0);
-    v1 = new data_type[dim];
-    v2 = new data_type[dim];
+    v1 = new DATA_TYPE[dim];
+    v2 = new DATA_TYPE[dim];
     std::uniform_real_distribution<double> distrib(-1.0, 1.0);
     for (size_t i = 0; i < dim; i++) {
-        v1[i] = (data_type)distrib(rng);
-        v2[i] = (data_type)distrib(rng);
+        v1[i] = (DATA_TYPE)distrib(rng);
+        v2[i] = (DATA_TYPE)distrib(rng);
     }
 }
 
-template <typename data_type>
-void BM_VecSimSpaces<data_type>::TearDown(const ::benchmark::State &state) {
+void BM_VecSimSpaces::TearDown(const ::benchmark::State &state) {
     delete v1;
     delete v2;
 }
