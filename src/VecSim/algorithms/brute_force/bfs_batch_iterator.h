@@ -22,7 +22,7 @@ private:
     inline VecSimQueryResult_Code calculateScores() override {
 
         this->scores.reserve(this->index->indexLabelCount());
-        vecsim_stl::vector<DataBlock *> blocks = this->index->getVectorBlocks();
+        auto &blocks = this->index->getVectorBlocks();
         VecSimQueryResult_Code rc;
 
         idType curr_id = 0;
