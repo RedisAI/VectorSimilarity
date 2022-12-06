@@ -9,10 +9,10 @@
 bool BM_VecSimGeneral::is_multi = false;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
+size_t BM_VecSimGeneral::n_vectors = 1000000;
 size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
-size_t BM_VecSimGeneral::n_vectors = 1000000;
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v1";

@@ -104,7 +104,17 @@ commands:
           command: |
             bash -l -c "make benchmark"
             if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
-            for bm_class in basics updated_index batch_iterator; do \
+            # Read results for spaces benchmarkss and for updated fp32_single indice.
+            for bm_class in updated_index_singke_fp32 spaces_fp32 spaces_fp64; do \
+              redisbench-admin export \
+              --results-format google.benchmark \
+              --github_repo $CIRCLE_PROJECT_REPONAME \
+              --github_org $CIRCLE_PROJECT_USERNAME \
+              --github_branch $branch \
+              --benchmark-result-file ${bm_class}_results.json
+            done
+            # Read results for the rest of the benchmarks
+            for bm_class in basics batch_iterator; do \
               for type in single multi; do \
                 for data_type in fp32; do \
                   redisbench-admin export \
@@ -451,5 +461,3 @@ workflows:
           parameters:
 #              san-type: [address, memory]
             san-type: [address]
-
-# VS Code Extension Version: 1.2.1

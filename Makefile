@@ -274,18 +274,23 @@ mod_test:
 
 benchmark:
 
-	for bm_class in basics updated_index batch_iterator; do \
+	$(SHOW) for bm_class in basics batch_iterator; do \
 		for type in single multi; do \
 			for data_type in fp32 fp64; do \
 				BM_TEST_NAME=$${bm_class}_$${type}_$${data_type}; \
-				echo $$BM_TEST_NAME; \
+				printf "\nRunning $$BM_TEST_NAME \n"; \
 				$(BINDIR)/benchmark/bm_$$BM_TEST_NAME --benchmark_out=$$BM_TEST_NAME_results.json --benchmark_out_format=json; \
 			done \
 		done \
 	done
+	
+	$(SHOW) # We have updated index benchmarks only for fp32_single indices
+	$(SHOW) printf "\nRunning updated_index_single_fp32 \n"; 
+	$(SHOW) $(BINDIR)/benchmark/bm_updated_index_single_fp32 --benchmark_out=bm_updated_index_single_fp32_results.json --benchmark_out_format=json; 
 
-	$(BINDIR)/benchmark/bm_spaces_fp32 --benchmark_out=spaces_fp32_results.json --benchmark_out_format=json; 
-	$(BINDIR)/benchmark/bm_spaces_fp64 --benchmark_out=spaces_fp64_results.json --benchmark_out_format=json; 
+	# Run spaces benchmarks
+	$(SHOW) $(BINDIR)/benchmark/bm_spaces_fp32 --benchmark_out=spaces_fp32_results.json --benchmark_out_format=json; 
+	$(SHOW) $(BINDIR)/benchmark/bm_spaces_fp64 --benchmark_out=spaces_fp64_results.json --benchmark_out_format=json; 
 
 
 	$(SHOW)python3 -m tox -e benchmark

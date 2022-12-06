@@ -11,10 +11,15 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 enable_testing()
 
-set(BM_SET bm_basics bm_updated_index bm_batch_iterator)
+set(BM_SET bm_basics bm_batch_iterator)
 set(INDEX_TYPE single multi)
 set(DATA_TYPE fp32)
 
+# We only have updted index benchmarks for fp32_single indices
+add_executable(bm_updated_index_single_fp32 bm_updated_index_single_fp32.cpp bm_utils.cpp)
+target_link_libraries(bm_updated_index_single_fp32 VectorSimilarity benchmark::benchmark)
+
+# Compiling lines for all other benchmarks.
 foreach(bm_set IN LISTS BM_SET)
 	foreach(index_type IN LISTS INDEX_TYPE)
 		foreach(data_type IN LISTS DATA_TYPE)

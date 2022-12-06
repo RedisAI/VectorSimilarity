@@ -71,7 +71,7 @@ void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State
     size_t label_to_remove = 0;
     double memory_delta = 0;
     size_t removed_vectors_count = 0;
-    std::vector<LabelData> labels_data;
+    std::vector<LabelData> removed_labels_data;
 
     for (auto _ : st) {
         st.PauseTiming();
@@ -79,7 +79,7 @@ void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State
         LabelData data;
         index->GetDataByLabel(label_to_remove, data.vectors_count, data.vectors_data);
 
-        labels_data.push_back(data);
+        removed_labels_data.push_back(data);
 
         st.ResumeTiming();
         removed_vectors_count += data.vectors_count;
@@ -94,13 +94,13 @@ void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State
     st.counters["memory"] = memory_delta / (double)removed_vectors_count;
 
     // Restore index state.
-    // For rem_label in removed_labels
-    for (size_t label_idx = 0; label_idx < labels_data.size(); label_idx++) {
-        size_t vec_count = labels_data[label_idx].vectors_count;
-        // For vector in rem_label
+    // For each label in removed_labels_data
+    for (size_t label_idx = 0; label_idx < removed_labels_data.size(); label_idx++) {
+        size_t vec_count = removed_labels_data[label_idx].vectors_count;
+        // Reinsert all the deleted vectors under this label.
         for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
-            VecSimIndex_AddVector(index, labels_data[label_idx].vectors_data[vec_idx].data(),
-                                  label_idx);
+            VecSimIndex_AddVector(
+                index, removed_labels_data[label_idx].vectors_data[vec_idx].data(), label_idx);
         }
     }
 }
