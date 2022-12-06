@@ -466,8 +466,8 @@ TYPED_TEST(BruteForceMultiTest, test_delete_swap_block) {
     ASSERT_EQ(deleted_label_id_pair, bfm_index->labelToIdsLookup.end());
 
     // The vector in index1 should hold id5 data.
-    DataBlock *block = bfm_index->getVectorVectorBlock(1);
-    TEST_DATA_T *vector_data = (TEST_DATA_T *)block->getElement(1);
+    DataBlock &block = bfm_index->getVectorVectorBlock(1);
+    TEST_DATA_T *vector_data = (TEST_DATA_T *)block.getElement(1);
     for (size_t i = 0; i < dim; ++i) {
         ASSERT_EQ(*vector_data, 5);
         ++vector_data;

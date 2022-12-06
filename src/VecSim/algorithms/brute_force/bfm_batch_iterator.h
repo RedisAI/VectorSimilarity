@@ -24,7 +24,7 @@ private:
         this->scores.reserve(this->index->indexLabelCount());
         vecsim_stl::unordered_map<labelType, DistType> tmp_scores(this->index->indexLabelCount(),
                                                                   this->allocator);
-        vecsim_stl::vector<DataBlock *> blocks = this->index->getVectorBlocks();
+        auto &blocks = this->index->getVectorBlocks();
         VecSimQueryResult_Code rc;
 
         idType curr_id = 0;

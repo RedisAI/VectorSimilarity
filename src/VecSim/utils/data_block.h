@@ -16,20 +16,32 @@ struct DataBlock : public VecsimBaseObject {
 public:
     DataBlock(size_t blockSize, size_t elementBytesCount,
               std::shared_ptr<VecSimAllocator> allocator);
+    DataBlock(DataBlock &&other) noexcept;
+    ~DataBlock() noexcept;
+
+    DataBlock(const DataBlock &other) = delete;
+
+    DataBlock &operator=(DataBlock &&other) noexcept {
+        element_bytes_count = other.element_bytes_count;
+        length = other.length;
+        data = other.data;
+        other.data = nullptr;
+        return *this;
+    };
 
     void addElement(const void *element);
 
     void updateElement(size_t index, const void *new_element);
 
-    inline char *getElement(size_t index) { return this->data + (index * element_bytes_count); }
+    inline const char *getElement(size_t index) const {
+        return this->data + (index * element_bytes_count);
+    }
 
     inline char *removeAndFetchLastElement() {
         return this->data + ((--this->length) * element_bytes_count);
     }
 
-    inline size_t getLength() { return length; }
-
-    virtual ~DataBlock();
+    inline size_t getLength() const { return length; }
 
 private:
     // Element size in bytes (dim * sizeof(data_type))
@@ -37,5 +49,5 @@ private:
     // Current block length.
     size_t length;
     // Elements hosted in the block.
-    char *const data;
+    char *data;
 };
