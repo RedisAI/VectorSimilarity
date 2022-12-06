@@ -1,0 +1,29 @@
+name: rocky8 flow
+
+on: workflow_call # TODO: add pull_request-labeled with "rocky8" label when specifying a label is supported
+
+jobs:
+  rocky8:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:8
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: install dependencies
+        run: .install/install_script.sh
+      - name: unit tests
+        run: |
+          export CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
+          export CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
+          make unit_test
+      - name: valgrind
+        run: |
+          export CXX=/opt/rh/gcc-toolset-10/root/usr/bin/g++
+          export CC=/opt/rh/gcc-toolset-10/root/usr/bin/gcc
+          make valgrind
+      - name: Archive valgrind tests reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: valgrind tests reports
+          path: bin/Linux-x86_64-debug/unit_tests/Testing/Temporary/
