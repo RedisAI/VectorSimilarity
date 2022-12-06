@@ -19,10 +19,10 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
-DEFINE_DELETE_VECTOR(DeleteVector_BF_FP32, fp32_index_t, BruteForceIndex_Single, float, float,
-                     VecSimAlgo_BF)
-DEFINE_DELETE_VECTOR(DeleteVector_HNSW_FP32, fp32_index_t, HNSWIndex_Single, float, float,
-                     VecSimAlgo_HNSWLIB)
+DEFINE_DELETE_LABEL(DeleteLabel_BF_FP32, fp32_index_t, BruteForceIndex_Single, float, float,
+                    VecSimAlgo_BF)
+DEFINE_DELETE_LABEL(DeleteLabel_HNSW_FP32, fp32_index_t, HNSWIndex_Single, float, float,
+                    VecSimAlgo_HNSWLIB)
 #include "bm_basics_define_n_register_fp32.h"
 
 BENCHMARK_MAIN();
