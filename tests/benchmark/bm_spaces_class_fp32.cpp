@@ -6,4 +6,4 @@
 
 #define DATA_TYPE float
 
-#include "bm_spaces_class.h"
+#include "bm_spaces_class_definitions.h"
