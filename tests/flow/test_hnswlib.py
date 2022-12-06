@@ -369,7 +369,7 @@ def test_range_query():
         end = time.time()
         res_num = len(hnsw_labels[0])
 
-        dists = sorted([(key, spatial.distance.sqeuclidean(query_data, vec)) for key, vec in vectors])
+        dists = sorted([(key, spatial.distance.sqeuclidean(query_data.flat, vec)) for key, vec in vectors])
         actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
         print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
@@ -494,7 +494,7 @@ def test_multi_range_query():
     # calculate distances of the labels in the index
     dists = {}
     for key, vec in vectors:
-        dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
+        dists[key] = min(spatial.distance.sqeuclidean(query_data.flat, vec), dists.get(key, np.inf))
 
     dists = list(dists.items())
     dists = sorted(dists, key=lambda pair: pair[1])
