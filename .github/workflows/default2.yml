@@ -8,7 +8,32 @@ on:
   workflow_call:
 
 jobs:
+  build:
+    name: default build job
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: install dependencies
+        run: sudo .install/install_script.sh
+      - name: install python packages
+        run: pip3 install -r requirements.txt
+      - name: check format
+        run: make check-format
+      - name: unit tests
+        run: make unit_test
+      - name: flow tests
+        run: make flow_test
+
   start-runner:
+    needs: build
     name: Start self-hosted EC2 runner
     runs-on: ubuntu-latest
     outputs:
@@ -29,40 +54,20 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 20.04 AMI
           ec2-image-id: ami-0f4feb99425e13b50
-          ec2-instance-type: t2.xlarge	
+          ec2-instance-type: t2.xlarge
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
-  build:
-    name: default build job
-    needs: start-runner # required to start the main job when the runner is ready
-    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
-    steps:
-      - name: checkout
-        uses: actions/checkout@v3
-      - name: setup python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - name: install dependencies
-        run: sudo .install/install_script.sh
-      - name: install python packages
-        run: pip3 install -r requirements.txt
-      # - name: check format
-      #   run: make check-format
-      # - name: unit tests
-      #   run: make unit_test
-      - name: flow tests
-        run: make flow_test
 
   codecov:
     name: codecov job
-    needs: [start-runner, build] # required to start the main job when the runner is ready
+    needs: start-runner # required to start the main job when the runner is ready
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: install dependencies
+        run: sudo .install/install_script.sh
       - name: run codecov
         run: make coverage
       - name: Upload coverage to Codecov
@@ -74,7 +79,6 @@ jobs:
     name: Stop self-hosted EC2 runner
     needs:
       - start-runner # required to get output from the start-runner job
-      - build # required to wait when the main job is done
       - codecov
     runs-on: ubuntu-latest
     if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
