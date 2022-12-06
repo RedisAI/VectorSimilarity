@@ -133,7 +133,7 @@ protected:
     inline void processCandidate_RangeSearch(
         idType curNodeId, const void *data_point, size_t layer, double epsilon, tag_t visited_tag,
         std::unique_ptr<vecsim_stl::abstract_results_container> &top_candidates,
-        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, double radius) const;
+        candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound, DistType radius) const;
     template <bool has_marked_deleted>
     candidatesMaxHeap<DistType> searchLayer(idType ep_id, const void *data_point, size_t layer,
                                             size_t ef) const;
@@ -143,7 +143,7 @@ protected:
                                   void *timeoutCtx, VecSimQueryResult_Code *rc) const;
     template <bool has_marked_deleted>
     VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                          double epsilon, double radius,
+                                                          double epsilon, DistType radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
@@ -517,7 +517,7 @@ template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     idType curNodeId, const void *query_data, size_t layer, double epsilon, tag_t visited_tag,
     std::unique_ptr<vecsim_stl::abstract_results_container> &results,
-    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
+    candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -528,8 +528,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
 
-    // Cast radius once instead of each time we check that candidate_dist <= radius_
-    DistType radius_ = DistType(radius);
     for (size_t j = 0; j < links_num; j++) {
         idType *candidate_pos = node_links + j;
         idType candidate_id = *candidate_pos;
@@ -549,7 +547,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             // If the new candidate is in the requested radius, add it to the results set.
-            if (candidate_dist <= radius_ &&
+            if (candidate_dist <= radius &&
                 (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
                 results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
@@ -758,7 +756,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
                 auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(),
                                     selectedNeighbor);
                 if (it != node_incoming_edges->end()) {
-                    node_incoming_edges->erase(it);
+                    *it = node_incoming_edges->back();
+                    node_incoming_edges->pop_back();
                 } else {
                     neighbour_incoming_edges->push_back(node_id);
                 }
@@ -825,7 +824,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         // and it should be saved in the neighbor's incoming edges.
         auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), neighbour_id);
         if (it != node_incoming_edges->end()) {
-            node_incoming_edges->erase(it);
+            *it = node_incoming_edges->back();
+            node_incoming_edges->pop_back();
         } else {
             neighbour_incoming_edges->push_back(node_id);
         }
@@ -846,9 +846,11 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                              neighbour_incoming_edges->end(),
-                                                              node_id));
+                    auto it = std::find(neighbour_incoming_edges->begin(),
+                                        neighbour_incoming_edges->end(), node_id);
+                    assert(it != neighbour_incoming_edges->end());
+                    *it = neighbour_incoming_edges->back();
+                    neighbour_incoming_edges->pop_back();
                     bidirectional_edge = true;
                     break;
                 }
@@ -926,8 +928,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
                 auto it = std::find(neighbour_incoming_edges->begin(),
                                     neighbour_incoming_edges->end(), cur_element_count);
                 assert(it != neighbour_incoming_edges->end());
-                neighbour_incoming_edges->erase(it);
-                neighbour_incoming_edges->push_back(element_internal_id);
+                *it = element_internal_id;
             }
         }
 
@@ -1185,9 +1186,11 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                          neighbour_incoming_edges->end(),
-                                                          element_internal_id));
+                auto it = std::find(neighbour_incoming_edges->begin(),
+                                    neighbour_incoming_edges->end(), element_internal_id);
+                assert(it != neighbour_incoming_edges->end());
+                *it = neighbour_incoming_edges->back();
+                neighbour_incoming_edges->pop_back();
             }
         }
 
@@ -1504,7 +1507,7 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
 VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
-    idType ep_id, const void *data_point, double epsilon, double radius, void *timeoutCtx,
+    idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
     VecSimQueryResult_Code *rc) const {
 
     *rc = VecSim_QueryResult_OK;
@@ -1539,8 +1542,6 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     candidate_set.emplace(-ep_dist, ep_id);
     this->visited_nodes_handler->tagNode(ep_id, visited_tag);
 
-    // Cast radius once instead of each time we check that -curr_el_pair.first >= radius_.
-    DistType radius_ = DistType(radius);
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
@@ -1555,7 +1556,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         candidate_set.pop();
 
         // Decrease the effective range, but keep dyn_range >= radius.
-        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius_) {
+        if (-curr_el_pair.first < dynamic_range && -curr_el_pair.first >= radius) {
             dynamic_range = -curr_el_pair.first;
             dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
         }
