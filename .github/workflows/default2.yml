@@ -33,60 +33,6 @@ jobs:
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
-  benchmark:
-    name: Run the benchmarks on the runner
-    needs: start-runner # required to start the main job when the runner is ready
-    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
-    steps:
-      - name: checkout
-        uses: actions/checkout@v3
-
-      - name: Print runner info
-        run: |
-          printf "Runner lscpu:\n$(lscpu)\n"
-          printf "Runner lsmem:\n$(lsmem)\n"
-          printf "Runner nproc:\n$(nproc)\n"
-          printf "Runner uname:\n$(uname -a)\n"
-
-      - name: Install benchmark dependencies
-        run: |
-             sudo .install/install_script.sh
-             sudo apt install python3-pip -y
-             pip3 install --upgrade pip PyYAML setuptools redisbench-admin
-             pip3 install -r requirements.txt
-
-      - name: stress test
-        run: |
-          sudo apt install stress-ng -qqy
-          uptime
-          stress-ng -c 1 --timeout 60s --metrics-brief
-          uptime
-          stress-ng --stream 1 -t 60 --metrics-brief
-          uptime
-          stress-ng --ipsec-mb=1 -t 60 --metrics-brief
-          uptime
-
-      # TODO: remove "--no-check-certificate" when possible
-      - name: Download pre-generated indices
-        timeout-minutes: 20
-        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
-
-      - name: Benchmark
-        timeout-minutes: 120
-        run: make benchmark
-
-      - name: Collect results
-        run: |
-          ./tests/benchmark/benchmarks.sh | xargs -I {} redisbench-admin export     \
-          --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
-          --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
-          --redistimeseries_pass      ${{ secrets.PERFORMANCE_RTS_AUTH }}           \
-          --github_repo               ${{ github.event.repository.name }}           \
-          --github_org                ${{ github.repository_owner }}                \
-          --github_branch             ${{ github.head_ref || github.ref_name }}     \
-          --github_actor              ${{ github.triggering_actor }}                \
-          --results-format            google.benchmark                              \
-          --benchmark-result-file     {}_results.json
   build:
     name: default build job
     needs: start-runner # required to start the main job when the runner is ready
@@ -114,7 +60,7 @@ jobs:
 
   codecov:
     name: codecov job
-    needs: start-runner, build # required to start the main job when the runner is ready
+    needs: [start-runner, build] # required to start the main job when the runner is ready
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
       - name: run codecov
