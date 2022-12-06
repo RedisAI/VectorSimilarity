@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "vector_block.h"
+#include "VecSim/utils/data_block.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
@@ -29,14 +29,14 @@ template <typename DataType, typename DistType>
 class BruteForceIndex : public VecSimIndexAbstract<DistType> {
 protected:
     vecsim_stl::vector<labelType> idToLabelMapping;
-    vecsim_stl::vector<VectorBlock *> vectorBlocks;
+    vecsim_stl::vector<DataBlock *> vectorBlocks;
     idType count;
 
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
     virtual size_t indexSize() const override;
-    vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
+    vecsim_stl::vector<DistType> computeBlockScores(DataBlock *block, const void *queryBlob,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
@@ -50,7 +50,7 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
-    inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
+    inline vecsim_stl::vector<DataBlock *> getVectorBlocks() const { return vectorBlocks; }
     virtual ~BruteForceIndex();
 
 protected:
@@ -61,9 +61,9 @@ protected:
     virtual int removeVector(idType id);
 
     inline DataType *getDataByInternalId(idType id) const {
-        return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
+        return (DataType *)vectorBlocks.at(id / this->blockSize)->getElement(id % this->blockSize);
     }
-    inline VectorBlock *getVectorVectorBlock(idType id) const {
+    inline DataBlock *getVectorVectorBlock(idType id) const {
         return vectorBlocks.at(id / this->blockSize);
     }
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
@@ -123,18 +123,18 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
     // if vectorBlocks vector is empty or last_vector_block is full create a new block
     if (id % this->blockSize == 0) {
         size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
-        VectorBlock *new_vectorBlock =
-            new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
+        DataBlock *new_vectorBlock =
+            new (this->allocator) DataBlock(this->blockSize, vector_bytes_count, this->allocator);
         this->vectorBlocks.push_back(new_vectorBlock);
     }
 
     // get the last vectors block
-    VectorBlock *vectorBlock = this->vectorBlocks.back();
+    DataBlock *vectorBlock = this->vectorBlocks.back();
 
     assert(vectorBlock == getVectorVectorBlock(id));
 
     // add vector data to vectorBlock
-    vectorBlock->addVector(vector_data);
+    vectorBlock->addElement(vector_data);
 
     // if idToLabelMapping is full,
     // resize and align idToLabelMapping by blockSize
@@ -163,10 +163,10 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     labelType last_idx_label = getVectorLabel(last_idx);
 
     // Get last vector data.
-    VectorBlock *last_vector_block = vectorBlocks.back();
+    DataBlock *last_vector_block = vectorBlocks.back();
     assert(last_vector_block == getVectorVectorBlock(last_idx));
 
-    void *last_vector_data = last_vector_block->removeAndFetchLastVector();
+    void *last_vector_data = last_vector_block->removeAndFetchLastElement();
 
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
@@ -180,11 +180,11 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         replaceIdOfLabel(last_idx_label, id_to_delete, last_idx);
 
         // Get the vectorBlock and the relative index of the deleted id.
-        VectorBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
+        DataBlock *deleted_vectorBlock = getVectorVectorBlock(id_to_delete);
         size_t id_to_delete_rel_idx = getVectorRelativeIndex(id_to_delete);
 
         // Put data of last vector inplace of the deleted vector.
-        deleted_vectorBlock->updateVector(id_to_delete_rel_idx, last_vector_data);
+        deleted_vectorBlock->updateElement(id_to_delete_rel_idx, last_vector_data);
     }
 
     // If the last vector block is emtpy.
@@ -213,7 +213,7 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 // Compute the score for every vector in the block by using the given distance function.
 template <typename DataType, typename DistType>
 vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockScores(
-    VectorBlock *block, const void *queryBlob, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
+    DataBlock *block, const void *queryBlob, void *timeoutCtx, VecSimQueryResult_Code *rc) const {
     size_t len = block->getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
@@ -221,7 +221,7 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block->getVector(i), queryBlob, this->dim);
+        scores[i] = this->dist_func(block->getElement(i), queryBlob, this->dim);
     }
     *rc = VecSim_QueryResult_OK;
     return scores;
