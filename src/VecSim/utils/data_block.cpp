@@ -13,7 +13,13 @@ DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,
     : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0),
       data((char *)this->allocator->allocate(blockSize * elementBytesCount)) {}
 
-DataBlock::~DataBlock() { this->allocator->free_allocation(data); }
+DataBlock::DataBlock(DataBlock &&other) noexcept
+    : VecsimBaseObject(other.allocator), element_bytes_count(other.element_bytes_count),
+      length(other.length), data(other.data) {
+    other.data = nullptr;
+}
+
+DataBlock::~DataBlock() noexcept { this->allocator->free_allocation(data); }
 
 void DataBlock::addElement(const void *element) {
 
@@ -23,6 +29,6 @@ void DataBlock::addElement(const void *element) {
 }
 
 void DataBlock::updateElement(size_t index, const void *new_element) {
-    char *destinaion = getElement(index);
+    char *destinaion = (char *)getElement(index);
     memcpy(destinaion, new_element, element_bytes_count);
 }
