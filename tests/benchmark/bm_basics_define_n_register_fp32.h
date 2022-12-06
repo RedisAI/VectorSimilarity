@@ -16,10 +16,10 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_HNSW_fp32, fp32_index_t)
 BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_HNSW_fp32)->Iterations(1);
 
 // AddVector
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddVector_fp32, fp32_index_t)
-(benchmark::State &st) { AddVector(st); }
-REGISTER_AddVector(AddVector_fp32, VecSimAlgo_BF);
-REGISTER_AddVector(AddVector_fp32, VecSimAlgo_HNSWLIB);
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddLabel_fp32, fp32_index_t)
+(benchmark::State &st) { AddLabel(st); }
+REGISTER_AddVector(AddLabel_fp32, VecSimAlgo_BF);
+REGISTER_AddVector(AddLabel_fp32, VecSimAlgo_HNSWLIB);
 
 // DeleteVector Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteVector(DeleteVector_BF_FP32);

@@ -105,7 +105,7 @@ commands:
             bash -l -c "make benchmark"
             if [[ $CIRCLE_BRANCH ]]; then branch=$CIRCLE_BRANCH; else branch=$CIRCLE_TAG; fi
             # Read results for spaces benchmarkss and for updated fp32_single indice.
-            for bm_class in updated_index_singke_fp32 spaces_fp32 spaces_fp64; do \
+            for bm_class in updated_index_single_fp32 spaces_fp32 spaces_fp64; do \
               redisbench-admin export \
               --results-format google.benchmark \
               --github_repo $CIRCLE_PROJECT_REPONAME \

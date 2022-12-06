@@ -276,7 +276,7 @@ benchmark:
 
 	$(SHOW) for bm_class in basics batch_iterator; do \
 		for type in single multi; do \
-			for data_type in fp32 fp64; do \
+			for data_type in fp32; do \
 				BM_TEST_NAME=$${bm_class}_$${type}_$${data_type}; \
 				printf "\nRunning $$BM_TEST_NAME \n"; \
 				$(BINDIR)/benchmark/bm_$$BM_TEST_NAME --benchmark_out=$$BM_TEST_NAME_results.json --benchmark_out_format=json; \

@@ -10,7 +10,7 @@ public:
     ~BM_VecSimBasics() = default;
 
     // Different implementation for multi and single.
-    static void AddVector(benchmark::State &st);
+    static void AddLabel(benchmark::State &st);
 
     // we Pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
     // which is not known to VecSimIndex class.
@@ -30,9 +30,7 @@ private:
 };
 
 template <typename index_type_t>
-void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
-    // Add a new vector from the test vectors in every iteration.
-    size_t iter = 0;
+void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
     size_t index_size = N_VECTORS;
     size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
@@ -41,25 +39,32 @@ void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
     size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
-    size_t vec_id = initial_label_count * vec_per_label;
     size_t memory_delta = 0;
+    labelType label = initial_label_count;
+    size_t added_vec_count = 0;
 
+    // Add a new label from the test set in every iteration.
     for (auto _ : st) {
-        memory_delta += VecSimIndex_AddVector(
-            INDICES[st.range(0)], QUERIES[iter % N_QUERIES].data(), vec_id / vec_per_label);
-        vec_id++;
-        iter++;
+        // Add one label
+        for (labelType vec = 0; vec < vec_per_label; ++vec) {
+            memory_delta += VecSimIndex_AddVector(
+                INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(), label);
+        }
+        added_vec_count += vec_per_label;
+        label++;
     }
-    st.counters["memory"] = (double)memory_delta / (double)iter;
 
-    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + iter);
+    st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
+    st.counters["vectors_per_label"] = vec_per_label;
+
+    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + added_vec_count);
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
     size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
-    for (size_t id = initial_label_count; id < new_label_count; id++) {
-        VecSimIndex_DeleteVector(INDICES[st.range(0)], id);
+    for (size_t label = initial_label_count; label < new_label_count; label++) {
+        VecSimIndex_DeleteVector(INDICES[st.range(0)], label);
     }
 
     assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
