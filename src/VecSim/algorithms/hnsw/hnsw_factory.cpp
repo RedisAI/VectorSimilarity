@@ -127,89 +127,89 @@ size_t EstimateElementSize(const HNSWParams *params) {
     return size_meta_data + size_total_data_per_element;
 }
 
-#ifdef BUILD_TESTS
+// #ifdef BUILD_TESTS
 
-template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
-                                                 std::shared_ptr<VecSimAllocator> allocator,
-                                                 Serializer::EncodingVersion version) {
-    HNSWIndex<DataType, DistType> *index = nullptr;
-    // check if single and call the ctor that loads index information from file.
-    if (params->multi)
-        index =
-            new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator, version);
-    else
-        index =
-            new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
+// template <typename DataType, typename DistType = DataType>
+// inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
+//                                                  std::shared_ptr<VecSimAllocator> allocator,
+//                                                  Serializer::EncodingVersion version) {
+//     HNSWIndex<DataType, DistType> *index = nullptr;
+//     // check if single and call the ctor that loads index information from file.
+//     if (params->multi)
+//         index =
+//             new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator, version);
+//     else
+//         index =
+//             new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
 
-    index->restoreGraph(input);
+//     index->restoreGraph(input);
 
-    return index;
-}
+//     return index;
+// }
 
-// Intialize @params from file for V2
-static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
-    Serializer::readBinaryPOD(source_params, params.dim);
-    Serializer::readBinaryPOD(source_params, params.type);
-    Serializer::readBinaryPOD(source_params, params.metric);
-    Serializer::readBinaryPOD(source_params, params.blockSize);
-    Serializer::readBinaryPOD(source_params, params.multi);
-    Serializer::readBinaryPOD(source_params, params.epsilon);
-}
+// // Intialize @params from file for V2
+// static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
+//     Serializer::readBinaryPOD(source_params, params.dim);
+//     Serializer::readBinaryPOD(source_params, params.type);
+//     Serializer::readBinaryPOD(source_params, params.metric);
+//     Serializer::readBinaryPOD(source_params, params.blockSize);
+//     Serializer::readBinaryPOD(source_params, params.multi);
+//     Serializer::readBinaryPOD(source_params, params.epsilon);
+// }
 
-// Intialize @params for V1
-static void InitializeParams(const HNSWParams *source_params, HNSWParams &params) {
-    params.type = source_params->type;
-    params.dim = source_params->dim;
-    params.metric = source_params->metric;
-    params.multi = source_params->multi;
-    params.blockSize = source_params->blockSize ? source_params->blockSize : DEFAULT_BLOCK_SIZE;
-    params.epsilon = source_params->epsilon ? source_params->epsilon : HNSW_DEFAULT_EPSILON;
-}
+// // Intialize @params for V1
+// static void InitializeParams(const HNSWParams *source_params, HNSWParams &params) {
+//     params.type = source_params->type;
+//     params.dim = source_params->dim;
+//     params.metric = source_params->metric;
+//     params.multi = source_params->multi;
+//     params.blockSize = source_params->blockSize ? source_params->blockSize : DEFAULT_BLOCK_SIZE;
+//     params.epsilon = source_params->epsilon ? source_params->epsilon : HNSW_DEFAULT_EPSILON;
+// }
 
-VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) {
+// VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) {
 
-    std::ifstream input(location, std::ios::binary);
-    if (!input.is_open()) {
-        throw std::runtime_error("Cannot open file");
-    }
+//     std::ifstream input(location, std::ios::binary);
+//     if (!input.is_open()) {
+//         throw std::runtime_error("Cannot open file");
+//     }
 
-    Serializer::EncodingVersion version = Serializer::ReadVersion(input);
-    HNSWParams params;
-    switch (version) {
-    case Serializer::EncodingVersion_V2: {
-        // Algorithm type is only serialized from V2 up.
-        VecSimAlgo algo = VecSimAlgo_BF;
-        Serializer::readBinaryPOD(input, algo);
-        if (algo != VecSimAlgo_HNSWLIB) {
-            input.close();
-            throw std::runtime_error("Cannot load index: bad algorithm type");
-        }
-        // this information is serialized from V2 and up
-        InitializeParams(input, params);
-        break;
-    }
-    case Serializer::EncodingVersion_V1: {
-        assert(v1_params);
-        InitializeParams(v1_params, params);
-        break;
-    }
-    // Something is wrong
-    default:
-        throw std::runtime_error("Cannot load index: bad encoding version");
-    }
-    Serializer::readBinaryPOD(input, params.initialCapacity);
+//     Serializer::EncodingVersion version = Serializer::ReadVersion(input);
+//     HNSWParams params;
+//     switch (version) {
+//     case Serializer::EncodingVersion_V2: {
+//         // Algorithm type is only serialized from V2 up.
+//         VecSimAlgo algo = VecSimAlgo_BF;
+//         Serializer::readBinaryPOD(input, algo);
+//         if (algo != VecSimAlgo_HNSWLIB) {
+//             input.close();
+//             throw std::runtime_error("Cannot load index: bad algorithm type");
+//         }
+//         // this information is serialized from V2 and up
+//         InitializeParams(input, params);
+//         break;
+//     }
+//     case Serializer::EncodingVersion_V1: {
+//         assert(v1_params);
+//         InitializeParams(v1_params, params);
+//         break;
+//     }
+//     // Something is wrong
+//     default:
+//         throw std::runtime_error("Cannot load index: bad encoding version");
+//     }
+//     Serializer::readBinaryPOD(input, params.initialCapacity);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+//     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    if (params.type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
-    } else if (params.type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
-    } else {
-        throw std::runtime_error("Cannot load index: bad index data type");
-    }
-}
-#endif
+//     if (params.type == VecSimType_FLOAT32) {
+//         return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
+//     } else if (params.type == VecSimType_FLOAT64) {
+//         return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
+//     } else {
+//         throw std::runtime_error("Cannot load index: bad index data type");
+//     }
+// }
+// #endif
 
 }; // namespace HNSWFactory

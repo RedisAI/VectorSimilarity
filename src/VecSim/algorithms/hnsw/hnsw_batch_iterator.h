@@ -114,28 +114,28 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        idType *node_links = this->index->get_linklist_at_level(curr_node_id, 0);
-        linkListSize links_num = this->index->getListCount(node_links);
+        level_data &node_meta = this->index->getMetadata(curr_node_id, 0);
 
-        __builtin_prefetch(visited_list->getElementsTags() + *node_links);
-        __builtin_prefetch(index->getDataByInternalId(*node_links));
+        __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[0]);
+        __builtin_prefetch(index->getDataByInternalId(node_meta.links[0]));
 
-        for (size_t j = 0; j < links_num; j++) {
-            idType candidate_id = *(node_links + j);
+        for (size_t j = 0; j < node_meta.numLinks; j++) {
+            idType candidate_id = node_meta.links[j];
 
             if (this->hasVisitedNode(candidate_id)) {
                 continue;
             }
 
-            __builtin_prefetch(visited_list->getElementsTags() + *(node_links + j + 1));
-            __builtin_prefetch(index->getDataByInternalId(*(node_links + j + 1)));
+            // FIXME: this wont work for the last element in the array.
+            __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[j + 1]);
+            __builtin_prefetch(index->getDataByInternalId(node_meta.links[j + 1]));
 
             this->visitNode(candidate_id);
-            char *candidate_data = this->index->getDataByInternalId(candidate_id);
+            const char *candidate_data = this->index->getDataByInternalId(candidate_id);
             DistType candidate_dist =
                 dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
-            __builtin_prefetch(index->get_linklist_at_level(candidates.top().second, 0));
+            __builtin_prefetch(&index->getMetadata(candidates.top().second, 0));
         }
     }
     return VecSim_QueryResult_OK;
