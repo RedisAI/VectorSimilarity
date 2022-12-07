@@ -4,7 +4,7 @@
 the file.
 ***************************************/
 // Memory BF before
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, FLAT) , fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, FLAT), fp32_index_t)
 (benchmark::State &st) { Memory_FLAT(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_BEFORE_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
