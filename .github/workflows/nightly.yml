@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/default.yml
+    secrets: inherit
 
   multi-architectures:
     uses: ./.github/workflows/multi-build.yml
