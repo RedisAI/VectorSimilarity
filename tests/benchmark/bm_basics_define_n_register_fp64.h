@@ -9,6 +9,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_FLAT_fp64, fp64_index_t)
 (benchmark::State &st) { Memory_FLAT(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, Memory_FLAT_fp64)->Iterations(1);
 
+
 // Memory HSNW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, Memory_HNSW_fp64, fp64_index_t)
 (benchmark::State &st) { Memory_HNSW(st); }
