@@ -1,6 +1,5 @@
-[![CircleCI](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main.svg?style=svg)](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main)
+[![nightly](https://github.com/RedisAI/VectorSimilarity/actions/workflows/nightly.yml/badge.svg)](https://github.com/RedisAI/VectorSimilarity/actions/workflows/nightly.yml)
 [![codecov](https://codecov.io/gh/RedisAI/VectorSimilarity/branch/main/graph/badge.svg)](https://codecov.io/gh/RedisAI/VectorSimilarity)
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/RedisAI/VectorSimilarity.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/RedisAI/VectorSimilarity/alerts/)
 [![CodeQL](https://github.com/RedisAI/VectorSimilarity/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/RedisAI/VectorSimilarity/actions/workflows/codeql-analysis.yml)
 [![Known Vulnerabilities](https://snyk.io/test/github/RedisAI/VectorSimilarity/badge.svg)](https://snyk.io/test/github/RedisAI/VectorSimilarity)
 
