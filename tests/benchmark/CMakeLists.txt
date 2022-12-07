@@ -11,28 +11,18 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 enable_testing()
 
-set(BM_SET bm_basics bm_batch_iterator)
-set(INDEX_TYPE single multi)
-set(DATA_TYPE fp32)
+exec_program(${root}/tests/benchmark/benchmarks.sh OUTPUT_VARIABLE BENCHMARKS)
+string(REPLACE "\n" ";" BENCHMARKS ${BENCHMARKS})
+foreach(benchmark IN ITEMS ${BENCHMARKS})
+	if(${benchmark} MATCHES "spaces*")
+		continue()
+	endif()
+	add_executable(${benchmark} bm_${benchmark}.cpp bm_utils.cpp)
+	target_link_libraries(${benchmark} VectorSimilarity benchmark::benchmark)
+endforeach()
 
-# We only have updted index benchmarks for fp32_single indices
-add_executable(bm_updated_index_single_fp32 bm_updated_index_single_fp32.cpp bm_utils.cpp)
-target_link_libraries(bm_updated_index_single_fp32 VectorSimilarity benchmark::benchmark)
-
-# Compiling lines for all other benchmarks.
-foreach(bm_set IN LISTS BM_SET)
-	foreach(index_type IN LISTS INDEX_TYPE)
-		foreach(data_type IN LISTS DATA_TYPE)
-			set(bm_test ${bm_set}_${index_type}_${data_type})
-			add_executable(${bm_test} ${bm_test}.cpp bm_utils.cpp)
-			target_link_libraries(${bm_test} VectorSimilarity benchmark::benchmark)
-		endforeach(data_type IN LISTS DATA_TYPE)
-	endforeach(index_type IN LISTS INDEX_TYPE)
-endforeach(bm_set IN LISTS BM_SET)
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-# Passed this line we have optimization enabled by the compiler.                        #
-# Adding files to complie after this line will have an effect on the resulted binaries. #
+#########################################################################################
+#                                     Spaces benchmarks									#
 #########################################################################################
 
 # First we compile the spaces benchmarks class so it won't include any compiler flags
@@ -41,9 +31,14 @@ endforeach(bm_set IN LISTS BM_SET)
 set(DATA_TYPE fp32 fp64)
 
 foreach(data_type IN LISTS DATA_TYPE)
-	add_library(bm_spaces_class_${data_type} bm_spaces_class_${data_type}.cpp)
-	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
+add_library(bm_spaces_class_${data_type} bm_spaces_class_${data_type}.cpp)
+target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
 endforeach(data_type IN LISTS DATA_TYPE)
+
+#########################################################################################
+# Passed this line we have optimization enabled by the compiler.                        #
+# Adding files to complie after this line will have an effect on the resulted binaries. #
+#########################################################################################
 
 include(CheckCXXCompilerFlag)
 
