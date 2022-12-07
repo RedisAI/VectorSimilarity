@@ -6,31 +6,31 @@ the file.
 ***************************************/
 
 // Fixed size batch BF
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_FixedBatchSize_fp32, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(BF, FixedBatchSize), fp32_index_t)
 (benchmark::State &st) { BF_FixedBatchSize(st); }
-REGISTER_FixedBatchSize(BF_FixedBatchSize_fp32);
+REGISTER_FixedBatchSize(BM_FUNC_NAME(BF, FixedBatchSize));
 
 // Variable size batch BF
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_VariableBatchSize_fp32, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(BF, VariableBatchSize), fp32_index_t)
 (benchmark::State &st) { BF_VariableBatchSize(st); }
-REGISTER_VariableBatchSize(BF_VariableBatchSize_fp32);
+REGISTER_VariableBatchSize(BM_FUNC_NAME(BF, VariableBatchSize));
 
 // Batches to hadoc BF
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BF_BatchesToAdhocBF_fp32, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(BF, BatchesToAdhocBF), fp32_index_t)
 (benchmark::State &st) { BF_BatchesToAdhocBF(st); }
-REGISTER_BatchesToAdhocBF(BF_BatchesToAdhocBF_fp32);
+REGISTER_BatchesToAdhocBF(BM_FUNC_NAME(BF, BatchesToAdhocBF));
 
 // Fixed size batch HNSW
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_FixedBatchSize_fp32, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, FixedBatchSize), fp32_index_t)
 (benchmark::State &st) { HNSW_FixedBatchSize(st); }
-REGISTER_HNSW_FixedBatchSize(HNSW_FixedBatchSize_fp32);
+REGISTER_HNSW_FixedBatchSize(BM_FUNC_NAME(HNSW, FixedBatchSize));
 
 // Variable size batch BF
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_VariableBatchSize_fp32, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, VariableBatchSize), fp32_index_t)
 (benchmark::State &st) { HNSW_VariableBatchSize(st); }
-REGISTER_HNSW_VariableBatchSize(HNSW_VariableBatchSize_fp32);
+REGISTER_HNSW_VariableBatchSize(BM_FUNC_NAME(HNSW, VariableBatchSize));
 
 // Batches to hadoc HSNW
-BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, HNSW_BatchesToAdhocBF_fp32, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, BatchesToAdhocBF), fp32_index_t)
 (benchmark::State &st) { HNSW_BatchesToAdhocBF(st); }
-REGISTER_HNSW_BatchesToAdhocBF(HNSW_BatchesToAdhocBF_fp32);
+REGISTER_HNSW_BatchesToAdhocBF(BM_FUNC_NAME(HNSW, BatchesToAdhocBF));

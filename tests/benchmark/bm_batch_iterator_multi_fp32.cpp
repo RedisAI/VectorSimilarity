@@ -15,6 +15,8 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/fashion_images_multi_test_vecs_fp32.raw";
 
+#define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Multi
+
 #include "bm_batch_define_n_register_fp32.h"
 
 BENCHMARK_MAIN();

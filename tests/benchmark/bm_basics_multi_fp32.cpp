@@ -19,9 +19,12 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/fashion_images_multi_test_vecs_fp32.raw";
 
-DEFINE_DELETE_LABEL(DeleteLabel_BF_FP32, fp32_index_t, BruteForceIndex_Multi, float, float,
-                    VecSimAlgo_BF)
-DEFINE_DELETE_LABEL(DeleteLabel_HNSW_FP32, fp32_index_t, HNSWIndex_Multi, float, float,
+#define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Multi
+#define BM_ADD_LABEL                AddLabel_Multi
+
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex_Multi, float,
+                    float, VecSimAlgo_BF)
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Multi, float, float,
                     VecSimAlgo_HNSWLIB)
 #include "bm_basics_define_n_register_fp32.h"
 

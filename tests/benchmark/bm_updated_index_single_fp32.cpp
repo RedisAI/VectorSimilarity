@@ -21,5 +21,8 @@ template <>
 const char *BM_VecSimUpdatedIndex<fp32_index_t>::updated_hnsw_index_file =
     "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw";
 
+#define BM_BEFORE_FUNC_NAME(bm_func, algo)  bm_func##_##algo##_before_Single
+#define BM_UPDATED_FUNC_NAME(bm_func, algo) bm_func##_##algo##_updated_Single
+
 #include "bm_updated_define_n_register_fp32.h"
 BENCHMARK_MAIN();

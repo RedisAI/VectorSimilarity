@@ -17,8 +17,8 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	if(${benchmark} MATCHES "spaces*")
 		continue()
 	endif()
-	add_executable(${benchmark} bm_${benchmark}.cpp bm_utils.cpp)
-	target_link_libraries(${benchmark} VectorSimilarity benchmark::benchmark)
+	add_executable(bm_${benchmark} bm_${benchmark}.cpp bm_utils.cpp)
+	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
 #########################################################################################
