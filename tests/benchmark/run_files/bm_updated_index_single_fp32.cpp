@@ -1,5 +1,5 @@
 
-#include "bm_updated_index.h"
+#include "benchmark/bm_updated_index.h"
 
 /**************************************
   Basic tests for updated single value index.
@@ -24,5 +24,5 @@ const char *BM_VecSimUpdatedIndex<fp32_index_t>::updated_hnsw_index_file =
 #define BM_BEFORE_FUNC_NAME(bm_func, algo)  bm_func##_##algo##_before_Single
 #define BM_UPDATED_FUNC_NAME(bm_func, algo) bm_func##_##algo##_updated_Single
 
-#include "bm_updated_define_n_register_fp32.h"
+#include "benchmark/bm_updated_initialize_fp32.h"
 BENCHMARK_MAIN();

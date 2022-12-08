@@ -1,4 +1,4 @@
-#include "bm_batch_iterator.h"
+#include "benchmark/bm_batch_iterator.h"
 
 bool BM_VecSimGeneral::is_multi = true;
 
@@ -17,6 +17,6 @@ const char *BM_VecSimGeneral::test_queries_file =
 
 #define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Multi
 
-#include "bm_batch_define_n_register_fp32.h"
+#include "benchmark/bm_batch_initialize_fp32.h"
 
 BENCHMARK_MAIN();

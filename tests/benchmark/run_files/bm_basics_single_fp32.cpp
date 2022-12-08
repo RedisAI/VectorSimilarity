@@ -1,4 +1,4 @@
-#include "bm_basics.h"
+#include "benchmark/bm_basics.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 
@@ -26,6 +26,6 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex
                     float, VecSimAlgo_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
                     VecSimAlgo_HNSWLIB)
-#include "bm_basics_define_n_register_fp32.h"
+#include "benchmark/bm_basics_initialize_fp32.h"
 
 BENCHMARK_MAIN();

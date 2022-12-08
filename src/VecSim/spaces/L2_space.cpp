@@ -89,8 +89,8 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         // tails. Then, we use modified versions that split both part of the computation without
         // using the unsupported extraction operation.
         static dist_func_t<double> dist_funcs[] = {
-            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD2Ext_AVX512_noDQ,
-            FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ};
+            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512,
+            FP64_L2SqrSIMD2Ext_AVX512_noDQ, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ};
 
         ret_dist_func = dist_funcs[optimization_type];
     } break;

@@ -29,10 +29,10 @@
 
 // Dimensions for functions that satisfy optimizations on dim % 16 == 0 (fp32) or dim % 8 == 0
 // (fp64)
-#define EXACT_PARAMS_MULT16DIM Arg(16)->Arg(128)->Arg(400)
+#define EXACT_PARAMS_MODULU16DIM Arg(16)->Arg(128)->Arg(400)
 
 // Dimensions for functions that satisfy optimizations on dim % 4 == 0 (fp32) or dim % 2 == 0 (fp64)
-#define EXACT_PARAMS_MULT4DIM Arg(28)->Arg(140)->Arg(412)
+#define EXACT_PARAMS_MODULU4DIM Arg(28)->Arg(140)->Arg(412)
 
 // For residual functions, taking dimensions that are 16 multiplications +-1, to show which of
 // 16_residual (for fp64 - 8_residual) and 4_residual (for fp64 - 2_residual) is better in which
@@ -47,9 +47,9 @@
             ->Unit(benchmark::kNanosecond)
 
 #define INITIALIZE_EXACT_BM(type_prefix, arch, metric, dim_opt, func)                              \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_PARAMS_MULT##dim_opt##DIM
+    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_PARAMS_MODULU##dim_opt##DIM
 
-#define INITIALIZE_RES_BM(type_prefix, arch, metric, dim_opt, func)                                \
+#define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt, func)                           \
     INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->RESIDUAL_PARAMS
 
 // Naive algorithms
