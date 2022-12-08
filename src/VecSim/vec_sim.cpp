@@ -9,6 +9,8 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "VecSim/algorithms/origin_hnsw/hnsw.h"
+#include "VecSim/algorithms/origin_hnsw/hnsw_factory.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
@@ -104,6 +106,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
         switch (params->algo) {
+        case VecSimAlgo_OLDHNSWLIB:
+            index = OLDHNSWFactory::NewIndex(&params->hnswParams, allocator);
+            break;
         case VecSimAlgo_HNSWLIB:
             index = HNSWFactory::NewIndex(&params->hnswParams, allocator);
             break;
@@ -119,6 +124,8 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     switch (params->algo) {
+    case VecSimAlgo_OLDHNSWLIB:
+        return OLDHNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
@@ -147,6 +154,8 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
+    case VecSimAlgo_OLDHNSWLIB:
+        return OLDHNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
