@@ -68,7 +68,7 @@ def populate_save_index(hnsw_index, index_file_name, X_train):
     for i, vector in enumerate(X_train):
         hnsw_index.add_vector(vector, i)
     print('Built index time:', (time.time() - t0)/60, "minutes")
-    hnsw_index.save_index(index_file_name)
+    # hnsw_index.save_index(index_file_name)
 
 
 def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
@@ -94,14 +94,18 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
     correct = 0
     bf_total_time = 0
     hnsw_total_time = 0
-    for target_vector in X_test[:num_queries]:
-        start = time.time()
-        hnsw_labels, hnsw_distances = hnsw_index.knn_query(target_vector, k)
-        hnsw_total_time += (time.time() - start)
-        start = time.time()
-        bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
-        bf_total_time += (time.time() - start)
-        correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
+    print(os.getpid())
+    input("Press Enter to continue...")
+    while True:
+    # if True:
+        for target_vector in X_test[:num_queries]:
+            # start = time.time()
+            hnsw_labels, hnsw_distances = hnsw_index.knn_query(target_vector, k)
+            # hnsw_total_time += (time.time() - start)
+            # start = time.time()
+            # bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
+            # bf_total_time += (time.time() - start)
+            # correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
     # Measure recall
     recall = float(correct)/(k*num_queries)
     print("Average recall is:", recall)
@@ -114,7 +118,7 @@ def run_benchmark(dataset_name, ef_construction, M, ef_values, k=10):
     dataset = get_data_set(dataset_name)
     index_file_name = os.path.join('data', '%s-M=%s-ef=%s.hnsw' % (dataset_name, M, ef_construction))
     hnsw_index = load_or_create_hnsw_index(dataset, index_file_name, ef_construction, M)
-   
+
     for ef_runtime in ef_values:
         measure_recall_per_second(hnsw_index, dataset, num_queries=1000, k=k, ef_runtime=ef_runtime)
 

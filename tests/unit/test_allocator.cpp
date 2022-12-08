@@ -257,8 +257,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //     auto *hnswIndex =
 //         new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
 
-//     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
-//     GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0, 0.0);
+//     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets
+//     here. GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0, 0.0);
 
 //     // Add another vector and validate it's exact memory allocation delta.
 //     TEST_DATA_T vec1[] = {1.0, 0.0};
@@ -293,7 +293,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //     //    |              |----^|
 //     //    4                    4
 
-//     // Next, insertion of vec5 should make 0->1 unidirectional, thus adding 0 to 1's incoming edges
+//     // Next, insertion of vec5 should make 0->1 unidirectional, thus adding 0 to 1's incoming
+//     edges
 //     // set.
 //     TEST_DATA_T vec5[] = {0.5f, 0.0f};
 //     size_t buckets_num_before = hnswIndex->label_lookup_.bucket_count();
@@ -305,7 +306,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //      * 2. A node in the labels_lookup has table (+ allocator's header). If rehashing occurred, we
 //      * account also for the diff in the buckets size (each bucket has sizeof(size_t) overhead).
 //      * 3. Account for allocating link lists for levels higher than 0, if exists.
-//      * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1 due
+//      * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1
+//      due
 //      * to the insertion, and the fact that vec1 will re-select its neighbours.
 //      */
 //     expected_allocation_delta =
@@ -318,9 +320,11 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //             hnswIndex->size_links_per_element_ * vec_max_level + vecsimAllocationOverhead;
 //     }
 
-//     // Expect that the first element is pushed to the incoming edges vector of element 1 in level 0.
+//     // Expect that the first element is pushed to the incoming edges vector of element 1 in level
+//     0.
 //     // Then, we account for the capacity of the buffer that is allocated for the vector data.
-//     expected_allocation_delta += hnswIndex->getIncomingEdgesPtr(1, 0)->capacity() * sizeof(idType) +
+//     expected_allocation_delta += hnswIndex->getIncomingEdgesPtr(1, 0)->capacity() *
+//     sizeof(idType) +
 //                                  vecsimAllocationOverhead;
 //     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
@@ -334,15 +338,16 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //     VecSimType type = TypeParam::get_index_type();
 
 //     // Build HNSW index with default args and initial capacity of zero.
-//     HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
-//     auto *hnswIndex =
+//     HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2, .initialCapacity =
+//     0}; auto *hnswIndex =
 //         new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
 
 //     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
 //     size_t initial_memory_size = allocator->getAllocationSize();
 //     // labels_lookup and element_levels containers are not allocated at all in some platforms,
 //     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
-//     // single bucket. This, we get the following range in which we expect the initial memory to be
+//     // single bucket. This, we get the following range in which we expect the initial memory to
+//     be
 //     // in.
 //     ASSERT_GE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params));
 //     ASSERT_LE(initial_memory_size, HNSWFactory::EstimateInitialSize(&params) + sizeof(size_t) +
@@ -359,7 +364,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //     ASSERT_EQ(hnswIndex->indexSize(), block_size);
 //     ASSERT_EQ(hnswIndex->getIndexCapacity(), block_size);
 //     ASSERT_EQ(allocator->getAllocationSize(), initial_memory_size + accumulated_mem_delta);
-//     // Also validate that there are no unidirectional connections (these add memory to the incoming
+//     // Also validate that there are no unidirectional connections (these add memory to the
+//     incoming
 //     // edges sets).
 //     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
@@ -380,7 +386,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 //         expected_mem_delta +=
 //             hnswIndex->size_links_per_element_ * vec_max_level + 1 + vecsimAllocationOverhead;
 //     }
-//     // Also account for all the memory allocation caused by the resizing that this vector triggered
+//     // Also account for all the memory allocation caused by the resizing that this vector
+//     triggered
 //     // except for the bucket count of the labels_lookup hash table that is calculated separately.
 //     size_t size_total_data_per_element = hnswIndex->size_data_per_element_;
 //     expected_mem_delta +=
@@ -406,14 +413,16 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 
 //     ASSERT_EQ(hnswIndex->indexSize(), 0);
 //     ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
-//     // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
+//     // All data structures' memory returns to as it was, with the exceptional of the
+//     labels_lookup
 //     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
 //     size_t hash_table_memory = hnswIndex->label_lookup_.bucket_count() * sizeof(size_t);
 //     // Current memory should be back as it was initially. The label_lookup hash table is an
 //     // exception, since in some platforms, empty buckets remain even when the capacity is set to
 //     // zero, while in others the entire capacity reduced to zero (including the header).
 //     ASSERT_LE(allocator->getAllocationSize(), HNSWFactory::EstimateInitialSize(&params) +
-//                                                   hash_table_memory + 2 * vecsimAllocationOverhead);
+//                                                   hash_table_memory + 2 *
+//                                                   vecsimAllocationOverhead);
 //     ASSERT_GE(allocator->getAllocationSize(),
 //               HNSWFactory::EstimateInitialSize(&params) + hash_table_memory);
 //     VecSimIndex_Free(hnswIndex);

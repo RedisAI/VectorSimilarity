@@ -87,10 +87,10 @@ struct element_meta {
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
                   public VecSimIndexTombstone
-// #ifdef BUILD_TESTS
-//     ,
-//                   public Serializer
-// #endif
+#ifdef BUILD_TESTS
+    ,
+                  public Serializer
+#endif
 {
 protected:
     // Index build parameters
@@ -135,7 +135,7 @@ protected:
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
-// #include "hnsw_serializer_declarations.h"
+#include "hnsw_serializer_declarations.h"
 #endif
 
 protected:
@@ -147,7 +147,7 @@ protected:
                                  level_data &node_meta, const vecsim_stl::vector<bool> &bitmap,
                                  idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
-    inline void
+    inline const void
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
                      tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
@@ -414,7 +414,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 // overloading to emplace correctly for both cases.
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted, typename Identifier>
-void HNSWIndex<DataType, DistType>::processCandidate(
+const void HNSWIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
@@ -425,23 +425,28 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
     level_data &node_meta = getMetadata(curNodeId, layer);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_meta.links);
-    __builtin_prefetch(getDataByInternalId(*node_meta.links)); // TODO: split into 2 prefetches
+    // Pre-fetch first candidate tag address.
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[0]);
+    // Pre-fetch first candidate data block address.
+    const DataBlock *block_to_fetch = this->vector_blocks.data() + (node_meta.links[0] / this->blockSize);
+    __builtin_prefetch(block_to_fetch);
 
     for (size_t j = 0; j < node_meta.numLinks; j++) {
         idType candidate_id = node_meta.links[j];
 
-        // Pre-fetch the next candidate data into memory cache, to improve performance.
-        // FIXME: this will not work on the last iteration.
-        idType next_candidate = node_meta.links[j + 1];
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + next_candidate);
-        __builtin_prefetch(getDataByInternalId(next_candidate)); // TODO: split into 2 prefetches
+        // Pre-fetch current candidate data (block address was already fetched).
+        __builtin_prefetch(block_to_fetch->getElement(getVectorRelativeIndex(candidate_id)));
+        // Pre-fetch next candidate tag address.
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
+        // Pre-fetch next candidate data block address.
+        block_to_fetch = this->vector_blocks.data() + (node_meta.links[j + 1] / this->blockSize);
+        __builtin_prefetch(block_to_fetch);
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        const char *currObj1 = (getDataByInternalId(candidate_id));
+        const char *currObj1 = getDataByInternalId(candidate_id);
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
         if (lowerBound > dist1 || top_candidates.size() < ef) {
@@ -462,8 +467,9 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    __builtin_prefetch(
-        &getMetadata(candidate_set.top().second, layer)); // TODO: split into 2 prefetches
+    // FIXME: this will not work if the candidate_set is empty.
+    __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
+    __builtin_prefetch(&getMetadata(candidate_set.top().second, layer));
 }
 
 template <typename DataType, typename DistType>
@@ -508,8 +514,9 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    __builtin_prefetch(
-        &getMetadata(candidate_set.top().second, layer)); // TODO: split into 2 prefetches
+    // TODO: split into 2 prefetches
+    // FIXME: this will not work if the candidate_set is empty.
+    __builtin_prefetch(&getMetadata(candidate_set.top().second, layer));
 }
 
 template <typename DataType, typename DistType>
@@ -1200,7 +1207,8 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     // create the new element's metadata
     char tmpData[this->element_meta_size_] = {0};
-    auto cur_meta = new (tmpData) element_meta(label, element_max_level, level_data_size_, this->allocator);
+    auto cur_meta =
+        new (tmpData) element_meta(label, element_max_level, level_data_size_, this->allocator);
 
     if (cur_c % this->blockSize == 0) {
         this->vector_blocks.emplace_back(this->blockSize, element_data_size_, this->allocator);
@@ -1753,5 +1761,5 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
 }
 
 #ifdef BUILD_TESTS
-// #include "hnsw_serializer.h"
+#include "hnsw_serializer.h"
 #endif

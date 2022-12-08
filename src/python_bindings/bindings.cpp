@@ -228,7 +228,7 @@ PYBIND11_MODULE(VecSim, m) {
         //      }),
         //      py::arg("location"), py::arg("params"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf);
-        // .def("save_index", &PyHNSWLibIndex::saveIndex);
+    // .def("save_index", &PyHNSWLibIndex::saveIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

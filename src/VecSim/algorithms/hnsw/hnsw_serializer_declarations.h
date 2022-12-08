@@ -15,7 +15,7 @@ virtual void saveIndexIMP(std::ofstream &output) override;
 void restoreGraph(std::ifstream &input);
 
 // used to fix V1 index to V2 (current version)
-void restoreGraph_V1_fixes();
+// void restoreGraph_V1_fixes();
 
 private:
 // Functions for index saving.
