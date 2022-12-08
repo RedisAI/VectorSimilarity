@@ -19,7 +19,7 @@ size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
 VecSimIndex *BM_VecSimBasics::bf_index;
 VecSimIndex *BM_VecSimBasics::hnsw_index;
-std::vector<std::vector<float>> *BM_VecSimBasics::queries;
+std::vector<std::vector<float>> BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 64;
 size_t BM_VecSimBasics::EF_C = 512;
 size_t BM_VecSimBasics::block_size = 1024;
@@ -37,7 +37,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorHNSW)(benchmark::State &st) {
     size_t memory_delta = 0;
     for (auto _ : st) {
         memory_delta +=
-            VecSimIndex_AddVector(hnsw_index, (*queries)[(iter % n_queries)].data(), new_id++);
+            VecSimIndex_AddVector(hnsw_index, queries[(iter % n_queries)].data(), new_id++);
         iter++;
     }
     st.counters["memory"] = (double)memory_delta / (double)iter;
@@ -56,7 +56,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, AddVectorBF)(benchmark::State &st) {
     size_t memory_delta = 0;
     for (auto _ : st) {
         memory_delta +=
-            VecSimIndex_AddVector(bf_index, (*queries)[(iter % n_queries)].data(), new_id++);
+            VecSimIndex_AddVector(bf_index, queries[(iter % n_queries)].data(), new_id++);
         iter++;
     }
     st.counters["memory"] = (double)memory_delta / (double)iter;
@@ -126,7 +126,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(bf_index, queries[iter % n_queries].data(), k, nullptr, BY_SCORE);
         iter++;
     }
 }
@@ -149,7 +149,7 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_BF)(benchmark::State &st) {
     size_t total_res = 0;
 
     for (auto _ : st) {
-        auto res = VecSimIndex_RangeQuery(bf_index, (*queries)[iter % n_queries].data(), radius,
+        auto res = VecSimIndex_RangeQuery(bf_index, queries[iter % n_queries].data(), radius,
                                           nullptr, BY_ID);
         total_res += VecSimQueryResult_Len(res);
         iter++;
@@ -167,14 +167,14 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
         VecSimQueryParams{.hnswRuntimeParams = HNSWRuntimeParams{.epsilon = epsilon}};
 
     for (auto _ : st) {
-        auto hnsw_results = VecSimIndex_RangeQuery(hnsw_index, (*queries)[iter % n_queries].data(),
+        auto hnsw_results = VecSimIndex_RangeQuery(hnsw_index, queries[iter % n_queries].data(),
                                                    radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryResult_Len(hnsw_results);
 
         // Measure recall:
-        auto bf_results = VecSimIndex_RangeQuery(bf_index, (*queries)[iter % n_queries].data(),
-                                                 radius, nullptr, BY_ID);
+        auto bf_results = VecSimIndex_RangeQuery(bf_index, queries[iter % n_queries].data(), radius,
+                                                 nullptr, BY_ID);
         total_res_bf += VecSimQueryResult_Len(bf_results);
 
         VecSimQueryResult_Free(bf_results);
