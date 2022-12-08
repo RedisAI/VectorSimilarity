@@ -1702,7 +1702,7 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
 //     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
 //     for (size_t level = 0; level <=
 //     this->CastToHNSW(index)->getMetaDataByInternalId(n)->toplevel; level++) {
-//         level_data &meta = this->CastToHNSW(index)->getMetadata(n, level);
+//         level_data &meta = this->CastToHNSW(index)->getLevelData(n, level);
 //         for (size_t idx = 0; idx < meta.numLinks; idx++) {
 //             ASSERT_TRUE((meta.links[idx] / per_label) % 2 != ep_reminder)
 //                 << "Got a link to " << meta.links[idx] << " on level " << level;
