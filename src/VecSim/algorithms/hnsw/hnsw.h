@@ -423,11 +423,13 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
         if (lowerBound > dist1 || top_candidates.size() < ef) {
+            // Pre-fetch current candidate meta data
+            __builtin_prefetch(this->idToMetaData.data() + candidate_id);
             candidate_set.emplace(-dist1, candidate_id);
 
             // Insert the candidate to the top candidates heap only if it is not marked as deleted.
             if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-                emplaceToHeap(top_candidates, dist1, candidate_id); // IMPROVE performance
+                emplaceToHeap(top_candidates, dist1, candidate_id);
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
@@ -482,12 +484,13 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
         DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
         if (candidate_dist < dyn_range) {
+            // Pre-fetch current candidate meta data
+            __builtin_prefetch(this->idToMetaData.data() + candidate_id);
             candidate_set.emplace(-candidate_dist, candidate_id);
 
             // If the new candidate is in the requested radius, add it to the results set.
             if (candidate_dist <= radius &&
                 (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
-                // IMPROVE performance
                 results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
         }
