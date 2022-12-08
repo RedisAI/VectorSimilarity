@@ -365,7 +365,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
             element_meta *meta = (element_meta *)block.getElement(j);
             output.write((char *)meta, this->element_meta_size_);
             if (meta->others) // only if there are levels > 0
-            output.write((char *)meta->others, this->level_data_size_ * meta->toplevel);
+                output.write((char *)meta->others, this->level_data_size_ * meta->toplevel);
 
             // Save the incoming edges of the current element.
             // Level 0

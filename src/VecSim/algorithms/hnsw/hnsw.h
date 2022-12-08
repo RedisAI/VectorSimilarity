@@ -428,7 +428,8 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
     // Pre-fetch first candidate tag address.
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[0]);
     // Pre-fetch first candidate data block address.
-    const DataBlock *block_to_fetch = this->vector_blocks.data() + (node_meta.links[0] / this->blockSize);
+    const DataBlock *block_to_fetch =
+        this->vector_blocks.data() + (node_meta.links[0] / this->blockSize);
     __builtin_prefetch(block_to_fetch);
 
     for (size_t j = 0; j < node_meta.numLinks; j++) {

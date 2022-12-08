@@ -831,7 +831,8 @@ TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
 
 //     size_t actual = index->getAllocationSize();
 //     // labels_lookup hash table has additional memory, since STL implementation chooses "an
-//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000,
+//     1031
 //     // buckets are created)
 //     estimation +=
 //         (this->CastToHNSW_Multi(index)->label_lookup_.bucket_count() - n) * sizeof(size_t);
