@@ -407,7 +407,7 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
     vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
     idType id) const {
-    heap.emplace(dist, getExternalLabel(id));
+    heap.emplace(dist, getExternalLabel(id)); // IMPROVE performance
 }
 
 // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
@@ -485,17 +485,23 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 #endif
     level_data &node_meta = getMetadata(curNodeId, layer);
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_meta.links);
-    __builtin_prefetch(getDataByInternalId(*node_meta.links)); // TODO: split into 2 prefetches
+    // Pre-fetch first candidate tag address.
+    __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[0]);
+    // Pre-fetch first candidate data block address.
+    const DataBlock *block_to_fetch =
+        this->vector_blocks.data() + (node_meta.links[0] / this->blockSize);
+    __builtin_prefetch(block_to_fetch);
 
     for (size_t j = 0; j < node_meta.numLinks; j++) {
         idType candidate_id = node_meta.links[j];
 
-        // Pre-fetch the next candidate data into memory cache, to improve performance.
-        // FIXME: this will not work on the last iteration.
-        idType next_candidate = node_meta.links[j + 1];
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + next_candidate);
-        __builtin_prefetch(getDataByInternalId(next_candidate)); // TODO: split into 2 prefetches
+        // Pre-fetch current candidate data (block address was already fetched).
+        __builtin_prefetch(block_to_fetch->getElement(getVectorRelativeIndex(candidate_id)));
+        // Pre-fetch next candidate tag address.
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
+        // Pre-fetch next candidate data block address.
+        block_to_fetch = this->vector_blocks.data() + (node_meta.links[j + 1] / this->blockSize);
+        __builtin_prefetch(block_to_fetch);
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
@@ -509,14 +515,15 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             // If the new candidate is in the requested radius, add it to the results set.
             if (candidate_dist <= radius &&
                 (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
+                // IMPROVE performance
                 results->emplace(getExternalLabel(candidate_id), candidate_dist);
             }
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    // TODO: split into 2 prefetches
     // FIXME: this will not work if the candidate_set is empty.
+    __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
     __builtin_prefetch(&getMetadata(candidate_set.top().second, layer));
 }
 
