@@ -114,7 +114,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        level_data &node_meta = this->index->getMetadata(curr_node_id, 0);
+        level_data &node_meta = this->index->getLevelData(curr_node_id, 0);
 
         __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[0]);
         __builtin_prefetch(index->getDataByInternalId(node_meta.links[0]));
@@ -135,7 +135,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
             DistType candidate_dist =
                 dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
-            __builtin_prefetch(&index->getMetadata(candidates.top().second, 0));
+            __builtin_prefetch(&index->getLevelData(candidates.top().second, 0));
         }
     }
     return VecSim_QueryResult_OK;

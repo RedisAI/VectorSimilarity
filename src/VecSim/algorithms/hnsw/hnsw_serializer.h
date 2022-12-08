@@ -7,7 +7,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       VecSimIndexTombstone(), Serializer(version), max_elements_(params->initialCapacity),
-      epsilon_(params->epsilon), vector_blocks(allocator), meta_blocks(allocator) {
+      epsilon_(params->epsilon), vector_blocks(allocator), meta_blocks(allocator),
+      idToMetaData(max_elements_, allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -61,7 +62,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             num_deleted++;
         }
         for (size_t l = 0; l <= getMetaDataByInternalId(i)->toplevel; l++) {
-            level_data &cur = this->getMetadata(i, l);
+            level_data &cur = this->getLevelData(i, l);
             std::set<idType> s;
             for (unsigned int j = 0; j < cur.numLinks; j++) {
                 // Check if we found an invalid neighbor.
@@ -73,7 +74,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                level_data &other = this->getMetadata(cur.links[j], l);
+                level_data &other = this->getLevelData(cur.links[j], l);
                 for (int r = 0; r < other.numLinks; r++) {
                     if (other.links[r] == (idType)i) {
                         double_connections++;
@@ -124,7 +125,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 
     // Restore index meta-data
     readBinaryPOD(input, this->element_data_size_);
-    readBinaryPOD(input, this->element_meta_size_);
+    readBinaryPOD(input, this->element_graph_data_size_);
     readBinaryPOD(input, this->level_data_size_);
     // readBinaryPOD(input, this->data_size_);
     // readBinaryPOD(input, this->size_data_per_element_);
@@ -209,6 +210,16 @@ void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
+    // Restore id to metadata vector
+    element_meta_data cur_meta;
+    for (idType id = 0; id < this->cur_element_count; id++) {
+        readBinaryPOD(input, cur_meta);
+        this->idToMetaData[id] = cur_meta;
+
+        // Restore label lookup by getting the label from data_level0_memory_
+        setVectorId(cur_meta.label, id);
+    }
+
     // Get number of blocks
     unsigned int num_blocks = 0;
     readBinaryPOD(input, num_blocks);
@@ -231,16 +242,14 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Get meta blocks
     idType cur_c = 0;
     for (size_t i = 0; i < num_blocks; i++) {
-        this->meta_blocks.emplace_back(this->blockSize, this->element_meta_size_, this->allocator);
+        this->meta_blocks.emplace_back(this->blockSize, this->element_graph_data_size_,
+                                       this->allocator);
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            char cur_meta_data[this->element_meta_size_];
-            input.read(cur_meta_data, this->element_meta_size_);
-            auto cur_meta = (element_meta *)cur_meta_data;
-
-            // Restore label lookup by getting the label from data_level0_memory_
-            setVectorId(cur_meta->label, cur_c);
+            char cur_meta_data[this->element_graph_data_size_];
+            input.read(cur_meta_data, this->element_graph_data_size_);
+            auto cur_meta = (element_graph_data *)cur_meta_data;
 
             if (cur_meta->toplevel > 0) {
                 // Allocate space for the other levels
@@ -328,7 +337,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     // writeBinaryPOD(output, this->incoming_links_offset0);
     // writeBinaryPOD(output, this->incoming_links_offset);
     writeBinaryPOD(output, this->element_data_size_);
-    writeBinaryPOD(output, this->element_meta_size_);
+    writeBinaryPOD(output, this->element_graph_data_size_);
     writeBinaryPOD(output, this->level_data_size_);
     writeBinaryPOD(output, this->mult_);
 
@@ -341,6 +350,10 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
+    // Save id to metadata vector
+    for (idType id = 0; id < this->cur_element_count; id++) {
+        writeBinaryPOD(output, this->idToMetaData[id]);
+    }
 
     // Save number of blocks
     unsigned int num_blocks = this->vector_blocks.size();
@@ -362,8 +375,8 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         unsigned int block_len = block.getLength();
         writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            element_meta *meta = (element_meta *)block.getElement(j);
-            output.write((char *)meta, this->element_meta_size_);
+            element_graph_data *meta = (element_graph_data *)block.getElement(j);
+            output.write((char *)meta, this->element_graph_data_size_);
             if (meta->others) // only if there are levels > 0
                 output.write((char *)meta->others, this->level_data_size_ * meta->toplevel);
 

@@ -2089,7 +2089,7 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
 //     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
 //     for (size_t level = 0; level <=
 //     this->CastToHNSW(index)->getMetaDataByInternalId(n)->toplevel; level++) {
-//         level_data &cur = this->CastToHNSW(index)->getMetadata(n, level);
+//         level_data &cur = this->CastToHNSW(index)->getLevelData(n, level);
 //         for (size_t idx = 0; idx < cur.numLinks; idx++) {
 //             ASSERT_TRUE(cur.links[idx] % 2 != ep_reminder)
 //                 << "Got a link to " << cur.links[idx] << " on level " << level;

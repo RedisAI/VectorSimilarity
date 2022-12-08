@@ -58,16 +58,21 @@ struct level_data {
         : numLinks(0), incoming_edges(new (allocator) vecsim_stl::vector<idType>(allocator)) {}
 };
 
-struct element_meta {
+struct element_meta_data {
     labelType label;
+    elementFlags flags;
+
+    element_meta_data(labelType label = SIZE_MAX) : label(label), flags(0) {}
+};
+
+struct element_graph_data {
     size_t toplevel;
     level_data *others;
-    elementFlags flags;
     level_data level0;
 
-    element_meta(labelType label, size_t maxLevel, size_t high_level_size,
-                 std::shared_ptr<VecSimAllocator> allocator)
-        : label(label), toplevel(maxLevel), others(nullptr), flags(0), level0(allocator) {
+    element_graph_data(size_t maxLevel, size_t high_level_size,
+                       std::shared_ptr<VecSimAllocator> allocator)
+        : toplevel(maxLevel), others(nullptr), level0(allocator) {
         if (toplevel > 0) {
             others = (level_data *)allocator->callocate(high_level_size * toplevel);
             if (others == nullptr) {
@@ -105,7 +110,7 @@ protected:
     double epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
-    size_t element_meta_size_;
+    size_t element_graph_data_size_;
     size_t level_data_size_;
     size_t element_data_size_;
     double mult_;
@@ -121,6 +126,7 @@ protected:
     idType entrypoint_node_;
     vecsim_stl::vector<DataBlock> vector_blocks;
     vecsim_stl::vector<DataBlock> meta_blocks;
+    vecsim_stl::vector<element_meta_data> idToMetaData;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -142,7 +148,6 @@ protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline size_t getRandomLevel(double reverse_size);
-    inline const elementFlags &get_flags(idType internal_id) const;
     inline void removeExtraLinks(candidatesMaxHeap<DistType> candidates, size_t Mcurmax,
                                  level_data &node_meta, const vecsim_stl::vector<bool> &bitmap,
                                  idType *removed_links, size_t *removed_links_num);
@@ -179,10 +184,11 @@ protected:
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       level_data &element_meta, level_data &neighbour_meta,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
-    inline void destroyMetadata(element_meta *em);
+    inline void destroyMetadata(element_graph_data *em);
     inline void replaceEntryPoint();
     inline void resizeIndex(size_t new_max_elements);
-    inline void SwapLastIdWithDeletedId(idType element_internal_id, element_meta *last_element_meta,
+    inline void SwapLastIdWithDeletedId(idType element_internal_id,
+                                        element_graph_data *last_element_meta,
                                         void *last_element_data);
 
     // Protected internal function that implements generic single vector insertion.
@@ -199,7 +205,7 @@ protected:
     inline const DataBlock &getVectorVectorBlock(idType id) const;
     inline const DataBlock &getVectorMetaBlock(idType id) const;
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
-    inline element_meta *getMetaDataByInternalId(idType internal_id) const;
+    inline element_graph_data *getMetaDataByInternalId(idType internal_id) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -215,15 +221,17 @@ public:
     inline size_t getEfConstruction() const { return ef_construction_; }
     inline size_t getM() const { return M_; }
     inline size_t getMaxLevel() const { return maxlevel_; }
-    inline idType getEntryPointId() const { return entrypoint_node_; }
-    inline labelType getEntryPointLabel() const;
-    inline labelType getExternalLabel(idType internal_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     inline const char *getDataByInternalId(idType internal_id) const;
-    inline level_data &getMetadata(idType internal_id, size_t level) const;
+    inline level_data &getLevelData(idType internal_id, size_t level) const;
+    inline idType getEntryPointId() const { return entrypoint_node_; }
+    inline labelType getEntryPointLabel() const;
+    inline labelType getExternalLabel(idType internal_id) const {
+        return idToMetaData[internal_id].label;
+    }
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
 
@@ -235,7 +243,6 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline void unmarkDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
-    inline bool isMarkedDeleted(element_meta &meta) const;
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
@@ -260,29 +267,16 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
     return SIZE_MAX;
 }
 
-// might be better to hold the element_meta in search time (for performance)
-template <typename DataType, typename DistType>
-labelType HNSWIndex<DataType, DistType>::getExternalLabel(idType internal_id) const {
-    return ((element_meta *)(getVectorMetaBlock(internal_id)
-                                 .getElement(getVectorRelativeIndex(internal_id))))
-        ->label;
-}
-
-// template <typename DataType, typename DistType>
-// void HNSWIndex<DataType, DistType>::setExternalLabel(idType internal_id, labelType label) {
-//     ((element_meta *)meta_blocks.at(internal_id / this->blockSize).getElement(internal_id %
-//     this->blockSize))->label = label;
-// }
-
 template <typename DataType, typename DistType>
 const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
     return vector_blocks[internal_id / this->blockSize].getElement(internal_id % this->blockSize);
 }
 
 template <typename DataType, typename DistType>
-element_meta *HNSWIndex<DataType, DistType>::getMetaDataByInternalId(idType internal_id) const {
-    return (element_meta *)meta_blocks[internal_id / this->blockSize].getElement(internal_id %
-                                                                                 this->blockSize);
+element_graph_data *
+HNSWIndex<DataType, DistType>::getMetaDataByInternalId(idType internal_id) const {
+    return (element_graph_data *)meta_blocks[internal_id / this->blockSize].getElement(
+        internal_id % this->blockSize);
 }
 
 template <typename DataType, typename DistType>
@@ -303,13 +297,7 @@ size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
 }
 
 template <typename DataType, typename DistType>
-const elementFlags &HNSWIndex<DataType, DistType>::get_flags(idType internal_id) const {
-    // elementFlags offset is 0 from the start of the element metadata
-    return getMetaDataByInternalId(internal_id)->flags;
-}
-
-template <typename DataType, typename DistType>
-level_data &HNSWIndex<DataType, DistType>::getMetadata(idType internal_id, size_t level) const {
+level_data &HNSWIndex<DataType, DistType>::getLevelData(idType internal_id, size_t level) const {
     auto meta = getMetaDataByInternalId(internal_id);
     assert(level <= meta->toplevel);
     if (level) {
@@ -319,14 +307,6 @@ level_data &HNSWIndex<DataType, DistType>::getMetadata(idType internal_id, size_
     }
 }
 
-// template <typename DataType, typename DistType>
-// linkListSize HNSWIndex<DataType, DistType>::getListCount(const idType *list) const {
-// }
-
-// template <typename DataType, typename DistType>
-// void HNSWIndex<DataType, DistType>::setListCount(idType *list, const linkListSize size) {
-// }
-
 template <typename DataType, typename DistType>
 VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler.get();
@@ -335,9 +315,8 @@ VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
     assert(internalId < this->cur_element_count);
-    element_meta &meta = *getMetaDataByInternalId(internalId);
-    if (!isMarkedDeleted(meta)) {
-        meta.flags |= DELETE_MARK;
+    if (!isMarkedDeleted(internalId)) {
+        idToMetaData[internalId].flags |= DELETE_MARK;
         this->num_marked_deleted++;
     }
 }
@@ -345,22 +324,15 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkDeletedInternal(idType internalId) {
     assert(internalId < this->cur_element_count);
-    element_meta &meta = *getMetaDataByInternalId(internalId);
-    if (isMarkedDeleted(meta)) {
-        meta.flags &= ~DELETE_MARK;
+    if (isMarkedDeleted(internalId)) {
+        idToMetaData[internalId].flags &= ~DELETE_MARK;
         this->num_marked_deleted--;
     }
 }
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
-    const elementFlags &flags = get_flags(internalId);
-    return flags & DELETE_MARK;
-}
-
-template <typename DataType, typename DistType>
-bool HNSWIndex<DataType, DistType>::isMarkedDeleted(element_meta &meta) const {
-    return meta.flags & DELETE_MARK;
+    return idToMetaData[internalId].flags & DELETE_MARK;
 }
 
 /**
@@ -407,7 +379,7 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::emplaceToHeap(
     vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
     idType id) const {
-    heap.emplace(dist, getExternalLabel(id)); // IMPROVE performance
+    heap.emplace(dist, getExternalLabel(id));
 }
 
 // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
@@ -423,7 +395,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
 #endif
 
-    level_data &node_meta = getMetadata(curNodeId, layer);
+    level_data &node_meta = getLevelData(curNodeId, layer);
 
     // Pre-fetch first candidate tag address.
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[0]);
@@ -455,7 +427,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 
             // Insert the candidate to the top candidates heap only if it is not marked as deleted.
             if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-                emplaceToHeap(top_candidates, dist1, candidate_id);
+                emplaceToHeap(top_candidates, dist1, candidate_id); // IMPROVE performance
 
             if (top_candidates.size() > ef)
                 top_candidates.pop();
@@ -470,7 +442,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
     // to be processed in the next iteration) into memory cache, to improve performance.
     // FIXME: this will not work if the candidate_set is empty.
     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
-    __builtin_prefetch(&getMetadata(candidate_set.top().second, layer));
+    __builtin_prefetch(&getLevelData(candidate_set.top().second, layer));
 }
 
 template <typename DataType, typename DistType>
@@ -483,7 +455,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
 #endif
-    level_data &node_meta = getMetadata(curNodeId, layer);
+    level_data &node_meta = getLevelData(curNodeId, layer);
 
     // Pre-fetch first candidate tag address.
     __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[0]);
@@ -524,7 +496,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     // to be processed in the next iteration) into memory cache, to improve performance.
     // FIXME: this will not work if the candidate_set is empty.
     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
-    __builtin_prefetch(&getMetadata(candidate_set.top().second, layer));
+    __builtin_prefetch(&getLevelData(candidate_set.top().second, layer));
 }
 
 template <typename DataType, typename DistType>
@@ -638,7 +610,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     idType next_closest_entry_point = selectedNeighbors.back();
     {
-        level_data &cur_meta = getMetadata(cur_c, level);
+        level_data &cur_meta = getLevelData(cur_c, level);
         assert(cur_meta.numLinks == 0 && "The newly inserted element should have blank link list");
         cur_meta.numLinks = selectedNeighbors.size();
 
@@ -662,7 +634,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
 #endif
-        level_data &neighbor_meta = getMetadata(selectedNeighbor, level);
+        level_data &neighbor_meta = getLevelData(selectedNeighbor, level);
 
         if (neighbor_meta.numLinks > Mcurmax)
             throw std::runtime_error("Bad value of sz_link_list_other");
@@ -701,7 +673,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             // neighbours that were chosen to remove (if edge wasn't bidirectional)
             for (size_t i = 0; i < removed_links_num; i++) {
                 idType node_id = removed_links[i];
-                level_data &node_meta = getMetadata(node_id, level);
+                level_data &node_meta = getLevelData(node_id, level);
                 // if we removed cur_c (the node just inserted), then it points to the current
                 // neighbour, but not vise versa.
                 if (node_id == cur_c) {
@@ -773,7 +745,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     // neighbours that were chosen to remove
     for (size_t i = 0; i < removed_links_num; i++) {
         idType node_id = removed_links[i];
-        level_data &node_meta = getMetadata(node_id, level);
+        level_data &node_meta = getLevelData(node_id, level);
 
         // if the node id (the neighbour's neighbour to be removed)
         // wasn't pointing to the neighbour (edge was one directional),
@@ -794,7 +766,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     for (size_t i = 0; i < neighbour_meta.numLinks; i++) {
         idType node_id = neighbour_meta.links[i];
         if (!neighbour_orig_neighbours_set[node_id]) {
-            level_data &node_meta = getMetadata(node_id, level);
+            level_data &node_meta = getLevelData(node_id, level);
             // if the node has an edge to the neighbour as well, remove it
             // from the incoming nodes of the neighbour
             // otherwise, need to update the edge as incoming.
@@ -823,7 +795,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
-        level_data &old_entry_meta = getMetadata(old_entry, maxlevel_);
+        level_data &old_entry_meta = getLevelData(old_entry, maxlevel_);
         if (old_entry_meta.numLinks > 0) {
             // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
             entrypoint_node_ = old_entry_meta.links[0];
@@ -835,7 +807,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             for (DataBlock &meta_block : meta_blocks) {
                 size_t size = meta_block.getLength();
                 for (size_t i = 0; i < size; i++) {
-                    auto meta = (element_meta *)meta_block.getElement(i);
+                    auto meta = (element_graph_data *)meta_block.getElement(i);
                     if (meta->toplevel == maxlevel_ && cur_id != old_entry) {
                         entrypoint_node_ = cur_id;
                         return;
@@ -856,7 +828,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
-                                                            element_meta *last_element_meta,
+                                                            element_graph_data *last_element_meta,
                                                             void *last_element_data) {
     // swap label
     replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id, cur_element_count);
@@ -869,7 +841,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
         // change, and update the id.
         for (size_t i = 0; i < cur_meta->numLinks; i++) {
             idType neighbour_id = cur_meta->links[i];
-            level_data &neighbour_meta = getMetadata(neighbour_id, level);
+            level_data &neighbour_meta = getLevelData(neighbour_id, level);
 
             bool bidirectional_edge = false;
             for (size_t j = 0; j < neighbour_meta.numLinks; j++) {
@@ -894,7 +866,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
         // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // updates.
         for (auto incoming_edge : *cur_meta->incoming_edges) {
-            level_data &incoming_neighbour_meta = getMetadata(incoming_edge, level);
+            level_data &incoming_neighbour_meta = getLevelData(incoming_edge, level);
             for (size_t j = 0; j < incoming_neighbour_meta.numLinks; j++) {
                 if (incoming_neighbour_meta.links[j] == cur_element_count) {
                     incoming_neighbour_meta.links[j] = element_internal_id;
@@ -909,10 +881,12 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 
     // Move the last element's data to the deleted element's place
     auto metadata = getMetaDataByInternalId(element_internal_id);
-    memcpy((void *)metadata, last_element_meta, this->element_meta_size_);
+    memcpy((void *)metadata, last_element_meta, this->element_graph_data_size_);
 
     auto data = getDataByInternalId(element_internal_id);
     memcpy((void *)data, last_element_data, this->element_data_size_);
+
+    this->idToMetaData[element_internal_id] = this->idToMetaData[cur_element_count];
 
     if (cur_element_count == this->entrypoint_node_) {
         this->entrypoint_node_ = element_internal_id;
@@ -920,14 +894,14 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::destroyMetadata(element_meta *em) {
-    delete em->level0.incoming_edges;
-    level_data *cur_ld = em->others;
-    for (size_t i = 0; i < em->toplevel; i++) {
+void HNSWIndex<DataType, DistType>::destroyMetadata(element_graph_data *egd) {
+    delete egd->level0.incoming_edges;
+    level_data *cur_ld = egd->others;
+    for (size_t i = 0; i < egd->toplevel; i++) {
         delete cur_ld->incoming_edges;
         cur_ld = (level_data *)((char *)cur_ld + this->level_data_size_);
     }
-    this->allocator->free_allocation(em->others);
+    this->allocator->free_allocation(egd->others);
 }
 
 // This function is greedily searching for the closest candidate to the given data point at the
@@ -952,7 +926,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
 #ifdef ENABLE_PARALLELIZATION
         std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
 #endif
-        level_data &node_meta = getMetadata(curObj, level);
+        level_data &node_meta = getLevelData(curObj, level);
 
         for (int i = 0; i < node_meta.numLinks; i++) {
             idType candidate = node_meta.links[i];
@@ -987,7 +961,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                     params->blockSize, params->multi),
       VecSimIndexTombstone(), max_elements_(params->initialCapacity),
       element_data_size_(VecSimType_sizeof(params->type) * this->dim), vector_blocks(allocator),
-      meta_blocks(allocator)
+      meta_blocks(allocator), idToMetaData(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
       ,
@@ -1031,7 +1005,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // | ---2--- | -----2----- | -----4*M0----------- | ---------8-------- |-data_size_-| ---8--- |
     // | <flags> | <links_len> | <link_1> <link_2>... |<incoming_links_ptr>|   <data>   | <label> |
 
-    element_meta_size_ = sizeof(element_meta) + sizeof(idType) * maxM0_;
+    element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * maxM0_;
 
     // The i-th entry in linkLists array points to max_level[i] (continuous)
     // chunks of memory, each one will look like this:
@@ -1060,6 +1034,7 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     resizeLabelLookup(new_max_elements);
+    idToMetaData.resize(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)
@@ -1092,7 +1067,7 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
         // repair.
         for (size_t i = 0; i < cur_meta->numLinks; i++) {
             idType neighbour_id = cur_meta->links[i];
-            level_data &neighbour_metadata = getMetadata(neighbour_id, level);
+            level_data &neighbour_metadata = getLevelData(neighbour_id, level);
 
             bool bidirectional_edge = false;
             for (size_t j = 0; j < neighbour_metadata.numLinks; j++) {
@@ -1120,7 +1095,7 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
         // repairs.
         for (auto incoming_edge : *cur_meta->incoming_edges) {
             repairConnectionsForDeletion(element_internal_id, incoming_edge, *cur_meta,
-                                         getMetadata(incoming_edge, level), level,
+                                         getLevelData(incoming_edge, level), level,
                                          neighbours_bitmap);
         }
         // Set element level's meta for the next level (1 and above)
@@ -1145,7 +1120,7 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
     DataBlock &last_vector_block = vector_blocks.back();
     auto last_element_data = last_vector_block.removeAndFetchLastElement();
     DataBlock &last_meta_block = meta_blocks.back();
-    auto last_element_meta = (element_meta *)last_meta_block.removeAndFetchLastElement();
+    auto last_element_meta = (element_graph_data *)last_meta_block.removeAndFetchLastElement();
 
     // Swap the last id with the deleted one, and invalidate the last id data.
     if (cur_element_count != element_internal_id) {
@@ -1195,6 +1170,7 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         }
         cur_c = cur_element_count++;
         setVectorId(label, cur_c);
+        this->idToMetaData[cur_c] = element_meta_data(label);
     }
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
@@ -1214,13 +1190,13 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     idType currObj = entrypoint_node_;
 
     // create the new element's metadata
-    char tmpData[this->element_meta_size_] = {0};
+    char tmpData[this->element_graph_data_size_] = {0};
     auto cur_meta =
-        new (tmpData) element_meta(label, element_max_level, level_data_size_, this->allocator);
+        new (tmpData) element_graph_data(element_max_level, level_data_size_, this->allocator);
 
     if (cur_c % this->blockSize == 0) {
         this->vector_blocks.emplace_back(this->blockSize, element_data_size_, this->allocator);
-        this->meta_blocks.emplace_back(this->blockSize, element_meta_size_, this->allocator);
+        this->meta_blocks.emplace_back(this->blockSize, element_graph_data_size_, this->allocator);
     }
 
     // Insert the new element to the data block
