@@ -1580,7 +1580,8 @@ TYPED_TEST(HNSWTest, testCosine) {
 
 //     size_t actual = index->getAllocationSize();
 //     // labels_lookup hash table has additional memory, since STL implementation chooses "an
-//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000,
+//     1031
 //     // buckets are created)
 //     estimation +=
 //         (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - n) * sizeof(size_t);
@@ -1621,7 +1622,8 @@ TYPED_TEST(HNSWTest, testCosine) {
 
 //     // labels_lookup and element_levels containers are not allocated at all in some platforms,
 //     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
-//     // single bucket. This, we get the following range in which we expect the initial memory to be
+//     // single bucket. This, we get the following range in which we expect the initial memory to
+//     be
 //     // in.
 //     ASSERT_GE(actual, estimation);
 //     ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
