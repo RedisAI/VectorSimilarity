@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bm_utils.h"
+#include "bm_vecsim_general.h"
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
 public:
@@ -21,7 +21,7 @@ protected:
     static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
     }
-    static inline char *GetHNSWDataByInternalId(size_t id, Offset_t index_offset = 0) {
+    static inline char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
     }
 
@@ -63,28 +63,29 @@ template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::Initialize() {
 
     VecSimType type = index_type_t::get_index_type();
-
+    // dim, block_size, M, EF_C, n_veectors, is_multi, n_queries, hnsw_index_file and
+    // test_queries_file are BM_VecSimGeneral static data members that are defined for a specific
+    // index type benchmarks.
     BFParams bf_params = {.type = type,
                           .dim = dim,
                           .metric = VecSimMetric_Cosine,
-                          .multi = IS_MULTI,
+                          .multi = is_multi,
                           .initialCapacity = n_vectors,
                           .blockSize = block_size};
 
     indices.push_back(CreateNewIndex(bf_params));
 
     HNSWParams params = {.type = type,
-                         .dim = DIM,
+                         .dim = dim,
                          .metric = VecSimMetric_Cosine,
-                         .multi = IS_MULTI,
-                         .initialCapacity = N_VECTORS,
-                         .blockSize = BM_VecSimGeneral::block_size,
-                         .M = BM_VecSimGeneral::M,
-                         .efConstruction = BM_VecSimGeneral::EF_C};
+                         .multi = is_multi,
+                         .initialCapacity = n_vectors,
+                         .blockSize = block_size,
+                         .M = M,
+                         .efConstruction = EF_C};
 
     // Initialize and load HNSW index for DBPedia data set.
-    indices.push_back(
-        HNSWFactory::NewIndex(AttachRootPath(BM_VecSimGeneral::hnsw_index_file), &params));
+    indices.push_back(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file), &params));
 
     auto *hnsw_index = CastToHNSW(indices[VecSimAlgo_HNSWLIB]);
     size_t ef_r = 10;
@@ -93,13 +94,13 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         char *blob = GetHNSWDataByInternalId(i);
-        // Fot multi value indices, the internal is not necessarily equal the label.
-        size_t label = CastToHNSW(INDICES[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
+        // Fot multi value indices, the internal id is not necessarily equal the label.
+        size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
-    loadTestVectors(AttachRootPath(BM_VecSimGeneral::test_queries_file), type);
+    loadTestVectors(AttachRootPath(test_queries_file), type);
 }
 
 template <typename index_type_t>
@@ -117,7 +118,7 @@ void BM_VecSimIndex<index_type_t>::loadTestVectors(const std::string &test_file,
 
 template <typename index_type_t>
 void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
-    for (size_t i = 0; i < N_QUERIES; i++) {
+    for (size_t i = 0; i < n_queries; i++) {
         std::vector<data_t> query(dim);
         input.read((char *)query.data(), dim * sizeof(data_t));
         queries.push_back(query);

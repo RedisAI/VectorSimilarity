@@ -13,8 +13,6 @@ struct IndexType {
 
 using fp32_index_t = IndexType<VecSimType_FLOAT32, float, float>;
 
-using Offset_t = unsigned short;
-
 #define INDICES   BM_VecSimIndex<index_type_t>::indices
 #define QUERIES   BM_VecSimIndex<index_type_t>::queries
 #define N_QUERIES BM_VecSimGeneral::n_queries

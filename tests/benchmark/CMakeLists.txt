@@ -20,7 +20,7 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 		continue()
 	endif()
 
-	add_executable(bm_${benchmark} run_files/bm_${benchmark}.cpp bm_utils.cpp)
+	add_executable(bm_${benchmark} run_files/bm_${benchmark}.cpp bm_vecsim_general.cpp)
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
