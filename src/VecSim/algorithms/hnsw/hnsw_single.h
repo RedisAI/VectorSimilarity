@@ -35,12 +35,10 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, allocator, version),
           label_lookup_(this->max_elements_, allocator) {}
 
-    void GetDataByLabel(labelType label, size_t &vector_count_output,
-                        std::vector<std::vector<DataType>> &vectors_output) {
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
 
         auto id = label_lookup_.at(label);
 
-        vector_count_output = 1;
         auto vec = std::vector<DataType>(this->dim);
         memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
         vectors_output.push_back(vec);

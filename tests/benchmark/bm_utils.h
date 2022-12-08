@@ -18,8 +18,9 @@
 #include "bm_definitions.h"
 
 // This class includes every static data member that is:
-// 1. common for fp32 and fp64 data sets.
-// or 2. in use for all types of bench mark, if this type
+// 1. Common for fp32 and fp64 data sets.
+// or
+// 2. In use for all benchmark types, if this type
 // is defined in a separate compilation unit.
 class BM_VecSimGeneral : public benchmark::Fixture {
 public:

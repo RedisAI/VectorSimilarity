@@ -9,30 +9,27 @@ public:
     BM_VecSimBasics() = default;
     ~BM_VecSimBasics() = default;
 
-    // Different implementation for multi and single.
-    static void AddVector(benchmark::State &st);
+    // Add one label in each iteration. For multi index adds multiple vectors under the same label
+    // per iteration, for single index adds one vector per iteration.
+    static void AddLabel(benchmark::State &st);
 
-    // we Pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
+    // We pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
     // which is not known to VecSimIndex class.
+    // We delete one label in each iteration. For multi index deletes multiple vectors per
+    // iteration, for single index deletes one vector per iteration.
     template <typename algo_t>
-    static void DeleteVector(algo_t *index, benchmark::State &st);
+    static void DeleteLabel(algo_t *index, benchmark::State &st);
 
     static void Range_BF(benchmark::State &st);
     static void Range_HNSW(benchmark::State &st);
 
 private:
-    // Proxy struct to save deleted vectors
-    struct LabelData {
-        LabelData() : vectors_data(0){};
-        size_t vectors_count;
-        std::vector<std::vector<data_t>> vectors_data;
-    };
+    // Vectors of vector to store deleted labels' data.
+    using LabelData = std::vector<std::vector<data_t>>;
 };
 
 template <typename index_type_t>
-void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
-    // Add a new vector from the test vectors in every iteration.
-    size_t iter = 0;
+void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
     size_t index_size = N_VECTORS;
     size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
@@ -41,48 +38,55 @@ void BM_VecSimBasics<index_type_t>::AddVector(benchmark::State &st) {
     size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
-    size_t vec_id = initial_label_count * vec_per_label;
     size_t memory_delta = 0;
+    labelType label = initial_label_count;
+    size_t added_vec_count = 0;
 
+    // Add a new label from the test set in every iteration.
     for (auto _ : st) {
-        memory_delta += VecSimIndex_AddVector(
-            INDICES[st.range(0)], QUERIES[iter % N_QUERIES].data(), vec_id / vec_per_label);
-        vec_id++;
-        iter++;
+        // Add one label
+        for (labelType vec = 0; vec < vec_per_label; ++vec) {
+            memory_delta += VecSimIndex_AddVector(
+                INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(), label);
+        }
+        added_vec_count += vec_per_label;
+        label++;
     }
-    st.counters["memory"] = (double)memory_delta / (double)iter;
 
-    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + iter);
+    st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
+    st.counters["vectors_per_label"] = vec_per_label;
+
+    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + added_vec_count);
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
     size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
-    for (size_t id = initial_label_count; id < new_label_count; id++) {
-        VecSimIndex_DeleteVector(INDICES[st.range(0)], id);
+    for (size_t label = initial_label_count; label < new_label_count; label++) {
+        VecSimIndex_DeleteVector(INDICES[st.range(0)], label);
     }
 
     assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
 }
 template <typename index_type_t>
 template <typename algo_t>
-void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State &st) {
+void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State &st) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
     double memory_delta = 0;
     size_t removed_vectors_count = 0;
-    std::vector<LabelData> labels_data;
+    std::vector<LabelData> removed_labels_data;
 
     for (auto _ : st) {
         st.PauseTiming();
+        LabelData data(0);
         // Get label id(s) data.
-        LabelData data;
-        index->GetDataByLabel(label_to_remove, data.vectors_count, data.vectors_data);
+        index->GetDataByLabel(label_to_remove, data);
 
-        labels_data.push_back(data);
+        removed_labels_data.push_back(data);
 
         st.ResumeTiming();
-        removed_vectors_count += data.vectors_count;
+        removed_vectors_count += data.size();
 
         // Delete label
         auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
@@ -91,16 +95,15 @@ void BM_VecSimBasics<index_type_t>::DeleteVector(algo_t *index, benchmark::State
 
     // Avg. memory delta per vector equals the total memory delta divided by the number
     // of deleted vectors.
-    st.counters["memory"] = memory_delta / (double)removed_vectors_count;
+    st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
 
     // Restore index state.
-    // For rem_label in removed_labels
-    for (size_t label_idx = 0; label_idx < labels_data.size(); label_idx++) {
-        size_t vec_count = labels_data[label_idx].vectors_count;
-        // For vector in rem_label
+    // For each label in removed_labels_data
+    for (size_t label_idx = 0; label_idx < removed_labels_data.size(); label_idx++) {
+        size_t vec_count = removed_labels_data[label_idx].size();
+        // Reinsert all the deleted vectors under this label.
         for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
-            VecSimIndex_AddVector(index, labels_data[label_idx].vectors_data[vec_idx].data(),
-                                  label_idx);
+            VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
         }
     }
 }
@@ -181,18 +184,18 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         ->Iterations(100)                                                                          \
         ->Unit(benchmark::kMillisecond)
 
-#define REGISTER_AddVector(BM_FUNC, VecSimAlgo)                                                    \
+#define REGISTER_AddLabel(BM_FUNC, VecSimAlgo)                                                     \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo)                                                     \
         ->ArgName(#VecSimAlgo)
 
-// DeleteVector define and register macros
-#define DEFINE_DELETE_VECTOR(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)    \
+// DeleteLabel define and register macros
+#define DEFINE_DELETE_LABEL(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_TYPE, DIST_TYPE, VecSimAlgo)     \
     BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
-        DeleteVector<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                            \
+        DeleteLabel<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                             \
             reinterpret_cast<INDEX_NAME<DATA_TYPE, DIST_TYPE> *>(                                  \
                 BM_VecSimIndex<INDEX_TYPE>::indices[VecSimAlgo]),                                  \
             st);                                                                                   \
     }
-#define REGISTER_DeleteVector(BM_FUNC)                                                             \
+#define REGISTER_DeleteLabel(BM_FUNC)                                                              \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)->UNIT_AND_ITERATIONS

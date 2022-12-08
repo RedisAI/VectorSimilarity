@@ -1,4 +1,0 @@
-pip>=21.1
-poetry==1.1.15
-tox>=3.25.0
-tox-poetry>=0.4.1

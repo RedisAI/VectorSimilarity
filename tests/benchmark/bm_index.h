@@ -34,17 +34,12 @@ private:
 template <typename index_type_t>
 size_t BM_VecSimIndex<index_type_t>::ref_count = 0;
 
-// Needs to be explicitly intialized
+// Needs to be explicitly initalized
 template <>
 std::vector<std::vector<float>> BM_VecSimIndex<fp32_index_t>::queries{};
 
 template <>
-std::vector<std::vector<double>> BM_VecSimIndex<fp64_index_t>::queries{};
-
-template <>
 std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
-template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<fp64_index_t>::indices{};
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
