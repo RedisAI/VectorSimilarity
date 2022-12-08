@@ -123,19 +123,19 @@ public:
         this->index = VecSimIndex_New(&params);
     }
 
-    // // @params is required only in V1.
-    // PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
-    //     this->index = HNSWFactory::NewIndex(location, hnsw_params);
-    // }
+    // @params is required only in V1.
+    PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
+        this->index = HNSWFactory::NewIndex(location, hnsw_params);
+    }
 
     void setDefaultEf(size_t ef) {
         auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
         hnsw->setEf(ef);
     }
-    // void saveIndex(const std::string &location) {
-    //     auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
-    //     hnsw->saveIndex(location);
-    // }
+    void saveIndex(const std::string &location) {
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        hnsw->saveIndex(location);
+    }
 };
 
 class PyBFIndex : public PyVecSimIndex {
@@ -223,12 +223,12 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        // .def(py::init([](const std::string &location, const HNSWParams *params) {
-        //          return new PyHNSWLibIndex(location, params);
-        //      }),
-        //      py::arg("location"), py::arg("params"))
-        .def("set_ef", &PyHNSWLibIndex::setDefaultEf);
-    // .def("save_index", &PyHNSWLibIndex::saveIndex);
+        .def(py::init([](const std::string &location, const HNSWParams *params) {
+                 return new PyHNSWLibIndex(location, params);
+             }),
+             py::arg("location"), py::arg("params"))
+        .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
+        .def("save_index", &PyHNSWLibIndex::saveIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

@@ -68,7 +68,7 @@ def populate_save_index(hnsw_index, index_file_name, X_train):
     for i, vector in enumerate(X_train):
         hnsw_index.add_vector(vector, i)
     print('Built index time:', (time.time() - t0)/60, "minutes")
-    # hnsw_index.save_index(index_file_name)
+    hnsw_index.save_index(index_file_name)
 
 
 def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
