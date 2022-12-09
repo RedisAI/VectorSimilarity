@@ -5,7 +5,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "bm_utils.h"
+#include "bm_vecsim_general.h"
 
 void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
                                      VecSimQueryResult_List bf_results, size_t &correct) {

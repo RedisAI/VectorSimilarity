@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bm_index.h"
+#include "bm_vecsim_index.h"
 
 size_t BM_VecSimGeneral::block_size = 1024;
 
@@ -12,18 +12,19 @@ public:
     ~BM_VecSimCommon() = default;
 
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                             size_t &correct, Offset_t index_offset = 0);
+                             size_t &correct, unsigned short index_offset = 0);
 
-    static void TopK_BF(benchmark::State &st, Offset_t index_offset = 0);
-    static void TopK_HNSW(benchmark::State &st, Offset_t index_offset = 0);
+    static void TopK_BF(benchmark::State &st, unsigned short index_offset = 0);
+    static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
 
-    static void Memory_FLAT(benchmark::State &st, Offset_t index_offset = 0);
-    static void Memory_HNSW(benchmark::State &st, Offset_t index_offset = 0);
+    static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
+    static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
 };
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
-                                                 size_t k, size_t &correct, Offset_t index_offset) {
+                                                 size_t k, size_t &correct,
+                                                 unsigned short index_offset) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
     auto hnsw_results =
@@ -43,7 +44,7 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, Offset_t index_offset) {
+void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, unsigned short index_offset) {
 
     for (auto _ : st) {
         // Do nothing...
@@ -52,7 +53,7 @@ void BM_VecSimCommon<index_type_t>::Memory_FLAT(benchmark::State &st, Offset_t i
         (double)VecSimIndex_Info(INDICES[VecSimAlgo_BF + index_offset]).bfInfo.memory;
 }
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, Offset_t index_offset) {
+void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, unsigned short index_offset) {
 
     for (auto _ : st) {
         // Do nothing...
@@ -64,7 +65,7 @@ void BM_VecSimCommon<index_type_t>::Memory_HNSW(benchmark::State &st, Offset_t i
 // TopK search BM
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, Offset_t index_offset) {
+void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short index_offset) {
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
@@ -75,7 +76,7 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, Offset_t index
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, Offset_t index_offset) {
+void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned short index_offset) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
     size_t correct = 0;

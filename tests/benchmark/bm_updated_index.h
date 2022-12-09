@@ -16,7 +16,7 @@
 template <typename index_type_t>
 class BM_VecSimUpdatedIndex : public BM_VecSimCommon<index_type_t> {
 public:
-    const static Offset_t updated_index_offset = 2;
+    const static unsigned short updated_index_offset = 2;
     using BM_INDEX = BM_VecSimIndex<index_type_t>;
 
     static bool is_initialized;

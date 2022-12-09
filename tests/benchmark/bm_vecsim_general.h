@@ -40,6 +40,8 @@ protected:
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
 
+    // Updates @correct according to the number of search results in @hnsw_results
+    // that appear also in the flat algorithm results list.
     static void MeasureRecall(VecSimQueryResult_List hnsw_results,
                               VecSimQueryResult_List bf_results, size_t &correct);
 
@@ -59,12 +61,14 @@ protected:
         return params;
     }
 
+    // Gets HNSWParams or BFParams parameters struct, and creates new VecSimIndex.
     template <typename IndexParams>
     static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
         VecSimParams params = CreateParams(index_params);
         return VecSimIndex_New(&params);
     }
 
+    // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
         return std::string(getenv("ROOT")) + "/" + file_name;
     }

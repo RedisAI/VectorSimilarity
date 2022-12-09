@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "bm_index.h"
+#include "bm_vecsim_index.h"
 
 template <typename index_type_t>
 class BM_BatchIterator : public BM_VecSimIndex<index_type_t> {
