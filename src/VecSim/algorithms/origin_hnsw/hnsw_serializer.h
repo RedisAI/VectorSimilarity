@@ -55,10 +55,10 @@ template <typename DataType, typename DistType>
 OLDHNSWIndexMetaData OLDHNSWIndex<DataType, DistType>::checkIntegrity() const {
     OLDHNSWIndexMetaData res = {.valid_state = false,
                                 .memory_usage = -1,
-                                .double_connections = HNSW_INVALID_META_DATA,
-                                .unidirectional_connections = HNSW_INVALID_META_DATA,
-                                .min_in_degree = HNSW_INVALID_META_DATA,
-                                .max_in_degree = HNSW_INVALID_META_DATA};
+                                .double_connections = OLDHNSW_INVALID_META_DATA,
+                                .unidirectional_connections = OLDHNSW_INVALID_META_DATA,
+                                .min_in_degree = OLDHNSW_INVALID_META_DATA,
+                                .max_in_degree = OLDHNSW_INVALID_META_DATA};
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->getAllocationSize();
