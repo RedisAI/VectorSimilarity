@@ -14,9 +14,7 @@ std::vector<std::vector<float>> load_test_vectors(const char *path, size_t n_que
 
     std::ifstream input(file_name, std::ios::binary);
 
-    std::vector<std::vector<float>> queries;
-    ;
-    queries.reserve(n_queries);
+    std::vector<std::vector<float>> queries(n_queries);
     if (input.is_open()) {
         input.seekg(0, std::ifstream::beg);
         for (size_t i = 0; i < n_queries; i++) {
