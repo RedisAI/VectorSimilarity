@@ -45,7 +45,7 @@ public:
     void saveIndex(const std::string &location);
 
     // Check the validity of the reproduced index.
-    HNSWIndexMetaData checkIntegrity();
+    HNSWIndexMetaData checkIntegrity(const std::unordered_map<idType, std::set<repairJob*>>& = std::unordered_map<idType, std::set<repairJob*>>());
 
     // Restore the index from the file in the specified location.
     void loadIndex(const std::string &location);

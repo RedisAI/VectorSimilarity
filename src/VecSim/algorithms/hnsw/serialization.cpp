@@ -302,7 +302,7 @@ void HNSWIndexSerializer::loadIndex(const std::string &location) {
 // The serializer does not own the index, here we just replace the pointed index.
 void HNSWIndexSerializer::reset(HNSWIndex<float, float> *hnsw_index_) { hnsw_index = hnsw_index_; }
 
-HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
+HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity(const std::unordered_map<idType, std::set<repairJob*>> &deleted_elements) {
 	HNSWIndexMetaData res = {.valid_state = false,
 			.memory_usage = -1,
 			.double_connections = HNSW_INVALID_META_DATA,
@@ -312,7 +312,9 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 			.incoming_edges_mismatch = 0};
 
 	// Save the current memory usage (before we use additional memory for the integrity check).
+	std::cout << "start integrity check: " << std::endl;
 	res.memory_usage = hnsw_index->getAllocator()->getAllocationSize();
+	res.valid_state = true;
 	size_t connections_checked = 0, double_connections = 0;
 	std::vector<int> inbound_connections_num(hnsw_index->cur_element_count, 0);
 	std::vector<std::map<size_t, std::vector<size_t>>> inbound_connections(
@@ -336,17 +338,29 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 				std::set<idType> s;
 				for (unsigned int j = 0; j < size; j++) {
 					// Check if we found an invalid neighbor.
-					if (data[j] >= hnsw_index->cur_element_count || data[j] == i) {
-						std::cout << i << " has invalid neighbor " << data[j] << std::endl;
+					if ((data[j] >= hnsw_index->cur_element_count) || data[j] == i) {
+						std::cout << i << " has invalid neighbor " << data[j] << " in level " << l << std::endl;
 						res.valid_state = false;
 					}
-					if (hnsw_index->isMarkedDeleted(data[j])) {
-						res.valid_state = false;
-						std::cout << i << " is pointing to a deleted neighbor " << data[j] << " in level " << l << std::endl;
-					}
-					inbound_connections_num[data[j]]++;
 					inbound_connections[data[j]][l].push_back(i);
 					s.insert(data[j]);
+
+					if (hnsw_index->isMarkedDeleted(data[j]) && !hnsw_index->isMarkedDeleted(i)) {
+						auto repair_jobs = deleted_elements.at(data[j]);
+						bool found = false;
+						for (auto *it : repair_jobs) {
+							if (it->internal_id == i && it->level == l) {
+								found = true;
+							}
+						}
+						if (!found) {
+							res.valid_state = false;
+							std::cout << i << " is pointing to a deleted neighbor " << data[j] << " in level " << l <<
+							          " and an appropriate repair job was not found" << std::endl;
+						}
+					}
+					// Collect the number of inbound connections for non-deleted element only.
+					inbound_connections_num[data[j]]++;
 					connections_checked++;
 
 					// Check if this connection is bidirectional.
@@ -360,6 +374,7 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 						}
 					}
 				}
+
 				// Check if a certain neighbor appeared more than once.
 				if (s.size() != size) {
 					std::cout << i << " has a neighbor that appears more than once" << std::endl;
@@ -369,12 +384,29 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 			}
 		}
 		for (idType i = 0; i < hnsw_index->cur_element_count; i++) {
-			if (hnsw_index->isMarkedDeleted(i)) {
-				continue;
-			}
 			for (size_t l = 0; l <= hnsw_index->element_levels_[i]; l++) {
 				auto inbound_cons = inbound_connections[i][l];
 				for (auto con: inbound_cons) {
+					if (hnsw_index->isMarkedDeleted(con)) {
+						// we remove deleted nodes from the incoming edges sets of their unidirectional incoming edges,
+						// so we don't expect to find an indication that this connection exists.
+						continue;
+					}
+					if (hnsw_index->isMarkedDeleted(i)) {
+						auto repair_jobs = deleted_elements.at(i);
+						bool found = false;
+						for (auto *it : repair_jobs) {
+							if (it->internal_id == con && it->level == l) {
+								found = true;
+							}
+						}
+						if (!found) {
+							res.valid_state = false;
+							std::cout << i << " is deleted and has an incoming edge from " << con << " in level " << l
+							          << " and an appropriate repair job was not found" << std::endl;
+
+						}
+					}
 					bool unidirectional = false;
 					auto it = std::find(hnsw_index->getIncomingEdgesPtr(i, l)->begin(),
 					                    hnsw_index->getIncomingEdgesPtr(i, l)->end(), con);
@@ -409,13 +441,9 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 					std::cout << i << " incoming edges set in level " << l << " is not unique" << std::endl;
 				}
 				for (auto con: *hnsw_index->getIncomingEdgesPtr(i, l)) {
-					if (hnsw_index->isMarkedDeleted(con)) {
-						std::cout << i << " holds an incoming edge from " << con << " which has deleted" << std::endl;
-						continue;
-					}
 					if (std::find(inbound_cons.begin(), inbound_cons.end(), con) ==
-					    inbound_cons.end()) {
-						std::cout << i << " holds an incoming edge from " << con << " which doesn't exist" << std::endl;
+					    inbound_cons.end() && !hnsw_index->isMarkedDeleted(i)) {
+						//std::cout << i << " holds an incoming edge from " << con << " which doesn't exist" << std::endl;
 						res.valid_state = false;
 						res.incoming_edges_mismatch++;
 					}
@@ -435,17 +463,17 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity() {
 			? *std::max_element(inbound_connections_num.begin(), inbound_connections_num.end())
 			: 0;
 	if (incoming_edges_sets_sizes + double_connections != connections_checked) {
+		std::cout << "incoming edges total size is " << incoming_edges_sets_sizes << ", double connections count is "
+		<< double_connections << ", and total connections checked is: " << connections_checked << std::endl;
 		res.valid_state = false;
-		return res;
 	}
-	res.valid_state = true;
 
 	size_t accumulated_cap_sum = 0;
 	for (auto it: incoming_edges_hist) {
 		//std::cout << "there are " << it.second << " sets with capacity of " << it.first << std::endl;
 		accumulated_cap_sum += it.first * it.second;
 	}
-	std::cout << "\ntotal incoming edges caps: " << accumulated_cap_sum << std::endl;
+	std::cout << "total incoming edges caps: " << accumulated_cap_sum << std::endl;
 	std::cout << "total nodes in level higher than 0: " << total_nodes_in_levels_GT_zero << std::endl;
 	std::cout << "max id is: " << hnsw_index->max_id << std::endl;
 	std::cout << "cur elements count is: " << hnsw_index->cur_element_count << " with " << num_deleted << " marked deleted" << std::endl;

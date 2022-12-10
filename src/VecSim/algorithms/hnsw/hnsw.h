@@ -54,6 +54,11 @@ typedef struct repairJob {
 	idType internal_id;
 	size_t level;
 	idType associated_deleted_id;
+	repairJob(idType internal_id_, size_t level_, idType associated_deleted_id_) {
+		internal_id = internal_id_;
+		level = level_;
+		associated_deleted_id = associated_deleted_id_;
+	}
 } repairJob;
 
 template <typename DataType, typename DistType>
@@ -84,8 +89,6 @@ protected:
     // Index level generator of the top level for a new element
     std::default_random_engine level_generator_;
 
-    // Index state
-    size_t cur_element_count;
     // TODO: after introducing the memory reclaim upon delete, max_id is redundant since the valid
     // internal ids are being kept as a continuous sequence [0, 1, ..,, cur_element_count-1].
     // We can remove this field completely if we change the serialization version, as the decoding
@@ -185,7 +188,8 @@ public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
-
+	// Index state
+	size_t cur_element_count;
 	idType max_id;
 	size_t max_gap;  // For stats/debugging
     inline void setEf(size_t ef);
@@ -224,7 +228,7 @@ public:
 
 	void repairConnectionsForDeletion_POC(
 			idType neighbour_id, size_t level);
-	std::vector<repairJob> removeVector_POC(labelType label);
+	std::vector<repairJob*> removeVector_POC(labelType label);
 	void SwapJob_POC(idType element_id);
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
@@ -1023,10 +1027,6 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement_POC (
 			}
 			// Now we know that we are looking at a node to be removed from the neighbor's neighbors.
 			auto removed_node = neighbor_neighbors_array[i];
-			if (isMarkedDeleted(selected_neighbor) || isMarkedDeleted(removed_node)) {
-				// we don't make updates here for deleted nodes to avoid inconsistency.
-				continue;
-			}
 			auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node, level);
 			// Perform the mutual update:
 			// if the removed node id (the neighbour's neighbour to be removed)
@@ -1093,8 +1093,17 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 	}
 	node_lock.unlock();
 
+	// Hold 3 sets of nodes - all the original neighbors at that point to later (potentially) update,
+	// subset of these which are the chosen neighbors nodes, and a subset of the original neighbors that are going to be removed.
+	std::vector<idType> nodes_to_update;
+	std::vector<idType> chosen_neighbors;
+	std::vector<idType> neighbors_to_remove;
+
 	// Go over the deleted nodes and collect their neighbors to the candidates set
 	for (idType deleted_neighbor_id: deleted_neighbors) {
+		nodes_to_update.push_back(deleted_neighbor_id);
+		neighbors_to_remove.push_back(deleted_neighbor_id);
+
 		std::unique_lock<std::mutex> neighbor_lock(this->link_list_locks_[deleted_neighbor_id]);
 		linklistsizeint *neighbor_neighbours_list = get_linklist_at_level(deleted_neighbor_id, level);
 		linklistsizeint neighbor_neighbours_count = getListCount(neighbor_neighbours_list);
@@ -1113,12 +1122,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 			                   neighbor_neighbours[j]);
 		}
 	}
-
-	// Hold 3 sets of nodes - all the original neighbors at that point to later (potentially) update,
-	// subset of these which are the chosen neighbors nodes, and a subset of the original neighbors that are going to be removed.
-	std::vector<idType> nodes_to_update;
-	std::vector<idType> chosen_neighbors;
-	std::vector<idType> neighbors_to_remove;
 
 	auto orig_candidates = candidates;
 
@@ -1151,9 +1154,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 		locks[i] = std::unique_lock<std::mutex>(link_list_locks_[nodes_to_update[i]]);
 	}
 
-	if (isMarkedDeleted(node_id)) {
-		return;
-	}
 	auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
 	node_neighbours_count = getListCount(node_neighbours_list);
 
@@ -1163,8 +1163,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 	// Perform mutual updates:
 	size_t node_neighbours_idx = 0;
 	for (size_t i = 0; i < node_neighbours_count; i++) {
-		if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), node_neighbours[i]) &&
-			!isMarkedDeleted(node_neighbours[i])) {
+		if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), node_neighbours[i])) {
 			// the repaired node added a new neighbor that we didn't account for before in the meantime - leave it as is.
 			node_neighbours[node_neighbours_idx++] = node_neighbours[i];
 			continue;
@@ -1178,10 +1177,6 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 		}
 		// Now we know that we are looking at a neighbor that needs to be removed.
 		auto removed_node = node_neighbours[i];
-		if (isMarkedDeleted(removed_node)) {
-			// we don't make updates here for deleted nodes to avoid inconsistency.
-			continue;
-		}
 		auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node, level);
 		// Perform the mutual update:
 		// if the removed node id (the node's neighbour to be removed)
@@ -1208,7 +1203,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 			break;
 		}
 		// We don't make update for deleted nodes.
-		if (isMarkedDeleted(chosen_id)) {
+		if (isMarkedDeleted(chosen_id) || isMarkedDeleted(node_id)) {
 			continue;
 		}
 		auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(chosen_id, level);
@@ -1703,11 +1698,34 @@ void HNSWIndex<DataType, DistType>::SwapJob_POC(idType element_id) {
 	--max_id;
 	--this->num_marked_deleted;
 
+	// remove the deleted id form the relevant incoming edges sets -
+	for (size_t level = 0; level<=element_top_level; level++) {
+		linklistsizeint *neighbours_list = get_linklist_at_level(element_id, level);
+		unsigned short neighbours_count = getListCount(neighbours_list);
+		auto *neighbours = (idType *) (neighbours_list + 1);
+		for (size_t i=0; i<neighbours_count; i++) {
+			idType neighbour_id = neighbours[i];
+			// If this neighbor was deleted and swapped, the new swapped vector under this id is not the original one,
+			// and might be in a different level. Hence, we can safely continue without looking at the incoming edges set.
+			if (element_levels_[neighbour_id] < level) {
+				continue;
+			}
+			auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+			auto it = std::find(neighbour_incoming_edges->begin(),
+			                    neighbour_incoming_edges->end(),
+			                    element_id);
+			if (it != neighbour_incoming_edges->end()) {
+				neighbour_incoming_edges->erase(it);
+			}
+		}
+	}
+
 	// Swap the last id with the deleted one, and invalidate the last id data.
 	if (element_levels_[element_id] > 0) {
 		this->allocator->free_allocation(linkLists_[element_id]);
 		linkLists_[element_id] = nullptr;
 	}
+
 	if (cur_element_count == element_id) {
 		// we're deleting the last internal id, just invalidate data without swapping.
 		memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
@@ -1731,10 +1749,10 @@ void HNSWIndex<DataType, DistType>::SwapJob_POC(idType element_id) {
 
 
 template <typename DataType, typename DistType>
-std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType label) {
+std::vector<repairJob*> HNSWIndex<DataType, DistType>::removeVector_POC(labelType label) {
 
 	// Assumed this vector was already marked as deleted...
-	auto repair_jobs = std::vector<repairJob>();
+	auto repair_jobs = std::vector<repairJob*>();
 	vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
 	// go over levels and collect nodes to repair
@@ -1770,21 +1788,21 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 				// if the edge is bidirectional, do repair for this neighbor
 				if (neighbour_neighbours[j] == element_internal_id) {
 					bidirectional_edge = true;
-					repair_jobs.push_back(repairJob{.internal_id = neighbour_id, .level = level, .associated_deleted_id = element_internal_id});
+					repair_jobs.emplace_back(new repairJob(neighbour_id, level, element_internal_id));
 					break;
 				}
 			}
-			if (!bidirectional_edge) {
-				auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-				auto it = std::find(neighbour_incoming_edges->begin(),
-				                    neighbour_incoming_edges->end(),
-				                    element_internal_id);
-				if (it != neighbour_incoming_edges->end()) {
-					neighbour_incoming_edges->erase(it);
-				} else {
-					std::cout << element_internal_id << " was already deleted from " << neighbour_id << " incoming edges" << std::endl;
-				}
-			}
+//			if (!bidirectional_edge) {
+//				auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+//				auto it = std::find(neighbour_incoming_edges->begin(),
+//				                    neighbour_incoming_edges->end(),
+//				                    element_internal_id);
+//				if (it != neighbour_incoming_edges->end()) {
+//					neighbour_incoming_edges->erase(it);
+//				} else {
+//					std::cout << element_internal_id << " was already deleted from " << neighbour_id << " incoming edges" << std::endl;
+//				}
+//			}
 		}
 
 		// next, go over the rest of incoming edges (the ones that are not bidirectional) and make
@@ -1792,7 +1810,7 @@ std::vector<repairJob> HNSWIndex<DataType, DistType>::removeVector_POC(labelType
 		element_lock.lock();
 		auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
 		for (auto incoming_edge : *incoming_edges) {
-			repair_jobs.push_back(repairJob{.internal_id = incoming_edge, .level = level, .associated_deleted_id = element_internal_id});
+			repair_jobs.emplace_back(new repairJob(incoming_edge, level, element_internal_id));
 		}
 		// Do delete in swap job, in case that other job is performing changes in this set in the meantime.
 		//delete incoming_edges;
