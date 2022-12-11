@@ -217,7 +217,7 @@ benchmark:
 	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 	$(ROOT)/tests/benchmark/benchmarks.sh | xargs -I {} bash -lc \
 		"$(BENCHMARKDIR)/bm_{} --benchmark_out_format=json --benchmark_out={}_results.json || exit 255"
-	$(SHOW)python3 -m tox -e benchmark
+	# $(SHOW)python3 -m tox -e benchmark
 
 toxenv:
 ifeq ($(wildcard .tox),)
