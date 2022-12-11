@@ -11,5 +11,5 @@ jobs:
     runs-on: ubuntu-latest
     steps: 
       - name: echo ok
-      - run: echo 'OK'
+        run: echo 'OK'
 
