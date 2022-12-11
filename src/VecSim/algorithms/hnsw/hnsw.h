@@ -13,6 +13,7 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/vecsim_results_container.h"
+#include "VecSim/utils/data_block.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
@@ -72,9 +73,10 @@ protected:
     size_t data_size_;
     size_t size_data_per_element_;
     size_t size_links_per_element_;
-    size_t size_links_level0_;
+    size_t flags_offset_;
+    size_t links_offset0_;
     size_t label_offset_;
-    size_t offsetData_, offsetLevel0_;
+    size_t data_offset_;
     size_t incoming_links_offset0;
     size_t incoming_links_offset;
     double mult_;
@@ -88,7 +90,7 @@ protected:
 
     // Index data structures
     idType entrypoint_node_;
-    char *data_level0_memory_;
+    vecsim_stl::vector<DataBlock> level0_blocks_;
     char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
     std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
@@ -111,8 +113,10 @@ protected:
 protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
+    inline const DataBlock &getVectorBlock(idType id) const { return level0_blocks_[id / this->blockSize]; }
+    inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
+    inline const char *getElementData(idType internal_id) const;
     inline void setExternalLabel(idType internal_id, labelType label);
-    inline labelType *getExternalLabelPtr(idType internal_id) const;
     inline size_t getRandomLevel(double reverse_size);
     inline vecsim_stl::vector<idType> *getIncomingEdgesPtr(idType internal_id, size_t level) const;
     inline void setIncomingEdgesPtr(idType internal_id, size_t level, void *edges_ptr);
@@ -124,11 +128,11 @@ protected:
                                  idType *node_neighbors, const vecsim_stl::vector<bool> &bitmap,
                                  idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
-    inline DistType
+    inline void
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
                      tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
-                     candidatesMaxHeap<DistType> &candidates_set, DistType lowerBound) const;
+                     candidatesMaxHeap<DistType> &candidates_set, DistType &lowerBound) const;
     template <bool has_marked_deleted>
     inline void processCandidate_RangeSearch(
         idType curNodeId, const void *data_point, size_t layer, double epsilon, tag_t visited_tag,
@@ -192,7 +196,7 @@ public:
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
-    char *getDataByInternalId(idType internal_id) const;
+    inline const char *getDataByInternalId(idType internal_id) const;
     inline idType *get_linklist_at_level(idType internal_id, size_t level) const;
     inline linkListSize getListCount(const idType *list) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
@@ -276,29 +280,26 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
 }
 
 template <typename DataType, typename DistType>
+const char *HNSWIndex<DataType, DistType>::getElementData(idType internal_id) const {
+    return this->getVectorBlock(internal_id).getElement(getVectorRelativeIndex(internal_id));
+}
+
+template <typename DataType, typename DistType>
 labelType HNSWIndex<DataType, DistType>::getExternalLabel(idType internal_id) const {
-    labelType return_label;
-    memcpy(&return_label,
-           (data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_),
-           sizeof(labelType));
-    return return_label;
+    const char *data = getElementData(internal_id);
+    return *(labelType *)(data + label_offset_);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::setExternalLabel(idType internal_id, labelType label) {
-    memcpy((data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), &label,
-           sizeof(labelType));
+    const char *data = getElementData(internal_id);
+    *(labelType *)(data + label_offset_) = label;
 }
 
 template <typename DataType, typename DistType>
-labelType *HNSWIndex<DataType, DistType>::getExternalLabelPtr(idType internal_id) const {
-    return (labelType *)(data_level0_memory_ + internal_id * size_data_per_element_ +
-                         label_offset_);
-}
-
-template <typename DataType, typename DistType>
-char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return (data_level0_memory_ + internal_id * size_data_per_element_ + offsetData_);
+const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
+    auto metadata = getElementData(internal_id);
+    return (metadata + data_offset_);
 }
 
 template <typename DataType, typename DistType>
@@ -312,9 +313,9 @@ template <typename DataType, typename DistType>
 vecsim_stl::vector<idType> *HNSWIndex<DataType, DistType>::getIncomingEdgesPtr(idType internal_id,
                                                                                size_t level) const {
     if (level == 0) {
+        auto metadata = getElementData(internal_id);
         return reinterpret_cast<vecsim_stl::vector<idType> *>(
-            *(void **)(data_level0_memory_ + internal_id * size_data_per_element_ +
-                       incoming_links_offset0));
+            *(void **)(metadata + incoming_links_offset0));
     }
     return reinterpret_cast<vecsim_stl::vector<idType> *>(
         *(void **)(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
@@ -325,8 +326,8 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::setIncomingEdgesPtr(idType internal_id, size_t level,
                                                         void *edges_ptr) {
     if (level == 0) {
-        memcpy(data_level0_memory_ + internal_id * size_data_per_element_ + incoming_links_offset0,
-               &edges_ptr, sizeof(void *));
+        auto metadata = getElementData(internal_id);
+        *(void **)(metadata + incoming_links_offset0) = edges_ptr;
     } else {
         memcpy(linkLists_[internal_id] + (level - 1) * size_links_per_element_ +
                    incoming_links_offset,
@@ -337,16 +338,16 @@ void HNSWIndex<DataType, DistType>::setIncomingEdgesPtr(idType internal_id, size
 template <typename DataType, typename DistType>
 elementFlags *HNSWIndex<DataType, DistType>::get_flags(idType internal_id) const {
     // elementFlags offset is 0 from the start of the element metadata
-    return (elementFlags *)(data_level0_memory_ + internal_id * size_data_per_element_ +
-                            offsetLevel0_);
+    auto metadata = getElementData(internal_id);
+    return (elementFlags *)(metadata + flags_offset_);
 }
 
 template <typename DataType, typename DistType>
 idType *HNSWIndex<DataType, DistType>::get_linklist0(idType internal_id) const {
     // links offset at level 0 is `sizeof(elementFlags) + sizeof(linkListSize)` from the start of
     // the element metadata
-    return (idType *)(data_level0_memory_ + internal_id * size_data_per_element_ +
-                      sizeof(elementFlags) + sizeof(linkListSize) + offsetLevel0_);
+    auto metadata = getElementData(internal_id);
+    return (idType *)(metadata + links_offset0_);
 }
 
 template <typename DataType, typename DistType>
@@ -455,14 +456,78 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
     heap.emplace(dist, getExternalLabel(id));
 }
 
+// // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
+// // overloading to emplace correctly for both cases.
+// template <typename DataType, typename DistType>
+// template <bool has_marked_deleted, typename Identifier>
+// void HNSWIndex<DataType, DistType>::processCandidate(
+//     idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
+//     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+//     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
+
+// #ifdef ENABLE_PARALLELIZATION
+//     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
+// #endif
+//     idType *node_links = get_linklist_at_level(curNodeId, layer);
+//     linkListSize links_num = getListCount(node_links);
+
+//     __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
+//     // Pre-fetch first candidate data block address.
+//     __builtin_prefetch(this->level0_blocks_.data() + (*node_links / this->blockSize));
+
+//     for (size_t j = 0; j < links_num; j++) {
+//         idType *candidate_pos = node_links + j;
+//         idType candidate_id = *candidate_pos;
+
+//         // Pre-fetch current candidate data (block address was already fetched).
+//         __builtin_prefetch(getElementData(candidate_id));
+//         // Pre-fetch the next candidate data into memory cache, to improve performance.
+//         idType *next_candidate_pos = node_links + j + 1;
+//         // Pre-fetch next candidate data block address.
+//         __builtin_prefetch(this->level0_blocks_.data() + (*next_candidate_pos / this->blockSize));
+//         // Pre-fetch next candidate tag address.
+//         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+
+//         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+//             continue;
+
+//         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+//         const char *currObj1 = (getDataByInternalId(candidate_id));
+
+//         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
+//         if (lowerBound > dist1 || top_candidates.size() < ef) {
+//             candidate_set.emplace(-dist1, candidate_id);
+
+//             // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+//             if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+//                 emplaceToHeap(top_candidates, dist1, candidate_id);
+
+//             if (top_candidates.size() > ef)
+//                 top_candidates.pop();
+
+//             // If we have marked deleted elements, we need to verify that `top_candidates` is not
+//             // empty (since we might have not added any non-deleted element yet).
+//             if (!has_marked_deleted || !top_candidates.empty())
+//                 lowerBound = top_candidates.top().first;
+//         }
+//     }
+//     // Pre-fetch the neighbours list of the top candidate (the one that is going
+//     // to be processed in the next iteration) into memory cache, to improve performance.
+//     if (layer == 0) {
+//         __builtin_prefetch(getElementData(candidate_set.top().second));
+//     } else {
+//         __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+//     }
+// }
+
 // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
 // overloading to emplace correctly for both cases.
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted, typename Identifier>
-DistType HNSWIndex<DataType, DistType>::processCandidate(
+void HNSWIndex<DataType, DistType>::processCandidate(
     idType curNodeId, const void *data_point, size_t layer, size_t ef, tag_t visited_tag,
     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
-    candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
+    candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
 
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
@@ -480,13 +545,14 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         // Pre-fetch the next candidate data into memory cache, to improve performance.
         idType *next_candidate_pos = node_links + j + 1;
         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        if (*next_candidate_pos < 1000000)
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
 
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *currObj1 = (getDataByInternalId(candidate_id));
+        const char *currObj1 = (getDataByInternalId(candidate_id));
 
         DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
         if (lowerBound > dist1 || top_candidates.size() < ef) {
@@ -507,9 +573,11 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
-
-    return lowerBound;
+    if (layer == 0) {
+        __builtin_prefetch(getElementData(candidate_set.top().second));
+    } else {
+        __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -535,12 +603,13 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         // Pre-fetch the next candidate data into memory cache, to improve performance.
         idType *next_candidate_pos = node_links + j + 1;
         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+        if (*next_candidate_pos < 1000000)
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
         this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        char *candidate_data = getDataByInternalId(candidate_id);
+        const char *candidate_data = getDataByInternalId(candidate_id);
 
         DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
         if (candidate_dist < dyn_range) {
@@ -594,7 +663,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        lowerBound = processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer,
+        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer,
                                                           ef, visited_tag, top_candidates,
                                                           candidate_set, lowerBound);
     }
@@ -685,9 +754,6 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             *ll_cur = *cur_neighbor;
             ll_cur++;
         }
-
-        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-        setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
     }
 
     // go over the selected neighbours - selectedNeighbor is the neighbour id
@@ -949,11 +1015,9 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     }
 
     // swap the last_id level 0 data, and invalidate the deleted id's data
-    memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
-           data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_,
-           size_data_per_element_);
-    memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
-           size_data_per_element_);
+    auto *last_element_data = this->level0_blocks_.back().removeAndFetchLastElement();
+    this->level0_blocks_[element_internal_id / this->blockSize].updateElement(
+        element_internal_id % this->blockSize, last_element_data);
 
     // swap pointer of higher levels links
     linkLists_[element_internal_id] = linkLists_[cur_element_count];
@@ -1025,7 +1089,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       VecSimIndexTombstone(), max_elements_(params->initialCapacity),
-      data_size_(VecSimType_sizeof(params->type) * this->dim),
+      data_size_(VecSimType_sizeof(params->type) * this->dim), level0_blocks_(allocator),
       element_levels_(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1070,21 +1134,18 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // | ---2--- | -----2----- | -----4*M0----------- | ---------8-------- |-data_size_-| ---8--- |
     // | <flags> | <links_len> | <link_1> <link_2>... |<incoming_links_ptr>|   <data>   | <label> |
 
-    size_links_level0_ =
-        sizeof(linkListSize) + sizeof(elementFlags) + maxM0_ * sizeof(idType) + sizeof(void *);
-    size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labelType);
+    flags_offset_ = 0;
+    links_offset0_ = flags_offset_ + sizeof(elementFlags) + sizeof(linkListSize);
+    incoming_links_offset0 = links_offset0_ + maxM0_ * sizeof(idType);
+    data_offset_ = incoming_links_offset0 + sizeof(void *);
+    label_offset_ = data_offset_ + data_size_;
+    size_data_per_element_ = label_offset_ + sizeof(labelType);
 
-    // No need to test for overflow because we passed the test for size_links_level0_ and this is
-    // less.
-    incoming_links_offset0 = maxM0_ * sizeof(idType) + sizeof(linkListSize) + sizeof(elementFlags);
-    offsetData_ = size_links_level0_;
-    label_offset_ = size_links_level0_ + data_size_;
-    offsetLevel0_ = 0;
-
-    data_level0_memory_ =
-        (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
-    if (data_level0_memory_ == nullptr)
-        throw std::runtime_error("Not enough memory");
+    size_t initial_vector_size = max_elements_ / this->blockSize;
+    if (max_elements_ % this->blockSize != 0) {
+        initial_vector_size++;
+    }
+    level0_blocks_.reserve(initial_vector_size);
 
     linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
     if (linkLists_ == nullptr)
@@ -1111,7 +1172,6 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
     }
 
     this->allocator->free_allocation(linkLists_);
-    this->allocator->free_allocation(data_level0_memory_);
 }
 
 /**
@@ -1131,12 +1191,6 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
-    // Reallocate base layer
-    char *data_level0_memory_new = (char *)this->allocator->reallocate(
-        data_level0_memory_, new_max_elements * size_data_per_element_);
-    if (data_level0_memory_new == nullptr)
-        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
-    data_level0_memory_ = data_level0_memory_new;
 
     // Reallocate all other layers
     char **linkLists_new =
@@ -1221,10 +1275,13 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
     }
     if (cur_element_count == element_internal_id) {
         // we're deleting the last internal id, just invalidate data without swapping.
-        memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
-               size_data_per_element_);
+        this->level0_blocks_.back().removeAndFetchLastElement();
     } else {
         SwapLastIdWithDeletedId(element_internal_id);
+    }
+
+    if (this->level0_blocks_.back().getLength() == 0) {
+        this->level0_blocks_.pop_back();
     }
 
     // If we need to free a complete block & there is a least one block between the
@@ -1283,12 +1340,19 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 #endif
     idType currObj = entrypoint_node_;
 
-    memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
-           size_data_per_element_);
+    char new_element[this->size_data_per_element_] = {0};
 
     // Initialisation of the data and label
-    setExternalLabel(cur_c, label);
-    memcpy(getDataByInternalId(cur_c), vector_data, data_size_);
+    *(labelType *)(new_element + label_offset_) = label;
+    memcpy(new_element + data_offset_, vector_data, data_size_);
+    *(vecsim_stl::vector<idType> **)(new_element + incoming_links_offset0) =
+        new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+
+    if (cur_c % this->blockSize == 0) {
+        this->level0_blocks_.emplace_back(this->blockSize, size_data_per_element_, this->allocator);
+    }
+
+    this->level0_blocks_.back().addElement(new_element);
 
     if (element_max_level > 0) {
         linkLists_[cur_c] =
@@ -1296,6 +1360,12 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         if (linkLists_[cur_c] == nullptr)
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
         memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level);
+        // create the incoming edges set for the new levels.
+        for (size_t level_idx = 1; level_idx <= element_max_level; level_idx++) {
+            auto *incoming_edges =
+                new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+            setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
+        }
     }
 
     // this condition only means that we are not inserting the first element.
@@ -1329,17 +1399,12 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
                     // Get currObj and cur_dist ready for the next iteration.
                     greedySearchLevel<false>(vector_data, level, currObj, cur_dist);
-                    // Set incoming edges list to empty.
-                    auto ptr = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-                    setIncomingEdgesPtr(cur_c, level, ptr);
-
                 } else {
                     currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
                 }
             }
         } else {
             for (size_t level = max_common_level; (int)level >= 0; level--) {
-
                 candidatesMaxHeap<DistType> top_candidates =
                     searchLayer<false>(currObj, vector_data, level, ef_construction_);
                 currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
@@ -1350,21 +1415,10 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         if (element_max_level > maxlevelcopy) {
             entrypoint_node_ = cur_c;
             maxlevel_ = element_max_level;
-            // create the incoming edges set for the new levels.
-            for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
-                auto *incoming_edges =
-                    new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-                setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
-            }
         }
     } else {
         // Do nothing for the first element
         entrypoint_node_ = 0;
-        for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
-            auto *incoming_edges =
-                new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-            setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
-        }
         maxlevel_ = element_max_level;
     }
     return true;
@@ -1432,7 +1486,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         candidate_set.pop();
 
-        lowerBound = processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef,
+        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef,
                                                           visited_tag, *top_candidates,
                                                           candidate_set, lowerBound);
     }

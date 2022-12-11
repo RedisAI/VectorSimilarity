@@ -7,7 +7,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       Serializer(version), max_elements_(params->initialCapacity), epsilon_(params->epsilon),
-      element_levels_(max_elements_, allocator) {
+      level0_blocks_(allocator), element_levels_(max_elements_, allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -27,10 +27,11 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
 
-    data_level0_memory_ =
-        (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
-    if (data_level0_memory_ == nullptr)
-        throw std::runtime_error("Not enough memory");
+    size_t initial_vector_size = max_elements_ / this->blockSize;
+    if (max_elements_ % this->blockSize != 0) {
+        initial_vector_size++;
+    }
+    level0_blocks_.reserve(initial_vector_size);
 
     linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
     if (linkLists_ == nullptr)
@@ -137,10 +138,14 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     readBinaryPOD(input, this->data_size_);
     readBinaryPOD(input, this->size_data_per_element_);
     readBinaryPOD(input, this->size_links_per_element_);
-    readBinaryPOD(input, this->size_links_level0_);
+    {
+        // readBinaryPOD(input, this->links_offset0_);
+        input.ignore(sizeof(size_t));
+        this->links_offset0_ = sizeof(elementFlags) + sizeof(linkListSize);
+    }
     readBinaryPOD(input, this->label_offset_);
-    readBinaryPOD(input, this->offsetData_);
-    readBinaryPOD(input, this->offsetLevel0_);
+    readBinaryPOD(input, this->data_offset_);
+    readBinaryPOD(input, this->flags_offset_);
     readBinaryPOD(input, this->incoming_links_offset0);
     readBinaryPOD(input, this->incoming_links_offset);
     readBinaryPOD(input, this->mult_);
@@ -181,14 +186,14 @@ void HNSWIndex<DataType, DistType>::restoreGraph_V1_fixes() {
     this->size_links_per_element_ -= sizeof(idType) - sizeof(linkListSize);
     this->incoming_links_offset -= sizeof(idType) - sizeof(linkListSize);
 
-    char *data = this->data_level0_memory_;
     for (idType i = 0; i < this->cur_element_count; i++) {
         // Restore level 0 number of links
         // In V1 linkListSize was of the same size as idType, so we need to fix it.
         // V1 did not have the elementFlags, so we need set all flags to 0.
-        idType lls = *(idType *)data;
-        *(linkListSize *)(data + sizeof(elementFlags)) = (linkListSize)lls;
-        *(elementFlags *)(data) = (elementFlags)0;
+        idType *data = this->get_linklist0(i);
+        idType lls = *(data - 1);
+        *(linkListSize *)((char *)data - sizeof(linkListSize)) = (linkListSize)lls;
+        *(elementFlags *)(data - 1) = (elementFlags)0;
         data += this->size_data_per_element_;
 
         // Restore level 1+ links
@@ -217,7 +222,19 @@ void HNSWIndex<DataType, DistType>::restoreGraph_V1_fixes() {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore graph layer 0
-    input.read(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
+    char cur[this->size_data_per_element_];
+    idType id = 0;
+    while (id < this->cur_element_count) {
+        this->level0_blocks_.emplace_back(this->blockSize, this->size_data_per_element_, this->allocator);
+        for (size_t i = 0; i < this->blockSize && id < this->cur_element_count; id++, i++) {
+            input.read(cur, this->size_data_per_element_);
+            this->level0_blocks_.back().addElement(cur);
+        }
+    }
+    // Skip the rest of the data until the incoming edges section (after `this->max_elements_ *
+    // this->size_data_per_element_` bytes)
+    input.ignore((this->max_elements_ - this->cur_element_count) * this->size_data_per_element_);
+
     for (idType i = 0; i < this->cur_element_count; i++) {
         auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
         unsigned int incoming_edges_len;
@@ -306,10 +323,10 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->data_size_);
     writeBinaryPOD(output, this->size_data_per_element_);
     writeBinaryPOD(output, this->size_links_per_element_);
-    writeBinaryPOD(output, this->size_links_level0_);
+    writeBinaryPOD(output, this->links_offset0_);
     writeBinaryPOD(output, this->label_offset_);
-    writeBinaryPOD(output, this->offsetData_);
-    writeBinaryPOD(output, this->offsetLevel0_);
+    writeBinaryPOD(output, this->data_offset_);
+    writeBinaryPOD(output, this->flags_offset_);
     writeBinaryPOD(output, this->incoming_links_offset0);
     writeBinaryPOD(output, this->incoming_links_offset);
     writeBinaryPOD(output, this->mult_);
@@ -324,7 +341,15 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // Save level 0 data (graph layer 0 + labels + vectors data)
-    output.write(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
+    for (auto &block : this->level0_blocks_) {
+        size_t block_size = block.getLength();
+        for (size_t i = 0; i < block_size; i++) {
+            output.write(block.getElement(i), this->size_data_per_element_);
+        }
+    }
+    // For backward compatibility, write `this->max_elements_ * this->size_data_per_element_` bytes.
+    output.seekp((this->max_elements_ - this->cur_element_count) * this->size_data_per_element_,
+                 std::ios::cur);
 
     // Save the incoming edge sets.
     for (size_t i = 0; i < this->cur_element_count; i++) {

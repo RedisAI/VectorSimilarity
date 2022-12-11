@@ -131,7 +131,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
             __builtin_prefetch(index->getDataByInternalId(*(node_links + j + 1)));
 
             this->visitNode(candidate_id);
-            char *candidate_data = this->index->getDataByInternalId(candidate_id);
+            const char *candidate_data = this->index->getDataByInternalId(candidate_id);
             DistType candidate_dist =
                 dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
