@@ -1,6 +1,5 @@
-[![CircleCI](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main.svg?style=svg)](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main)
+[![nightly](https://github.com/RedisAI/VectorSimilarity/actions/workflows/nightly.yml/badge.svg)](https://github.com/RedisAI/VectorSimilarity/actions/workflows/nightly.yml)
 [![codecov](https://codecov.io/gh/RedisAI/VectorSimilarity/branch/main/graph/badge.svg)](https://codecov.io/gh/RedisAI/VectorSimilarity)
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/RedisAI/VectorSimilarity.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/RedisAI/VectorSimilarity/alerts/)
 [![CodeQL](https://github.com/RedisAI/VectorSimilarity/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/RedisAI/VectorSimilarity/actions/workflows/codeql-analysis.yml)
 [![Known Vulnerabilities](https://snyk.io/test/github/RedisAI/VectorSimilarity/badge.svg)](https://snyk.io/test/github/RedisAI/VectorSimilarity)
 
@@ -35,57 +34,13 @@ make
 To execute unit tests run
 
 ```
-make
 make unit_test
 ```
 ## Memory check
 
 To run unit with valgrind run
 ```
-make VALGRIND=1
 make unit_test VALGRIND=1
-```
-
-To run unit tests with clang memory and address sanitizers, we have provided you a docker image to do so.
-
-#### VSCode devcontainer
-If you are using VSCode, make sure you have the [Visual Studio Code Remote Development Extension Pack](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack]) installed. You will be prompt about opening the repository in the devcontainer. This will automatically setup a development container with all the dependencies installed and will use [Oh My ZSH](https://ohmyz.sh/) as shell.
-
-When done, execute below for memory sanitizer
-```
-make
-make unit_test SAN=memory
-```
-
-Or execute below for address sanitizer
-```
-make
-make unit_test SAN=address
-```
-
-#### Docker build
-Build and run the docker image
-```
-docker build .devcontainer -t vecsim_sanitizer
-docker run -it -v "$(pwd)":/project vecsim_sanitizer
-```
-
-When on docker, you will need to install the dependencies in order to build and run tests
-```
-$ cd /project
-$ ./sbin/system-setup.p
-```
-
-When done, execute below for memory sanitizer
-```
-make
-make unit_test SAN=memory
-```
-
-Or execute below for address sanitizer
-```
-make
-make unit_test SAN=address
 ```
 
 ## Python bindings
