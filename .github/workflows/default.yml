@@ -1,10 +1,6 @@
 name: default flow
 
 on:
-  push:
-    branches: [main, '[0-9].[0-9]']
-  pull_request:
-    branches-ignore: ['*docs', '*noci']
   workflow_call:
 
 jobs:
@@ -77,11 +73,11 @@ jobs:
 
   stop-runner:
     name: Stop self-hosted EC2 runner
-    needs:
-      - start-runner # required to get output from the start-runner job
+    needs: 
+      - start-runner
       - codecov
     runs-on: ubuntu-latest
-    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
+    if: ${{ always() }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
