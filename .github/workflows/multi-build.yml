@@ -12,6 +12,7 @@ on:
 
 jobs:
   checks:
+    if: (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
     name: checks if multi-build is required
     runs-on: ubuntu-latest
     outputs:

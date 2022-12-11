@@ -22,6 +22,7 @@ on:
 
 jobs:
   analyze:
+    if: (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
     name: Analyze
     runs-on: ubuntu-latest
     permissions:
