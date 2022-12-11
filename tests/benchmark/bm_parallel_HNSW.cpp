@@ -48,7 +48,6 @@ private:
 				VecSimQueryResult_IteratorFree(bf_it);
 			}
 			VecSimQueryResult_IteratorFree(hnsw_it);
-
 			VecSimQueryResult_Free(bf_results);
 			VecSimQueryResult_Free(hnsw_results);
 			total_correct += correct;
@@ -479,7 +478,8 @@ public:
 		cout << "\nDeleting " << data.size() / 2 << " vectors with dim=" << hnswParams.hnswParams.dim
 		     << " in parallel"  << endl;
 
-		size_t last_inserted_label = data.size()/2;
+		long total_vector_inserted = data.size()/2;
+		long total_vector_deleted = 0;
 
 		// Holds an indicator for whether the deleted item is ready for eviction.
 		// A mapping: deleted_id -> set of (id, level) of nodes to repair in the graph.
@@ -489,77 +489,142 @@ public:
 		std::deque<repairJob*> all_jobs;
 		// A mapping from id -> vector of the relevant repair jobs
 		std::unordered_map<idType , std::vector<repairJob*>> idToJob;
+		// A mapping from deleted_node_id -> vector of the relevant repair jobs
+		std::unordered_map<idType , std::vector<repairJob*>> deletedIdToJob;
 		std::mutex jobs_queue_guard;
 
 		started = std::chrono::high_resolution_clock::now();
 #pragma omp parallel num_threads(n_threads) shared(hnsw_index, queries, total_res, k, cout, q_counter, swap_jobs, \
-		sleep_time, last_inserted_label, guard, serializer, all_jobs, jobs_queue_guard, idToJob) default(none)
+		sleep_time, total_vector_inserted, guard, serializer, all_jobs, jobs_queue_guard, idToJob, deletedIdToJob, total_vector_deleted) default(none)
 		{
 			int myID = omp_get_thread_num();
 			if (myID == 0) {
+				//std::this_thread::sleep_for(std::chrono::milliseconds (7000));
+#pragma omp critical
+				cout << "Thread " << myID << " is marking vectors as deleted and creating repair jobs... " << endl;
 				for (size_t i = 0; i < data.size() / 2; i++) {
 					guard.lock_shared();
+//					VecSimIndex_AddVector(hnsw_index, (const void *) data[i + data.size()/2].data(), i + data.size()/2);
+//					__atomic_add_fetch(&total_vector_inserted, 1, __ATOMIC_RELAXED);
 					auto repair_jobs = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->removeVector_POC(i);
-					VecSimIndex_AddVector(hnsw_index, (const void *) data[i + data.size() / 2].data(),
-					                      i + data.size() / 2);
+					__atomic_add_fetch(&total_vector_deleted, 1, __ATOMIC_RELAXED);
 					guard.unlock_shared();
 					jobs_queue_guard.lock();
 					for (auto job : repair_jobs) {
 						idToJob[job->internal_id].push_back(job);
+						deletedIdToJob[job->associated_deleted_id].push_back(job);
 					}
 					swap_jobs.insert({reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getInternalIdByLabel(i),
 									  repair_jobs.size()});
 
-					last_inserted_label++;
 					all_jobs.insert(all_jobs.end(), repair_jobs.begin(), repair_jobs.end());
 					jobs_queue_guard.unlock();
 
 					if (i % 10000 == 9999) {
-						//std::this_thread::sleep_for(std::chrono::milliseconds (10));
+						// Do a batch of swap jobs for every deleted vector whose repair jobs are all done.
+						size_t total_jobs_done = 0;
+						std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+						cout << "Applying swap jobs after " << i << " deletions and after total of " << total_vector_inserted <<
+						" vectors inserted" << endl;
 						guard.lock();
-						std::vector<idType> to_remove;
-						for (auto &it : swap_jobs) {
-							if (it.second < 0) {
-								throw std::runtime_error("repair jobs counter lower than 0");
-							}
-							if (it.second == 0) {
-								to_remove.push_back(it.first);
-								//cout << "Applying swap job for id " << it.first  << endl;
-								reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
-								for (auto it_job : idToJob[it.first]) {
-									it_job->internal_id = HNSW_INVALID_ID;
+
+						bool reiterate_swap_jobs = false;
+						do {
+							reiterate_swap_jobs = false;
+							idType id_to_reinsert = HNSW_INVALID_ID;
+							long counter_to_update = HNSW_INVALID_ID;
+							std::vector<idType> to_remove;
+							//cout << "Applying swap jobs for queue with " << swap_jobs.size() << " items" << endl;
+							for (auto &it: swap_jobs) {
+								if (it.second < 0) {
+									throw std::runtime_error("repair jobs counter lower than 0");
 								}
-								// Swap the ids in the pending jobs.
-								for (auto it_job : idToJob[reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count]) {
-									it_job->internal_id = it.first;
+								if (it.second == 0) {
+									//cout << "Applying swap job for id " << it.first << endl;
+									reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
+									// Invalidate repair jobs for the disposed id.
+									for (auto it_job: idToJob[it.first]) {
+										it_job->internal_id = HNSW_INVALID_ID;
+									}
+									idType last_id = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count;
+									// Swap the ids in the pending jobs.
+									for (auto it_job: idToJob[last_id]) {
+										it_job->internal_id = it.first;
+									}
+									idToJob[it.first] = idToJob[last_id];
+									idToJob.erase(last_id);
+
+									// Update the swap job - if last_id has a pending swap job
+									if (it.first != last_id && swap_jobs.find(last_id) != swap_jobs.end()) {
+										//swap_jobs[it.first] = swap_jobs[last_id];
+										id_to_reinsert = it.first;
+										counter_to_update = swap_jobs[last_id];
+										to_remove.push_back(last_id);
+										to_remove.push_back(it.first);
+
+										// update the associated id in the jobs
+										for (auto *job : deletedIdToJob[last_id]) {
+											job->associated_deleted_id = it.first;
+										}
+										deletedIdToJob[it.first] = deletedIdToJob[last_id];
+										deletedIdToJob.erase(last_id);
+										// we changed swap_jobs, so the iterator is no longer valid.
+										reiterate_swap_jobs = true;
+//										cout << "swapped id in swap job for last element: " << last_id << " with " << it.first <<
+//										" where swap jobs size is " << swap_jobs.size() << " and " << to_remove.size() <<
+//										" were done" << endl;
+										break;
+									} else {
+										to_remove.push_back(it.first);
+										deletedIdToJob.erase(it.first);
+									}
+									//serializer.checkIntegrity(swap_jobs);
 								}
-								idToJob[it.first] = idToJob[reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count];
-								idToJob.erase(reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count);
-								//serializer.checkIntegrity(swap_jobs);
 							}
-						}
-						for (auto it : to_remove) {
-							swap_jobs.erase(it);
-						}
+							// Remove all the completed swap jobs.
+							total_jobs_done += to_remove.size();
+							for (auto it: to_remove) {
+								swap_jobs.erase(it);
+							}
+							if (id_to_reinsert != HNSW_INVALID_ID) {
+								swap_jobs[id_to_reinsert] = counter_to_update;
+							}
+						} while (reiterate_swap_jobs);
 //						serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
-						cout << "Applied " << to_remove.size() << " swap jobs and " <<
-						swap_jobs.size() << " jobs left, where last inserted label is " << last_inserted_label << endl;
+						cout << "Applied " << total_jobs_done << " swap jobs and " <<
+						swap_jobs.size() << " jobs left, where last inserted label is " << total_vector_inserted << endl;
 //						serializer.checkIntegrity(swap_jobs).valid_state << endl;
 						guard.unlock();
 					}
 				}
-			} else if (myID >= 1 && myID < 4) {
 #pragma omp critical
-				cout << "Thread " << myID << " repairing vectors" << endl;
-				//std::this_thread::sleep_for(std::chrono::milliseconds (100));
+				cout << "Thread " << myID << " done deleting vectors after inserting: " <<
+				__atomic_load_n(&total_vector_inserted, __ATOMIC_RELAXED) << " vectors in total" << endl;
+			} else if (myID == 1) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+#pragma omp critical
+				cout << "Thread " << myID << " is inserting new vectors..." << endl;
+				for (size_t j = data.size()/2; j < data.size(); j++) {
+					guard.lock_shared();
+					VecSimIndex_AddVector(hnsw_index, (const void *)data[j].data(),
+					                      j);
+					guard.unlock_shared();
+					__atomic_add_fetch(&total_vector_inserted, 1, __ATOMIC_RELAXED);
+				}
+#pragma omp critical
+				cout << "Thread " << myID << " done inserting new vectors..." << endl;
+			} else if (myID > 1 && myID < 4) {
+#pragma omp critical
+				cout << "Thread " << myID << " is repairing vectors..." << endl;
+				//std::this_thread::sleep_for(std::chrono::milliseconds (5000));
 				while (true) {
 					jobs_queue_guard.lock();
-					if (all_jobs.empty() && last_inserted_label == data.size()) {
+					if (all_jobs.empty() && __atomic_load_n(&total_vector_deleted, __ATOMIC_RELAXED) == data.size()/2) {
 						jobs_queue_guard.unlock();
 						break;
 					} else if (all_jobs.empty()) {
 						jobs_queue_guard.unlock();
-						//std::this_thread::sleep_for(std::chrono::milliseconds (10));
+						//std::this_thread::sleep_for(std::chrono::milliseconds(10));
 						continue;
 					}
 					auto job = all_jobs.front();
@@ -568,7 +633,6 @@ public:
 
 					guard.lock_shared();
 					if (job->internal_id != HNSW_INVALID_ID) {
-						//cout << "Applying repair job for id " << job->internal_id << " due to deletion of " << job->associated_deleted_id << endl;
 						reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->repairConnectionsForDeletion_POC(
 								job->internal_id, job->level);
 						jobs_queue_guard.lock();
@@ -582,7 +646,6 @@ public:
 						jobs_queue_guard.unlock();
 					}
 					guard.unlock_shared();
-					//size_t count = swap_jobs[job->associated_deleted_id].erase(job);
 					jobs_queue_guard.lock();
 					size_t count = __atomic_fetch_sub(&swap_jobs[job->associated_deleted_id], 1, __ATOMIC_RELAXED);
 					if (count <= 0) {
@@ -591,15 +654,15 @@ public:
 					jobs_queue_guard.unlock();
 					delete job;
 				}
-
 #pragma omp critical
 				cout << "Thread " << myID << " done repairing nodes" << endl;
 			} else {
 				std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
 #pragma omp critical
 				cout << "Thread " << myID << " start running queries, index size upon search starts: "
-			        << VecSimIndex_IndexSize(hnsw_index) << " and max label is: " <<
-			        last_inserted_label << endl;
+			        << VecSimIndex_IndexSize(hnsw_index) << " after inserting: " <<
+					__atomic_load_n(&total_vector_inserted, __ATOMIC_RELAXED) << " vectors in total and deleting " <<
+					__atomic_load_n(&total_vector_deleted, __ATOMIC_RELAXED) << endl;
 			while (true) {
 				size_t next_val = q_counter++;
 				if (next_val >= queries.size()) {
@@ -613,15 +676,16 @@ public:
 			}
 #pragma omp critical
 			cout << "Thread " << myID << " done running queries, index size upon search ends: "
-			     << VecSimIndex_IndexSize(hnsw_index) << " and max label is: " <<
-			     last_inserted_label << endl;
+			     << VecSimIndex_IndexSize(hnsw_index) << " after inserting: " <<
+				 __atomic_load_n(&total_vector_inserted, __ATOMIC_RELAXED) << " vectors in total and deleting " <<
+				 __atomic_load_n(&total_vector_deleted, __ATOMIC_RELAXED) << endl;
 		}
 	}
 		done = std::chrono::high_resolution_clock::now();
 		assert(VecSimIndex_IndexSize(hnsw_index) == data.size()/2);
 		std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
 		<< VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
-		std::cout << "Total update time is "
+		std::cout << "Total update/search time is "
 		          << std::chrono::duration_cast<std::chrono::milliseconds>(done - started).count()
 		          << " ms" << std::endl;
 		std::cout << "Max gap between number of vectors whose indexing began to the number"
@@ -636,9 +700,18 @@ public:
 		}
 		if (!swap_jobs.empty()) {
 			started = std::chrono::high_resolution_clock::now();
-			for (auto &it: swap_jobs) {
-				reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
-			}
+			bool reiterate = false;
+			do {
+				for (auto &it: swap_jobs) {
+					reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
+					idType last_id = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count;
+					if (it.first != last_id && swap_jobs.find(last_id) != swap_jobs.end()) {
+						swap_jobs[it.first] = swap_jobs[last_id];
+						reiterate = true;
+						break;
+					}
+				}
+			} while (reiterate);
 			done = std::chrono::high_resolution_clock::now();
 			std::cout << "Index size is " << VecSimIndex_IndexSize(hnsw_index) << " with "
 			          << VecSimIndex_Info(hnsw_index).hnswInfo.numDeleted << " marked deleted elements" << std::endl;
@@ -655,7 +728,7 @@ public:
 
 		for (size_t i = data.size() / 2; i < data.size(); i++) {
 			VecSimIndex_AddVector(bf_index,
-			                      (const void *)reinterpret_cast<HNSWIndex_Single<float, float> *>(hnsw_index)->getDataByLabel(i),
+			                      (const void *)(const void *) data[i].data(),
 			                      i);
 		}
 		auto total_recall = computeRecall(total_res, bf_index, true);

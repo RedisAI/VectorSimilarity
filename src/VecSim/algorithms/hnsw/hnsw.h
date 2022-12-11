@@ -1348,7 +1348,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             }
         }
     }
-	if (element_levels_[entrypoint_node_] != maxlevel_) {
+	if (entrypoint_node_ != HNSW_INVALID_ID && element_levels_[entrypoint_node_] != maxlevel_) {
 		throw std::runtime_error("Invalid new entry point was chosen");
 	}
 }

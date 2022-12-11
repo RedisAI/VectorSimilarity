@@ -346,18 +346,18 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity(const std::unordered_map<i
 					s.insert(data[j]);
 
 					if (hnsw_index->isMarkedDeleted(data[j]) && !hnsw_index->isMarkedDeleted(i)) {
-						auto repair_jobs = deleted_elements.at(data[j]);
-						bool found = false;
-						for (auto *it : repair_jobs) {
-							if (it->internal_id == i && it->level == l) {
-								found = true;
-							}
-						}
-						if (!found) {
-							res.valid_state = false;
-							std::cout << i << " is pointing to a deleted neighbor " << data[j] << " in level " << l <<
-							          " and an appropriate repair job was not found" << std::endl;
-						}
+//						auto repair_jobs = deleted_elements.at(data[j]);
+//						bool found = false;
+//						for (auto *it : repair_jobs) {
+//							if (it->internal_id == i && it->level == l) {
+//								found = true;
+//							}
+//						}
+//						if (!found) {
+//							res.valid_state = false;
+//							std::cout << i << " is pointing to a deleted neighbor " << data[j] << " in level " << l <<
+//							          " and an appropriate repair job was not found" << std::endl;
+//						}
 					}
 					// Collect the number of inbound connections for non-deleted element only.
 					inbound_connections_num[data[j]]++;
@@ -393,19 +393,19 @@ HNSWIndexMetaData HNSWIndexSerializer::checkIntegrity(const std::unordered_map<i
 						continue;
 					}
 					if (hnsw_index->isMarkedDeleted(i)) {
-						auto repair_jobs = deleted_elements.at(i);
-						bool found = false;
-						for (auto *it : repair_jobs) {
-							if (it->internal_id == con && it->level == l) {
-								found = true;
-							}
-						}
-						if (!found) {
-							res.valid_state = false;
-							std::cout << i << " is deleted and has an incoming edge from " << con << " in level " << l
-							          << " and an appropriate repair job was not found" << std::endl;
-
-						}
+//						auto repair_jobs = deleted_elements.at(i);
+//						bool found = false;
+//						for (auto *it : repair_jobs) {
+//							if (it->internal_id == con && it->level == l) {
+//								found = true;
+//							}
+//						}
+//						if (!found) {
+//							res.valid_state = false;
+//							std::cout << i << " is deleted and has an incoming edge from " << con << " in level " << l
+//							          << " and an appropriate repair job was not found" << std::endl;
+//
+//						}
 					}
 					bool unidirectional = false;
 					auto it = std::find(hnsw_index->getIncomingEdgesPtr(i, l)->begin(),
