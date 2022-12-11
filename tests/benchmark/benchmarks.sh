@@ -1,7 +1,7 @@
 
 for bm_class in basics batch_iterator; do \
     for type in single multi; do \
-        for data_type in fp32; do \
+        for data_type in fp32 fp64; do \
             echo ${bm_class}_${type}_${data_type}; \
         done \
     done \
