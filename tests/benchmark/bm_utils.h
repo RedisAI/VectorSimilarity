@@ -25,7 +25,7 @@ public:
     static size_t block_size;
 
     static const char *test_vectors_file;
-    static std::vector<std::vector<float>> *queries;
+    static std::vector<std::vector<float>> queries;
     static size_t n_queries;
 
     // We use this class as a singleton for every test case, so we won't hold several indices (to
@@ -49,8 +49,7 @@ public:
  *  Populate the given queries vector with the serialized raw vectors data in
  *  the file which is located in the given path.
  */
-void load_test_vectors(const char *path, std::vector<std::vector<float>> &queries, size_t n_queries,
-                       size_t dim);
+std::vector<std::vector<float>> load_test_vectors(const char *path, size_t n_queries, size_t dim);
 
 #define HNSW_TOP_K_ARGS(ef_runtime, k) ->Args({ef_runtime, k})->ArgNames({"ef_runtime", "k"})
 

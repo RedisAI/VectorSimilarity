@@ -19,7 +19,7 @@ size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
 VecSimIndex *BM_VecSimBasics::hnsw_index;
 VecSimIndex *BM_VecSimBasics::bf_index;
-std::vector<std::vector<float>> *BM_VecSimBasics::queries;
+std::vector<std::vector<float>> BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 65;
 size_t BM_VecSimBasics::EF_C = 512;
 size_t BM_VecSimBasics::block_size = 1024;
@@ -57,7 +57,7 @@ protected:
         auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
         // Initially, load all the vectors to the updated bf index (before we override it).
         for (size_t i = 0; i < BM_VecSimBasics::n_vectors; ++i) {
-            char *blob = hnsw_index_casted->getDataByInternalId(i);
+            const char *blob = hnsw_index_casted->getDataByInternalId(i);
             size_t label = hnsw_index_casted->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
@@ -82,7 +82,7 @@ protected:
         }
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob = hnsw_index_updated_casted->getDataByInternalId(i);
+            const char *blob = hnsw_index_updated_casted->getDataByInternalId(i);
             size_t label = hnsw_index_updated_casted->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
@@ -104,7 +104,7 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF)(benchmark::State &st) {
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index, (*queries)[iter % n_queries].data(), k, nullptr, BY_SCORE);
+        VecSimIndex_TopKQuery(bf_index, queries[iter % n_queries].data(), k, nullptr, BY_SCORE);
         iter++;
     }
 }
@@ -113,7 +113,7 @@ BENCHMARK_DEFINE_F(BM_VecSimUpdatedIndex, TopK_BF_Updated)(benchmark::State &st)
     size_t k = st.range(0);
     size_t iter = 0;
     for (auto _ : st) {
-        VecSimIndex_TopKQuery(bf_index_updated, (*queries)[iter % n_queries].data(), k, nullptr,
+        VecSimIndex_TopKQuery(bf_index_updated, queries[iter % n_queries].data(), k, nullptr,
                               BY_SCORE);
         iter++;
     }
