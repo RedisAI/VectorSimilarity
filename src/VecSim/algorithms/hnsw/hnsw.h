@@ -300,10 +300,10 @@ template <typename DataType, typename DistType>
 level_data &HNSWIndex<DataType, DistType>::getLevelData(idType internal_id, size_t level) const {
     auto meta = getMetaDataByInternalId(internal_id);
     assert(level <= meta->toplevel);
-    if (level) {
-        return *(level_data *)((char *)meta->others + (level - 1) * this->level_data_size_);
-    } else {
+    if (level == 0) {
         return meta->level0;
+    } else {
+        return *(level_data *)((char *)meta->others + (level - 1) * this->level_data_size_);
     }
 }
 
@@ -409,11 +409,11 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 
         // Pre-fetch current candidate data (block address was already fetched).
         __builtin_prefetch(block_to_fetch->getElement(getVectorRelativeIndex(candidate_id)));
-        // Pre-fetch next candidate tag address.
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
         // Pre-fetch next candidate data block address.
         block_to_fetch = this->vector_blocks.data() + (node_meta.links[j + 1] / this->blockSize);
         __builtin_prefetch(block_to_fetch);
+        // Pre-fetch next candidate tag address.
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
@@ -444,7 +444,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
     // to be processed in the next iteration) into memory cache, to improve performance.
     // FIXME: this will not work if the candidate_set is empty.
     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
-    __builtin_prefetch(&getLevelData(candidate_set.top().second, layer));
+    __builtin_prefetch(getMetaDataByInternalId(candidate_set.top().second));
 }
 
 template <typename DataType, typename DistType>
@@ -471,11 +471,11 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
         // Pre-fetch current candidate data (block address was already fetched).
         __builtin_prefetch(block_to_fetch->getElement(getVectorRelativeIndex(candidate_id)));
-        // Pre-fetch next candidate tag address.
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
         // Pre-fetch next candidate data block address.
         block_to_fetch = this->vector_blocks.data() + (node_meta.links[j + 1] / this->blockSize);
         __builtin_prefetch(block_to_fetch);
+        // Pre-fetch next candidate tag address.
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
             continue;
@@ -499,7 +499,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     // to be processed in the next iteration) into memory cache, to improve performance.
     // FIXME: this will not work if the candidate_set is empty.
     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
-    __builtin_prefetch(&getLevelData(candidate_set.top().second, layer));
+    __builtin_prefetch(getMetaDataByInternalId(candidate_set.top().second));
 }
 
 template <typename DataType, typename DistType>
