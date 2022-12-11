@@ -10,4 +10,6 @@ jobs:
     if: github.event.label.name == 'ok to merge'
     runs-on: ubuntu-latest
     steps: 
+      - name: echo ok
+      - run: echo 'OK'
 
