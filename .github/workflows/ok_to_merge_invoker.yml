@@ -7,7 +7,7 @@ on:
 jobs:
   ok_to_merge_docs:
     if: github.event.review.state == 'approved' && (endsWith(github.head_ref, 'docs') 
-    uses: ./.github/workflows/flows/ok_to_merge.yml
+    uses: ./.github/workflows/ok_to_merge.yml
 
   ok_to_merge_run_build:
     if: github.event.review.state == 'approved' && (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
@@ -17,5 +17,5 @@ jobs:
   ok_to_merge_code:
     if: github.event.review.state == 'approved' && (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
     needs: ok_to_merge_run_build
-    uses: ./.github/workflows/flows/ok_to_merge.yml
+    uses: ./.github/workflows/ok_to_merge.yml
 

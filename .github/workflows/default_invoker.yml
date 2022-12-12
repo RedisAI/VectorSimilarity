@@ -13,10 +13,10 @@ on:
 jobs:
   invoke_default_flow:
     if: (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
-    uses: ./.github/workflows/flows/default.yml
+    uses: ./.github/workflows/default.yml
     secrets: inherit
 
   invoke_codeql_flow:
     if: (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
-    uses: ./.github/workflows/flows/codeql-analysis.yml
+    uses: ./.github/workflows/codeql-analysis.yml
     secrets: inherit
