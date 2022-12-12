@@ -5,17 +5,17 @@ on:
     types: [submitted]
 
 jobs:
-  ok_to_merge_docs:
-    if: github.event.review.state == 'approved' && (endsWith(github.head_ref, 'docs') || endsWith(github.head_ref, 'noci'))
-    uses: ./.github/workflows/ok_to_merge.yml
-
   ok_to_merge_run_build:
     if: github.event.review.state == 'approved' && (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
     uses: ./.github/workflows/multi-build.yml
     secrets: inherit
 
-  ok_to_merge_code:
-    if: github.event.review.state == 'approved' && (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
-    needs: ok_to_merge_run_build
-    uses: ./.github/workflows/ok_to_merge.yml
+  ok_to_merge:
+    runs-on: ubuntu-latest
+    needs:
+      - ok_to_merge_run_build
+    steps: 
+      - name: echo ok
+        run: echo 'OK'
+
 
