@@ -427,8 +427,8 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //             __builtin_prefetch(this->idToMetaData.data() + candidate_id);
 //             candidate_set.emplace(-dist1, candidate_id);
 
-//             // Insert the candidate to the top candidates heap only if it is not marked as deleted.
-//             if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+//             // Insert the candidate to the top candidates heap only if it is not marked as
+//             deleted. if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
 //                 emplaceToHeap(top_candidates, dist1, candidate_id);
 
 //             if (top_candidates.size() > ef)
@@ -443,7 +443,8 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //     // Pre-fetch the neighbours list of the top candidate (the one that is going
 //     // to be processed in the next iteration) into memory cache, to improve performance.
 //     // FIXME: this will not work if the candidate_set is empty.
-//     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
+//     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second /
+//     this->blockSize));
 //     __builtin_prefetch(getMetaDataByInternalId(candidate_set.top().second));
 // }
 
@@ -486,21 +487,22 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
                 __builtin_prefetch(this->idToMetaData.data() + candidate_id);
                 candidate_set.emplace(-dist1, candidate_id);
 
-                // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+                // Insert the candidate to the top candidates heap only if it is not marked as
+                // deleted.
                 if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
                     emplaceToHeap(top_candidates, dist1, candidate_id);
 
                 if (top_candidates.size() > ef)
                     top_candidates.pop();
 
-                // If we have marked deleted elements, we need to verify that `top_candidates` is not
-                // empty (since we might have not added any non-deleted element yet).
+                // If we have marked deleted elements, we need to verify that `top_candidates` is
+                // not empty (since we might have not added any non-deleted element yet).
                 if (!has_marked_deleted || !top_candidates.empty())
                     lowerBound = top_candidates.top().first;
             }
         }
 
-        // Running the last candidate outside the loop to avoid prefetching the next candidate
+        // Running the last candidate outside the loop to avoid prefetching invalid candidate
         idType candidate_id = node_meta.links[node_meta.numLinks - 1];
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) != visited_tag) {
@@ -514,20 +516,22 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
                 __builtin_prefetch(this->idToMetaData.data() + candidate_id);
                 candidate_set.emplace(-dist1, candidate_id);
 
-                // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+                // Insert the candidate to the top candidates heap only if it is not marked as
+                // deleted.
                 if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
                     emplaceToHeap(top_candidates, dist1, candidate_id);
 
                 if (top_candidates.size() > ef)
                     top_candidates.pop();
 
-                // If we have marked deleted elements, we need to verify that `top_candidates` is not
-                // empty (since we might have not added any non-deleted element yet).
+                // If we have marked deleted elements, we need to verify that `top_candidates` is
+                // not empty (since we might have not added any non-deleted element yet).
                 if (!has_marked_deleted || !top_candidates.empty())
                     lowerBound = top_candidates.top().first;
             }
         }
     }
+    __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
 }
 
 // template <typename DataType, typename DistType>
@@ -581,7 +585,8 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 //     // Pre-fetch the neighbours list of the top candidate (the one that is going
 //     // to be processed in the next iteration) into memory cache, to improve performance.
 //     // FIXME: this will not work if the candidate_set is empty.
-//     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
+//     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second /
+//     this->blockSize));
 //     __builtin_prefetch(getMetaDataByInternalId(candidate_set.top().second));
 // }
 
@@ -608,7 +613,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             // Pre-fetch next candidate tag address.
             __builtin_prefetch(visited_nodes_handler->getElementsTags() + node_meta.links[j + 1]);
-            // Pre-fetch current candidate data (block address was already fetched).
             // Pre-fetch next candidate data block address.
             __builtin_prefetch(getDataByInternalId(node_meta.links[j + 1]));
 
@@ -630,7 +634,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
                 }
             }
         }
-        // Running the last candidate outside the loop to avoid prefetching the next candidate
+        // Running the last candidate outside the loop to avoid prefetching invalid candidate
         idType candidate_id = node_meta.links[node_meta.numLinks - 1];
 
         if (this->visited_nodes_handler->getNodeTag(candidate_id) != visited_tag) {
@@ -651,6 +655,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             }
         }
     }
+    __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
 }
 
 template <typename DataType, typename DistType>
@@ -684,13 +689,14 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
+        // Pre-fetch the neighbours list of the top candidate (the one that is going
+        // to be processed in the next iteration) into memory cache, to improve performance.
+        __builtin_prefetch(getMetaDataByInternalId(curr_el_pair.second));
+
         if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
-        // Pre-fetch the neighbours list of the top candidate (the one that is going
-        // to be processed in the next iteration) into memory cache, to improve performance.
-        __builtin_prefetch(getMetaDataByInternalId(curr_el_pair.second));
 
         processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
                                              visited_tag, top_candidates, candidate_set,
@@ -1470,6 +1476,10 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
+        // Pre-fetch the neighbours list of the top candidate (the one that is going
+        // to be processed in the next iteration) into memory cache, to improve performance.
+        __builtin_prefetch(getMetaDataByInternalId(curr_el_pair.second));
+
         if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
@@ -1478,9 +1488,6 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
             return top_candidates;
         }
         candidate_set.pop();
-        // Pre-fetch the neighbours list of the top candidate (the one that is going
-        // to be processed in the next iteration) into memory cache, to improve performance.
-        __builtin_prefetch(getMetaDataByInternalId(curr_el_pair.second));
 
         processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef, visited_tag,
                                              *top_candidates, candidate_set, lowerBound);
