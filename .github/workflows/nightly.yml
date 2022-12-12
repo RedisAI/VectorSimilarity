@@ -11,7 +11,7 @@ jobs:
     secrets: inherit
 
   multi-architectures:
-    uses: ./.github/workflows/invokers/multi-build.yml
+    uses: ./.github/workflows/multi-build.yml
     secrets: inherit
 
   benchmark:
