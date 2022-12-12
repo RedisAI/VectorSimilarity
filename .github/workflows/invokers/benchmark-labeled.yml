@@ -11,5 +11,5 @@ on: # TODO: delete this file when specifying a label is supported
 jobs:
   Invoker:
     if: github.event.label.name == 'benchmark'
-    uses: ./.github/workflows/benchmark.yml
+    uses: ./.github/workflows/flows/benchmark.yml
     secrets: inherit

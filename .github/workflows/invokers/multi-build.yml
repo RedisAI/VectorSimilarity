@@ -29,35 +29,35 @@ jobs:
   rocky8:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
-    uses: ./.github/workflows/rocky8.yml
+    uses: ./.github/workflows/flows/rocky8.yml
 
   bionic:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'bionic'
-    uses: ./.github/workflows/bionic.yml
+    uses: ./.github/workflows/flows/bionic.yml
 
   xenial:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'xenial'
-    uses: ./.github/workflows/xenial.yml
+    uses: ./.github/workflows/flows/xenial.yml
 
   focal:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'focal'
-    uses: ./.github/workflows/focal.yml
+    uses: ./.github/workflows/flows/focal.yml
 
   jammy:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'jammy'
-    uses: ./.github/workflows/jammy.yml
+    uses: ./.github/workflows/flows/jammy.yml
 
   macos:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'macos'
-    uses: ./.github/workflows/macos.yml
+    uses: ./.github/workflows/flows/macos.yml
 
   arm:
     needs: checks
     if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'arm'
-    uses: ./.github/workflows/arm.yml
+    uses: ./.github/workflows/flows/arm.yml
     secrets: inherit

@@ -7,13 +7,13 @@ on:
 
 jobs:
   build:
-    uses: ./.github/workflows/default.yml
+    uses: ./.github/workflows/flows/default.yml
     secrets: inherit
 
   multi-architectures:
-    uses: ./.github/workflows/multi-build.yml
+    uses: ./.github/workflows/invokers/multi-build.yml
     secrets: inherit
 
   benchmark:
-    uses: ./.github/workflows/benchmark.yml
+    uses: ./.github/workflows/flows/benchmark.yml
     secrets: inherit
