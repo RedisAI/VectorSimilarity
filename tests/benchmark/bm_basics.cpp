@@ -173,8 +173,8 @@ BENCHMARK_DEFINE_F(BM_VecSimBasics, Range_HNSW)(benchmark::State &st) {
         total_res += VecSimQueryResult_Len(hnsw_results);
 
         // Measure recall:
-        auto bf_results = VecSimIndex_RangeQuery(bf_index, queries[iter % n_queries].data(),
-                                                 radius, nullptr, BY_ID);
+        auto bf_results = VecSimIndex_RangeQuery(bf_index, queries[iter % n_queries].data(), radius,
+                                                 nullptr, BY_ID);
         total_res_bf += VecSimQueryResult_Len(bf_results);
 
         VecSimQueryResult_Free(bf_results);

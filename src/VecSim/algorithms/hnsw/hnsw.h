@@ -113,7 +113,9 @@ protected:
 protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
-    inline const DataBlock &getVectorBlock(idType id) const { return level0_blocks_[id / this->blockSize]; }
+    inline const DataBlock &getVectorBlock(idType id) const {
+        return level0_blocks_[id / this->blockSize];
+    }
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
     inline const char *getElementData(idType internal_id) const;
     inline void setExternalLabel(idType internal_id, labelType label);
@@ -484,7 +486,8 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //         // Pre-fetch the next candidate data into memory cache, to improve performance.
 //         idType *next_candidate_pos = node_links + j + 1;
 //         // Pre-fetch next candidate data block address.
-//         __builtin_prefetch(this->level0_blocks_.data() + (*next_candidate_pos / this->blockSize));
+//         __builtin_prefetch(this->level0_blocks_.data() + (*next_candidate_pos /
+//         this->blockSize));
 //         // Pre-fetch next candidate tag address.
 //         __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
 
@@ -498,8 +501,8 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //         if (lowerBound > dist1 || top_candidates.size() < ef) {
 //             candidate_set.emplace(-dist1, candidate_id);
 
-//             // Insert the candidate to the top candidates heap only if it is not marked as deleted.
-//             if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+//             // Insert the candidate to the top candidates heap only if it is not marked as
+//             deleted. if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
 //                 emplaceToHeap(top_candidates, dist1, candidate_id);
 
 //             if (top_candidates.size() > ef)
@@ -534,41 +537,70 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 #endif
     idType *node_links = get_linklist_at_level(curNodeId, layer);
     linkListSize links_num = getListCount(node_links);
+    if (links_num > 0) {
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
-    __builtin_prefetch(getDataByInternalId(*node_links));
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
+        __builtin_prefetch(getDataByInternalId(*node_links));
 
-    for (size_t j = 0; j < links_num; j++) {
-        idType *candidate_pos = node_links + j;
+        for (linkListSize j = 0; j < links_num - 1; j++) {
+            idType *candidate_pos = node_links + j;
+            idType candidate_id = *candidate_pos;
+
+            // Pre-fetch the next candidate data into memory cache, to improve performance.
+            idType *next_candidate_pos = node_links + j + 1;
+            __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+            __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
+
+            if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+                continue;
+
+            this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+            const char *currObj1 = (getDataByInternalId(candidate_id));
+
+            DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
+            if (lowerBound > dist1 || top_candidates.size() < ef) {
+                candidate_set.emplace(-dist1, candidate_id);
+
+                // Insert the candidate to the top candidates heap only if it is not marked as
+                // deleted.
+                if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+                    emplaceToHeap(top_candidates, dist1, candidate_id);
+
+                if (top_candidates.size() > ef)
+                    top_candidates.pop();
+
+                // If we have marked deleted elements, we need to verify that `top_candidates` is
+                // not empty (since we might have not added any non-deleted element yet).
+                if (!has_marked_deleted || !top_candidates.empty())
+                    lowerBound = top_candidates.top().first;
+            }
+        }
+
+        idType *candidate_pos = node_links + links_num - 1;
         idType candidate_id = *candidate_pos;
 
-        // Pre-fetch the next candidate data into memory cache, to improve performance.
-        idType *next_candidate_pos = node_links + j + 1;
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
-        if (*next_candidate_pos < 1000000)
-        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
+        if (this->visited_nodes_handler->getNodeTag(candidate_id) != visited_tag) {
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
-            continue;
+            this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+            const char *currObj1 = (getDataByInternalId(candidate_id));
 
-        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        const char *currObj1 = (getDataByInternalId(candidate_id));
+            DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
+            if (lowerBound > dist1 || top_candidates.size() < ef) {
+                candidate_set.emplace(-dist1, candidate_id);
 
-        DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
-        if (lowerBound > dist1 || top_candidates.size() < ef) {
-            candidate_set.emplace(-dist1, candidate_id);
+                // Insert the candidate to the top candidates heap only if it is not marked as
+                // deleted.
+                if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+                    emplaceToHeap(top_candidates, dist1, candidate_id);
 
-            // Insert the candidate to the top candidates heap only if it is not marked as deleted.
-            if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-                emplaceToHeap(top_candidates, dist1, candidate_id);
+                if (top_candidates.size() > ef)
+                    top_candidates.pop();
 
-            if (top_candidates.size() > ef)
-                top_candidates.pop();
-
-            // If we have marked deleted elements, we need to verify that `top_candidates` is not
-            // empty (since we might have not added any non-deleted element yet).
-            if (!has_marked_deleted || !top_candidates.empty())
-                lowerBound = top_candidates.top().first;
+                // If we have marked deleted elements, we need to verify that `top_candidates` is
+                // not empty (since we might have not added any non-deleted element yet).
+                if (!has_marked_deleted || !top_candidates.empty())
+                    lowerBound = top_candidates.top().first;
+            }
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
@@ -592,39 +624,63 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 #endif
     idType *node_links = get_linklist_at_level(curNodeId, layer);
     linkListSize links_num = getListCount(node_links);
+    if (links_num > 0) {
 
-    __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
-    __builtin_prefetch(getDataByInternalId(*node_links));
+        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *node_links);
+        __builtin_prefetch(getDataByInternalId(*node_links));
 
-    for (size_t j = 0; j < links_num; j++) {
-        idType *candidate_pos = node_links + j;
+        for (linkListSize j = 0; j < links_num - 1; j++) {
+            idType *candidate_pos = node_links + j;
+            idType candidate_id = *candidate_pos;
+
+            // Pre-fetch the next candidate data into memory cache, to improve performance.
+            idType *next_candidate_pos = node_links + j + 1;
+            __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
+            __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
+
+            if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
+                continue;
+            this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+            const char *candidate_data = getDataByInternalId(candidate_id);
+
+            DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
+            if (candidate_dist < dyn_range) {
+                candidate_set.emplace(-candidate_dist, candidate_id);
+
+                // If the new candidate is in the requested radius, add it to the results set.
+                if (candidate_dist <= radius &&
+                    (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
+                    results->emplace(getExternalLabel(candidate_id), candidate_dist);
+                }
+            }
+        }
+
+        idType *candidate_pos = node_links + links_num - 1;
         idType candidate_id = *candidate_pos;
 
-        // Pre-fetch the next candidate data into memory cache, to improve performance.
-        idType *next_candidate_pos = node_links + j + 1;
-        __builtin_prefetch(visited_nodes_handler->getElementsTags() + *next_candidate_pos);
-        if (*next_candidate_pos < 1000000)
-        __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
+        if (this->visited_nodes_handler->getNodeTag(candidate_id) != visited_tag) {
+            this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
+            const char *candidate_data = getDataByInternalId(candidate_id);
 
-        if (this->visited_nodes_handler->getNodeTag(candidate_id) == visited_tag)
-            continue;
-        this->visited_nodes_handler->tagNode(candidate_id, visited_tag);
-        const char *candidate_data = getDataByInternalId(candidate_id);
+            DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
+            if (candidate_dist < dyn_range) {
+                candidate_set.emplace(-candidate_dist, candidate_id);
 
-        DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
-        if (candidate_dist < dyn_range) {
-            candidate_set.emplace(-candidate_dist, candidate_id);
-
-            // If the new candidate is in the requested radius, add it to the results set.
-            if (candidate_dist <= radius &&
-                (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
-                results->emplace(getExternalLabel(candidate_id), candidate_dist);
+                // If the new candidate is in the requested radius, add it to the results set.
+                if (candidate_dist <= radius &&
+                    (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
+                    results->emplace(getExternalLabel(candidate_id), candidate_dist);
+                }
             }
         }
     }
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
-    __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    if (layer == 0) {
+        __builtin_prefetch(getElementData(candidate_set.top().second));
+    } else {
+        __builtin_prefetch(get_linklist_at_level(candidate_set.top().second, layer));
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -663,9 +719,9 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer,
-                                                          ef, visited_tag, top_candidates,
-                                                          candidate_set, lowerBound);
+        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
+                                             visited_tag, top_candidates, candidate_set,
+                                             lowerBound);
     }
 
 #ifdef ENABLE_PARALLELIZATION
@@ -1486,9 +1542,8 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef,
-                                                          visited_tag, *top_candidates,
-                                                          candidate_set, lowerBound);
+        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef, visited_tag,
+                                             *top_candidates, candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(this->visited_nodes_handler);

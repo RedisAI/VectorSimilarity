@@ -225,7 +225,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     char cur[this->size_data_per_element_];
     idType id = 0;
     while (id < this->cur_element_count) {
-        this->level0_blocks_.emplace_back(this->blockSize, this->size_data_per_element_, this->allocator);
+        this->level0_blocks_.emplace_back(this->blockSize, this->size_data_per_element_,
+                                          this->allocator);
         for (size_t i = 0; i < this->blockSize && id < this->cur_element_count; id++, i++) {
             input.read(cur, this->size_data_per_element_);
             this->level0_blocks_.back().addElement(cur);
