@@ -49,6 +49,7 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
+// #pragma pack(16)
 struct level_data {
     linkListSize numLinks;
     vecsim_stl::vector<idType> *incoming_edges;
@@ -58,13 +59,15 @@ struct level_data {
         : numLinks(0), incoming_edges(new (allocator) vecsim_stl::vector<idType>(allocator)) {}
 };
 
+#pragma pack(16)
 struct element_meta_data {
     labelType label;
     elementFlags flags;
 
-    element_meta_data(labelType label = SIZE_MAX) : label(label), flags(0) {}
+    element_meta_data(labelType label = SIZE_MAX) noexcept : label(label), flags(0) {}
 };
 
+// #pragma pack(16)
 struct element_graph_data {
     size_t toplevel;
     level_data *others;
@@ -1602,6 +1605,11 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
         // finish the search.
+
+        // Pre-fetch the neighbours list of the top candidate (the one that is going
+        // to be processed in the next iteration) into memory cache, to improve performance.
+        __builtin_prefetch(getMetaDataByInternalId(curr_el_pair.second));
+
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
@@ -1616,9 +1624,6 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
             dynamic_range = -curr_el_pair.first;
             dynamic_range_search_boundaries = dynamic_range * (1.0 + epsilon);
         }
-        // Pre-fetch the neighbours list of the top candidate (the one that is going
-        // to be processed in the next iteration) into memory cache, to improve performance.
-        __builtin_prefetch(getMetaDataByInternalId(curr_el_pair.second));
 
         // Go over the candidate neighbours, add them to the candidates list if they are within the
         // epsilon environment of the dynamic range, and add them to the results if they are in the
