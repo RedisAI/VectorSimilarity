@@ -50,12 +50,14 @@ void BM_VecSimBasics::Initialize() {
     };
 
     // Generate index from file.
-    VecSimIndex *data = OLDHNSWFactory::NewIndex(
-        GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file), &params);
-    auto casted_data = reinterpret_cast<OLDHNSWIndex<float, float> *>(data);
+    // VecSimIndex *data = OLDHNSWFactory::NewIndex(
+    //     GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file), &params);
+    // auto casted_data = reinterpret_cast<OLDHNSWIndex<float, float> *>(data);
 
-    VecSimParams hnsw_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
-    BM_VecSimBasics::hnsw_index = VecSimIndex_New(&hnsw_params);
+    // VecSimParams hnsw_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
+    // BM_VecSimBasics::hnsw_index = VecSimIndex_New(&hnsw_params);
+    BM_VecSimBasics::hnsw_index = HNSWFactory::NewIndex(
+        GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file), &params);
 
     auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     size_t ef_r = 10;
@@ -71,11 +73,12 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        const char *blob = casted_data->getDataByInternalId(i);
+        // const char *blob = casted_data->getDataByInternalId(i);
+        const char *blob = hnsw_index_casted->getDataByInternalId(i);
         VecSimIndex_AddVector(bf_index, blob, i);
-        VecSimIndex_AddVector(hnsw_index, blob, i);
+        // VecSimIndex_AddVector(hnsw_index, blob, i);
     }
-    VecSimIndex_Free(data);
+    // VecSimIndex_Free(data);
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
     BM_VecSimBasics::queries = load_test_vectors(BM_VecSimBasics::test_vectors_file,
