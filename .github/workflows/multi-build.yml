@@ -20,7 +20,7 @@ jobs:
     steps:
       - id: check
         run: |
-          if [[ '${{ github.event_name }}' == 'schedule' ]] || [[ '${{ github.event_name }}' == 'pull_request_review' ]] || [[ '${{ github.event.label.name }}' == 'multi-build' ]]; then
+          if [[ '${{ github.event_name }}' == 'schedule' ]] || [[ '${{ github.event_name }}' == 'pull_request_review' ]] || [[ '${{ github.event.label.name }}' == 'multi-build' ]] && (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci')); then
             echo "globally-needed=true" >> $GITHUB_OUTPUT
           else
             echo "globally-needed=false" >> $GITHUB_OUTPUT

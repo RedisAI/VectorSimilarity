@@ -6,7 +6,7 @@ on:
 
 jobs:
   ok_to_merge_run_build:
-    if: github.event.review.state == 'approved' && (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
+    if: github.event.review.state == 'approved'
     uses: ./.github/workflows/multi-build.yml
     secrets: inherit
 
