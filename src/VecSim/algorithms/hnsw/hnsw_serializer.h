@@ -7,8 +7,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       VecSimIndexTombstone(), Serializer(version), max_elements_(params->initialCapacity),
-      epsilon_(params->epsilon), vector_blocks(allocator), meta_blocks(allocator),
-      idToMetaData(max_elements_, allocator) {
+      vector_blocks(allocator), meta_blocks(allocator), idToMetaData(allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -27,6 +26,15 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     this->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
+
+    size_t initial_vector_size = max_elements_ / this->blockSize;
+    if (max_elements_ % this->blockSize != 0) {
+        initial_vector_size++;
+    }
+    vector_blocks.reserve(initial_vector_size);
+    meta_blocks.reserve(initial_vector_size);
+
+    idToMetaData.resize(max_elements_);
 }
 
 template <typename DataType, typename DistType>
@@ -120,93 +128,20 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 
     // Restore index search parameter
     readBinaryPOD(input, this->ef_);
-
-    // epsilon is only restored from v2 up.
+    readBinaryPOD(input, this->epsilon_);
 
     // Restore index meta-data
     readBinaryPOD(input, this->element_data_size_);
     readBinaryPOD(input, this->element_graph_data_size_);
     readBinaryPOD(input, this->level_data_size_);
-    // readBinaryPOD(input, this->data_size_);
-    // readBinaryPOD(input, this->size_data_per_element_);
-    // readBinaryPOD(input, this->size_links_per_element_);
-    // readBinaryPOD(input, this->size_links_level0_);
-    // readBinaryPOD(input, this->label_offset_);
-    // readBinaryPOD(input, this->offsetData_);
-    // readBinaryPOD(input, this->offsetLevel0_);
-    // readBinaryPOD(input, this->incoming_links_offset0);
-    // readBinaryPOD(input, this->incoming_links_offset);
     readBinaryPOD(input, this->mult_);
-
-    // skip restoration of level_generator_ data member
-    HandleLevelGenerator(input);
 
     // Restore index state
     readBinaryPOD(input, this->cur_element_count);
-    if (this->m_version == EncodingVersion_V1) {
-        input.ignore(sizeof(idType)); // skip max_id value
-        this->num_marked_deleted = 0;
-    } else {
-        readBinaryPOD(input, this->num_marked_deleted);
-    }
+    readBinaryPOD(input, this->num_marked_deleted);
     readBinaryPOD(input, this->maxlevel_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
-    if (this->m_version == EncodingVersion_V1) {
-        // All current v1 files were generated on intel machines, where
-        // sizeof(std::default_random_engine) ==  sizeof(unsigned long)
-        // unlike MacOS where sizeof(std::default_random_engine) ==  sizeof(unsigned int).
-
-        // Skip sizeof(unsigned long) bytes
-        input.ignore(sizeof(unsigned long));
-    }
-    // for V2 and up we don't serialize the level generator, so we just return and
-    // continue to read the file.
-}
-
-// template <typename DataType, typename DistType>
-// void HNSWIndex<DataType, DistType>::restoreGraph_V1_fixes() {
-//     // Fix offsets from V1 to V2
-//     size_t old_size_links_per_element_ = this->size_links_per_element_;
-//     this->size_links_per_element_ -= sizeof(idType) - sizeof(linkListSize);
-//     this->incoming_links_offset -= sizeof(idType) - sizeof(linkListSize);
-
-//     char *data = this->data_level0_memory_;
-//     for (idType i = 0; i < this->cur_element_count; i++) {
-//         // Restore level 0 number of links
-//         // In V1 linkListSize was of the same size as idType, so we need to fix it.
-//         // V1 did not have the elementFlags, so we need set all flags to 0.
-//         idType lls = *(idType *)data;
-//         *(linkListSize *)(data + sizeof(elementFlags)) = (linkListSize)lls;
-//         *(elementFlags *)(data) = (elementFlags)0;
-//         data += this->size_data_per_element_;
-
-//         // Restore level 1+ links
-//         // We need to fix the offset of the linkListSize.
-//         size_t llSize = this->element_levels_[i] * this->size_links_per_element_;
-//         if (llSize) {
-//             char *levels_data = (char *)this->allocator->allocate(llSize);
-//             for (size_t offset = 0; offset < this->element_levels_[i]; offset++) {
-//                 // Copy links without the linkListSize
-//                 // sizeof(linkListSize) == New offset size
-//                 // sizeof(idType) == Old offset size
-//                 memcpy(levels_data + offset * this->size_links_per_element_ +
-//                 sizeof(linkListSize),
-//                        this->linkLists_[i] + offset * old_size_links_per_element_ +
-//                        sizeof(idType), this->size_links_per_element_ - sizeof(linkListSize));
-//                 // Copy linkListSize (from idType to linkListSize)
-//                 *(linkListSize *)(levels_data + offset * this->size_links_per_element_) =
-//                     *(idType *)(this->linkLists_[i] + offset * old_size_links_per_element_);
-//             }
-//             // Free old links and set new links
-//             this->allocator->free_allocation(this->linkLists_[i]);
-//             this->linkLists_[i] = levels_data;
-//         }
-//     }
-// }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
@@ -296,31 +231,23 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             cur_c++;
         }
     }
-    if (this->m_version == EncodingVersion_V1) {
-        // restoreGraph_V1_fixes();
-    }
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexFields_v2(std::ofstream &output) const {
-    // From v2 and up write also algorithm type and vec_sim_index data members.
+void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
+    // Save index type
     writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
 
+    // Save VecSimIndex fields
     writeBinaryPOD(output, this->dim);
     writeBinaryPOD(output, this->vecType);
     writeBinaryPOD(output, this->metric);
     writeBinaryPOD(output, this->blockSize);
     writeBinaryPOD(output, this->isMulti);
-    writeBinaryPOD(output, this->epsilon_);
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
-
-    this->saveIndexFields_v2(output);
+    writeBinaryPOD(output, this->max_elements_); // This will be used to restore the index initial
+                                                 // capacity
 
     // Save index build parameters
-    writeBinaryPOD(output, this->max_elements_);
     writeBinaryPOD(output, this->M_);
     writeBinaryPOD(output, this->maxM_);
     writeBinaryPOD(output, this->maxM0_);
@@ -328,17 +255,9 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
 
     // Save index search parameter
     writeBinaryPOD(output, this->ef_);
+    writeBinaryPOD(output, this->epsilon_);
 
     // Save index meta-data
-    // writeBinaryPOD(output, this->data_size_);
-    // writeBinaryPOD(output, this->size_data_per_element_);
-    // writeBinaryPOD(output, this->size_links_per_element_);
-    // writeBinaryPOD(output, this->size_links_level0_);
-    // writeBinaryPOD(output, this->label_offset_);
-    // writeBinaryPOD(output, this->offsetData_);
-    // writeBinaryPOD(output, this->offsetLevel0_);
-    // writeBinaryPOD(output, this->incoming_links_offset0);
-    // writeBinaryPOD(output, this->incoming_links_offset);
     writeBinaryPOD(output, this->element_data_size_);
     writeBinaryPOD(output, this->element_graph_data_size_);
     writeBinaryPOD(output, this->level_data_size_);

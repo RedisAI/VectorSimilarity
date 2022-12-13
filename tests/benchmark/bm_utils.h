@@ -13,8 +13,6 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
-#include "VecSim/algorithms/origin_hnsw/hnsw_single.h"
-#include "VecSim/algorithms/origin_hnsw/hnsw_factory.h"
 
 class BM_VecSimBasics : public benchmark::Fixture {
 public:

@@ -147,27 +147,17 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
     return index;
 }
 
-// Intialize @params from file for V2
+// Initialize @params from file for V3
 static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
     Serializer::readBinaryPOD(source_params, params.dim);
     Serializer::readBinaryPOD(source_params, params.type);
     Serializer::readBinaryPOD(source_params, params.metric);
     Serializer::readBinaryPOD(source_params, params.blockSize);
     Serializer::readBinaryPOD(source_params, params.multi);
-    Serializer::readBinaryPOD(source_params, params.epsilon);
+    Serializer::readBinaryPOD(source_params, params.initialCapacity);
 }
 
-// Intialize @params for V1
-static void InitializeParams(const HNSWParams *source_params, HNSWParams &params) {
-    params.type = source_params->type;
-    params.dim = source_params->dim;
-    params.metric = source_params->metric;
-    params.multi = source_params->multi;
-    params.blockSize = source_params->blockSize ? source_params->blockSize : DEFAULT_BLOCK_SIZE;
-    params.epsilon = source_params->epsilon ? source_params->epsilon : HNSW_DEFAULT_EPSILON;
-}
-
-VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) {
+VecSimIndex *NewIndex(const std::string &location) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -177,7 +167,7 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
     Serializer::EncodingVersion version = Serializer::ReadVersion(input);
     HNSWParams params;
     switch (version) {
-    case Serializer::EncodingVersion_V2: {
+    case Serializer::EncodingVersion_V3: {
         // Algorithm type is only serialized from V2 up.
         VecSimAlgo algo = VecSimAlgo_BF;
         Serializer::readBinaryPOD(input, algo);
@@ -189,16 +179,10 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
         InitializeParams(input, params);
         break;
     }
-    case Serializer::EncodingVersion_V1: {
-        assert(v1_params);
-        InitializeParams(v1_params, params);
-        break;
-    }
     // Something is wrong
     default:
         throw std::runtime_error("Cannot load index: bad encoding version");
     }
-    Serializer::readBinaryPOD(input, params.initialCapacity);
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
