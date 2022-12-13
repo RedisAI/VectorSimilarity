@@ -404,7 +404,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
         // Pre-fetch first candidate tag address.
         __builtin_prefetch(visited_nodes->getElementsTags() + node_meta.links[0]);
         // // Pre-fetch first candidate data block address.
-        // __builtin_prefetch(getDataByInternalId_prefetch(node_meta.links[0]));
+        __builtin_prefetch(getDataByInternalId(node_meta.links[0]));
 
         for (linkListSize j = 0; j < node_meta.numLinks - 1; j++) {
             idType candidate_id = node_meta.links[j];
