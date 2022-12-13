@@ -24,7 +24,7 @@ jobs:
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ami-0ba430d4b7b64de57
-          ec2-instance-type: r6i.large
+          ec2-instance-type: r6i.xlarge
           subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
 
@@ -63,7 +63,7 @@ jobs:
 
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
-        timeout-minutes: 25
+        timeout-minutes: 20
         run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Benchmark
