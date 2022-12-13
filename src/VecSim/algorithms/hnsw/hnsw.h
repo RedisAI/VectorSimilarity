@@ -1093,6 +1093,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion_POC(
 	}
 	node_lock.unlock();
 
+	if (deleted_neighbors.empty()) return;
+
 	// Hold 3 sets of nodes - all the original neighbors at that point to later (potentially) update,
 	// subset of these which are the chosen neighbors nodes, and a subset of the original neighbors that are going to be removed.
 	std::vector<idType> nodes_to_update;

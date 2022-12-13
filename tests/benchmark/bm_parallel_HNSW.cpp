@@ -531,36 +531,31 @@ public:
 						bool reiterate_swap_jobs = false;
 						do {
 							reiterate_swap_jobs = false;
-							idType id_to_reinsert = HNSW_INVALID_ID;
-							long counter_to_update = HNSW_INVALID_ID;
 							std::vector<idType> to_remove;
-							//cout << "Applying swap jobs for queue with " << swap_jobs.size() << " items" << endl;
+//							cout << "Applying swap jobs for queue with " << swap_jobs.size() << " items" << endl;
 							for (auto &it: swap_jobs) {
 								if (it.second < 0) {
 									throw std::runtime_error("repair jobs counter lower than 0");
 								}
 								if (it.second == 0) {
-									//cout << "Applying swap job for id " << it.first << endl;
+									idType last_id = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count-1;
+									//cout << "Applying swap job for id " << it.first << " with " << last_id << endl;
 									reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->SwapJob_POC(it.first);
 									// Invalidate repair jobs for the disposed id.
 									for (auto it_job: idToJob[it.first]) {
 										it_job->internal_id = HNSW_INVALID_ID;
 									}
-									idType last_id = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->cur_element_count;
 									// Swap the ids in the pending jobs.
 									for (auto it_job: idToJob[last_id]) {
 										it_job->internal_id = it.first;
 									}
 									idToJob[it.first] = idToJob[last_id];
 									idToJob.erase(last_id);
-
 									// Update the swap job - if last_id has a pending swap job
-									if (it.first != last_id && swap_jobs.find(last_id) != swap_jobs.end()) {
-										//swap_jobs[it.first] = swap_jobs[last_id];
-										id_to_reinsert = it.first;
-										counter_to_update = swap_jobs[last_id];
+									if (it.first != last_id && swap_jobs.find(last_id) != swap_jobs.end() &&
+									std::find(to_remove.begin(), to_remove.end(), last_id) == to_remove.end()) {
+										swap_jobs[it.first] = swap_jobs[last_id];
 										to_remove.push_back(last_id);
-										to_remove.push_back(it.first);
 
 										// update the associated id in the jobs
 										for (auto *job : deletedIdToJob[last_id]) {
@@ -578,7 +573,6 @@ public:
 										to_remove.push_back(it.first);
 										deletedIdToJob.erase(it.first);
 									}
-									//serializer.checkIntegrity(swap_jobs);
 								}
 							}
 							// Remove all the completed swap jobs.
@@ -586,14 +580,11 @@ public:
 							for (auto it: to_remove) {
 								swap_jobs.erase(it);
 							}
-							if (id_to_reinsert != HNSW_INVALID_ID) {
-								swap_jobs[id_to_reinsert] = counter_to_update;
-							}
 						} while (reiterate_swap_jobs);
 //						serializer.reset(reinterpret_cast<HNSWIndex<float, float>  *>(hnsw_index));
 						cout << "Applied " << total_jobs_done << " swap jobs and " <<
 						swap_jobs.size() << " jobs left, where last inserted label is " << total_vector_inserted << endl;
-//						serializer.checkIntegrity(swap_jobs).valid_state << endl;
+//						cout << serializer.checkIntegrity().valid_state << endl;
 						guard.unlock();
 					}
 				}
@@ -640,6 +631,13 @@ public:
 						for (auto it = jobs.begin(); it != jobs.end(); it++) {
 							if (*it == job) {
 								jobs.erase(it);
+								break;
+							}
+						}
+						auto &deleted_id_jobs = deletedIdToJob[job->associated_deleted_id];
+						for (auto it = deleted_id_jobs.begin(); it != deleted_id_jobs.end(); it++) {
+							if (*it == job) {
+								deleted_id_jobs.erase(it);
 								break;
 							}
 						}
