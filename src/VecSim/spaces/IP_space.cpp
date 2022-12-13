@@ -89,7 +89,7 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
         // using the unsupported extraction operation.
         static dist_func_t<double> dist_funcs[] = {
             FP64_InnerProduct, FP64_InnerProductSIMD8Ext_AVX512,
-            FP64_InnerProductSIMD8ExtResiduals_AVX512, FP64_InnerProductSIMD2Ext_AVX512_noDQ,
+            FP64_InnerProductSIMD2Ext_AVX512_noDQ, FP64_InnerProductSIMD8ExtResiduals_AVX512,
             FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ};
 
         ret_dist_func = dist_funcs[optimization_type];
