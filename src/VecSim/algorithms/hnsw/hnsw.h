@@ -1058,8 +1058,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // | <links_len> | <link_1> <link_2> ...  | <incoming_links_ptr> |
     level_data_size_ = sizeof(level_data) + sizeof(idType) * maxM_;
 
-    size_t initial_vector_size = params->initialCapacity / this->blockSize;
-    if (params->initialCapacity % this->blockSize != 0) {
+    size_t initial_vector_size = this->max_elements_ / this->blockSize;
+    if (this->max_elements_ % this->blockSize != 0) {
         initial_vector_size++;
     }
     vector_blocks.reserve(initial_vector_size);

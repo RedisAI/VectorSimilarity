@@ -62,24 +62,16 @@ protected:
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
 
-        // Generate the updated index from file.
-        // HNSWParams is required to load v1 index
-        HNSWParams params = {.type = VecSimType_FLOAT32,
-                             .dim = BM_VecSimBasics::dim,
-                             .metric = VecSimMetric_Cosine,
-                             .multi = false,
-                             .blockSize = BM_VecSimBasics::block_size};
-
         // Generate index from file.
         hnsw_index_updated = HNSWFactory::NewIndex(
-            BM_VecSimBasics::GetSerializedIndexLocation(updated_hnsw_index_file), &params);
+            BM_VecSimBasics::GetSerializedIndexLocation(updated_hnsw_index_file));
 
         auto hnsw_index_updated_casted =
             reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated);
 
-        // if (!hnsw_index_updated_casted->checkIntegrity().valid_state) {
-        //     throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
-        // }
+        if (!hnsw_index_updated_casted->checkIntegrity().valid_state) {
+            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
+        }
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < n_vectors; ++i) {
             const char *blob = hnsw_index_updated_casted->getDataByInternalId(i);
