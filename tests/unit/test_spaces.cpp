@@ -164,6 +164,15 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
     FP64_InnerProductSIMD2ExtResiduals_AVX512};
 } // namespace spaces_test
 
+// In the 4 next tests we test #space_#data_type_GetDistFunc for each combination of data type and
+// space. For a dimension that can't be optimized (dimensions[0]), GetDistFunc always returns the
+// naive calculation function, regardless of the supported architecture optimization.
+// fp32_L2_dist_funcs_array[i] is associated with the architecture optimizations that match
+// dimension[i]. Instead of defining an array that all of its entries would be the same
+// naive function and put it in fp32_L2_dist_funcs_array[0],
+// we manually match GetDistFunc(dim = NO_OPTIMIZATION, arch = any) to the naive function,
+// and start to iterate dimensions array from a dimension that can be splitted to optimize the
+// calculations, according to the hardware capabilities.
 TEST_F(SpacesTest, fp32_L2_GetDistFunc) {
     using namespace spaces_test;
     using namespace spaces;
