@@ -74,7 +74,7 @@ public:
 // You can cast a numpy array into bytearray in the Python code using:
 // >> bytearray(np_arr)
 
-// NOTE: Using np_arr.tobytes() won't work as the function expect to get an object 
+// NOTE: Using np_arr.tobytes() won't work as the function expect to get an object
 // of py::bytearray type.
 
 // py::bytearray object is agnostic to the data type of the original numpy array, hence
@@ -83,9 +83,9 @@ public:
 // To convert the py::bytearray object into a pointer:
 // 1. we use the type's cast to std::string operator
 // 2. then get the const char * (std::string::c_str)
-// 3. and cast implicitly to a const void *, 
-// As VecSim functions expect to get. 
-//For example:
+// 3. and cast implicitly to a const void *,
+// As VecSim functions expect to get.
+// For example:
 // VecSimIndex_AddVector(index, std::string(input).c_str(), id);
 class PyVecSimIndex {
 public:
@@ -95,7 +95,7 @@ public:
 
     void addVector(py::bytearray input, size_t id) {
         VecSimIndex_AddVector(index, std::string(input).c_str(), id);
-    } 
+    }
 
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
@@ -110,15 +110,16 @@ public:
     }
 
     py::object range(py::bytearray input, double radius, VecSimQueryParams *query_params) {
-        VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index, std::string(input).c_str(), radius, query_params, BY_SCORE);
+        VecSimQueryResult_List res = VecSimIndex_RangeQuery(index, std::string(input).c_str(),
+                                                            radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
     PyBatchIterator createBatchIterator(py::bytearray input, VecSimQueryParams *query_params) {
-        return PyBatchIterator(VecSimBatchIterator_New(index, std::string(input).c_str(), query_params));
+        return PyBatchIterator(
+            VecSimBatchIterator_New(index, std::string(input).c_str(), query_params));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
