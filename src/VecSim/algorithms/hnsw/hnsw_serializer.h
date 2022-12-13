@@ -211,13 +211,16 @@ void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Restore id to metadata vector
-    element_meta_data cur_meta;
+    labelType label = 0;
+    elementFlags flags = 0;
     for (idType id = 0; id < this->cur_element_count; id++) {
-        readBinaryPOD(input, cur_meta);
-        this->idToMetaData[id] = cur_meta;
+        readBinaryPOD(input, label);
+        readBinaryPOD(input, flags);
+        this->idToMetaData[id].label = label;
+        this->idToMetaData[id].flags = flags;
 
         // Restore label lookup by getting the label from data_level0_memory_
-        setVectorId(cur_meta.label, id);
+        setVectorId(label, id);
     }
 
     // Get number of blocks
@@ -352,7 +355,10 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
     // Save id to metadata vector
     for (idType id = 0; id < this->cur_element_count; id++) {
-        writeBinaryPOD(output, this->idToMetaData[id]);
+        labelType label = this->idToMetaData[id].label;
+        elementFlags flags = this->idToMetaData[id].flags;
+        writeBinaryPOD(output, label);
+        writeBinaryPOD(output, flags);
     }
 
     // Save number of blocks
