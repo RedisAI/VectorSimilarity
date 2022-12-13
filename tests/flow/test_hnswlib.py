@@ -39,12 +39,12 @@ def test_sanity_hnswlib_index_L2():
 
     data = np.float32(np.random.random((num_elements, dim)))
     for i, vector in enumerate(data):
-        index.add_vector(vector, i)
+        index.add_vector(bytearray(vector), i)
         p.add_items(vector, i)
 
     query_data = np.float32(np.random.random((1, dim)))
     hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
-    redis_labels, redis_distances = index.knn_query(query_data, 10)
+    redis_labels, redis_distances = index.knn_query(bytearray(query_data), 10)
     assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
     assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
 
@@ -80,12 +80,12 @@ def test_sanity_hnswlib_index_cosine():
 
     data = np.float32(np.random.random((num_elements, dim)))
     for i, vector in enumerate(data):
-        index.add_vector(vector, i)
+        index.add_vector(bytearray(vector), i)
         p.add_items(vector, i)
 
     query_data = np.float32(np.random.random((1, dim)))
     hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
-    redis_labels, redis_distances = index.knn_query(query_data, 10)
+    redis_labels, redis_distances = index.knn_query(bytearray(query_data), 10)
     assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
     assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
 
@@ -117,7 +117,7 @@ def test_recall_for_hnswlib_index_with_deletion():
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
-        hnsw_index.add_vector(vector, i)
+        hnsw_index.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     # delete half of the data
@@ -130,7 +130,7 @@ def test_recall_for_hnswlib_index_with_deletion():
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
-        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(bytearray(target_vector), 10)
 
         # sort distances of every vector from the target vector and get actual k nearest vectors
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
@@ -173,12 +173,12 @@ def test_batch_iterator():
     data = np.float32(rng.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
-        hnsw_index.add_vector(vector, i)
+        hnsw_index.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     # Create a random query vector and create a batch iterator
     query_data = np.float32(rng.random((1, dim)))
-    batch_iterator = hnsw_index.create_batch_iterator(query_data)
+    batch_iterator = hnsw_index.create_batch_iterator(bytearray(query_data))
     labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
     for i, _ in enumerate(labels_first_batch[0][:-1]):
         # Assert sorting by id
@@ -197,13 +197,13 @@ def test_batch_iterator():
     # Verify that runtime args are sent properly to the batch iterator.
     query_params = VecSimQueryParams()
     query_params.hnswRuntimeParams.efRuntime = 5
-    batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
+    batch_iterator_new = hnsw_index.create_batch_iterator(bytearray(query_data), query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that accuracy is worse with the new lower ef_runtime.
     assert (sum(labels_first_batch[0]) < sum(labels_first_batch_new[0]))
 
     query_params.hnswRuntimeParams.efRuntime = efRuntime  # Restore previous ef_runtime.
-    batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
+    batch_iterator_new = hnsw_index.create_batch_iterator(bytearray(query_data), query_params)
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that results are now the same.
     assert_allclose(labels_first_batch_new[0], labels_first_batch[0])
@@ -218,7 +218,7 @@ def test_batch_iterator():
     query_data = np.float32(rng.random((num_queries, dim)))
     for target_vector in query_data:
         correct = 0
-        batch_iterator = hnsw_index.create_batch_iterator(target_vector)
+        batch_iterator = hnsw_index.create_batch_iterator(bytearray(target_vector))
         iterations = 0
         # Sort distances of every vector from the target vector and get the actual order
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
@@ -240,7 +240,7 @@ def test_batch_iterator():
     print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ', total_recall/num_queries)
 
     # Run again a single query in batches until it is depleted.
-    batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
+    batch_iterator = hnsw_index.create_batch_iterator(bytearray(query_data[0]))
     iterations = 0
     accumulated_labels = set()
 
@@ -278,14 +278,14 @@ def test_serialization():
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
-        hnsw_index.add_vector(vector, i)
+        hnsw_index.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     correct_labels = []  # cache these
     for target_vector in query_data:
-        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(bytearray(target_vector), 10)
 
         # sort distances of every vector from the target vector and get actual k nearest vectors
         dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
@@ -313,7 +313,7 @@ def test_serialization():
     # Check recall
     correct_after = 0
     for i, target_vector in enumerate(query_data):
-        hnswlib_labels, hnswlib_distances = new_hnsw_index.knn_query(target_vector, 10)
+        hnswlib_labels, hnswlib_distances = new_hnsw_index.knn_query(bytearray(target_vector), 10)
         correct_labels_cur = correct_labels[i]
         for label in hnswlib_labels[0]:
             for correct_label in correct_labels_cur:
@@ -352,7 +352,7 @@ def test_range_query():
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
-        index.add_vector(vector, i)
+        index.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
@@ -364,7 +364,7 @@ def test_range_query():
         query_params = VecSimQueryParams()
         query_params.hnswRuntimeParams.epsilon = epsilon_rt
         start = time.time()
-        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+        hnsw_labels, hnsw_distances = index.range_query(bytearray(query_data), radius=radius, query_param=query_params)
         end = time.time()
         res_num = len(hnsw_labels[0])
 
@@ -384,7 +384,7 @@ def test_range_query():
     assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
 
     # Expect zero results for radius==0
-    hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
+    hnsw_labels, hnsw_distances = index.range_query(bytearray(query_data), radius=0)
     assert len(hnsw_labels[0]) == 0
 
 
@@ -417,7 +417,7 @@ def test_recall_for_hnsw_multi_value():
     vectors = []
     for i, vector in enumerate(data):
         for _ in range(num_per_label):
-            hnsw_index.add_vector(vector, i)
+            hnsw_index.add_vector(bytearray(vector), i)
             vectors.append((i, vector))
 
     # We validate that we can increase ef with this designated API (if this won't work, recall should be very low)
@@ -425,7 +425,7 @@ def test_recall_for_hnsw_multi_value():
     query_data = np.float32(np.random.random((num_queries, dim)))
     correct = 0
     for target_vector in query_data:
-        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
+        hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(bytearray(target_vector), 10)
         assert(len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
 
         # sort distances of every vector from the target vector and get actual k nearest vectors
@@ -483,7 +483,7 @@ def test_multi_range_query():
     vectors = []
     for label, vecs in enumerate(data):
         for vector in vecs:
-            index.add_vector(vector, label)
+            index.add_vector(bytearray(vector), label)
             vectors.append((label, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
@@ -503,7 +503,7 @@ def test_multi_range_query():
         query_params = VecSimQueryParams()                  
         query_params.hnswRuntimeParams.epsilon = epsilon_rt                 
         start = time.time()                 
-        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)                    
+        hnsw_labels, hnsw_distances = index.range_query(bytearray(query_data), radius=radius, query_param=query_params)                    
         end = time.time()
         res_num = len(hnsw_labels[0])
 
@@ -523,5 +523,5 @@ def test_multi_range_query():
     assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
 
     # Expect zero results for radius==0
-    hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
+    hnsw_labels, hnsw_distances = index.range_query(bytearray(query_data), radius=0)
     assert len(hnsw_labels[0]) == 0

@@ -3,6 +3,79 @@
 # the Server Side Public License v1 (SSPLv1).
 
 from common import *
+def test_bytearray():
+    dim = 16
+    num_elements = 10
+    k=10
+
+    params = VecSimParams()
+    bfparams = BFParams()
+
+    params.algo = VecSimAlgo_BF
+    bfparams.initialCapacity = num_elements
+    bfparams.blockSize = num_elements
+    bfparams.dim = dim
+    bfparams.type = VecSimType_FLOAT32
+    bfparams.metric = VecSimMetric_Cosine
+
+    params.bfParams = bfparams
+
+    bfindices = []
+
+    fp32_cosine_index = VecSimIndex(params)
+    bfindices.append(fp32_cosine_index)
+
+    params.bfParams.metric = VecSimMetric_L2
+    fp32_L2_index = VecSimIndex(params)
+    bfindices.append(fp32_L2_index)
+
+    params.bfParams.type = VecSimType_FLOAT64
+    fp64_L2_index = VecSimIndex(params)
+    bfindices.append(fp64_L2_index)
+
+    params.bfParams.metric = VecSimMetric_Cosine
+    fp64_cosine_index = VecSimIndex(params)
+    bfindices.append(fp64_cosine_index)
+
+    np.random.seed(47)
+    fp32_data = np.float32(np.random.random((num_elements, dim)))
+    fp32_vectors = []
+    fp64_data = np.float64(np.random.random((num_elements, dim)))
+    fp64_vectors = []
+
+    for i, vector in enumerate(fp32_data):
+        fp32_vectors.append((i, vector))
+        for index in fp32_cosine_index, fp32_L2_index:
+            index.add_vector(bytearray(vector), i)
+
+    for i, vector in enumerate(fp64_data):
+        fp64_vectors.append((i, vector))
+        for index in fp64_cosine_index, fp64_L2_index:
+            index.add_vector(bytearray(vector), i)
+
+    fp32_query_data = np.float32(np.random.random((1, dim)))
+    fp64_query_data = np.float64(np.random.random((1, dim)))
+
+
+    for(query, vectors, index) in (fp32_query_data, fp32_vectors, fp32_cosine_index), (fp64_query_data, fp64_vectors, fp64_cosine_index):
+        dists = [(spatial.distance.cosine(query.flat, vec), key) for key, vec in vectors]
+        dists = sorted(dists)[:k]
+        keys = [key for _, key in dists[:k]]
+        dists = [dist for dist, _ in dists[:k]]
+        bf_labels, bf_distances = index.knn_query(bytearray(query), k=k)
+        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
+        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+
+    for(query, vectors, index) in (fp32_query_data, fp32_vectors, fp32_L2_index), (fp64_query_data, fp64_vectors, fp64_L2_index):
+        dists = [(spatial.distance.sqeuclidean(query.flat, vec), key) for key, vec in vectors]
+        dists = sorted(dists)[:k]
+        keys = [key for _, key in dists[:k]]
+        dists = [dist for dist, _ in dists[:k]]
+        bf_labels, bf_distances = index.knn_query(bytearray(query), k=k)
+        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
+        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+
+    print("\ntest_bytearray ended successfully")
 
 
 def test_bf_cosine():
@@ -23,7 +96,7 @@ def test_bf_cosine():
     vectors = []
 
     for i, vector in enumerate(data):
-        bfindex.add_vector(vector, i)
+        bfindex.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
@@ -33,7 +106,8 @@ def test_bf_cosine():
     keys = [key for _, key in dists[:k]]
     dists = [dist for dist, _ in dists[:k]]
     start = time.time()
-    bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
+    bf_labels, bf_distances = bfindex.knn_query(bytearray(query_data), k=10)
+
     end = time.time()
     print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
 
@@ -59,7 +133,7 @@ def test_bf_l2():
     vectors = []
 
     for i, vector in enumerate(data):
-        bfindex.add_vector(vector, i)
+        bfindex.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
@@ -68,7 +142,7 @@ def test_bf_l2():
     dists = sorted(dists)[:k]
     keys = [key for _, key in dists[:k]]
     start = time.time()
-    bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
+    bf_labels, bf_distances = bfindex.knn_query(bytearray(query_data), k=10)
     end = time.time()
     print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
 
@@ -92,11 +166,11 @@ def test_batch_iterator():
     np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
     for i, vector in enumerate(data):
-        bf_index.add_vector(vector, i)
+        bf_index.add_vector(bytearray(vector), i)
 
     # Create a random query vector and create a batch iterator
     query_data = np.float32(np.random.random((1, dim)))
-    batch_iterator = bf_index.create_batch_iterator(query_data)
+    batch_iterator = bf_index.create_batch_iterator(bytearray(query_data))
     labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
     for i, _ in enumerate(labels_first_batch[0][:-1]):
         # assert sorting by id
@@ -143,14 +217,14 @@ def test_range_query():
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
     for i, vector in enumerate(data):
-        bfindex.add_vector(vector, i)
+        bfindex.add_vector(bytearray(vector), i)
         vectors.append((i, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
 
     radius = 13
     start = time.time()
-    bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
+    bf_labels, bf_distances = bfindex.range_query(bytearray(query_data), radius=radius)
     end = time.time()
     res_num = len(bf_labels[0])
     print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds, got {res_num} results')
@@ -166,7 +240,7 @@ def test_range_query():
     assert dists[res_num][0]**2 > radius
 
     # Expect zero results for radius==0
-    bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
+    bf_labels, bf_distances = bfindex.range_query(bytearray(query_data), radius=0)
     assert len(bf_labels[0]) == 0
 
 
@@ -192,7 +266,7 @@ def test_bf_multivalue():
     vectors = []
 
     for i, vector in enumerate(data):
-        bfindex.add_vector(vector, i % num_labels)
+        bfindex.add_vector(bytearray(vector), i % num_labels)
         vectors.append((i % num_labels, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
@@ -209,7 +283,7 @@ def test_bf_multivalue():
     keys = [key for key, _ in dists[:k]]
     dists = [dist for _, dist in dists[:k]]
     start = time.time()
-    bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
+    bf_labels, bf_distances = bfindex.knn_query(bytearray(query_data), k=10)
     end = time.time()
     print(f'\nlookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
 
@@ -237,7 +311,7 @@ def test_multi_range_query():
     vectors = []
     for label, vecs in enumerate(data):
         for vector in vecs:
-            bfindex.add_vector(vector, label)
+            bfindex.add_vector(bytearray(vector), label)
             vectors.append((label, vector))
 
     query_data = np.float32(np.random.random((1, dim)))
@@ -253,7 +327,7 @@ def test_multi_range_query():
     keys = [key for key, dist in dists if dist <= radius]
 
     start = time.time()
-    bf_labels, bf_distances = bfindex.range_query(query_data, radius=radius)
+    bf_labels, bf_distances = bfindex.range_query(bytearray(query_data), radius=radius)
     end = time.time()
     res_num = len(bf_labels[0])
 
@@ -271,5 +345,5 @@ def test_multi_range_query():
     assert max(bf_distances[0]) <= radius
 
     # Expect zero results for radius==0
-    bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
+    bf_labels, bf_distances = bfindex.range_query(bytearray(query_data), radius=0)
     assert len(bf_labels[0]) == 0
