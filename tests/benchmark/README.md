@@ -171,7 +171,7 @@ In the definition we:
 4. Call the function, defined in the fixture class, that implements the required test case.
 ### Registration
 `BENCHMARK_REGISTER_F(test_fixture, test_name)->Args({val1, val2})->ArgNames({"name1", "name2"})->Iterations(val0)->Unit(benchmark::kMillisecond)`  
-Here we register the test that was bind to `test_fixture` and has `test_name` to the benchmarks running loop.
+Here we register to the benchmarks running loop the test that was bind to `test_fixture` and has `test_name` .  
 *NOTE:* The **registration order** is important. Changing it might violate the ability to compare between one benchmark run to another. The reason to that is that we have tests (such as addLabel and DeleteLabel) that modify the hnsw graph.
 # Fixtures
 ## Fixture template type
@@ -251,8 +251,9 @@ In addition, in this file we define macros with the arguments for the `TopK` reg
 ### class BM_VecSimBasics<index_type_t> : public BM_VecSimCommon<index_type_t>
 Defined in bm_vecsim_basics.h  
 In this class we define additional tests for the basic tests set:
-* `AddLabel` - add one label per iteration (meaning 1 vector for single value index, and multiple vector for multi value index)
-* `DeleteLabel` - Delete one label per iteration (meaning 1 vector for single value index, and multiple vector for multi value index)
+* `AddLabel` - Add one label per iteration (meaning 1 vector for single value index, and multiple vector for multi value index)
+* `DeleteLabel<algo_t>` - Delete one label per iteration (meaning 1 vector for single value index, and multiple vector for multi value index).  
+`algo_t` is a specific index type (including multi/single) because we call `GetDataByLabel()`, which is only known to HNSW_Single/Multi and BruteForce_Single/Multi. This why this test case is defined separately in each .cpp file using `DEFINE_DELETE_LABEL` macro (defined in bm_vecsim_basics.h). The registration is done like all other test cases in the initialization file.  
 * `Range_BF` 
 * `Range_HNSW`  
 In addition, in this file we define macros with the arguments for the `Range`, `AddLabel` and `DeleteLabel` registration.
