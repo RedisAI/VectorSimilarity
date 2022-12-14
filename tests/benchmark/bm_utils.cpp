@@ -38,8 +38,8 @@ BM_VecSimBasics::BM_VecSimBasics() {
 
 void BM_VecSimBasics::Initialize() {
 
-    BM_VecSimBasics::hnsw_index = HNSWFactory::NewIndex(
-        GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
+    BM_VecSimBasics::hnsw_index =
+        HNSWFactory::NewIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file));
 
     auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     size_t ef_r = 10;
