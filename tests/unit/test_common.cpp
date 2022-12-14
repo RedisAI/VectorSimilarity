@@ -385,29 +385,36 @@ protected:
 
     std::string file_name;
 };
-// TEST_F(SerializerTest, HNSWSerialzer) {
 
-//     this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/bad_index.hnsw";
+TEST_F(SerializerTest, HNSWSerialzer) {
 
-//     // Try to load an index from a file that doesnt exist.
-//     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
-//                              "Cannot open file");
+    this->file_name = std::string(getenv("ROOT")) + "/tests/unit/data/bad_index.hnsw";
 
-//     std::ofstream output(this->file_name, std::ios::binary);
-//     // Write invalid encoding version
-//     Serializer::writeBinaryPOD(output, 0);
-//     output.flush();
-//     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
-//                              "Cannot load index: bad encoding version");
+    // Try to load an index from a file that doesnt exist.
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot open file");
 
-//     // Test WRONG index algorithm exception
-//     // Use a valid version
-//     output.seekp(0, std::ios_base::beg);
+    std::ofstream output(this->file_name, std::ios::binary);
+    // Write invalid encoding version
+    Serializer::writeBinaryPOD(output, 0);
+    output.flush();
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot load index: deprecated encoding version: 0");
 
-//     Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V2);
-//     Serializer::writeBinaryPOD(output, VecSimAlgo_BF);
-//     output.close();
+    output.seekp(0, std::ios_base::beg);
+    Serializer::writeBinaryPOD(output, 42);
+    output.flush();
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot load index: bad encoding version: 42");
 
-//     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
-//                              "Cannot load index: bad algorithm type");
-// }
+    // Test WRONG index algorithm exception
+    // Use a valid version
+    output.seekp(0, std::ios_base::beg);
+
+    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V3);
+    Serializer::writeBinaryPOD(output, 42);
+    output.close();
+
+    ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+                             "Cannot load index: bad algorithm type: Unknown (corrupted file?)");
+}

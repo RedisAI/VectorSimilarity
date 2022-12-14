@@ -813,11 +813,11 @@ TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
 }
 
 TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
-    size_t dim = 128;
-    size_t n_labels = 1000;
+    size_t dim = 256;
+    size_t n_labels = 500;
     size_t perLabel = 1;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-    size_t M = 32;
+    size_t bs = DEFAULT_BLOCK_SIZE / 2;
+    size_t M = 64;
 
     size_t n = n_labels * perLabel;
 
@@ -838,19 +838,23 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
 
     ASSERT_EQ(estimation, actual);
 
+    // Fill the initial capacity + fill the last block.
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
+    }
+    idType cur = n;
+    while (index->indexSize() % bs != 0) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, cur++);
     }
 
-    // Estimate the memory delta of adding a full new block.
-    estimation = EstimateElementSize(params) * (bs % n + bs);
+    // Estimate the memory delta of adding a single vector that requires a full new block.
+    estimation = EstimateElementSize(params) * bs;
+    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, bs);
 
-    actual = 0;
-    for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
-    }
-    // ASSERT_GE(estimation * 1.01, actual);
-    // ASSERT_LE(estimation * 0.99, actual);
+    // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
+    // of the estimation.
+    ASSERT_GE(estimation, actual);
+    ASSERT_LE(estimation, actual * 1.05);
 
     VecSimIndex_Free(index);
 }
