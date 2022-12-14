@@ -22,7 +22,11 @@ Serializer::EncodingVersion Serializer::ReadVersion(std::ifstream &input) {
     // The version number is the first field that is serialized.
     EncodingVersion version = EncodingVersion_INVALID;
     readBinaryPOD(input, version);
-    if (version <= EncodingVersion_DEPRECATED || version >= EncodingVersion_INVALID) {
+    if (version <= EncodingVersion_DEPRECATED) {
+        input.close();
+        throw std::runtime_error("Cannot load index: deprecated encoding version: " +
+                                 std::to_string(version));
+    } else if (version >= EncodingVersion_INVALID) {
         input.close();
         throw std::runtime_error("Cannot load index: bad encoding version: " +
                                  std::to_string(version));

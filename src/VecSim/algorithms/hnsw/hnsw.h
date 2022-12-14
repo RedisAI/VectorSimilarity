@@ -128,7 +128,6 @@ protected:
     vecsim_stl::vector<DataBlock> vector_blocks;
     vecsim_stl::vector<DataBlock> meta_blocks;
     vecsim_stl::vector<element_meta_data> idToMetaData;
-    std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 
     // used for synchronization only when parallel indexing / searching is enabled.
 #ifdef ENABLE_PARALLELIZATION
@@ -137,6 +136,8 @@ protected:
     std::mutex global;
     std::mutex cur_element_count_guard_;
     std::vector<std::mutex> link_list_locks_;
+#else
+    std::shared_ptr<VisitedNodesHandler> visited_nodes_handler;
 #endif
 
 #ifdef BUILD_TESTS

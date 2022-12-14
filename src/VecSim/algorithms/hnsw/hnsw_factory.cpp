@@ -76,22 +76,10 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
 size_t EstimateElementSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t element_graph_data_size_ =
-        sizeof(element_graph_data) + sizeof(idType) * M * 2 + sizeof(vecsim_stl::vector<idType>);
-    size_t higher_level_data_size_ =
-        sizeof(level_data) + sizeof(idType) * M + sizeof(vecsim_stl::vector<idType>);
+    size_t element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * M * 2;
 
-    // The Expectancy for the random variable which is the number of levels per element equals
-    // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
-    // of levels is lower (intuitively, we "loose" a level every time the random generated number
-    // should have been rounded up to the larger integer). So, we "fix" the expectancy and take
-    // 1/2*ln(M) instead as an approximation.
-    size_t expected_higher_level_data_size_ =
-        ceil((1 / (2 * log(M))) * (float)(higher_level_data_size_));
-
-    size_t size_total_data_per_element = element_graph_data_size_ +
-                                         expected_higher_level_data_size_ +
-                                         params->dim * VecSimType_sizeof(params->type);
+    size_t size_total_data_per_element =
+        element_graph_data_size_ + params->dim * VecSimType_sizeof(params->type);
 
     size_t size_label_lookup_node;
     if (params->multi) {
@@ -100,19 +88,18 @@ size_t EstimateElementSize(const HNSWParams *params) {
         // allocation and therefore another VecSimAllocator::allocation_header_size.
         size_label_lookup_node =
             sizeof(vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>::value_type) +
-            sizeof(size_t) + sizeof(vecsim_stl::vector<idType>::value_type) + sizeof(size_t);
+            sizeof(size_t);
     } else {
         // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
         // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
-        // plus an internal pointer
-        size_label_lookup_node = sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
-                                 sizeof(size_t) + sizeof(size_t);
+        size_label_lookup_node =
+            sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) + sizeof(size_t);
     }
 
     // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
     // labels lookup hash map.
     size_t size_meta_data =
-        sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) + size_label_lookup_node;
+        sizeof(tag_t) + (sizeof(labelType) + sizeof(elementFlags)) + size_label_lookup_node;
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of
@@ -185,7 +172,12 @@ VecSimIndex *NewIndex(const std::string &location) {
         Serializer::readBinaryPOD(input, algo);
         if (algo != VecSimAlgo_HNSWLIB) {
             input.close();
-            throw std::runtime_error("Cannot load index: bad algorithm type");
+            auto bad_name = VecSimAlgo_ToString(algo);
+            if (bad_name == nullptr) {
+                bad_name = "Unknown (corrupted file?)";
+            }
+            throw std::runtime_error(std::string("Cannot load index: bad algorithm type: ") +
+                                     bad_name);
         }
         // this information is serialized from V2 and up
         InitializeParams(input, params);
@@ -203,7 +195,12 @@ VecSimIndex *NewIndex(const std::string &location) {
     } else if (params.type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
     } else {
-        throw std::runtime_error("Cannot load index: bad index data type");
+        auto bad_name = VecSimType_ToString(params.type);
+        if (bad_name == nullptr) {
+            bad_name = "Unknown (corrupted file?)";
+        }
+        throw std::runtime_error(std::string("Cannot load index: bad index data type: ") +
+                                 bad_name);
     }
 }
 #endif
