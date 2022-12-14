@@ -1527,11 +1527,11 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     DataType __attribute__((aligned(64)))
     normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
 
-    memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+    memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
         normalizeVector(normalized_blob, this->dim);
     }
-    vector_data = normalized_blob;
+    query_data = normalized_blob;
 
     double epsilon = epsilon_;
     if (queryParams) {
