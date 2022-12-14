@@ -43,7 +43,7 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
-    size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
+    size_t blockSize = (params->blockSize) ? params->blockSize : DEFAULT_BLOCK_SIZE;
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     if (params->type == VecSimType_FLOAT32) {
@@ -62,40 +62,36 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (params->initialCapacity) {
-        est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
+        size_t num_blocks = ceil((float)params->initialCapacity / (float)blockSize);
+        est += sizeof(DataBlock) * num_blocks + sizeof(size_t); // data blocks
+        est += sizeof(DataBlock) * num_blocks + sizeof(size_t); // meta blocks
+        est += (sizeof(labelType) + sizeof(elementFlags)) * params->initialCapacity +
+               sizeof(size_t); // idToMetaData
         est += sizeof(size_t) * params->initialCapacity +
                sizeof(size_t); // Labels lookup hash table buckets.
     }
-
-    // Explicit allocation calls - always allocate a header.
-    est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
-
-    size_t size_links_level0 =
-        sizeof(elementFlags) + sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *);
-    size_t size_total_data_per_element =
-        size_links_level0 + params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
-    est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
 
     return est;
 }
 
 size_t EstimateElementSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t size_links_level0 = sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *) +
-                               sizeof(vecsim_stl::vector<idType>);
-    size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) +
-                                     sizeof(vecsim_stl::vector<idType>);
+    size_t element_graph_data_size_ =
+        sizeof(element_graph_data) + sizeof(idType) * M * 2 + sizeof(vecsim_stl::vector<idType>);
+    size_t higher_level_data_size_ =
+        sizeof(level_data) + sizeof(idType) * M + sizeof(vecsim_stl::vector<idType>);
+
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
     // of levels is lower (intuitively, we "loose" a level every time the random generated number
     // should have been rounded up to the larger integer). So, we "fix" the expectancy and take
     // 1/2*ln(M) instead as an approximation.
-    size_t expected_size_links_higher_levels =
-        ceil((1 / (2 * log(M))) * (float)size_links_higher_level);
+    size_t expected_higher_level_data_size_ =
+        ceil((1 / (2 * log(M))) * (float)(higher_level_data_size_));
 
-    size_t size_total_data_per_element = size_links_level0 + expected_size_links_higher_levels +
-                                         params->dim * VecSimType_sizeof(params->type) +
-                                         sizeof(labelType);
+    size_t size_total_data_per_element = element_graph_data_size_ +
+                                         expected_higher_level_data_size_ +
+                                         params->dim * VecSimType_sizeof(params->type);
 
     size_t size_label_lookup_node;
     if (params->multi) {
@@ -113,10 +109,10 @@ size_t EstimateElementSize(const HNSWParams *params) {
                                  sizeof(size_t) + sizeof(size_t);
     }
 
-    // 1 entry in visited nodes + 1 entry in element levels + (approximately) 1 bucket in labels
-    // lookup hash map.
+    // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
+    // labels lookup hash map.
     size_t size_meta_data =
-        sizeof(tag_t) + sizeof(size_t) + sizeof(size_t) + size_label_lookup_node;
+        sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) + size_label_lookup_node;
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of

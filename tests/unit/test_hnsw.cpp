@@ -1564,72 +1564,70 @@ TYPED_TEST(HNSWTest, testCosine) {
     VecSimIndex_Free(index);
 }
 
-// TYPED_TEST(HNSWTest, testSizeEstimation) {
-//     size_t dim = 128;
-//     size_t n = 1000;
-//     size_t bs = DEFAULT_BLOCK_SIZE;
-//     size_t M = 32;
+TYPED_TEST(HNSWTest, testSizeEstimation) {
+    size_t dim = 128;
+    size_t n = 1000;
+    size_t bs = DEFAULT_BLOCK_SIZE;
+    size_t M = 32;
 
-//     HNSWParams params = {
-//         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs, .M = M};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs, .M = M};
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     // EstimateInitialSize is called after CreateNewIndex because params struct is
-//     // changed in CreateNewIndex.
-//     size_t estimation = EstimateInitialSize(params);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // EstimateInitialSize is called after CreateNewIndex because params struct is
+    // changed in CreateNewIndex.
+    size_t estimation = EstimateInitialSize(params);
 
-//     size_t actual = index->getAllocationSize();
-//     // labels_lookup hash table has additional memory, since STL implementation chooses "an
-//     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000,
-//     1031
-//     // buckets are created)
-//     estimation +=
-//         (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - n) * sizeof(size_t);
+    size_t actual = index->getAllocationSize();
+    // labels_lookup hash table has additional memory, since STL implementation chooses "an
+    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+    // buckets are created)
+    estimation +=
+        (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - n) * sizeof(size_t);
 
-//     ASSERT_EQ(estimation, actual);
+    ASSERT_EQ(estimation, actual);
 
-//     for (size_t i = 0; i < n; i++) {
-//         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
-//     }
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
 
-//     // Estimate the memory delta of adding a full new block.
-//     estimation = EstimateElementSize(params) * (bs % n + bs);
+    // Estimate the memory delta of adding a full new block.
+    estimation = EstimateElementSize(params) * (bs % n + bs);
 
-//     actual = 0;
-//     for (size_t i = 0; i < bs; i++) {
-//         actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
-//     }
-//     ASSERT_GE(estimation * 1.01, actual);
-//     ASSERT_LE(estimation * 0.99, actual);
+    actual = 0;
+    for (size_t i = 0; i < bs; i++) {
+        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
+    }
+    ASSERT_GE(estimation * 1.01, actual);
+    ASSERT_LE(estimation * 0.99, actual);
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
-// TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
-//     size_t dim = 128;
-//     size_t n = 0;
-//     size_t bs = DEFAULT_BLOCK_SIZE;
+TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
+    size_t dim = 128;
+    size_t n = 0;
+    size_t bs = DEFAULT_BLOCK_SIZE;
 
-//     HNSWParams params = {
-//         .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_Cosine, .initialCapacity = n, .blockSize = bs};
 
-//     VecSimIndex *index = this->CreateNewIndex(params);
-//     // EstimateInitialSize is called after CreateNewIndex because params struct is
-//     // changed in CreateNewIndex.
-//     size_t estimation = EstimateInitialSize(params);
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // EstimateInitialSize is called after CreateNewIndex because params struct is
+    // changed in CreateNewIndex.
+    size_t estimation = EstimateInitialSize(params);
 
-//     size_t actual = index->getAllocationSize();
+    size_t actual = index->getAllocationSize();
 
-//     // labels_lookup and element_levels containers are not allocated at all in some platforms,
-//     // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
-//     // single bucket. This, we get the following range in which we expect the initial memory to
-//     be
-//     // in.
-//     ASSERT_GE(actual, estimation);
-//     ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
+    // labels_lookup and element_levels containers are not allocated at all in some platforms,
+    // when initial capacity is zero, while in other platforms labels_lookup is allocated with a
+    // single bucket. This, we get the following range in which we expect the initial memory to be
+    // in.
+    ASSERT_GE(actual, estimation);
+    ASSERT_LE(actual, estimation + sizeof(size_t) + 2 * sizeof(size_t));
 
-//     VecSimIndex_Free(index);
-// }
+    VecSimIndex_Free(index);
+}
 
 TYPED_TEST(HNSWTest, testTimeoutReturn) {
     size_t dim = 4;
