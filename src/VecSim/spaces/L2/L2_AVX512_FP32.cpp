@@ -19,9 +19,9 @@ float FP32_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
 
     // In each iteration we calculate 16 floats = 512 bits.
     while (pVect1 < pEnd1) {
-        v1 = _mm512_loadu_ps(pVect1);
+        v1 = _mm512_load_ps(pVect1);
         pVect1 += 16;
-        v2 = _mm512_loadu_ps(pVect2);
+        v2 = _mm512_load_ps(pVect2);
         pVect2 += 16;
         diff = _mm512_sub_ps(v1, v2);
         // sum = _mm512_fmadd_ps(diff, diff, sum);
@@ -45,9 +45,9 @@ float FP32_L2SqrSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v, size_t
 
     // In each iteration we calculate 16 floats = 512 bits.
     while (pVect1 < pEnd1) {
-        v1_512 = _mm512_loadu_ps(pVect1);
+        v1_512 = _mm512_load_ps(pVect1);
         pVect1 += 16;
-        v2_512 = _mm512_loadu_ps(pVect2);
+        v2_512 = _mm512_load_ps(pVect2);
         pVect2 += 16;
         diff512 = _mm512_sub_ps(v1_512, v2_512);
         sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(diff512, diff512));
@@ -59,9 +59,9 @@ float FP32_L2SqrSIMD4Ext_AVX512(const void *pVect1v, const void *pVect2v, size_t
 
     // In each iteration we calculate 4 floats = 128 bits.
     while (pVect1 < pEnd2) {
-        v1 = _mm_loadu_ps(pVect1);
+        v1 = _mm_load_ps(pVect1);
         pVect1 += 4;
-        v2 = _mm_loadu_ps(pVect2);
+        v2 = _mm_load_ps(pVect2);
         pVect2 += 4;
         diff = _mm_sub_ps(v1, v2);
         sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));

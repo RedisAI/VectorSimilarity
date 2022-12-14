@@ -1189,12 +1189,14 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
 
     idType cur_c;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType __attribute__((aligned(64)))
+    normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+
+    memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
         normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
     }
+    vector_data = normalized_blob;
 
     {
 #ifdef ENABLE_PARALLELIZATION
@@ -1389,12 +1391,14 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+    DataType __attribute__((aligned(64)))
+    normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+
+    memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
         normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
     }
+    query_data = normalized_blob;
     // Get original efRuntime and store it.
     size_t ef = ef_;
 
@@ -1520,12 +1524,14 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType __attribute__((aligned(64)))
+    normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
+
+    memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
     if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
         normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
     }
+    vector_data = normalized_blob;
 
     double epsilon = epsilon_;
     if (queryParams) {

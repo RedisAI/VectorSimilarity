@@ -18,9 +18,9 @@ float FP32_InnerProductSIMD16Ext_AVX512_impl(const void *pVect1v, const void *pV
 
     while (pVect1 < pEnd1) {
 
-        __m512 v1 = _mm512_loadu_ps(pVect1);
+        __m512 v1 = _mm512_load_ps(pVect1);
         pVect1 += 16;
-        __m512 v2 = _mm512_loadu_ps(pVect2);
+        __m512 v2 = _mm512_load_ps(pVect2);
         pVect2 += 16;
         sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(v1, v2));
     }
@@ -45,9 +45,9 @@ float FP32_InnerProductSIMD4Ext_AVX512_impl(const void *pVect1v, const void *pVe
 
     while (pVect1 < pEnd1) {
 
-        __m512 v1 = _mm512_loadu_ps(pVect1);
+        __m512 v1 = _mm512_load_ps(pVect1);
         pVect1 += 16;
-        __m512 v2 = _mm512_loadu_ps(pVect2);
+        __m512 v2 = _mm512_load_ps(pVect2);
         pVect2 += 16;
         sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(v1, v2));
     }
@@ -57,9 +57,9 @@ float FP32_InnerProductSIMD4Ext_AVX512_impl(const void *pVect1v, const void *pVe
                       _mm512_extractf32x4_ps(sum512, 2) + _mm512_extractf32x4_ps(sum512, 3);
 
     while (pVect1 < pEnd2) {
-        v1 = _mm_loadu_ps(pVect1);
+        v1 = _mm_load_ps(pVect1);
         pVect1 += 4;
-        v2 = _mm_loadu_ps(pVect2);
+        v2 = _mm_load_ps(pVect2);
         pVect2 += 4;
         sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(v1, v2));
     }
