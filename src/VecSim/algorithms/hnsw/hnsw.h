@@ -1046,16 +1046,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     mult_ = 1 / log(1.0 * M_);
     level_generator_.seed(random_seed);
 
-    // data_level0_memory will look like this:
-    // | ---2--- | -----2----- | -----4*M0----------- | ---------8-------- |-data_size_-| ---8--- |
-    // | <flags> | <links_len> | <link_1> <link_2>... |<incoming_links_ptr>|   <data>   | <label> |
-
     element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * maxM0_;
-
-    // The i-th entry in linkLists array points to max_level[i] (continuous)
-    // chunks of memory, each one will look like this:
-    // | -----2----- | -----4*M-------------- | ----------8--------- |
-    // | <links_len> | <link_1> <link_2> ...  | <incoming_links_ptr> |
     level_data_size_ = sizeof(level_data) + sizeof(idType) * maxM_;
 
     size_t initial_vector_size = this->max_elements_ / this->blockSize;
@@ -1078,8 +1069,9 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
-    resizeLabelLookup(new_max_elements);
     idToMetaData.resize(new_max_elements);
+    idToMetaData.shrink_to_fit();
+    resizeLabelLookup(new_max_elements);
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
         new (this->allocator)

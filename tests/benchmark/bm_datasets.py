@@ -34,6 +34,10 @@ def get_data_set(dataset_name):
 
 # Create an HNSW index from dataset based on specific params.
 def load_or_create_hnsw_index(dataset, index_file_name, ef_construction, M):
+     # If we are using existing index, we load the index from the existing file.
+    if os.path.exists(index_file_name):
+        print(index_file_name, "already exist. Remove index file first to override it")
+        return HNSWIndex(index_file_name)
 
     X_train = np.array(dataset['train'])
     distance = dataset.attrs['distance']
@@ -50,12 +54,6 @@ def load_or_create_hnsw_index(dataset, index_file_name, ef_construction, M):
     hnswparams.type = VecSimType_FLOAT32
     hnswparams.metric = get_vecsim_metric(distance)
     hnswparams.multi = False
-
-     # If we are using existing index, we load the index from the existing file.
-    if os.path.exists(index_file_name):
-        print(index_file_name, "already exist. Remove index file first to override it")
-        # We need @params to load V1 files.
-        return HNSWIndex(index_file_name, hnswparams)
 
     hnsw_index = HNSWIndex(hnswparams)
     populate_save_index(hnsw_index, index_file_name, X_train)

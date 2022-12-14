@@ -24,7 +24,8 @@ Serializer::EncodingVersion Serializer::ReadVersion(std::ifstream &input) {
     readBinaryPOD(input, version);
     if (version <= EncodingVersion_DEPRECATED || version >= EncodingVersion_INVALID) {
         input.close();
-        throw std::runtime_error("Cannot load index: bad encoding version");
+        throw std::runtime_error("Cannot load index: bad encoding version: " +
+                                 std::to_string(version));
     }
 
     return version;
