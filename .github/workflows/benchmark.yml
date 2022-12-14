@@ -63,7 +63,7 @@ jobs:
 
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
-        timeout-minutes: 25
+        timeout-minutes: 20
         run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Benchmark
