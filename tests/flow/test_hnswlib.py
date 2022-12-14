@@ -306,7 +306,7 @@ def test_serialization():
     file_name = os.getcwd()+"/dump"
     hnsw_index.save_index(file_name)
 
-    new_hnsw_index = HNSWIndex(file_name, hnswparams)
+    new_hnsw_index = HNSWIndex(file_name)
     os.remove(file_name)
     assert new_hnsw_index.index_size() == num_elements
 
@@ -499,11 +499,11 @@ def test_multi_range_query():
     dists = sorted(dists, key=lambda pair: pair[1])
     keys = [key for key, dist in dists if dist <= radius]
 
-    for epsilon_rt in [0.001, 0.01, 0.1]:                   
-        query_params = VecSimQueryParams()                  
-        query_params.hnswRuntimeParams.epsilon = epsilon_rt                 
-        start = time.time()                 
-        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)                    
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
         end = time.time()
         res_num = len(hnsw_labels[0])
 
