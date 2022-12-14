@@ -523,7 +523,7 @@ public:
 					if (i % 10000 == 9999) {
 						// Do a batch of swap jobs for every deleted vector whose repair jobs are all done.
 						size_t total_jobs_done = 0;
-						std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+						std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 						cout << "Applying swap jobs after " << i << " deletions and after total of " << total_vector_inserted <<
 						" vectors inserted" << endl;
 						guard.lock();
@@ -592,7 +592,7 @@ public:
 				cout << "Thread " << myID << " done deleting vectors after inserting: " <<
 				__atomic_load_n(&total_vector_inserted, __ATOMIC_RELAXED) << " vectors in total" << endl;
 			} else if (myID == 1) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 #pragma omp critical
 				cout << "Thread " << myID << " is inserting new vectors..." << endl;
 				for (size_t j = data.size()/2; j < data.size(); j++) {
@@ -644,12 +644,10 @@ public:
 						jobs_queue_guard.unlock();
 					}
 					guard.unlock_shared();
-					jobs_queue_guard.lock();
 					size_t count = __atomic_fetch_sub(&swap_jobs[job->associated_deleted_id], 1, __ATOMIC_RELAXED);
 					if (count <= 0) {
 						throw std::runtime_error("tried to remove a repair job that was already removed");
 					}
-					jobs_queue_guard.unlock();
 					delete job;
 				}
 #pragma omp critical
@@ -762,9 +760,9 @@ int main() {
 					.blockSize = n}};
 
 	auto bm = BM_ParallelHNSW(params, bf_params, n_threads, n_queries, k);
-//    bm.run_parallel_indexing_benchmark();
-//	bm.run_parallel_search_benchmark();
-//	bm.run_all_parallel_benchmark();
-//	bm.run_parallel_update_benchmark_delete_alone();
+    bm.run_parallel_indexing_benchmark();
+	bm.run_parallel_search_benchmark();
+	bm.run_all_parallel_benchmark();
+	bm.run_parallel_update_benchmark_delete_alone();
 	bm.run_parallel_update_benchmark_with_repair_jobs();
 }
