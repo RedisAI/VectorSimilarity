@@ -1,0 +1,14 @@
+name: ok to merge
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  ok_to_merge:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+    steps: 
+      - name: echo ok
+        run: echo 'OK'
+
