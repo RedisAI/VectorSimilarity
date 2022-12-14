@@ -67,7 +67,7 @@ jobs:
         run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 
       - name: Benchmark
-        timeout-minutes: 120
+        timeout-minutes: 180
         run: make benchmark
 
       - name: Collect results
