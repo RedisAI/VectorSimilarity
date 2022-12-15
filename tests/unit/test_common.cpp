@@ -413,8 +413,25 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V3);
     Serializer::writeBinaryPOD(output, 42);
-    output.close();
+    output.flush();
+
+    ASSERT_EXCEPTION_MESSAGE(
+        HNSWFactory::NewIndex(this->file_name), std::runtime_error,
+        "Cannot load index: Expected HNSW file but got algorithm type: Unknown (corrupted file?)");
+
+    // Test WRONG index data type
+    // Use a valid version
+    output.seekp(0, std::ios_base::beg);
+
+    Serializer::writeBinaryPOD(output, Serializer::EncodingVersion_V3);
+    Serializer::writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
+    Serializer::writeBinaryPOD(output, size_t(128));
+
+    Serializer::writeBinaryPOD(output, 42);
+    output.flush();
 
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
-                             "Cannot load index: bad algorithm type: Unknown (corrupted file?)");
+                             "Cannot load index: bad index data type: Unknown (corrupted file?)");
+
+    output.close();
 }
