@@ -1566,8 +1566,8 @@ TYPED_TEST(HNSWTest, testCosine) {
 
 TYPED_TEST(HNSWTest, testSizeEstimation) {
     size_t dim = 256;
-    size_t n = 500;
-    size_t bs = DEFAULT_BLOCK_SIZE / 2;
+    size_t n = 200;
+    size_t bs = 256;
     size_t M = 64;
 
     HNSWParams params = {
