@@ -208,7 +208,6 @@ protected:
     inline const DataBlock &getVectorVectorBlock(idType id) const;
     inline const DataBlock &getVectorMetaBlock(idType id) const;
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
-    inline element_graph_data *getMetaDataByInternalId(idType internal_id) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -229,11 +228,15 @@ public:
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     inline const char *getDataByInternalId(idType internal_id) const;
+    inline element_graph_data *getMetaDataByInternalId(idType internal_id) const;
     inline level_data &getLevelData(idType internal_id, size_t level) const;
     inline idType getEntryPointId() const { return entrypoint_node_; }
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const {
         return idToMetaData[internal_id].label;
+    }
+    inline const element_meta_data *getMetaDataAddress(idType internal_id) const {
+        return idToMetaData.data() + internal_id;
     }
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
