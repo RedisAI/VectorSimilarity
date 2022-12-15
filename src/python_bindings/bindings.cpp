@@ -69,39 +69,31 @@ public:
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
     virtual ~PyBatchIterator() {}
 };
+#include <pybind11/embed.h>
+// @input or @query arguments are a py::object object. (numpy arrays are acceptable)
 
-// @input or @query arguments are a py::bytearray object.
-// You can cast a numpy array into bytearray in the Python code using:
-// >> bytearray(np_arr)
-
-// NOTE: Using np_arr.tobytes() won't work as the function expect to get an object
-// of py::bytearray type.
-
-// py::bytearray object is agnostic to the data type of the original numpy array, hence
-// no special treatment is required to support both fp32 and fp64.
-
-// To convert the py::bytearray object into a pointer:
-// 1. we use the type's cast to std::string operator
-// 2. then get the const char * (std::string::c_str)
-// 3. and cast implicitly to a const void *,
-// As VecSim functions expect to get.
+// To convert input or query to a pointer use input_to_blob(input)
 // For example:
-// VecSimIndex_AddVector(index, std::string(input).c_str(), id);
+// VecSimIndex_AddVector(index, input_to_blob(input), id);
+
 class PyVecSimIndex {
 public:
-    PyVecSimIndex() {}
+    PyVecSimIndex()
+        : create_bytearray(py::module::import("Mybytearray").attr("create_bytearray")) {}
 
-    PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
-
-    void addVector(py::bytearray input, size_t id) {
-        VecSimIndex_AddVector(index, std::string(input).c_str(), id);
+    PyVecSimIndex(const VecSimParams &params)
+        : create_bytearray(py::module::import("Mybytearray").attr("create_bytearray")) {
+        index = VecSimIndex_New(&params);
     }
 
+    void addVector(py::object input, size_t id) {
+        VecSimIndex_AddVector(index, input_to_blob(input), id);
+    }
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
-    py::object knn(py::bytearray input, size_t k, VecSimQueryParams *query_params) {
+    py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         VecSimQueryResult_List res =
-            VecSimIndex_TopKQuery(index, std::string(input).c_str(), k, query_params, BY_SCORE);
+            VecSimIndex_TopKQuery(index, input_to_blob(input), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
@@ -109,23 +101,31 @@ public:
         return wrap_results(res, k);
     }
 
-    py::object range(py::bytearray input, double radius, VecSimQueryParams *query_params) {
-        VecSimQueryResult_List res = VecSimIndex_RangeQuery(index, std::string(input).c_str(),
-                                                            radius, query_params, BY_SCORE);
+    py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
+        VecSimQueryResult_List res =
+            VecSimIndex_RangeQuery(index, input_to_blob(input), radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
-    PyBatchIterator createBatchIterator(py::bytearray input, VecSimQueryParams *query_params) {
-        return PyBatchIterator(
-            VecSimBatchIterator_New(index, std::string(input).c_str(), query_params));
+    PyBatchIterator createBatchIterator(py::object input, VecSimQueryParams *query_params) {
+        return PyBatchIterator(VecSimBatchIterator_New(index, input_to_blob(input), query_params));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
 protected:
     VecSimIndex *index;
+
+private:
+    // save the bytearray to keep its pointer valid
+    py::bytearray tmp_bytearray;
+    const py::function create_bytearray;
+    const char *input_to_blob(py::object input) {
+        tmp_bytearray = create_bytearray(input);
+        return PyByteArray_AS_STRING(tmp_bytearray.ptr());
+    }
 };
 
 class PyHNSWLibIndex : public PyVecSimIndex {
