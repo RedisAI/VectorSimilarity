@@ -1231,7 +1231,8 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     idType currObj = entrypoint_node_;
 
     // create the new element's metadata
-    char tmpData[this->element_graph_data_size_] = {0};
+    char tmpData[this->element_graph_data_size_];
+    memset(tmpData, 0, this->element_graph_data_size_);
     auto cur_meta =
         new (tmpData) element_graph_data(element_max_level, level_data_size_, this->allocator);
 
