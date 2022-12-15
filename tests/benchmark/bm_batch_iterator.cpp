@@ -22,7 +22,7 @@ size_t BM_VecSimBasics::M = 64;
 size_t BM_VecSimBasics::EF_C = 512;
 size_t BM_VecSimBasics::block_size = 1024;
 const char *BM_VecSimBasics::hnsw_index_file =
-    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512.hnsw_v3";
+    "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-efc512.hnsw_v3";
 const char *BM_VecSimBasics::test_vectors_file =
     "tests/benchmark/data/DBpedia-test_vectors-n10k.raw";
 
