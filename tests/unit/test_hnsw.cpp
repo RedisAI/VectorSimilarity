@@ -1854,12 +1854,12 @@ TYPED_TEST(HNSWTest, rangeQueryCosine) {
 TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
 
     size_t dim = 4;
-    size_t n = 1000;
+    size_t n = 1001;
     size_t n_labels[] = {n, 100};
     size_t M = 8;
     size_t ef = 10;
     double epsilon = 0.004;
-    size_t blockSize = 1;
+    size_t blockSize = 2;
     bool is_multi[] = {false, true};
     std::string multiToString[] = {"single", "multi_100labels_"};
 

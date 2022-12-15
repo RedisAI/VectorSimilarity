@@ -148,29 +148,22 @@ VecSimIndex *NewIndex(const std::string &location) {
     }
 
     Serializer::EncodingVersion version = Serializer::ReadVersion(input);
-    HNSWParams params;
-    switch (version) {
-    case Serializer::EncodingVersion_V3: {
-        // Algorithm type is only serialized from V2 up.
-        VecSimAlgo algo = VecSimAlgo_BF;
-        Serializer::readBinaryPOD(input, algo);
-        if (algo != VecSimAlgo_HNSWLIB) {
-            input.close();
-            auto bad_name = VecSimAlgo_ToString(algo);
-            if (bad_name == nullptr) {
-                bad_name = "Unknown (corrupted file?)";
-            }
-            throw std::runtime_error(std::string("Cannot load index: bad algorithm type: ") +
-                                     bad_name);
+
+    VecSimAlgo algo = VecSimAlgo_BF;
+    Serializer::readBinaryPOD(input, algo);
+    if (algo != VecSimAlgo_HNSWLIB) {
+        input.close();
+        auto bad_name = VecSimAlgo_ToString(algo);
+        if (bad_name == nullptr) {
+            bad_name = "Unknown (corrupted file?)";
         }
-        // this information is serialized from V2 and up
-        InitializeParams(input, params);
-        break;
+        throw std::runtime_error(
+            std::string("Cannot load index: Expected HNSW file but got algorithm type: ") +
+            bad_name);
     }
-    // Something is wrong
-    default:
-        throw std::runtime_error("Cannot load index: bad encoding version");
-    }
+
+    HNSWParams params;
+    InitializeParams(input, params);
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
