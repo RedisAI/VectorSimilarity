@@ -66,7 +66,7 @@ def populate_save_index(hnsw_index, index_file_name, X_train):
     # Insert vectors one by one.
     t0 = time.time()
     for i, vector in enumerate(X_train):
-        hnsw_index.add_vector(bytearray(vector), i)
+        hnsw_index.add_vector(vector, i)
     print('Built index time:', (time.time() - t0)/60, "minutes")
     hnsw_index.save_index(index_file_name)
 
@@ -85,7 +85,7 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
 
     # Add all the vectors in the train set into the index.
     for i, vector in enumerate(X_train):
-        bf_index.add_vector(bytearray(vector), i)
+        bf_index.add_vector(vector, i)
     assert bf_index.index_size() == hnsw_index.index_size()
 
     # Measure recall and times
@@ -96,10 +96,10 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
     hnsw_total_time = 0
     for target_vector in X_test[:num_queries]:
         start = time.time()
-        hnsw_labels, hnsw_distances = hnsw_index.knn_query(bytearray(target_vector), k)
+        hnsw_labels, hnsw_distances = hnsw_index.knn_query(target_vector, k)
         hnsw_total_time += (time.time() - start)
         start = time.time()
-        bf_labels, bf_distances = bf_index.knn_query(bytearray(target_vector), k)
+        bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
         bf_total_time += (time.time() - start)
         correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
     # Measure recall
