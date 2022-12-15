@@ -94,16 +94,14 @@ def measure_recall_per_second(hnsw_index, dataset, num_queries, k, ef_runtime):
     hnsw_total_time = 0
     print(os.getpid())
     input("Press Enter to continue...")
-    while True:
-    # if True:
-        for target_vector in X_test[:num_queries]:
-            # start = time.time()
-            hnsw_labels, hnsw_distances = hnsw_index.knn_query(target_vector, k)
-            # hnsw_total_time += (time.time() - start)
-            # start = time.time()
-            # bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
-            # bf_total_time += (time.time() - start)
-            # correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
+    for target_vector in X_test[:num_queries]:
+        start = time.time()
+        hnsw_labels, _ = hnsw_index.knn_query(target_vector, k)
+        hnsw_total_time += (time.time() - start)
+        start = time.time()
+        bf_labels, _ = bf_index.knn_query(target_vector, k)
+        bf_total_time += (time.time() - start)
+        correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
     # Measure recall
     recall = float(correct)/(k*num_queries)
     print("Average recall is:", recall)
