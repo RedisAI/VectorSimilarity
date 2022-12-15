@@ -15,15 +15,15 @@
 * [ann-benchmarks](#ann-benchmark)
 
 # Overview
-We use Google benchmark tool to create our benchmarks.
+We use [Google benchmark](https://github.com/google/benchmark) tool to run micro-benchmarks for the vector indexes functionality.  
 Google benchmark is a popular tool for benchmark code snippets, similar to unit tests. It allows a quick way of estimating the runtime of each test based on several (identical) runs, and print the results as output. For some tests, the output includes additional "Recall" metric, which indicates the accuracy in case of approximate search.  
-**The recall** is calculated as the number of results from the approximate algorithm (HNSW in this case) divided by the ground truth results number (calculated by the brute force algorithm).
+**The recall** is calculated as the number of results returned by the approximate algorithm (HNSW in this case) which belong to the "ground truth" results (calculated by the brute force algorithm), divided by the ground truth results number. 
 
 # Run benchmarks
 ## Required files
-The serialized hnsw indices and the datasets for the ann-benchmarks can be found in 
+The serialized HNSW indices files that are used for micro-benchmarking and running ann-benchmark can be found in
 `tests/benchmark/data/hnsw_indices.txt`.  
-To download all the required files run:
+To download all the required files run from the repository root directory:
 ```asm
 wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
 ```
@@ -41,38 +41,38 @@ make benchmark BENCHMARK_FILTER=fp32*
 There are currently 3 sets of benchmarks available: `BM_VecSimBasics` , `BM_BatchIterator` and `BM_VecSimUpdatedIndex`. Each is templated according to the index data type.
 ## BM_VecSimBasics
 For each combination of data type (fp32/fp64) and label type (single/multi) the following test cases are included:
-1. Index `total memory` 
+1. Mesure index total `memory` (runtime is irrelevant for this use case, just the memory metric) 
 2. `AddLabel` - adds `DEFAULT_BLOCK_SIZE (= 1024)` new labels to the index from the test_query_file. Note that for a single value index each label contains one vector, meaning that the number of new labels equals the number of new vectors.  
 **results:** average time per label, average memory addition per vector and vectors per label.  
 *At the end of the benchmark, we delete the added labels*
 3. `DeleteLabel` - Deletes `DEFAULT_BLOCK_SIZE (= 1024)` labels from the index. Note that for a single value index each label contains one vector, meaning that the number of deleted labels equals the number of deleted vectors.  
 **results:** average time per label, average memory addition per vector (a negative value means that the memory has decreased).  
-*In each iteration , before deletion, we pause the time measurement to store the deleted label data so we can re-add it to the index at the end of the benchmark*
+*In each iteration, before deletion, we pause the time measurement to store the deleted label data so we can re-add it to the index at the end of the benchmark*
 4. Run `Top_K` query over the flat index (using brute-force search), for each `k=10`, `k=100` and `k=500`  
 **results:** average time per iteration
-5. Run **100** iterations of `Top_K` query over the HNSW index, for each pair of `{ef_runtime, k}` from the following: 
+5. Run **100** iterations of `Top_K` query over the HNSW index, for each pair of `{ef_runtime, k}` from the following:  
     `{ef_runtime=10, k=10}`   
     `{ef_runtime=200, k=10}`   
     `{ef_runtime=100, k=100}`   
     `{ef_runtime=200, k=100}`   
     `{ef_runtime=500, k=500}`   
 **results:** average time per iteration, Recall  
-6. Run `Range` query over the flat index (using brute-force search), for each `radiusX100=20`, `radiusX100=35` and `radiusX100=50`  
-**results:** average time per iteration, results number
-7. Run **100** iterations of `Range` query over the HNSW index, for each pair of `{radiusX100, epsilonX1000}` from the following: 
-    `{radiusX100=20, epsilonX1000=1}`   
-    `{radiusX100=20, epsilonX1000=10}`   
-    `{radiusX100=20, epsilonX1000=100}`   
-    `{radiusX100=35, epsilonX1000=1}`   
-    `{radiusX100=35, epsilonX1000=10}`   
-    `{radiusX100=35, epsilonX1000=100}`   
-    `{radiusX100=50, epsilonX1000=1}`   
-    `{radiusX100=50, epsilonX1000=10}`   
-    `{radiusX100=50, epsilonX1000=100}`   
-**results:** average time per iteration, results number, Recall  
+6. Run `Range` query over the flat index (using brute-force search), for each `radius=0.2`, `radius=0.35` and `radius=0.5`  
+**results:** average time per iteration, average results number per iteration
+7. Run **100** iterations of `Range` query over the HNSW index, for each pair of `{radius, epsilon}` from the following:  
+    `{radius=0.2, epsilon=0.001}`   
+    `{radius=0.2, epsilon=0.01}`    
+    `{radius=0.2, epsilon=0.1}`     
+    `{radius=0.35, epsilon=0.001}`   
+    `{radius=0.35, epsilon=0.01}`      
+    `{radius=0.35, epsilon=0.1}`      
+    `{radius=0.5, epsilon=0.001}`   
+    `{radius=0.5, epsilon=0.01}`   
+    `{radius=0.5, epsilon=0.1}`   
+**results:** average time per iteration, average results number per iteration, Recall  
 
 ## BM_BatchIterator
-The purpose of these tests is to benchmark the batched search feature. The batch iterator is a handle which enables running `Top_K` query in batches, by asking for the next best `n` results repeatedly, until there are no more results to return. We use for this test cases the same indices that were built for the "basic benchmark".  
+The purpose of these tests is to benchmark batch iterator functionality. The batch iterator is a handle that enables running `Top_K` query in batches, by asking for the next best `n` results repeatedly, until there are no more results to return. We use for this test cases the same indices that were built for the "basic benchmark" for this test case as well.  
 The test cases are:
 1. Fixed batch size - Run `Top_K` query for each pair of `{batch size, number of batches}` from the following:  
 `{batch size=10, number of batches=1}`  
@@ -109,14 +109,14 @@ The test cases are:
 **HNSW index results:** Time per iteration, memory delta per iteration
 
 ## BM_VecSimUpdatedIndex
-In this tests set we create 4 indices, 2 of each algorithm (flat and hnsw). The first 2, bf and hnsw indices, contain 500K vectors added to an empty index. The next 2 indices also contain 500K vectors, but this time they were added by overriding the 500K vectors of the aforementioned indices. Currently, we only test this for fp32 single value index.  
+For this use case, we create four indices, two for each algorithm (flat and HNSW). The first index per algorithm contains 500K vectors added to an empty index. The second index per algorithm also contains 500K vectors, but this time they were added by overriding the 500K vectors of the aforementioned indices. Currently, we only test this for FP32 single-value index.  
 The test cases are:
 1. Index `total memory` **before** updating
 2. Index `total memory` **after** updating
 3. Run `Top_K` query over the flat index **before** updating (using brute-force search), for each `k=10`, `k=100` and `k=500`  
 4. Run `Top_K` query over the flat index **after** updating (using brute-force search), for each `k=10`, `k=100` and `k=500`  
 **results:** average time per iteration
-5. Run **100** iterations of `Top_K` query over the HNSW index **before** updating, for each pair of `{ef_runtime, k}` from the following: 
+5. Run **100** iterations of `Top_K` query over the HNSW index **before** updating, for each pair of `{ef_runtime, k}` from the following:  
     `{ef_runtime=10, k=10}`   
     `{ef_runtime=200, k=10}`   
     `{ef_runtime=100, k=100}`   
@@ -129,19 +129,19 @@ The test cases are:
     `{ef_runtime=200, k=100}`   
     `{ef_runtime=500, k=500}`   
 **results:** average time per iteration, Recall  
-7. Run `Range` query over the flat index (using brute-force search), for each `radiusX100=20`, `radiusX100=35` and `radiusX100=50`  
-**results:** average time per iteration, results number
-8. Run **100** iterations of `Range` query over the HNSW index, for each pair of `{radiusX100, epsilonX1000}` from the following: 
-    `{radiusX100=20, epsilonX1000=1}`   
-    `{radiusX100=20, epsilonX1000=10}`   
-    `{radiusX100=20, epsilonX1000=100}`   
-    `{radiusX100=35, epsilonX1000=1}`   
-    `{radiusX100=35, epsilonX1000=10}`   
-    `{radiusX100=35, epsilonX1000=100}`   
-    `{radiusX100=50, epsilonX1000=1}`   
-    `{radiusX100=50, epsilonX1000=10}`   
-    `{radiusX100=50, epsilonX1000=100}`   
-**results:** average time per iteration, results number, Recall  
+7. Run `Range` query over the flat index (using brute-force search), for each `radius=0.2`, `radius=0.35` and `radius=0.5`  
+**results:** average time per iteration, average results number per iteration
+8. Run **100** iterations of `Range` query over the HNSW index, for each pair of `{radius, epsilon` from the following:  
+    `{radius=0.2, epsilon=0.001}`   
+    `{radius=0.2, epsilon=0.01}`   
+    `{radius=0.2, epsilon=0.1}`   
+    `{radius=0.35, epsilon=0.001}`   
+    `{radius=0.35, epsilon=0.01}`   
+    `{radius=0.35, epsilon=0.1}`   
+    `{radius=0.5, epsilon=0.001}`   
+    `{radius=0.5, epsilon=0.01}`   
+    `{radius=0.5, epsilon=0.1}`   
+**results:** average time per iteration, average results number per iteration, Recall  
 
 # The benchmarks directory 
 This directory contains the following:
