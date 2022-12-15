@@ -814,9 +814,9 @@ TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
 
 TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     size_t dim = 256;
-    size_t n_labels = 500;
     size_t perLabel = 1;
-    size_t bs = DEFAULT_BLOCK_SIZE / 2;
+    size_t n_labels = 200;
+    size_t bs = 256;
     size_t M = 64;
 
     size_t n = n_labels * perLabel;

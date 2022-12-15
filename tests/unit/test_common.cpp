@@ -11,7 +11,6 @@
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
-// #include "VecSim/utils/serializer.h"
 #include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"

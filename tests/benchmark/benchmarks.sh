@@ -1,4 +1,4 @@
-# echo basics
+echo basics
 # echo updated_index
-# echo spaces
+echo spaces
 echo batch_iterator
