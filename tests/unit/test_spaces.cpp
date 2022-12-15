@@ -99,6 +99,7 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 #ifdef CPU_FEATURES_ARCH_X86_64
 
 using spaces::dist_func_t;
+
 namespace spaces_test {
 // Each array contains all the possible architecture optimization related to one dimension
 // optimization. For example: L2_dist_funcs_16Ext[ARCH_OPT_NONE = 0] = FP32_L2Sqr,
@@ -162,6 +163,159 @@ static dist_func_t<double> IP_dist_funcs_2ExtResiduals[] = {
     FP64_InnerProductSIMD2ExtResiduals_AVX, FP64_InnerProductSIMD2ExtResiduals_AVX512_noDQ,
     FP64_InnerProductSIMD2ExtResiduals_AVX512};
 } // namespace spaces_test
+
+// In the 4 next tests we test #space_#data_type_GetDistFunc for each combination of data type and
+// space. For a dimension that can't be optimized (dimensions[0]), GetDistFunc always returns the
+// naive calculation function, regardless of the supported architecture optimization.
+// fp32_L2_dist_funcs_array[i] is associated with the architecture optimizations that match
+// dimension[i]. Instead of defining an array that all of its entries would be the same
+// naive function and put it in fp32_L2_dist_funcs_array[0],
+// we manually match GetDistFunc(dim = NO_OPTIMIZATION, arch = any) to the naive function,
+// and start to iterate dimensions array from a dimension that can be splitted to optimize the
+// calculations, according to the hardware capabilities.
+TEST_F(SpacesTest, fp32_L2_GetDistFunc) {
+    using namespace spaces_test;
+    using namespace spaces;
+    // fp32_L2_dist_funcs_array[i][j] is a pointer to a function that match CalculationGuideline[i]
+    // and architecture optimization Arch_Optimization[j]
+    static dist_func_t<float> *fp32_L2_dist_funcs_array[] = {
+        nullptr, L2_dist_funcs_16Ext, L2_dist_funcs_4Ext, L2_dist_funcs_16ExtResiduals,
+        L2_dist_funcs_4ExtResiduals};
+    static size_t dimensions[] = {
+        3,  // NO_OPTIMIZATION
+        16, // % 16 ==0,
+        20, //% 4 == 0,
+        17, //>16, % 16 < 4 ,
+        5,  //> 4  ]
+    };
+    /* enum Arch_Optimization {
+    ARCH_OPT_NONE,
+    ARCH_OPT_SSE,
+    ARCH_OPT_AVX,
+    ARCH_OPT_AVX512_F,
+    ARCH_OPT_AVX512_DQ // Relevant only to fp64
+}; */
+    // For each arch
+    for (int arch = ARCH_OPT_NONE; arch <= ARCH_OPT_AVX512_F; ++arch) {
+        ASSERT_EQ(L2_FP32_GetDistFunc(dimensions[NO_OPTIMIZATION], (Arch_Optimization)arch),
+                  FP32_L2Sqr);
+        // For each dimension optimization
+        for (int dim_opt = SPLIT_TO_512_BITS; dim_opt <= SPLIT_TO_512_128_BITS_WITH_RESIDUALS;
+             ++dim_opt) {
+            // Check we choose the correct function
+            ASSERT_EQ(L2_FP32_GetDistFunc(dimensions[dim_opt], (Arch_Optimization)arch),
+                      fp32_L2_dist_funcs_array[dim_opt][arch]);
+        }
+    }
+}
+
+TEST_F(SpacesTest, fp32_InnerProduct_GetDistFunc) {
+    using namespace spaces_test;
+    using namespace spaces;
+    // fp32_IP_dist_funcs_array[i][j] is a pointer to a function that match CalculationGuideline[i]
+    // and architecture optimization Arch_Optimization[j]
+    static dist_func_t<float> *fp32_IP_dist_funcs_array[] = {
+        nullptr, IP_dist_funcs_16Ext, IP_dist_funcs_4Ext, IP_dist_funcs_16ExtResiduals,
+        IP_dist_funcs_4ExtResiduals};
+    static size_t dimensions[] = {
+        3,  // NO_OPTIMIZATION
+        16, // % 16 ==0,
+        20, //% 4 == 0,
+        17, //>16, % 16 < 4 ,
+        5,  //> 4  ]
+    };
+    /* enum Arch_Optimization {
+    ARCH_OPT_NONE,
+    ARCH_OPT_SSE,
+    ARCH_OPT_AVX,
+    ARCH_OPT_AVX512_F,
+    ARCH_OPT_AVX512_DQ // Relevant only to fp64
+}; */
+    // For each arch
+    for (int arch = ARCH_OPT_NONE; arch <= ARCH_OPT_AVX512_F; ++arch) {
+        ASSERT_EQ(IP_FP32_GetDistFunc(dimensions[NO_OPTIMIZATION], (Arch_Optimization)arch),
+                  FP32_InnerProduct);
+        // For each dimension optimization
+        for (int dim_opt = SPLIT_TO_512_BITS; dim_opt <= SPLIT_TO_512_128_BITS_WITH_RESIDUALS;
+             ++dim_opt) {
+            // Check we choose the correct function
+            ASSERT_EQ(IP_FP32_GetDistFunc(dimensions[dim_opt], (Arch_Optimization)arch),
+                      fp32_IP_dist_funcs_array[dim_opt][arch]);
+        }
+    }
+}
+
+TEST_F(SpacesTest, fp64_L2_GetDistFunc) {
+    using namespace spaces_test;
+    using namespace spaces;
+    // fp64_L2_dist_funcs_array[i][j] is a pointer to a function that match CalculationGuideline[i]
+    // and architecture optimization Arch_Optimization[j]
+    static dist_func_t<double> *fp64_L2_dist_funcs_array[] = {
+        nullptr, L2_dist_funcs_8Ext, L2_dist_funcs_2Ext, L2_dist_funcs_8ExtResiduals,
+        L2_dist_funcs_2ExtResiduals};
+    static size_t dimensions[] = {
+        1,  // NO_OPTIMIZATION
+        16, // % 8 ==0,
+        20, //% 2 == 0,
+        17, //>8, % 8 < 2 ,
+        5,  //> 2  ]
+    };
+    /* enum Arch_Optimization {
+    ARCH_OPT_NONE,
+    ARCH_OPT_SSE,
+    ARCH_OPT_AVX,
+    ARCH_OPT_AVX512_F,
+    ARCH_OPT_AVX512_DQ
+}; */
+    // For each arch
+    for (int arch = ARCH_OPT_NONE; arch <= ARCH_OPT_AVX512_DQ; ++arch) {
+        ASSERT_EQ(L2_FP64_GetDistFunc(dimensions[NO_OPTIMIZATION], (Arch_Optimization)arch),
+                  FP64_L2Sqr);
+        // For each dimension optimization
+        for (int dim_opt = SPLIT_TO_512_BITS; dim_opt <= SPLIT_TO_512_128_BITS_WITH_RESIDUALS;
+             ++dim_opt) {
+            // Check we choose the correct function
+            ASSERT_EQ(L2_FP64_GetDistFunc(dimensions[dim_opt], (Arch_Optimization)arch),
+                      fp64_L2_dist_funcs_array[dim_opt][arch]);
+        }
+    }
+}
+
+TEST_F(SpacesTest, fp64_InnerProduct_GetDistFunc) {
+    using namespace spaces_test;
+    using namespace spaces;
+    // fp64_IP_dist_funcs_array[i][j] is a pointer to a function that match CalculationGuideline[i]
+    // and architecture optimization Arch_Optimization[j]
+    static dist_func_t<double> *fp64_IP_dist_funcs_array[] = {
+        nullptr, IP_dist_funcs_8Ext, IP_dist_funcs_2Ext, IP_dist_funcs_8ExtResiduals,
+        IP_dist_funcs_2ExtResiduals};
+    static size_t dimensions[] = {
+        1,  // NO_OPTIMIZATION
+        16, // % 8 ==0,
+        20, //% 2 == 0,
+        17, //>8, % 8 < 2 ,
+        5,  //> 2  ]
+    };
+    /* enum Arch_Optimization {
+    ARCH_OPT_NONE,
+    ARCH_OPT_SSE,
+    ARCH_OPT_AVX,
+    ARCH_OPT_AVX512_F,
+    ARCH_OPT_AVX512_DQ
+}; */
+    // For each arch
+    for (int arch = ARCH_OPT_NONE; arch <= ARCH_OPT_AVX512_DQ; ++arch) {
+        ASSERT_EQ(IP_FP64_GetDistFunc(dimensions[NO_OPTIMIZATION], (Arch_Optimization)arch),
+                  FP64_InnerProduct);
+        // For each dimension optimization
+        for (int dim_opt = SPLIT_TO_512_BITS; dim_opt <= SPLIT_TO_512_128_BITS_WITH_RESIDUALS;
+             ++dim_opt) {
+            // Check we choose the correct function
+            ASSERT_EQ(IP_FP64_GetDistFunc(dimensions[dim_opt], (Arch_Optimization)arch),
+                      fp64_IP_dist_funcs_array[dim_opt][arch]);
+        }
+    }
+}
 
 class FP32SpacesOptimizationTest
     : public testing::TestWithParam<std::pair<size_t, dist_func_t<float> *>> {};
