@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "test_utils.h"
 #include "gtest/gtest.h"
 #include "VecSim/utils/vec_utils.h"
@@ -68,6 +74,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
         expected_n_res = n_res;
     VecSimQueryResult_List res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), expected_n_res);
+    ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
     while (VecSimQueryResult_IteratorHasNext(iterator)) {

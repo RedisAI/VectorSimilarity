@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
@@ -484,6 +490,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
+    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
     this->CastToHNSW(index)->cur_element_count = 1e6;
     vecsim_stl::vector<idType> vec(index->getAllocator());
     for (size_t i = 0; i < 1e5; i++) {
@@ -505,6 +512,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
+    this->CastToHNSW(index)->cur_element_count = actual_element_count;
     VecSimIndex_Free(index);
 }
 
@@ -819,7 +827,7 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
@@ -1478,107 +1486,6 @@ TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     VecSimIndex_Free(index);
 }
 
-// TEST_F(HNSWMultiTest, hnsw_multi_serialization_v1) {
-//     size_t dim = 4;
-//     size_t n = 1000;
-//     size_t M = 8;
-//     size_t ef = 10;
-
-//     VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
-//                         .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-//                                                  .dim = dim,
-//                                                  .metric = VecSimMetric_L2,
-//                                                  .initialCapacity = n,
-//                                                  .blockSize = 1,
-//                                                  .M = M,
-//                                                  .efConstruction = ef,
-//                                                  .efRuntime = ef}};
-//     VecSimIndex *index = VecSimIndex_New(&params);
-
-//     auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-
-//     auto file_name = std::string(getenv("ROOT")) + "/tests/unit/data/1k-d4-L2-M8-ef_c10.hnsw_v1";
-//     // Save and load an empty index.
-//     serializer.saveIndex(file_name);
-//     serializer.loadIndex(file_name);
-//     auto res = serializer.checkIntegrity();
-//     ASSERT_TRUE(res.valid_state);
-
-//     for (size_t i = 0; i < n; i++) {
-//         float f[dim];
-//         for (size_t j = 0; j < dim; j++) {
-//             f[j] = (float)i;
-//         }
-//         VecSimIndex_AddVector(index, (const void *)f, i);
-//     }
-//     // Get index info and copy it, so it will be available after the index is deleted.
-//     VecSimIndexInfo info = VecSimIndex_Info(index);
-
-//     // Persist index with the serializer, and delete it.
-//     serializer.saveIndex(file_name);
-//     VecSimIndex_Free(index);
-
-//     // Create new index, set it into the serializer and extract the data to it.
-//     auto new_index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(new_index), 0);
-
-//     serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(new_index));
-//     serializer.loadIndex(file_name);
-
-//     // Validate that the new loaded index has the same meta-data as the original.
-//     VecSimIndexInfo new_info = VecSimIndex_Info(new_index);
-//     ASSERT_EQ(info.algo, new_info.algo);
-//     ASSERT_EQ(info.hnswInfo.M, new_info.hnswInfo.M);
-//     ASSERT_EQ(info.hnswInfo.efConstruction, new_info.hnswInfo.efConstruction);
-//     ASSERT_EQ(info.hnswInfo.efRuntime, new_info.hnswInfo.efRuntime);
-//     ASSERT_EQ(info.hnswInfo.indexSize, new_info.hnswInfo.indexSize);
-//     ASSERT_EQ(info.hnswInfo.max_level, new_info.hnswInfo.max_level);
-//     ASSERT_EQ(info.hnswInfo.entrypoint, new_info.hnswInfo.entrypoint);
-//     ASSERT_EQ(info.hnswInfo.metric, new_info.hnswInfo.metric);
-//     ASSERT_EQ(info.hnswInfo.type, new_info.hnswInfo.type);
-//     ASSERT_EQ(info.hnswInfo.dim, new_info.hnswInfo.dim);
-
-//     res = serializer.checkIntegrity();
-//     ASSERT_TRUE(res.valid_state);
-
-//     // Add 1000 random vectors, override the existing ones to trigger deletions.
-//     std::vector<float> data((n + 1) * dim);
-//     std::mt19937 rng;
-//     rng.seed(47);
-//     std::uniform_real_distribution<> distrib;
-//     for (size_t i = 0; i < (n + 1) * dim; ++i) {
-//         data[i] = (float)distrib(rng);
-//     }
-//     for (size_t i = 0; i < n + 1; ++i) {
-//         VecSimIndex_AddVector(new_index, data.data() + dim * i, i);
-//     }
-
-//     // Delete arbitrary vector (trigger removal of a block).
-//     VecSimIndex_DeleteVector(new_index, (size_t)(distrib(rng) * (n + 1)));
-
-//     HNSWIndex<float, float> *hnswNewIndex = reinterpret_cast<HNSWIndex<float, float>
-//     *>(new_index); ASSERT_EQ(hnswNewIndex->getIndexCapacity(), n);
-
-//     // Persist index, delete it from memory and restore.
-//     serializer.saveIndex(file_name);
-//     VecSimIndex_Free(new_index);
-
-//     params.hnswParams.initialCapacity = n / 2; // to ensure that we resize in load time.
-//     auto restored_index = VecSimIndex_New(&params);
-//     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), 0);
-
-//     serializer.reset(reinterpret_cast<HNSWIndex<float, float> *>(restored_index));
-//     serializer.loadIndex(file_name);
-//     ASSERT_EQ(VecSimIndex_IndexSize(restored_index), n);
-//     res = serializer.checkIntegrity();
-//     ASSERT_TRUE(res.valid_state);
-
-//     // Clean-up.
-//     remove(file_name.c_str());
-//     VecSimIndex_Free(restored_index);
-//     serializer.reset();
-// }
-
 TYPED_TEST(HNSWMultiTest, testCosine) {
     size_t dim = 4;
     size_t n = 100;
@@ -1730,6 +1637,109 @@ TYPED_TEST(HNSWMultiTest, rangeQuery) {
         ASSERT_EQ(score, dim * pow(std::abs(int(id - pivot_id)), 2));
     };
     runRangeQueryTest(index, query, radius, verify_res_by_id, expected_num_results);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWMultiTest, markDelete) {
+    size_t n_labels = 100;
+    size_t per_label = 10;
+    size_t k = 11;
+    size_t dim = 4;
+    VecSimBatchIterator *batchIterator;
+
+    size_t n = n_labels * per_label;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // Try marking and unmarking non-existing label
+    ASSERT_FALSE(this->CastToHNSW(index)->markDelete(0));
+    ASSERT_FALSE(this->CastToHNSW(index)->unmarkDelete(0));
+
+    for (size_t i = 0; i < n_labels; i++) {
+        for (size_t j = 0; j < per_label; j++)
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i * per_label + j);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
+    // Search for k results from the origin. expect to find them.
+    auto verify_res = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id, idx);
+        ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
+        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], id * per_label + j);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res);
+    // with all vectors, this is the element of the k-th vector from the origin
+    size_t all_element = per_label * (k - 1);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
+
+    unsigned char ep_reminder = index->info().hnswInfo.entrypoint % 2;
+    // Mark as deleted half of the vectors including the entrypoint.
+    for (labelType label = 0; label < n_labels; label++)
+        if (label % 2 == ep_reminder)
+            this->CastToHNSW(index)->markDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
+    // This value is very close to a deleted vector
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
+    for (size_t level = 0; level <= this->CastToHNSW_Multi(index)->element_levels_[n]; level++) {
+        idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
+        linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
+        for (size_t idx = 0; idx < size; idx++) {
+            ASSERT_TRUE((neighbors[idx] / per_label) % 2 != ep_reminder)
+                << "Got a link to " << neighbors[idx] << " on level " << level;
+        }
+    }
+
+    // Search for k results around the middle. expect to find only even results.
+    auto verify_res_even = [&](size_t id, double score, size_t idx) {
+        ASSERT_NE(id % 2, ep_reminder);
+        ASSERT_EQ(id, idx * 2);
+        ASSERT_EQ(score, dim * per_label * per_label * id * id);
+        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        for (size_t j = 0; j < ids.size(); j++) {
+            // Verifying that each vector is labeled correctly.
+            // ID is calculated according to insertion order.
+            ASSERT_EQ(ids[j], id * per_label + j);
+        }
+    };
+    runTopKSearchTest(index, query, k, verify_res_even);
+    // with only even vectors, this is the element of the k-th vector from the origin.
+    size_t even_el = all_element * 2 + (1 - ep_reminder);
+    runRangeQueryTest(index, query, dim * even_el * even_el, verify_res_even, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
+    VecSimBatchIterator_Free(batchIterator);
+
+    // Unmark the previously marked vectors.
+    for (labelType label = 0; label < n_labels; label++)
+        if (label % 2 == ep_reminder)
+            this->CastToHNSW(index)->unmarkDelete(label);
+
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+
+    // Search for k results around the middle again. expect to find the same results we found in the
+    // first search.
+    runTopKSearchTest(index, query, k, verify_res);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);
 }

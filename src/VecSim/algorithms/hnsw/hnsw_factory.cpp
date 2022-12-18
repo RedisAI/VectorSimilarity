@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
@@ -9,7 +15,7 @@ namespace HNSWFactory {
 template <typename DataType, typename DistType = DataType>
 inline HNSWIndex<DataType, DistType> *
 NewIndex_ChooseMultiOrSingle(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
-    // check if single and return new bf_index
+    // check if single and return new hnsw_index
     if (params->multi)
         return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
     else
@@ -64,7 +70,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     // Explicit allocation calls - always allocate a header.
     est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
 
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *);
+    size_t size_links_level0 =
+        sizeof(elementFlags) + sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
         size_links_level0 + params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
     est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
@@ -74,9 +81,9 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
 size_t EstimateElementSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t size_links_level0 = sizeof(linklistsizeint) + M * 2 * sizeof(idType) + sizeof(void *) +
+    size_t size_links_level0 = sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *) +
                                sizeof(vecsim_stl::vector<idType>);
-    size_t size_links_higher_level = sizeof(linklistsizeint) + M * sizeof(idType) + sizeof(void *) +
+    size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) +
                                      sizeof(vecsim_stl::vector<idType>);
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
@@ -138,4 +145,90 @@ VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
     }
 }
 
+#ifdef BUILD_TESTS
+
+template <typename DataType, typename DistType = DataType>
+inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
+                                                 std::shared_ptr<VecSimAllocator> allocator,
+                                                 Serializer::EncodingVersion version) {
+    HNSWIndex<DataType, DistType> *index = nullptr;
+    // check if single and call the ctor that loads index information from file.
+    if (params->multi)
+        index =
+            new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator, version);
+    else
+        index =
+            new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
+
+    index->restoreGraph(input);
+
+    return index;
+}
+
+// Intialize @params from file for V2
+static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
+    Serializer::readBinaryPOD(source_params, params.dim);
+    Serializer::readBinaryPOD(source_params, params.type);
+    Serializer::readBinaryPOD(source_params, params.metric);
+    Serializer::readBinaryPOD(source_params, params.blockSize);
+    Serializer::readBinaryPOD(source_params, params.multi);
+    Serializer::readBinaryPOD(source_params, params.epsilon);
+}
+
+// Intialize @params for V1
+static void InitializeParams(const HNSWParams *source_params, HNSWParams &params) {
+    params.type = source_params->type;
+    params.dim = source_params->dim;
+    params.metric = source_params->metric;
+    params.multi = source_params->multi;
+    params.blockSize = source_params->blockSize ? source_params->blockSize : DEFAULT_BLOCK_SIZE;
+    params.epsilon = source_params->epsilon ? source_params->epsilon : HNSW_DEFAULT_EPSILON;
+}
+
+VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) {
+
+    std::ifstream input(location, std::ios::binary);
+    if (!input.is_open()) {
+        throw std::runtime_error("Cannot open file");
+    }
+
+    Serializer::EncodingVersion version = Serializer::ReadVersion(input);
+    HNSWParams params;
+    switch (version) {
+    case Serializer::EncodingVersion_V2: {
+        // Algorithm type is only serialized from V2 up.
+        VecSimAlgo algo = VecSimAlgo_BF;
+        Serializer::readBinaryPOD(input, algo);
+        if (algo != VecSimAlgo_HNSWLIB) {
+            input.close();
+            throw std::runtime_error("Cannot load index: bad algorithm type");
+        }
+        // this information is serialized from V2 and up
+        InitializeParams(input, params);
+        break;
+    }
+    case Serializer::EncodingVersion_V1: {
+        assert(v1_params);
+        InitializeParams(v1_params, params);
+        break;
+    }
+    // Something is wrong
+    default:
+        throw std::runtime_error("Cannot load index: bad encoding version");
+    }
+    Serializer::readBinaryPOD(input, params.initialCapacity);
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    if (params.type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
+    } else if (params.type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
+    } else {
+        throw std::runtime_error("Cannot load index: bad index data type");
+    }
+}
+#endif
+
 }; // namespace HNSWFactory
+

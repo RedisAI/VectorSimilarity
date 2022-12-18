@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 #include "VecSim/vec_sim_common.h"
 #include <stddef.h>
@@ -33,7 +39,7 @@ public:
     void operator delete(void *p, size_t size);
     void operator delete[](void *p, size_t size);
 
-    int64_t getAllocationSize();
+    int64_t getAllocationSize() const;
     inline friend bool operator==(const VecSimAllocator &a, const VecSimAllocator &b) {
         return a.allocated == b.allocated;
     }

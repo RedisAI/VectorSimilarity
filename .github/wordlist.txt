@@ -23,3 +23,7 @@ tox
 valgrind
 virtualenv
 whl
+datasets
+runtime
+RedisAI
+dataset

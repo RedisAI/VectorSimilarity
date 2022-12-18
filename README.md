@@ -1,6 +1,5 @@
-[![CircleCI](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main.svg?style=svg)](https://circleci.com/gh/RedisAI/VectorSimilarity/tree/main)
+[![nightly](https://github.com/RedisAI/VectorSimilarity/actions/workflows/nightly.yml/badge.svg)](https://github.com/RedisAI/VectorSimilarity/actions/workflows/nightly.yml)
 [![codecov](https://codecov.io/gh/RedisAI/VectorSimilarity/branch/main/graph/badge.svg)](https://codecov.io/gh/RedisAI/VectorSimilarity)
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/RedisAI/VectorSimilarity.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/RedisAI/VectorSimilarity/alerts/)
 [![CodeQL](https://github.com/RedisAI/VectorSimilarity/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/RedisAI/VectorSimilarity/actions/workflows/codeql-analysis.yml)
 [![Known Vulnerabilities](https://snyk.io/test/github/RedisAI/VectorSimilarity/badge.svg)](https://snyk.io/test/github/RedisAI/VectorSimilarity)
 
@@ -14,11 +13,30 @@ The API header files are `vec_sim.h` and `query_results.h`, which are located in
 
 ## Algorithms
 
+All of the algorithms in this library is designed to work inside RediSearch and supports the following features:
+1. In place insert, delete, update of vectors in the index.
+2. KNN queries - results can be ordered by score or ID.
+3. Iterator interface for consecutive KNN queries.
+4. Range queries
+5. Multiple vector indexing for the same label (multi value indexing)
+6. 3rd party allocators
+
+#### Datatypes SIMD support
+
+| Operation | x86_64 | arm64v8 | Apple silicone |
+|-----------|--------|---------|-----------------|
+| FP32 Internal product |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
+| FP32 L2 distance |SSE, AVX, AVX512| No SIMD support | No SIMD support |
+| FP64 Internal product |SSE, AVX, AVX512, AVX512DQ | No SIMD support | No SIMD support |
+| FP64 L2 distance |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
+
 ### Flat (Brute Force)
-TBD
+
+Brute force comparison of the query vector `q` with the stored vectors. Vectors are stored in vector blocks, which are contiguous memory block, with configurable size.
+
 
 ### HNSW
-TBD
+Modified implementation of [hnswlib](https://github.com/nmslib/hnswlib). Modified to accommodate the above feature set.
 
 ## Build
 For building you will need:
@@ -35,57 +53,13 @@ make
 To execute unit tests run
 
 ```
-make
 make unit_test
 ```
 ## Memory check
 
 To run unit with valgrind run
 ```
-make VALGRIND=1
 make unit_test VALGRIND=1
-```
-
-To run unit tests with clang memory and address sanitizers, we have provided you a docker image to do so.
-
-#### VSCode devcontainer
-If you are using VSCode, make sure you have the [Visual Studio Code Remote Development Extension Pack](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack]) installed. You will be prompt about opening the repository in the devcontainer. This will automatically setup a development container with all the dependencies installed and will use [Oh My ZSH](https://ohmyz.sh/) as shell.
-
-When done, execute below for memory sanitizer
-```
-make
-make unit_test SAN=memory
-```
-
-Or execute below for address sanitizer
-```
-make
-make unit_test SAN=address
-```
-
-#### Docker build
-Build and run the docker image
-```
-docker build .devcontainer -t vecsim_sanitizer
-docker run -it -v "$(pwd)":/project vecsim_sanitizer
-```
-
-When on docker, you will need to install the dependencies in order to build and run tests
-```
-$ cd /project
-$ ./sbin/system-setup.p
-```
-
-When done, execute below for memory sanitizer
-```
-make
-make unit_test SAN=memory
-```
-
-Or execute below for address sanitizer
-```
-make
-make unit_test SAN=address
 ```
 
 ## Python bindings

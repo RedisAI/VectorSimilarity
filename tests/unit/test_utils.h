@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include <functional>
@@ -106,6 +112,21 @@ inline double GetInfVal(VecSimType type) {
         throw std::invalid_argument("This type is not supported");
     }
 }
+
+// Test a specific exception type is thrown and prints the right message.
+#define ASSERT_EXCEPTION_MESSAGE(VALUE, EXCEPTION_TYPE, MESSAGE)                                   \
+    try {                                                                                          \
+        VALUE;                                                                                     \
+        FAIL() << "exception '" << MESSAGE << "' not thrown at all!";                              \
+    } catch (const EXCEPTION_TYPE &e) {                                                            \
+        EXPECT_EQ(std::string(MESSAGE), e.what())                                                  \
+            << " exception message is incorrect. Expected the following "                          \
+               "message:\n\n"                                                                      \
+            << MESSAGE << "\n";                                                                    \
+    } catch (...) {                                                                                \
+        FAIL() << "exception '" << MESSAGE << "' not thrown with expected type '"                  \
+               << #EXCEPTION_TYPE << "'!";                                                         \
+    }
 
 namespace tiered_index_mock {
 using JobQueue = std::queue<void *>;

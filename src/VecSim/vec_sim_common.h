@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #ifdef __cplusplus
@@ -26,6 +32,9 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
+
+// Vectors flags (for marking a specific vector)
+typedef enum { DELETE_MARK = 0x01 } Flags;
 
 typedef size_t labelType;
 typedef unsigned int idType;
@@ -230,6 +239,8 @@ typedef enum {
     VecSim_QueryResult_OK = VecSim_OK,
     VecSim_QueryResult_TimedOut,
 } VecSimQueryResult_Code;
+
+#define VECSIM_TIMEOUT(ctx) (__builtin_expect(VecSimIndexInterface::timeoutCallback(ctx), false))
 
 #ifdef __cplusplus
 }

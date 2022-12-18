@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
@@ -1368,7 +1374,7 @@ TYPED_TEST(BruteForceTest, testSizeEstimation) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
     estimation = EstimateElementSize(params) * bs;
@@ -1393,7 +1399,7 @@ TYPED_TEST(BruteForceTest, testInitialSizeEstimationWithInitialCapacity) {
     // changed in CreateNewIndex.
     size_t estimation = EstimateInitialSize(params);
 
-    size_t actual = index->getAllocator()->getAllocationSize();
+    size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
     VecSimIndex_Free(index);

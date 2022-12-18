@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"
@@ -104,8 +110,6 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_BF:
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
-        default:
-            break;
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
@@ -124,16 +128,16 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    int64_t before = index->getAllocator()->getAllocationSize();
+    int64_t before = index->getAllocationSize();
     index->addVector(blob, id);
-    int64_t after = index->getAllocator()->getAllocationSize();
+    int64_t after = index->getAllocationSize();
     return after - before;
 }
 
 extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
-    int64_t before = index->getAllocator()->getAllocationSize();
+    int64_t before = index->getAllocationSize();
     index->deleteVector(id);
-    int64_t after = index->getAllocator()->getAllocationSize();
+    int64_t after = index->getAllocationSize();
     return after - before;
 }
 

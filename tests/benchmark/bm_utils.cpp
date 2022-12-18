@@ -1,21 +1,12 @@
+
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "bm_utils.h"
-
-void load_HNSW_index(const char *path, VecSimIndex *hnsw_index) {
-
-    // Load the index file, if it exists in the expected path.
-    auto location = std::string(getenv("ROOT"));
-    auto file_name = location + "/" + path;
-    auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index));
-    std::ifstream input(file_name, std::ios::binary);
-    if (input.is_open()) {
-        serializer.loadIndex(file_name);
-        if (!serializer.checkIntegrity().valid_state) {
-            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
-        }
-    } else {
-        throw std::runtime_error("HNSW index file was not found in path. Exiting...");
-    }
-}
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 void load_test_vectors(const char *path, std::vector<std::vector<float>> &queries, size_t n_queries,
                        size_t dim) {
@@ -47,21 +38,20 @@ BM_VecSimBasics::BM_VecSimBasics() {
 
 void BM_VecSimBasics::Initialize() {
 
-    // Initialize and load HNSW index for DBPedia data set.
-    VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                           .hnswParams = HNSWParams{.type = VecSimType_FLOAT32,
-                                                    .dim = BM_VecSimBasics::dim,
-                                                    .metric = VecSimMetric_Cosine,
-                                                    .initialCapacity = BM_VecSimBasics::n_vectors,
-                                                    .blockSize = BM_VecSimBasics::block_size,
-                                                    .M = BM_VecSimBasics::M,
-                                                    .efConstruction = BM_VecSimBasics::EF_C}};
-    BM_VecSimBasics::hnsw_index = VecSimIndex_New(&params);
+    // HNSWParams is required to load v1 index
+    HNSWParams params = {.type = VecSimType_FLOAT32,
+                         .dim = BM_VecSimBasics::dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = false,
+                         .blockSize = BM_VecSimBasics::block_size};
 
-    // Load pre-generated HNSW index. Index file path is relative to repository root dir.
-    load_HNSW_index(hnsw_index_file, hnsw_index);
+    // Generate index from file.
+    hnsw_index = HNSWFactory::NewIndex(GetSerializedIndexLocation(BM_VecSimBasics::hnsw_index_file),
+                                       &params);
+
+    auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
     size_t ef_r = 10;
-    reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->setEf(ef_r);
+    hnsw_index_casted->setEf(ef_r);
 
     VecSimParams bf_params = {.algo = VecSimAlgo_BF,
                               .bfParams = BFParams{.type = VecSimType_FLOAT32,
@@ -73,8 +63,7 @@ void BM_VecSimBasics::Initialize() {
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
-        char *blob =
-            reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
+        char *blob = hnsw_index_casted->getDataByInternalId(i);
         VecSimIndex_AddVector(bf_index, blob, i);
     }
 

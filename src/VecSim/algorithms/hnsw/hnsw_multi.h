@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "hnsw.h"
@@ -10,12 +16,16 @@ private:
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> label_lookup_;
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
 #include "VecSim/algorithms/hnsw/hnsw_multi_tests_friends.h"
 #endif
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override {
+        // Checking if an element with the given label already exists.
+        // if not, add an empty vector under the new label.
+        if (label_lookup_.find(label) == label_lookup_.end()) {
+            label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
+        }
         label_lookup_.at(label).push_back(id);
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
@@ -25,7 +35,13 @@ public:
                     size_t random_seed = 100, size_t initial_pool_size = 1)
         : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}
-
+#ifdef BUILD_TESTS
+    // Ctor to be used before loading a serialized index. Can be used from v2 and up.
+    HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
+                    std::shared_ptr<VecSimAllocator> allocator, Serializer::EncodingVersion version)
+        : HNSWIndex<DataType, DistType>(input, params, allocator, version),
+          label_lookup_(this->max_elements_, allocator) {}
+#endif
     ~HNSWIndex_Multi() {}
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
@@ -45,6 +61,8 @@ public:
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
+    inline int markDelete(labelType label) override;
+    inline int unmarkDelete(labelType label) override;
 };
 
 /**
@@ -67,8 +85,10 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
-        dist = (dist < d) ? dist : d;
+        if (!this->isMarkedDeleted(id)) {
+            DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+            dist = (dist < d) ? dist : d;
+        }
     }
 
     return dist;
@@ -118,12 +138,6 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
 
-    // Checking if an element with the given label already exists.
-    // if not, add an empty vector under the new label.
-    if (label_lookup_.find(label) == label_lookup_.end()) {
-        label_lookup_.emplace(label, vecsim_stl::vector<idType>{this->allocator});
-    }
-
     return this->appendVector(vector_data, label);
 }
 
@@ -139,4 +153,38 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);
+}
+
+/**
+ * Marks an element with the given label deleted, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
+    auto search = label_lookup_.find(label);
+    if (search == label_lookup_.end()) {
+        return false;
+    }
+
+    for (idType id : search->second) {
+        this->markDeletedInternal(id);
+    }
+    return true;
+}
+
+/**
+ * Remove the deleted mark of the node, does NOT really change the current graph.
+ * @param label
+ */
+template <typename DataType, typename DistType>
+int HNSWIndex_Multi<DataType, DistType>::unmarkDelete(labelType label) {
+    auto search = label_lookup_.find(label);
+    if (search == label_lookup_.end()) {
+        return false;
+    }
+
+    for (idType id : search->second) {
+        this->unmarkDeletedInternal(id);
+    }
+    return true;
 }

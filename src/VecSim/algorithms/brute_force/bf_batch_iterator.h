@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "VecSim/batch_iterator.h"
@@ -178,7 +184,7 @@ BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryRe
             return {NULL, rc};
         }
     }
-    if (__builtin_expect(VecSimIndex::timeoutCallback(this->getTimeoutCtx()), 0)) {
+    if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
         return {NULL, VecSim_QueryResult_TimedOut};
     }
     VecSimQueryResult_List rl = searchByHeuristics(n_res, order);

@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "vector_block.h"
@@ -212,7 +218,7 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
     size_t len = block->getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
-        if (__builtin_expect(VecSimIndexAbstract<DistType>::timeoutCallback(timeoutCtx), 0)) {
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
@@ -332,7 +338,7 @@ VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
     info.bfInfo.indexSize = this->count;
     info.bfInfo.indexLabelCount = this->indexLabelCount();
     info.bfInfo.blockSize = this->blockSize;
-    info.bfInfo.memory = this->allocator->getAllocationSize();
+    info.bfInfo.memory = this->getAllocationSize();
     info.bfInfo.isMulti = this->isMulti;
     info.bfInfo.last_mode = this->last_mode;
     return info;

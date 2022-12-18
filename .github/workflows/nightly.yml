@@ -1,0 +1,19 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+
+
+jobs:
+  build:
+    uses: ./.github/workflows/default.yml
+    secrets: inherit
+
+  multi-architectures:
+    uses: ./.github/workflows/multi-build.yml
+    secrets: inherit
+
+  benchmark:
+    uses: ./.github/workflows/benchmark.yml
+    secrets: inherit

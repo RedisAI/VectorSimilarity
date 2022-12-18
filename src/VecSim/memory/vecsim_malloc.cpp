@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "vecsim_malloc.h"
 #include <stdlib.h>
 #include <memory>
@@ -71,4 +77,4 @@ void *VecSimAllocator::operator new[](size_t size) { return vecsim_malloc(size);
 void VecSimAllocator::operator delete(void *p, size_t size) { vecsim_free(p); }
 void VecSimAllocator::operator delete[](void *p, size_t size) { vecsim_free(p); }
 
-int64_t VecSimAllocator::getAllocationSize() { return *this->allocated.get(); }
+int64_t VecSimAllocator::getAllocationSize() const { return *this->allocated.get(); }

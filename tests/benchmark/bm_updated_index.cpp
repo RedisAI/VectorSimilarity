@@ -1,17 +1,24 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/utils/serializer.h"
 #include "bm_utils.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
 // Global benchmark data
 size_t BM_VecSimBasics::n_vectors = 500000;
 size_t BM_VecSimBasics::n_queries = 10000;
 size_t BM_VecSimBasics::dim = 768;
-VecSimIndex *BM_VecSimBasics::bf_index;
 VecSimIndex *BM_VecSimBasics::hnsw_index;
+VecSimIndex *BM_VecSimBasics::bf_index;
 std::vector<std::vector<float>> *BM_VecSimBasics::queries;
 size_t BM_VecSimBasics::M = 65;
 size_t BM_VecSimBasics::EF_C = 512;
@@ -47,33 +54,36 @@ protected:
                                                .initialCapacity = BM_VecSimBasics::n_vectors}};
         BM_VecSimUpdatedIndex::bf_index_updated = VecSimIndex_New(&bf_params);
 
+        auto hnsw_index_casted = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index);
         // Initially, load all the vectors to the updated bf index (before we override it).
         for (size_t i = 0; i < BM_VecSimBasics::n_vectors; ++i) {
-            char *blob =
-                reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getDataByInternalId(i);
-            size_t label =
-                reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index)->getExternalLabel(i);
+            char *blob = hnsw_index_casted->getDataByInternalId(i);
+            size_t label = hnsw_index_casted->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
 
-        // Initialize and populate an HNSW index where all vectors have been updated.
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                               .hnswParams =
-                                   HNSWParams{.type = VecSimType_FLOAT32,
-                                              .dim = BM_VecSimBasics::dim,
-                                              .metric = VecSimMetric_Cosine,
-                                              .initialCapacity = BM_VecSimBasics::n_vectors,
-                                              .M = BM_VecSimBasics::M,
-                                              .efConstruction = BM_VecSimBasics::EF_C}};
-        BM_VecSimUpdatedIndex::hnsw_index_updated = VecSimIndex_New(&params);
-        load_HNSW_index(updated_hnsw_index_file, hnsw_index_updated);
+        // Generate the updated index from file.
+        // HNSWParams is required to load v1 index
+        HNSWParams params = {.type = VecSimType_FLOAT32,
+                             .dim = BM_VecSimBasics::dim,
+                             .metric = VecSimMetric_Cosine,
+                             .multi = false,
+                             .blockSize = BM_VecSimBasics::block_size};
 
+        // Generate index from file.
+        hnsw_index_updated = HNSWFactory::NewIndex(
+            BM_VecSimBasics::GetSerializedIndexLocation(updated_hnsw_index_file), &params);
+
+        auto hnsw_index_updated_casted =
+            reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated);
+
+        if (!hnsw_index_updated_casted->checkIntegrity().valid_state) {
+            throw std::runtime_error("The loaded HNSW index is corrupted. Exiting...");
+        }
         // Add the same vectors to the *updated* FLAT index (override the previous vectors).
         for (size_t i = 0; i < n_vectors; ++i) {
-            char *blob = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
-                             ->getDataByInternalId(i);
-            size_t label = reinterpret_cast<HNSWIndex<float, float> *>(hnsw_index_updated)
-                               ->getExternalLabel(i);
+            char *blob = hnsw_index_updated_casted->getDataByInternalId(i);
+            size_t label = hnsw_index_updated_casted->getExternalLabel(i);
             VecSimIndex_AddVector(bf_index_updated, blob, label);
         }
     }

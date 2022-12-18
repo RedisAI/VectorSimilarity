@@ -1,3 +1,7 @@
+# Copyright Redis Ltd. 2021 - present
+# Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+# the Server Side Public License v1 (SSPLv1).
+
 import os
 from common import *
 import hnswlib
@@ -302,9 +306,7 @@ def test_serialization():
     file_name = os.getcwd()+"/dump"
     hnsw_index.save_index(file_name)
 
-    new_hnsw_index = HNSWIndex(hnswparams)
-    assert new_hnsw_index.index_size() == 0
-    new_hnsw_index.load_index(file_name)
+    new_hnsw_index = HNSWIndex(file_name, hnswparams)
     os.remove(file_name)
     assert new_hnsw_index.index_size() == num_elements
 
@@ -366,7 +368,7 @@ def test_range_query():
         end = time.time()
         res_num = len(hnsw_labels[0])
 
-        dists = sorted([(key, spatial.distance.sqeuclidean(query_data, vec)) for key, vec in vectors])
+        dists = sorted([(key, spatial.distance.sqeuclidean(query_data.flat, vec)) for key, vec in vectors])
         actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
         print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
@@ -491,17 +493,17 @@ def test_multi_range_query():
     # calculate distances of the labels in the index
     dists = {}
     for key, vec in vectors:
-        dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
+        dists[key] = min(spatial.distance.sqeuclidean(query_data.flat, vec), dists.get(key, np.inf))
 
     dists = list(dists.items())
     dists = sorted(dists, key=lambda pair: pair[1])
     keys = [key for key, dist in dists if dist <= radius]
 
-    for epsilon_rt in [0.001, 0.01, 0.1]:
-        query_params = VecSimQueryParams()
-        query_params.hnswRuntimeParams.epsilon = epsilon_rt
-        start = time.time()
-        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+    for epsilon_rt in [0.001, 0.01, 0.1]:                   
+        query_params = VecSimQueryParams()                  
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt                 
+        start = time.time()                 
+        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)                    
         end = time.time()
         res_num = len(hnsw_labels[0])
 

@@ -1,3 +1,7 @@
+# Copyright Redis Ltd. 2021 - present
+# Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+# the Server Side Public License v1 (SSPLv1).
+
 from common import *
 
 
@@ -24,7 +28,7 @@ def test_bf_cosine():
 
     query_data = np.float32(np.random.random((1, dim)))
 
-    dists = [(spatial.distance.cosine(query_data, vec), key) for key, vec in vectors]
+    dists = [(spatial.distance.cosine(query_data.flat, vec), key) for key, vec in vectors]
     dists = sorted(dists)[:k]
     keys = [key for _, key in dists[:k]]
     dists = [dist for dist, _ in dists[:k]]
@@ -60,7 +64,7 @@ def test_bf_l2():
 
     query_data = np.float32(np.random.random((1, dim)))
 
-    dists = [(spatial.distance.euclidean(query_data, vec), key) for key, vec in vectors]
+    dists = [(spatial.distance.euclidean(query_data.flat, vec), key) for key, vec in vectors]
     dists = sorted(dists)[:k]
     keys = [key for _, key in dists[:k]]
     start = time.time()
@@ -152,7 +156,7 @@ def test_range_query():
     print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds, got {res_num} results')
 
     # Verify that we got exactly all vectors within the range
-    dists = sorted([(spatial.distance.euclidean(query_data, vec), key) for key, vec in vectors])
+    dists = sorted([(spatial.distance.euclidean(query_data.flat, vec), key) for key, vec in vectors])
     keys = [key for _, key in dists[:res_num]]
     assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
     # The distance return by the library is L2^2
@@ -198,7 +202,7 @@ def test_bf_multivalue():
         # Setting or updating the score for each label. If it's the first time we calculate a score for a label,
         # dists.get(key, 3) will return 3, which is more than a Cosine score can be,
         # so we will choose the actual score the first time.
-        dists[key] = min(spatial.distance.cosine(query_data, vec), dists.get(key, 3)) # cosine distance is always <= 2
+        dists[key] = min(spatial.distance.cosine(query_data.flat, vec), dists.get(key, 3)) # cosine distance is always <= 2
 
     dists = list(dists.items())
     dists = sorted(dists, key=lambda pair: pair[1])[:k]
@@ -242,7 +246,7 @@ def test_multi_range_query():
     # calculate distances of the labels in the index
     dists = {}
     for key, vec in vectors:
-        dists[key] = min(spatial.distance.sqeuclidean(query_data, vec), dists.get(key, np.inf))
+        dists[key] = min(spatial.distance.sqeuclidean(query_data.flat, vec), dists.get(key, np.inf))
 
     dists = list(dists.items())
     dists = sorted(dists, key=lambda pair: pair[1])
@@ -254,7 +258,7 @@ def test_multi_range_query():
     res_num = len(bf_labels[0])
 
     print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds')
-    
+
     # Recall should be 100%.
     assert res_num == len(keys)
 

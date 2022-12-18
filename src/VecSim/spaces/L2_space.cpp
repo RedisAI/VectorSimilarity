@@ -1,25 +1,28 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/space_aux.h"
 #include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/L2/L2_AVX512DQ.h"
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
 namespace spaces {
 
-dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
 #if defined(M1)
 #elif defined(__x86_64__)
 
     CalculationGuideline optimization_type = FP32_GetCalculationGuideline(dim);
+
     switch (arch_opt) {
-    case ARCH_OPT_NONE:
-        break;
-    case ARCH_OPT_AVX512_F:
     case ARCH_OPT_AVX512_DQ:
+    case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
     {
         static dist_func_t<float> dist_funcs[] = {
@@ -49,23 +52,24 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim) {
 
         ret_dist_func = dist_funcs[optimization_type];
     } break;
-    } // switch
 #endif
+    case ARCH_OPT_NONE:
+        break;
+    } // switch
 
 #endif // __x86_64__
     return ret_dist_func;
 }
 
-dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<double> ret_dist_func = FP64_L2Sqr;
 #if defined(M1)
 #elif defined(__x86_64__)
 
     CalculationGuideline optimization_type = FP64_GetCalculationGuideline(dim);
+
     switch (arch_opt) {
-    case ARCH_OPT_NONE:
-        break;
     case ARCH_OPT_AVX512_DQ:
 #ifdef __AVX512DQ__
     {
@@ -85,8 +89,8 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
         // tails. Then, we use modified versions that split both part of the computation without
         // using the unsupported extraction operation.
         static dist_func_t<double> dist_funcs[] = {
-            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD8ExtResiduals_AVX512,
-            FP64_L2SqrSIMD2Ext_AVX512_noDQ, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ};
+            FP64_L2Sqr, FP64_L2SqrSIMD8Ext_AVX512, FP64_L2SqrSIMD2Ext_AVX512_noDQ,
+            FP64_L2SqrSIMD8ExtResiduals_AVX512, FP64_L2SqrSIMD2ExtResiduals_AVX512_noDQ};
 
         ret_dist_func = dist_funcs[optimization_type];
     } break;
@@ -112,6 +116,8 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim) {
         ret_dist_func = dist_funcs[optimization_type];
     } break;
 #endif
+    case ARCH_OPT_NONE:
+        break;
     } // switch
 
 #endif // __x86_64__ */

@@ -1,3 +1,9 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 #include "vecsim_malloc.h"
 #include <memory>
@@ -22,5 +28,7 @@ public:
     static void operator delete[](void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
 
     std::shared_ptr<VecSimAllocator> getAllocator();
+    inline int64_t getAllocationSize() const { return this->allocator->getAllocationSize(); }
+
     virtual ~VecsimBaseObject() {}
 };
