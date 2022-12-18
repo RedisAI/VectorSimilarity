@@ -85,8 +85,8 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
 
         removed_labels_data.push_back(data);
 
-        st.ResumeTiming();
         removed_vectors_count += data.size();
+        st.ResumeTiming();
 
         // Delete label
         auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
@@ -164,6 +164,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         ->Arg(35)                                                                                  \
         ->Arg(50)                                                                                  \
         ->ArgName("radiusX100")                                                                    \
+        ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 // {radius*100, epsilon*1000}
@@ -181,7 +182,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         ->Args({50, 10})                                                                           \
         ->Args({50, 100})                                                                          \
         ->ArgNames({"radiusX100", "epsilonX1000"})                                                 \
-        ->Iterations(100)                                                                          \
+        ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 #define REGISTER_AddLabel(BM_FUNC, VecSimAlgo)                                                     \

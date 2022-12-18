@@ -1,3 +1,4 @@
+#pragma once
 
 /**************************************
   Define and register benchmarks for batch itertor with index of data type fp32
@@ -23,12 +24,12 @@ REGISTER_BatchesToAdhocBF(BM_FUNC_NAME(BF, BatchesToAdhocBF));
 // Fixed size batch HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, FixedBatchSize), fp32_index_t)
 (benchmark::State &st) { HNSW_FixedBatchSize(st); }
-REGISTER_HNSW_FixedBatchSize(BM_FUNC_NAME(HNSW, FixedBatchSize));
+REGISTER_FixedBatchSize(BM_FUNC_NAME(HNSW, FixedBatchSize));
 
 // Variable size batch BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, VariableBatchSize), fp32_index_t)
 (benchmark::State &st) { HNSW_VariableBatchSize(st); }
-REGISTER_HNSW_VariableBatchSize(BM_FUNC_NAME(HNSW, VariableBatchSize));
+REGISTER_VariableBatchSize(BM_FUNC_NAME(HNSW, VariableBatchSize));
 
 // Batches to hadoc HSNW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_BatchIterator, BM_FUNC_NAME(HNSW, BatchesToAdhocBF), fp32_index_t)

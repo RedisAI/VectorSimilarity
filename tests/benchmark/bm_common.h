@@ -14,9 +14,14 @@ public:
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
                              size_t &correct, unsigned short index_offset = 0);
 
+    // Search for the K closest vectors to the query in the index. K is defined in the
+    // test registration (initialization file).
     static void TopK_BF(benchmark::State &st, unsigned short index_offset = 0);
+    // Run TopK using both HNSW and flat index and calculate the recall of the HNSW algorithm
+    // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
 
+    // Does nothing but returning the index memory.
     static void Memory_FLAT(benchmark::State &st, unsigned short index_offset = 0);
     static void Memory_HNSW(benchmark::State &st, unsigned short index_offset = 0);
 };
@@ -94,6 +99,7 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned sho
         ->Arg(100)                                                                                 \
         ->Arg(500)                                                                                 \
         ->ArgName("k")                                                                             \
+        ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
 // {ef_runtime, k} (recall that always ef_runtime >= k)
@@ -105,5 +111,5 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned sho
         ->Args({200, 100})                                                                         \
         ->Args({500, 500})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(100)                                                                          \
+        ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)

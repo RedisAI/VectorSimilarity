@@ -53,11 +53,11 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(benchmark::State &st,
         accumulated_results[batch_num++] = res;
         batch_size *= batch_increase_factor;
     }
+    st.PauseTiming();
     // Update the memory delta as a result of using the batch iterator.
     size_t curr_memory = VecSimIndex_Info(INDICES.at(VecSimAlgo_HNSWLIB)).hnswInfo.memory;
     memory_delta += (double)(curr_memory - index_memory);
     VecSimBatchIterator_Free(batchIterator);
-    st.PauseTiming();
 
     // Measure recall - compare every result that was collected in some batch to the BF results.
     auto bf_results = VecSimIndex_TopKQuery(
@@ -227,7 +227,8 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
         ->Args({1000, 3})                                                                          \
         ->Args({1000, 5})                                                                          \
         ->ArgNames({"batch size", "number of batches"})                                            \
-        ->Unit(benchmark::kMillisecond)
+        ->Unit(benchmark::kMillisecond)                                                            \
+        ->Iterations(10)
 
 // {initial_batch_size, num_batches}
 // batch size is increased by factor of 2 from iteration to the next one.
@@ -240,7 +241,8 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
         ->Args({1000, 2})                                                                          \
         ->Args({1000, 4})                                                                          \
         ->ArgNames({"batch initial size", "number of batches"})                                    \
-        ->Unit(benchmark::kMillisecond)
+        ->Unit(benchmark::kMillisecond)                                                            \
+        ->Iterations(10)
 
 // {step, num_batches} - where step is the ratio between the index size to the number of vectors to
 // go over in ad-hoc BF.
@@ -258,21 +260,12 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
         ->Args({20, 2})                                                                            \
         ->Args({20, 5})                                                                            \
         ->ArgNames({"step", "number of batches"})                                                  \
-        ->Unit(benchmark::kMillisecond)
+        ->Unit(benchmark::kMillisecond)                                                            \
+        ->Iterations(10)
 
-// {initial_batch_size, num_batches}
-// batch size is increased by factor of 2 from iteration to the next one.
-#define REGISTER_HNSW_FixedBatchSize(BM_FUNC) REGISTER_FixedBatchSize(BM_FUNC)->Iterations(50)
-
-#define REGISTER_HNSW_VariableBatchSize(BM_FUNC) REGISTER_VariableBatchSize(BM_FUNC)->Iterations(50)
 // {step, num_batches} - where step is the ratio between the index size to the number of vectors to
 // go over in ad-hoc BF.
 // batch size is increased by factor of 2 from iteration to the next one, and initial batch size
 // is 10.
 #define REGISTER_HNSW_BatchesToAdhocBF(BM_FUNC)                                                    \
-    REGISTER_BatchesToAdhocBF(BM_FUNC)                                                             \
-        ->Args({50, 0})                                                                            \
-        ->Args({50, 2})                                                                            \
-        ->Args({50, 5})                                                                            \
-        ->Args({100, 0})                                                                           \
-        ->Iterations(50)
+    REGISTER_BatchesToAdhocBF(BM_FUNC)->Args({50, 0})->Args({50, 2})->Args({50, 5})->Args({100, 0})

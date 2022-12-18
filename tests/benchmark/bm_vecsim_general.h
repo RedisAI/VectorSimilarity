@@ -24,6 +24,7 @@
 // is defined in a separate compilation unit.
 class BM_VecSimGeneral : public benchmark::Fixture {
 public:
+    // block_size is public because it is used to define the number of iterations on some test cases
     static size_t block_size;
 
 protected:
