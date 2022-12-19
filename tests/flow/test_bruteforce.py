@@ -36,20 +36,18 @@ def test_sanity_bf():
         def measure_dists(self, k):
             dists = [(self.dist_func(self.query.flat, vec), key) for key, vec in self.vectors]
             dists = sorted(dists)[:k]
-            keys = [key for _, key in dists[:k]]
-            dists = [dist for dist, _ in dists[:k]]
+            keys = [key for _, key in dists]
+            dists = [dist for dist, _ in dists]
             return (keys, dists)       
     
 
     test_datas = []
 
-    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_Cosine, spatial.distance.cosine, np.float32))
-
-    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_L2, spatial.distance.sqeuclidean, np.float32))
-
-    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_L2, spatial.distance.sqeuclidean, np.float64))
-
-    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_Cosine, spatial.distance.cosine, np.float64))
+    dist_funcs = [(VecSimMetric_Cosine, spatial.distance.cosine), (VecSimMetric_L2, spatial.distance.sqeuclidean)]
+    types = [(VecSimType_FLOAT32, np.float32), (VecSimType_FLOAT64, np.float64)]
+    for type_name, np_type in types:
+        for dist_name, dist_func in dist_funcs:
+            test_datas.append(TestData(type_name, dist_name, dist_func, np_type))
 
     k = 10
     for test_data in test_datas:
@@ -91,7 +89,6 @@ def test_bf_cosine():
     dists = [dist for dist, _ in dists[:k]]
     start = time.time()
     bf_labels, bf_distances = bfindex.knn_query(query_data, k=10)
-
     end = time.time()
     print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds')
 
