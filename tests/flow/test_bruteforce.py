@@ -5,7 +5,7 @@
 from common import *
 def test_sanity_bf():
     class TestData:
-        def __init__(self, data_type, metric):
+        def __init__(self, data_type, metric, dist_func, np_fuc = np.float32):
             dim = 16
             num_elements = 10
             params = VecSimParams()
@@ -21,24 +21,20 @@ def test_sanity_bf():
             params.bfParams = bfparams
 
             self.index = VecSimIndex(params)
+
             self.metric = metric
             self.type = data_type
+            self.dist_func = dist_func
+
             np.random.seed(47)
-            if(data_type == VecSimType_FLOAT32):
-                self.data = np.float32(np.random.random((num_elements, dim)))
-                self.query = np.float32(np.random.random((1, dim)))
-            elif (data_type == VecSimType_FLOAT64):
-                self.data = np.float64(np.random.random((num_elements, dim)))
-                self.query = np.float64(np.random.random((1, dim)))
+            self.data = np_fuc(np.random.random((num_elements, dim)))
+            self.query = np_fuc(np.random.random((1, dim)))
             self.vectors = []
             for i, vector in enumerate(self.data):
                 self.vectors.append((i, vector))
 
         def measure_dists(self, k):
-            if(self.metric == VecSimMetric_Cosine):
-                dists = [(spatial.distance.cosine(self.query.flat, vec), key) for key, vec in self.vectors]
-            elif(self.metric == VecSimMetric_L2):
-                dists = [(spatial.distance.sqeuclidean(self.query.flat, vec), key) for key, vec in self.vectors]
+            dists = [(self.dist_func(self.query.flat, vec), key) for key, vec in self.vectors]
             dists = sorted(dists)[:k]
             keys = [key for _, key in dists[:k]]
             dists = [dist for dist, _ in dists[:k]]
@@ -47,13 +43,13 @@ def test_sanity_bf():
 
     test_datas = []
 
-    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_Cosine))
+    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_Cosine, spatial.distance.cosine, np.float32))
 
-    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_L2))
+    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_L2, spatial.distance.sqeuclidean, np.float32))
 
-    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_L2))
+    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_L2, spatial.distance.sqeuclidean, np.float64))
 
-    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_Cosine))
+    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_Cosine, spatial.distance.cosine, np.float64))
 
     k = 10
     for test_data in test_datas:
