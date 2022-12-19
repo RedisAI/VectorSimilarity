@@ -22,7 +22,6 @@
 #include <queue>
 #include <cassert>
 #include <limits>
-#include <stdexcept>
 
 using spaces::dist_func_t;
 
@@ -40,6 +39,9 @@ public:
     vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
+    inline DataType *getDataByInternalId(idType id) const {
+        return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
+    }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
@@ -61,9 +63,6 @@ protected:
     // Private internal function that implements generic single vector deletion.
     virtual int removeVector(idType id);
 
-    inline DataType *getDataByInternalId(idType id) const {
-        return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
-    }
     inline VectorBlock *getVectorVectorBlock(idType id) const {
         return vectorBlocks.at(id / this->blockSize);
     }

@@ -19,8 +19,8 @@ protected:
 
     // Consider putting these in the derived class instead. Also - see if we should use
     // std::shared_mutex
-    std::shared_timed_mutex flatIndexGuard;
-    std::shared_timed_mutex mainIndexGuard;
+    std::shared_mutex flatIndexGuard;
+    std::shared_mutex mainIndexGuard;
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, void *job_queue_, SubmitCB submitCb,

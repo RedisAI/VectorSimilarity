@@ -134,12 +134,14 @@ VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
         auto *hnsw_index =
             NewIndex_ChooseMultiOrSingle<float, float>(&params->hnswParams, allocator);
         return new (allocator) TieredHNSWIndex<float, float>(
-            hnsw_index, params->jobQueue, params->submitCb, params->memoryCtx, params->UpdateMemCb);
+            hnsw_index, params->tieredParams.jobQueue, params->tieredParams.submitCb,
+            params->tieredParams.memoryCtx, params->tieredParams.UpdateMemCb);
     } else if (params->hnswParams.type == VecSimType_FLOAT64) {
         auto *hnsw_index =
             NewIndex_ChooseMultiOrSingle<double, double>(&params->hnswParams, allocator);
         return new (allocator) TieredHNSWIndex<double, double>(
-            hnsw_index, params->jobQueue, params->submitCb, params->memoryCtx, params->UpdateMemCb);
+            hnsw_index, params->tieredParams.jobQueue, params->tieredParams.submitCb,
+            params->tieredParams.memoryCtx, params->tieredParams.UpdateMemCb);
     } else {
         return nullptr; // Invalid type
     }
@@ -231,4 +233,3 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
 #endif
 
 }; // namespace HNSWFactory
-

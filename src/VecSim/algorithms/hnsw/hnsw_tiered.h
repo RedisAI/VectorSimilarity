@@ -4,22 +4,32 @@
 #include "hnsw.h"
 #include "hnsw_factory.h"
 
-/*
- * The required information for the atomic update protocol. Todo: extend this data structure as
- * needed.
- */
-typedef struct UpdateMessage {
-    HNSWJobType type;
-    // ...
-} UpdateMessage;
+#include <unordered_map>
 
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
+    /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
+    // In MULTI, we can have more than one insert job pending per label
+    std::unordered_map<labelType, std::vector<HNSWInsertJob *>> labelToInsertJobs;
+    std::unordered_map<idType, std::vector<HNSWRepairJob *>> idToRepairJobs;
+    std::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
+
     // Todo: implement these methods later on
-    void executeJob(HNSWJob *job) {}
-    UpdateMessage *computeDeltas(HNSWJob *job) { return nullptr; }
-    void applyDeltas(HNSWJob *job, UpdateMessage *message) {}
+    void executeInsertJob(HNSWInsertJob *job) {}
+    void executeRepairJob(HNSWRepairJob *job) {}
+
+    // To be executed synchronously upon deleting a vector, doesn't require a wrapper.
+    void executeSwapJob(HNSWSwapJob *job) {}
+
+    // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
+    // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
+    static void executeInsertJobWrapper(HNSWInsertJob *job) {
+        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(job->index)->executeInsertJob(job);
+    }
+    static void executeRepairJobWrapper(HNSWRepairJob *job) {
+        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(job->index)->executeRepairJob(job);
+    }
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
