@@ -1,6 +1,14 @@
 name: benchmark
 
-on: workflow_call # TODO: add pull_request-labeled with "benchmark" label when specifying a label is supported
+# TODO: add pull_request-labeled with "benchmark" label when specifying a label is supported
+on: 
+  workflow_call:
+    inputs:
+      filter:
+        description: 'A filter to specify the benchmark set to run'
+        default: 'BASICS_FP32_S'
+        required: false
+        type: string
 
 jobs:
   start-runner:
@@ -68,11 +76,11 @@ jobs:
 
       - name: Benchmark
         timeout-minutes: 120
-        run: make benchmark
+        run: make benchmark BM_FILTER=${{ inputs.filter }}
 
       - name: Collect results
         run: |
-          ./tests/benchmark/benchmarks.sh | xargs -I {} redisbench-admin export     \
+          ./tests/benchmark/benchmarks.sh BM_FILTER=${{ inputs.filter }} | xargs -I {} redisbench-admin export     \
           --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
           --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
           --redistimeseries_pass      ${{ secrets.PERFORMANCE_RTS_AUTH }}           \

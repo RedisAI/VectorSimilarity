@@ -9,7 +9,33 @@ on: # TODO: delete this file when specifying a label is supported
       - '*noci'
 
 jobs:
-  Invoker:
-    if: github.event.label.name == 'benchmark'
+
+  default_invoker: #runs basics fp 32 single + multi and spaces
+    if: github.event.label.name == 'benchmarks-default'
     uses: ./.github/workflows/benchmark.yml
+    secrets: inherit
+
+  basics_fp32_s_invoker:
+    if: github.event.label.name == 'bm basics fp32 single'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BASICS_FP32_S"
+    secrets: inherit
+  basics_fp32_m_invoker:
+    if: github.event.label.name == 'bm basics fp32 multi'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BASICS_FP32_M"
+    secrets: inherit
+  basics_fp64_s_invoker:
+    if: github.event.label.name == 'bm basics fp64 single'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BASICS_FP64_S"
+    secrets: inherit
+  basics_fp32_m_invoker:
+    if: github.event.label.name == 'bm basics fp64 multi'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BASICS_FP64_M"
     secrets: inherit
