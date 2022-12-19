@@ -6,6 +6,7 @@ on:
     inputs:
       filter:
         description: 'A filter to specify the benchmark set to run'
+        default: "BASICS_FP32_S+M_SPACES"
         required: false
         type: string
       files_set:
