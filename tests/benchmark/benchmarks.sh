@@ -6,34 +6,34 @@ if [ -z "$BM_FILTER" ]; then \
     echo spaces_fp64
 
 # Basic benchmarks
-elif [ "$BM_FILTER"=="BASICS_FP32_S" ] ; then \
+elif [ "$BM_FILTER" == "BASICS_FP32_S" ] ; then \
     echo basics_single_fp32
-elif [ "$BM_FILTER"=="BASICS_FP32_M" ] ; then \
+elif [ "$BM_FILTER" == "BASICS_FP32_M" ] ; then \
     echo basics_multi_fp32
-elif [ "$BM_FILTER"=="BASICS_FP64_S" ] ; then \
+elif [ "$BM_FILTER" == "BASICS_FP64_S" ] ; then \
     echo basics_multi_fp64
-elif [ "$BM_FILTER"=="BASICS_FP64_M" ] ; then \
+elif [ "$BM_FILTER" == "BASICS_FP64_M" ] ; then \
     echo basics_multi_fp64
 
 # Batch iterator benchmarks
-elif [ "$BM_FILTER"=="BI_FP32_S" ] ; then \
+elif [ "$BM_FILTER" == "BI_FP32_S" ] ; then \
     echo batch_iterator_single_fp32
-elif [ "$BM_FILTER"=="BI_FP32_M" ] ; then \
+elif [ "$BM_FILTER" == "BI_FP32_M" ] ; then \
     echo batch_iterator_multi_fp32
-elif [ "$BM_FILTER"=="BI_FP64_S" ] ; then \
+elif [ "$BM_FILTER" == "BI_FP64_S" ] ; then \
     echo batch_iterator_multi_fp64
-elif [ "$BM_FILTER"=="BI_FP64_M" ] ; then \
+elif [ "$BM_FILTER" == "BI_FP64_M" ] ; then \
     echo batch_iterator_multi_fp64
 
 # Updated index benchmarks
-elif [ "$BM_FILTER"=="UPDATED_FP32_S" ] ; then \
+elif [ "$BM_FILTER" == "UPDATED_FP32_S" ] ; then \
     echo updated_index_single_fp32
 
 # Spaces benchmarks
-elif [ "$BM_FILTER"=="SPACES" ] ; then \
+elif [ "$BM_FILTER" == "SPACES" ] ; then \
     echo spaces_fp32
     echo spaces_fp64
-elif [ "$BM_FILTER"=="ALL" ] ; then
+elif [ "$BM_FILTER" == "ALL" ] ; then
     for bm_class in basics batch_iterator; do \
         for type in single multi; do \
             for data_type in fp32 fp64; do \

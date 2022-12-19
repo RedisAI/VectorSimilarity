@@ -78,10 +78,10 @@ jobs:
       - name: Download pre-generated indices
         timeout-minutes: 20
         run: |
-          if [ "${{ inputs.files_set }}"=="none" ] ; then \
-          continue \
+          if [ "${{ inputs.files_set }}" == "none" ] ; then \
+            continue \
           else \
-          wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_${{ inputs.files_set }}.txt -P tests/benchmark/data\
+            wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_${{ inputs.files_set }}.txt -P tests/benchmark/data\
           fi
 
       - name: Benchmark
