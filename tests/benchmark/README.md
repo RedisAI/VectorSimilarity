@@ -49,7 +49,7 @@ For each combination of data type (fp32/fp64) and index type (single/multi) the 
 *At the end of the benchmark, we delete the added labels*
 3. `DeleteLabel` - runs for `DEFAULT_BLOCK_SIZE (= 1024)` iterations, in each we delete one label from the index. Note that for a single value index each label contains one vector, meaning that the number of deleted labels equals the number of deleted vectors.  
 **results:** average time per label, average memory addition per vector (a negative value means that the memory has decreased).  
-*At the end of the benchmark, we re-add the deleted vectors under the same labels*
+*At the end of the benchmark, we restore the deleted vectors under the same labels*
 #### **TopK benchmarks**
 Search for the `k` nearest neighbors of the query.   
 4. Run `Top_K` query over the flat index (using brute-force search), for each `k=10`, `k=100` and `k=500`  
@@ -269,12 +269,6 @@ The test's name components are:
 2. The name as given in definition and registration
 3. arguments names and values  
 *NOTE:* the fixture type (fp32_index_t, for example) is part of the name, so tests that use a different fixture **or** the same fixture of a different type, **can** share the same name.  
-
-
-# CMake remarks
-Each test binary includes only one file .cpp from benchmark/run_files because
-1. We don't want to override BM_VecSimGeneral static data members
-2. Memory (RAM) limitations.
 
 ## benchmarks.sh
 In this file, we define the names of the benchmarks binary files, **without** the `bm_` prefix. The names are used in:
