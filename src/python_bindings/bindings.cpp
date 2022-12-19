@@ -79,10 +79,12 @@ public:
 class PyVecSimIndex {
 public:
     PyVecSimIndex()
-        : create_bytearray(py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {}
+        : create_bytearray(
+              py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {}
 
     PyVecSimIndex(const VecSimParams &params)
-        : create_bytearray(py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {
+        : create_bytearray(
+              py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {
         index = VecSimIndex_New(&params);
     }
 
