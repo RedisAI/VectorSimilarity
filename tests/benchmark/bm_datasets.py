@@ -8,7 +8,6 @@ import numpy as np
 import time
 from VecSim import *
 import h5py
-import Mybytearray
 
 # This script is partially based on the work that was made in:
 # https://github.com/erikbern/ann-benchmarks/blob/master/ann_benchmarks/datasets.py

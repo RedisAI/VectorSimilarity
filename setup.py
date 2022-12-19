@@ -82,7 +82,6 @@ class CMakeBuild(build_ext):
             ["cmake", "--build", "."] + build_args, cwd=self.build_temp
         )
 
-
 # The information here can also be placed in setup.cfg - better separation of
 # logic and declaration, and simpler if you include description/version in a file.
 setup(
@@ -93,5 +92,6 @@ setup(
     description="Python library around collection of vector similarity algorithm",
     long_description="",
     ext_modules=[CMakeExtension("VecSim", "src/python_bindings")],
+    py_modules=['src/python_bindings/Mybytearray'],
     cmdclass={"build_ext": CMakeBuild}
 )
