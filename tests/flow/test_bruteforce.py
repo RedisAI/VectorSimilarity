@@ -3,80 +3,68 @@
 # the Server Side Public License v1 (SSPLv1).
 
 from common import *
-def test_bytearray():
-    dim = 16
-    num_elements = 10
-    k=10
+def test_sanity_bf():
+    class TestData:
+        def __init__(self, data_type, metric):
+            dim = 16
+            num_elements = 10
+            params = VecSimParams()
+            bfparams = BFParams()
 
-    params = VecSimParams()
-    bfparams = BFParams()
+            params.algo = VecSimAlgo_BF
+            bfparams.initialCapacity = num_elements
+            bfparams.blockSize = num_elements
+            bfparams.dim = dim
+            bfparams.type = data_type
+            bfparams.metric = metric
 
-    params.algo = VecSimAlgo_BF
-    bfparams.initialCapacity = num_elements
-    bfparams.blockSize = num_elements
-    bfparams.dim = dim
-    bfparams.type = VecSimType_FLOAT32
-    bfparams.metric = VecSimMetric_Cosine
+            params.bfParams = bfparams
 
-    params.bfParams = bfparams
+            self.index = VecSimIndex(params)
+            self.metric = metric
+            self.type = data_type
+            np.random.seed(47)
+            if(data_type == VecSimType_FLOAT32):
+                self.data = np.float32(np.random.random((num_elements, dim)))
+                self.query = np.float32(np.random.random((1, dim)))
+            elif (data_type == VecSimType_FLOAT64):
+                self.data = np.float64(np.random.random((num_elements, dim)))
+                self.query = np.float64(np.random.random((1, dim)))
+            self.vectors = []
+            for i, vector in enumerate(self.data):
+                self.vectors.append((i, vector))
 
-    bfindices = []
+        def measure_dists(self, k):
+            if(self.metric == VecSimMetric_Cosine):
+                dists = [(spatial.distance.cosine(self.query.flat, vec), key) for key, vec in self.vectors]
+            elif(self.metric == VecSimMetric_L2):
+                dists = [(spatial.distance.sqeuclidean(self.query.flat, vec), key) for key, vec in self.vectors]
+            dists = sorted(dists)[:k]
+            keys = [key for _, key in dists[:k]]
+            dists = [dist for dist, _ in dists[:k]]
+            return (keys, dists)       
+    
 
-    fp32_cosine_index = VecSimIndex(params)
-    bfindices.append(fp32_cosine_index)
+    test_datas = []
 
-    params.bfParams.metric = VecSimMetric_L2
-    fp32_L2_index = VecSimIndex(params)
-    bfindices.append(fp32_L2_index)
+    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_Cosine))
 
-    params.bfParams.type = VecSimType_FLOAT64
-    fp64_L2_index = VecSimIndex(params)
-    bfindices.append(fp64_L2_index)
+    test_datas.append(TestData(VecSimType_FLOAT32, VecSimMetric_L2))
 
-    params.bfParams.metric = VecSimMetric_Cosine
-    fp64_cosine_index = VecSimIndex(params)
-    bfindices.append(fp64_cosine_index)
+    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_L2))
 
-    np.random.seed(47)
-    fp32_data = np.float32(np.random.random((num_elements, dim)))
-    fp32_vectors = []
-    fp64_data = np.float64(np.random.random((num_elements, dim)))
-    fp64_vectors = []
+    test_datas.append(TestData(VecSimType_FLOAT64, VecSimMetric_Cosine))
 
-    for i, vector in enumerate(fp32_data):
-        fp32_vectors.append((i, vector))
-        for index in fp32_cosine_index, fp32_L2_index:
-            index.add_vector(vector, i)
+    k = 10
+    for test_data in test_datas:
+        for i, vector in enumerate(test_data.data):
+            test_data.index.add_vector(vector, i)
 
-    for i, vector in enumerate(fp64_data):
-        fp64_vectors.append((i, vector))
-        for index in fp64_cosine_index, fp64_L2_index:
-            index.add_vector(vector, i)
-
-    fp32_query_data = np.float32(np.random.random((1, dim)))
-    fp64_query_data = np.float64(np.random.random((1, dim)))
-
-
-    for(query, vectors, index) in (fp32_query_data, fp32_vectors, fp32_cosine_index), (fp64_query_data, fp64_vectors, fp64_cosine_index):
-        dists = [(spatial.distance.cosine(query.flat, vec), key) for key, vec in vectors]
-        dists = sorted(dists)[:k]
-        keys = [key for _, key in dists[:k]]
-        dists = [dist for dist, _ in dists[:k]]
-        bf_labels, bf_distances = index.knn_query(query, k=k)
+        keys, dists = test_data.measure_dists(k)
+        bf_labels, bf_distances = test_data.index.knn_query(test_data.query, k=k)
         assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
         assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
-
-    for(query, vectors, index) in (fp32_query_data, fp32_vectors, fp32_L2_index), (fp64_query_data, fp64_vectors, fp64_L2_index):
-        dists = [(spatial.distance.sqeuclidean(query.flat, vec), key) for key, vec in vectors]
-        dists = sorted(dists)[:k]
-        keys = [key for _, key in dists[:k]]
-        dists = [dist for dist, _ in dists[:k]]
-        bf_labels, bf_distances = index.knn_query(query, k=k)
-        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
-        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
-
-    print("\ntest_bytearray ended successfully")
-
+        print(f"\nsanity test for {test_data.metric} and {test_data.type} pass")
 
 def test_bf_cosine():
     dim = 128
