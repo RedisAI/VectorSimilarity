@@ -33,7 +33,7 @@ jobs:
     with:
       filter: "BASICS_FP64_S"
     secrets: inherit
-  basics_fp32_m_invoker:
+  basics_fp64_m_invoker:
     if: github.event.label.name == 'bm basics fp64 multi'
     uses: ./.github/workflows/benchmark.yml
     with:
