@@ -5,7 +5,7 @@
 from common import *
 def test_sanity_bf():
     class TestData:
-        def __init__(self, data_type, metric, dist_func, np_fuc = np.float32):
+        def __init__(self, data_type, metric, dist_func, np_fuc):
             dim = 16
             num_elements = 10
             params = VecSimParams()
