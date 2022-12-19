@@ -6,9 +6,14 @@ on:
     inputs:
       filter:
         description: 'A filter to specify the benchmark set to run'
-        default: 'BASICS_FP32_S'
         required: false
         type: string
+      files_set:
+        description: 'A file identifier with the addresses to download the required dataset for a benchmark'
+        default: 'basic_fp32'
+        required: false
+        type: string
+
 
 jobs:
   start-runner:
@@ -72,7 +77,12 @@ jobs:
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
-        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+        run: |
+          if [ "${{ inputs.files_set }}"=="none" ] ; then \
+          continue \
+          else \
+          wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_${{ inputs.files_set }}.txt -P tests/benchmark/data\
+          fi
 
       - name: Benchmark
         timeout-minutes: 120

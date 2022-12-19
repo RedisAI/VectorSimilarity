@@ -9,12 +9,13 @@ on: # TODO: delete this file when specifying a label is supported
       - '*noci'
 
 jobs:
-
-  default_invoker: #runs basics fp 32 single + multi and spaces
+  #runs basics fp 32 single + multi and spaces
+  default_invoker: 
     if: github.event.label.name == 'benchmarks-default'
     uses: ./.github/workflows/benchmark.yml
     secrets: inherit
 
+  # basics benchmarks labels
   basics_fp32_s_invoker:
     if: github.event.label.name == 'bm basics fp32 single'
     uses: ./.github/workflows/benchmark.yml
@@ -32,10 +33,67 @@ jobs:
     uses: ./.github/workflows/benchmark.yml
     with:
       filter: "BASICS_FP64_S"
+      files_set: "fp64"
     secrets: inherit
   basics_fp64_m_invoker:
     if: github.event.label.name == 'bm basics fp64 multi'
     uses: ./.github/workflows/benchmark.yml
     with:
       filter: "BASICS_FP64_M"
+      files_set: "fp64"
+    secrets: inherit
+
+  # batch iterator benchmarks labels
+  bi_fp32_s_invoker:
+    if: github.event.label.name == 'bm BI fp32 single'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BI_FP32_S"
+    secrets: inherit
+  bi_fp32_m_invoker:
+    if: github.event.label.name == 'bm BI fp32 multi'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BI_FP32_M"
+    secrets: inherit
+  bi_fp64_s_invoker:
+    if: github.event.label.name == 'bm BI fp64 single'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BI_FP64_S"
+      files_set: "fp64"
+    secrets: inherit
+  bi_fp64_m_invoker:
+    if: github.event.label.name == 'bm BI fp64 multi'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "BI_FP64_M"
+      files_set: "fp64"
+    secrets: inherit
+
+  # updated index benchmarks label
+  updated_index_fp32_s_invoker:
+    if: github.event.label.name == 'bm updated fp32 single'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "UPDATED_FP32_S"
+      files_set: "updated"
+    secrets: inherit
+
+  # spaces benchmarks label
+  spaces_invoker:
+    if: github.event.label.name == 'bm spaces'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "SPACES"
+      files_set: "none"
+    secrets: inherit
+
+  # run all benchmarks label
+  all_bm_invoker:
+    if: github.event.label.name == 'benchmarks-all'
+    uses: ./.github/workflows/benchmark.yml
+    with:
+      filter: "ALL"
+      files_set: "all"
     secrets: inherit
