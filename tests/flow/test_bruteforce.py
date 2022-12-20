@@ -3,6 +3,7 @@
 # the Server Side Public License v1 (SSPLv1).
 
 from common import *
+
 def test_sanity_bf():
     class TestData:
         def __init__(self, data_type, metric, dist_func, np_fuc):
@@ -32,6 +33,7 @@ def test_sanity_bf():
             self.vectors = []
             for i, vector in enumerate(self.data):
                 self.vectors.append((i, vector))
+                self.index.add_vector(vector, i)
 
         def measure_dists(self, k):
             dists = [(self.dist_func(self.query.flat, vec), key) for key, vec in self.vectors]
@@ -40,7 +42,6 @@ def test_sanity_bf():
             dists = [dist for dist, _ in dists]
             return (keys, dists)       
     
-
     test_datas = []
 
     dist_funcs = [(VecSimMetric_Cosine, spatial.distance.cosine), (VecSimMetric_L2, spatial.distance.sqeuclidean)]
@@ -51,8 +52,6 @@ def test_sanity_bf():
 
     k = 10
     for test_data in test_datas:
-        for i, vector in enumerate(test_data.data):
-            test_data.index.add_vector(vector, i)
 
         keys, dists = test_data.measure_dists(k)
         bf_labels, bf_distances = test_data.index.knn_query(test_data.query, k=k)
