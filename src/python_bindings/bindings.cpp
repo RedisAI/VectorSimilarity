@@ -226,7 +226,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init([](const std::string &location, const HNSWParams *params) {
                  return new PyHNSWLibIndex(location, params);
              }),
-             py::arg("location"), py::arg("params"))
+             py::arg("location"), py::arg("params") = nullptr)
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
         .def("save_index", &PyHNSWLibIndex::saveIndex);
 

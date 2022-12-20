@@ -6,7 +6,6 @@ import os
 from common import *
 import hnswlib
 
-
 # compare results with the original version of hnswlib - do not use elements deletion.
 def test_sanity_hnswlib_index_L2():
     dim = 16
@@ -264,16 +263,19 @@ def test_serialization():
     k = 10
     efRuntime = 50
 
+    data_type = VecSimType_FLOAT32
+
     hnswparams = HNSWParams()
     hnswparams.M = M
     hnswparams.efConstruction = efConstruction
     hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
     hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
+    hnswparams.type = data_type
     hnswparams.metric = VecSimMetric_L2
 
     hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index.set_ef(efRuntime)
+
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -306,7 +308,7 @@ def test_serialization():
     file_name = os.getcwd()+"/dump"
     hnsw_index.save_index(file_name)
 
-    new_hnsw_index = HNSWIndex(file_name, hnswparams)
+    new_hnsw_index = HNSWIndex(file_name)
     os.remove(file_name)
     assert new_hnsw_index.index_size() == num_elements
 
@@ -325,7 +327,6 @@ def test_serialization():
     recall_after = float(correct_after)/(k*num_queries)
     print("\nrecall after is: \n", recall_after)
     assert recall == recall_after
-
 
 def test_range_query():
     dim = 100

@@ -8,23 +8,39 @@ set(CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+include_directories(../)
 
 enable_testing()
 
-add_executable(bm_batch_iterator bm_batch_iterator.cpp bm_utils.cpp)
-target_link_libraries(bm_batch_iterator VectorSimilarity benchmark::benchmark)
-add_executable(bm_basics bm_basics.cpp bm_utils.cpp)
-target_link_libraries(bm_basics VectorSimilarity benchmark::benchmark)
-add_executable(bm_updated_index bm_updated_index.cpp bm_utils.cpp)
-target_link_libraries(bm_updated_index VectorSimilarity benchmark::benchmark)
+exec_program(${root}/tests/benchmark/benchmarks.sh OUTPUT_VARIABLE BENCHMARKS)
+string(REPLACE "\n" ";" BENCHMARKS ${BENCHMARKS})
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+foreach(benchmark IN ITEMS ${BENCHMARKS})
+	if(${benchmark} MATCHES "spaces*")
+		continue()
+	endif()
+
+	add_executable(bm_${benchmark} run_files/bm_${benchmark}.cpp bm_vecsim_general.cpp)
+	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
+endforeach()
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Spaces benchmarks								                                          #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+# First we compile the spaces benchmarks class so it won't include any compiler flags
+# that are not supported by the hardware.
+set(DATA_TYPE fp32 fp64)
+
+foreach(data_type IN LISTS DATA_TYPE)
+	add_library(bm_spaces_class_${data_type} spaces_benchmarks/bm_spaces_class_${data_type}.cpp)
+	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
+endforeach(data_type IN LISTS DATA_TYPE)
+
+# ########################################################################################
 # Passed this line we have optimization enabled by the compiler.                        #
 # Adding files to complie after this line will have an effect on the resulted binaries. #
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-add_library(bm_spaces_class bm_spaces_class.cpp)
-target_link_libraries(bm_spaces_class benchmark::benchmark)
-
+# ########################################################################################
 include(CheckCXXCompilerFlag)
 
 # TODO: Remove this once cpu_features get support for M1
@@ -66,5 +82,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
-add_executable(bm_spaces bm_spaces.cpp)
-target_link_libraries(bm_spaces VectorSimilarity benchmark::benchmark bm_spaces_class)
+foreach(data_type IN LISTS DATA_TYPE)
+	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
+	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark bm_spaces_class_${data_type})
+endforeach()
