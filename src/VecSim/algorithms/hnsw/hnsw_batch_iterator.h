@@ -62,7 +62,9 @@ public:
 
     void reset() override;
 
-    ~HNSW_BatchIterator() override {}
+    virtual ~HNSW_BatchIterator() {
+        index->returnVisitedList(this->visited_list);
+    }
 };
 
 /******************** Ctor / Dtor **************/
@@ -242,6 +244,8 @@ template <typename DataType, typename DistType>
 void HNSW_BatchIterator<DataType, DistType>::reset() {
     this->resetResultsCount();
     this->depleted = false;
+
+    // Reset the visited nodes handler.
     this->visited_tag = this->visited_list->getFreshTag();
     this->lower_bound = std::numeric_limits<DistType>::infinity();
     // Clear the queues.

@@ -1144,14 +1144,14 @@ TYPED_TEST(HNSWTest, hnsw_batch_iterator_advanced) {
     ASSERT_EQ(VecSimQueryResult_Len(res), 1);
     VecSimQueryResult_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
+    VecSimBatchIterator_Free(batchIterator);
 
+    // Insert vectors to the index and re-create the batch iterator.
     for (size_t i = 1; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-    // Reset the iterator after it was depleted.
-    VecSimBatchIterator_Reset(batchIterator);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get 0 results.
     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);

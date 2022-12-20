@@ -34,6 +34,10 @@ public:
 
     inline tag_t *getElementsTags() { return elements_tags; }
 
+    inline void setElementsTags(tag_t *element_tags_) { elements_tags = element_tags_; }
+
+    inline void setNumElements(unsigned int num_elements_) { num_elements =  num_elements_; }
+
     void reset();
 
     // Mark node_id with tag, to have an indication that this node has been visited.
@@ -62,6 +66,8 @@ public:
     VisitedNodesHandler *getAvailableVisitedNodesHandler();
 
     void returnVisitedNodesHandlerToPool(VisitedNodesHandler *handler);
+
+    void resize(size_t new_size);
 
     ~VisitedNodesHandlerPool() override;
 };
