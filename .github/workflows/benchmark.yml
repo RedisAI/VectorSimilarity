@@ -78,8 +78,12 @@ jobs:
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
-        if: github.event.inputs.files_set != 'none'
-        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_${{ inputs.files_set }}.txt -P tests/benchmark/data
+        run: |
+          if [[ "${{ github.event.inputs.files_set }}" != "none" ]]; then
+            :
+          else
+            wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_${{ inputs.files_set }}.txt -P tests/benchmark/data
+          fi
       - name: Benchmark
         timeout-minutes: 120
         run: make benchmark BM_FILTER=${{ inputs.filter }}
