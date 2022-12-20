@@ -69,7 +69,6 @@ public:
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
     virtual ~PyBatchIterator() {}
 };
-#include <pybind11/embed.h>
 // @input or @query arguments are a py::object object. (numpy arrays are acceptable)
 
 // To convert input or query to a pointer use input_to_blob(input)
