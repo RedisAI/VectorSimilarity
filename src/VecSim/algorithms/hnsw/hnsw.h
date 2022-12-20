@@ -155,7 +155,7 @@ protected:
                                  idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
     inline const void
-    processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
+    processCandidate(idType curNodeId, element_graph_data *cur_meta, const void *data_point, size_t layer, size_t ef,
                      VisitedNodesHandler *visited_nodes, tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType &lowerBound) const;
@@ -230,6 +230,7 @@ public:
     inline const char *getDataByInternalId(idType internal_id) const;
     inline element_graph_data *getMetaDataByInternalId(idType internal_id) const;
     inline level_data &getLevelData(idType internal_id, size_t level) const;
+    inline level_data &getLevelData(element_graph_data *meta, size_t level) const;
     inline idType getEntryPointId() const { return entrypoint_node_; }
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const {
@@ -314,6 +315,11 @@ size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
 template <typename DataType, typename DistType>
 level_data &HNSWIndex<DataType, DistType>::getLevelData(idType internal_id, size_t level) const {
     auto meta = getMetaDataByInternalId(internal_id);
+    return getLevelData(meta, level);
+}
+
+template <typename DataType, typename DistType>
+level_data &HNSWIndex<DataType, DistType>::getLevelData(element_graph_data *meta, size_t level) const {
     assert(level <= meta->toplevel);
     if (level == 0) {
         return meta->level0;
@@ -586,7 +592,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted, typename Identifier>
 const void HNSWIndex<DataType, DistType>::processCandidate(
-    idType curNodeId, const void *data_point, size_t layer, size_t ef,
+    idType curNodeId, element_graph_data *cur_meta, const void *query_data, size_t layer, size_t ef,
     VisitedNodesHandler *visited_nodes, tag_t visited_tag,
     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
@@ -595,7 +601,10 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
 #endif
 
-    level_data &node_meta = getLevelData(curNodeId, layer);
+    // Strongly prefetch query data.
+    __builtin_prefetch(query_data, 0, 0);
+
+    level_data &node_meta = getLevelData(cur_meta, layer);
     if (node_meta.numLinks > 0) {
 
         // Pre-fetch first candidate tag address.
@@ -626,7 +635,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 
             visited_nodes->tagNode(candidate_id, visited_tag);
 
-            DistType dist1 = this->dist_func(data_point, curr_data, this->dim);
+            DistType dist1 = this->dist_func(query_data, curr_data, this->dim);
             if (lowerBound > dist1 || top_candidates.size() < ef) {
 
                 candidate_set.emplace(-dist1, candidate_id);
@@ -659,7 +668,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 
             visited_nodes->tagNode(candidate_id, visited_tag);
 
-            DistType dist1 = this->dist_func(data_point, curr_data, this->dim);
+            DistType dist1 = this->dist_func(query_data, curr_data, this->dim);
             if (lowerBound > dist1 || top_candidates.size() < ef) {
                 candidate_set.emplace(-dist1, candidate_id);
 
@@ -759,6 +768,10 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 #ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
 #endif
+
+    // Strongly prefetch query data.
+    __builtin_prefetch(query_data, 0, 0);
+
     level_data &node_meta = getLevelData(curNodeId, layer);
     if (node_meta.numLinks > 0) {
 
@@ -850,14 +863,15 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // Pre-fetch the neighbours list of the top candidate (the one that is going
         // to be processed in the next iteration) into memory cache, to improve performance.
-        my_prefetch(getMetaDataByInternalId(curr_el_pair.second));
+        auto curr_el_meta = getMetaDataByInternalId(curr_el_pair.second);
+        my_prefetch(curr_el_meta);
 
         if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
+        processCandidate<has_marked_deleted>(curr_el_pair.second, curr_el_meta, data_point, layer, ef,
                                              visited_nodes, visited_tag, top_candidates,
                                              candidate_set, lowerBound);
     }
@@ -1627,9 +1641,11 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // Pre-fetch the neighbours list of the top candidate (the one that is going
         // to be processed in the next iteration) into memory cache, to improve performance.
-        my_prefetch(getMetaDataByInternalId(curr_el_pair.second));
+        auto cur_meta_data = getMetaDataByInternalId(curr_el_pair.second);
+        my_prefetch(cur_meta_data);
 
-        if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
+        const size_t size = top_candidates->size();
+        if ((-curr_el_pair.first) > lowerBound && size >= ef) {
             break;
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
@@ -1638,7 +1654,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef, visited_nodes,
+        processCandidate<has_marked_deleted>(curr_el_pair.second, cur_meta_data, data_point, 0, ef, visited_nodes,
                                              visited_tag, *top_candidates, candidate_set,
                                              lowerBound);
     }
