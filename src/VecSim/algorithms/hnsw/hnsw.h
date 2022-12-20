@@ -52,8 +52,7 @@ template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
                   public VecSimIndexTombstone
 #ifdef BUILD_TESTS
-    ,
-                  public Serializer
+                ,public Serializer
 #endif
 {
 protected:
