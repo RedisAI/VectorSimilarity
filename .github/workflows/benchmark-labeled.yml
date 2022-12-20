@@ -45,26 +45,26 @@ jobs:
 
   # batch iterator benchmarks labels
   bi_fp32_s_invoker:
-    if: github.event.label.name == 'bm BI fp32 single'
+    if: github.event.label.name == 'bm batch-iter fp32 single'
     uses: ./.github/workflows/benchmark.yml
     with:
       filter: "BI_FP32_S"
     secrets: inherit
   bi_fp32_m_invoker:
-    if: github.event.label.name == 'bm BI fp32 multi'
+    if: github.event.label.name == 'bm batch-iter fp32 multi'
     uses: ./.github/workflows/benchmark.yml
     with:
       filter: "BI_FP32_M"
     secrets: inherit
   bi_fp64_s_invoker:
-    if: github.event.label.name == 'bm BI fp64 single'
+    if: github.event.label.name == 'bm batch-iter fp64 single'
     uses: ./.github/workflows/benchmark.yml
     with:
       filter: "BI_FP64_S"
       files_set: "fp64"
     secrets: inherit
   bi_fp64_m_invoker:
-    if: github.event.label.name == 'bm BI fp64 multi'
+    if: github.event.label.name == 'bm batch-iter fp64 multi'
     uses: ./.github/workflows/benchmark.yml
     with:
       filter: "BI_FP64_M"
