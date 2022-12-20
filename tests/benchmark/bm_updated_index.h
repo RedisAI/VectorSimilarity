@@ -17,14 +17,13 @@ template <typename index_type_t>
 class BM_VecSimUpdatedIndex : public BM_VecSimCommon<index_type_t> {
 public:
     const static unsigned short updated_index_offset = 2;
-    // The constructor is called after we already registered the tests resides in BM_VecSimCommon,
-    // (and not in this class)
-    // so `ref_count` is not zero at the first time BM_VecSimUpdatedIndex Ctor is called,
-    // and we cant rely on it to decide weather we should initialize the indices or not.
-    // This is why we use the `is_initialized` flag.
-    // Also, we keep the value of ref_count at the moment of initialization in
-    // first_updatedBM_ref_count to free the indices when ref_count is decreased to this value.
-    // Reminder: ref_count is updated in BM_VecSimIndex ctor (and dtor).
+    // The constructor is called after we have already registered the tests residing in
+    // BM_VecSimCommon, (and not in this class) so `ref_count` is not zero at the first time
+    // BM_VecSimUpdatedIndex Ctor is called, and we can't rely on it to decide whether we should
+    // initialize the indices or not. This is why we use the `is_initialized` flag. Also, we keep
+    // the value of ref_count at the moment of initialization in first_updatedBM_ref_count to free
+    // the indices when ref_count is decreased to this value. Reminder: ref_count is updated in
+    // BM_VecSimIndex ctor (and dtor).
     static bool is_initialized;
 
     static size_t first_updatedBM_ref_count;
