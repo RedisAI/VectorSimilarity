@@ -4,6 +4,60 @@
 
 from common import *
 
+def test_sanity_bf():
+    class TestData:
+        def __init__(self, data_type, metric, dist_func, np_fuc):
+            dim = 16
+            num_elements = 10
+            params = VecSimParams()
+            bfparams = BFParams()
+
+            params.algo = VecSimAlgo_BF
+            bfparams.initialCapacity = num_elements
+            bfparams.blockSize = num_elements
+            bfparams.dim = dim
+            bfparams.type = data_type
+            bfparams.metric = metric
+
+            params.bfParams = bfparams
+
+            self.index = VecSimIndex(params)
+
+            self.metric = metric
+            self.type = data_type
+            self.dist_func = dist_func
+
+            np.random.seed(47)
+            self.data = np_fuc(np.random.random((num_elements, dim)))
+            self.query = np_fuc(np.random.random((1, dim)))
+            self.vectors = []
+            for i, vector in enumerate(self.data):
+                self.vectors.append((i, vector))
+                self.index.add_vector(vector, i)
+
+        def measure_dists(self, k):
+            dists = [(self.dist_func(self.query.flat, vec), key) for key, vec in self.vectors]
+            dists = sorted(dists)[:k]
+            keys = [key for _, key in dists]
+            dists = [dist for dist, _ in dists]
+            return (keys, dists)       
+    
+    test_datas = []
+
+    dist_funcs = [(VecSimMetric_Cosine, spatial.distance.cosine), (VecSimMetric_L2, spatial.distance.sqeuclidean)]
+    types = [(VecSimType_FLOAT32, np.float32), (VecSimType_FLOAT64, np.float64)]
+    for type_name, np_type in types:
+        for dist_name, dist_func in dist_funcs:
+            test_datas.append(TestData(type_name, dist_name, dist_func, np_type))
+
+    k = 10
+    for test_data in test_datas:
+
+        keys, dists = test_data.measure_dists(k)
+        bf_labels, bf_distances = test_data.index.knn_query(test_data.query, k=k)
+        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
+        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+        print(f"\nsanity test for {test_data.metric} and {test_data.type} pass")
 
 def test_bf_cosine():
     dim = 128
