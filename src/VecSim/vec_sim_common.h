@@ -101,11 +101,11 @@ typedef struct {
 
 // A struct that contains the common tiered index params.
 typedef struct {
-    void *jobQueue;    // External queue that holds the jobs.
-    SubmitCB submitCb; // A callback that submits an array of jobs into a given jobQueue.
-    void *memoryCtx;   // External context that stores the index memory consumption.
-    UpdateMemoryCB
-        UpdateMemCb; // A callback that updates the memoryCtx with a given memory (number).
+    void *jobQueue;             // External queue that holds the jobs.
+    SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
+    void *memoryCtx;            // External context that stores the index memory consumption.
+    UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
+                                // with a given memory (number).
 } TieredIndexParams;
 
 typedef struct {
@@ -129,7 +129,8 @@ typedef enum {
     HNSW_INSERT_VECTOR_JOB,
     HNSW_REPAIR_NODE_CONNECTIONS_JOB,
     HNSW_SEARCH_JOB,
-    HNSW_SWAP_JOB
+    HNSW_SWAP_JOB,
+    INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 
 /**

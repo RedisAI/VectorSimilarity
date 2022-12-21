@@ -32,7 +32,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         TEST_DATA_T vector[tiered_index->index->getDim()];
         GenerateVector<TEST_DATA_T>(vector, tiered_index->index->getDim());
         labelType vector_label = 1;
-        VecSimIndex_AddVector(tiered_index->tempFlat, vector, vector_label);
+        VecSimIndex_AddVector(tiered_index->flatBuffer, vector, vector_label);
 
         // Create a mock job that inserts some vector into the HNSW index.
         auto insert_to_index = [](void *job) {
@@ -41,11 +41,17 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
                 reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(my_insert_job->index);
 
             // Move the vector from the temp flat index into the HNSW index.
-            my_index->addVector(my_index->tempFlat->getDataByInternalId(my_insert_job->id),
+            // Note that we access the vector via its internal id since in index of type MULTI,
+            // this is the only way to do so (knowing the label is not enough...)
+            my_index->addVector(my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
                                 my_insert_job->label);
-            VecSimIndex_DeleteVector(my_index->tempFlat, my_insert_job->label);
+            // TODO: enable deleting vectors by internal id for the case of moving a single vector
+            //  from the flat buffer in MULTI.
+            VecSimIndex_DeleteVector(my_index->flatBuffer, my_insert_job->label);
             auto it = my_index->labelToInsertJobs[my_insert_job->label].begin();
             ASSERT_EQ(job, *it); // Assert pointers equation
+            // Here we update labelToInsertJobs mapping, as we except that for every insert job
+            // there will be a corresponding item in the map.
             my_index->labelToInsertJobs[my_insert_job->label].erase(it);
             my_index->UpdateIndexMemory(my_index->memoryCtx,
                                         my_index->getAllocator()->getAllocationSize());
@@ -58,6 +64,8 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         tiered_index->labelToInsertJobs[vector_label].push_back(&job);
 
         // Wrap this job with an array and submit the jobs to the queue.
+        // TODO: in the future this should be part of the tiered index "add_vector" flow, and
+        //  we can replace this to avoid the breaking of the abstraction.
         auto **jobs = array_new<AsyncJob *>(1);
         jobs = array_append(jobs, (AsyncJob *)&job);
         tiered_index->SubmitJobsToQueue(tiered_index->jobQueue, (void **)jobs, 1);
@@ -68,7 +76,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         ASSERT_EQ(tiered_index->indexSize(), 1);
         ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
         ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
-        ASSERT_EQ(tiered_index->tempFlat->indexSize(), 0);
+        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
         ASSERT_EQ(tiered_index->labelToInsertJobs[vector_label].size(), 0);
 
         // Cleanup.

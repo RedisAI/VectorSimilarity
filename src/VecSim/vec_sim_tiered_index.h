@@ -8,7 +8,7 @@
 template <typename DataType, typename DistType>
 class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
-    BruteForceIndex<DataType, DistType> *tempFlat;
+    BruteForceIndex<DataType, DistType> *flatBuffer;
     VecSimIndexAbstract<DistType> *index;
 
     void *jobQueue;
@@ -31,11 +31,11 @@ public:
                               .dim = index_->getDim(),
                               .metric = index_->getMetric(),
                               .multi = index_->isMultiValue()};
-        tempFlat = static_cast<BruteForceIndex<DataType, DistType> *>(
+        flatBuffer = static_cast<BruteForceIndex<DataType, DistType> *>(
             BruteForceFactory::NewIndex(&bf_params, index->getAllocator()));
     }
     ~VecSimTieredIndex() {
         VecSimIndex_Free(index);
-        VecSimIndex_Free(tempFlat);
+        VecSimIndex_Free(flatBuffer);
     }
 };
