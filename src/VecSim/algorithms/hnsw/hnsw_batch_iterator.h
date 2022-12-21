@@ -62,9 +62,7 @@ public:
 
     void reset() override;
 
-    virtual ~HNSW_BatchIterator() {
-        index->returnVisitedList(this->visited_list);
-    }
+    virtual ~HNSW_BatchIterator() { index->returnVisitedList(this->visited_list); }
 };
 
 /******************** Ctor / Dtor **************/
