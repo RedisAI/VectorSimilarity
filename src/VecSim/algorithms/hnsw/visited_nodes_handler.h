@@ -36,7 +36,7 @@ public:
 
     inline void setElementsTags(tag_t *element_tags_) { elements_tags = element_tags_; }
 
-    inline void setNumElements(unsigned int num_elements_) { num_elements =  num_elements_; }
+    inline void setNumElements(unsigned int num_elements_) { num_elements = num_elements_; }
 
     void reset();
 
