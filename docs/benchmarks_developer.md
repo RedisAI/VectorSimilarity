@@ -6,7 +6,6 @@
     - [How to define and register a new test](#how-to-define-and-register-a-new-test)
 * [Fixtures](#fixtures)
     - [Benchmarks fixture classes hierarchy](#benchmarks-fixture-classes-hierarchy)
-* [Cmake remarks](#cmake-remarks)
 
 # Directory structure 
 The benchmark directory contains several types of files as follows:
@@ -140,9 +139,9 @@ The test's name components are:
 3. arguments names and values  
 *NOTE:* the fixture type (fp32_index_t, for example) is part of the name, so tests that use a different fixture **or** the same fixture of a different type, **can** share the same name.  
 
-## benchmarks.sh
-In this file, we define the names of the benchmarks binary files, **without** the `bm_` prefix. The names are used in:
-1. cmake of the benchmarks - given a `${benchmark}.cpp` file, create an executable file name `bm_${benchmark}`
-2. Makefile - to execute the benchmarks and define the results files names `${benchmark}_results`.
-3. benchmark.yml - read the results from the files according to the name defined in the Makefile.
+## benchmarks.sh [ BM_TYPE ]
+This script expects to get zero or one argument.  
+It will print the names of the benchmarks binary files, **without** the `bm_` prefix, separated by `\n`.  
+You can run this script with no argument (or `BM_TYPE = benchmarks-all`) to refer to **all** available benchmarks, or specify a set of benchmark tests.  
+
 
