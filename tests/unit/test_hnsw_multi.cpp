@@ -1822,7 +1822,7 @@ TYPED_TEST(HNSWMultiTest, parallelSearch) {
     // Run parallel searches where every searching thread expects to get different label as results
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
-        TEST_DATA_T query_val = 50+myID;
+        TEST_DATA_T query_val = 50 + myID;
         TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
