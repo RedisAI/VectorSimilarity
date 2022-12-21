@@ -69,24 +69,32 @@ public:
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
     virtual ~PyBatchIterator() {}
 };
+// @input or @query arguments are a py::object object. (numpy arrays are acceptable)
+
+// To convert input or query to a pointer use input_to_blob(input)
+// For example:
+// VecSimIndex_AddVector(index, input_to_blob(input), id);
 
 class PyVecSimIndex {
 public:
-    PyVecSimIndex() {}
+    PyVecSimIndex()
+        : create_bytearray(
+              py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {}
 
-    PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
-
-    void addVector(py::object input, size_t id) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        VecSimIndex_AddVector(index, (void *)items.data(0), id);
+    PyVecSimIndex(const VecSimParams &params)
+        : create_bytearray(
+              py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {
+        index = VecSimIndex_New(&params);
     }
 
+    void addVector(py::object input, size_t id) {
+        VecSimIndex_AddVector(index, input_to_blob(input), id);
+    }
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         VecSimQueryResult_List res =
-            VecSimIndex_TopKQuery(index, (void *)items.data(0), k, query_params, BY_SCORE);
+            VecSimIndex_TopKQuery(index, input_to_blob(input), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
@@ -95,27 +103,32 @@ public:
     }
 
     py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index, (void *)items.data(0), radius, query_params, BY_SCORE);
+            VecSimIndex_RangeQuery(index, input_to_blob(input), radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
-    PyBatchIterator createBatchIterator(py::object &query_blob, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-        float *vector_data = (float *)items.data(0);
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, query_params));
+    PyBatchIterator createBatchIterator(py::object input, VecSimQueryParams *query_params) {
+        return PyBatchIterator(VecSimBatchIterator_New(index, input_to_blob(input), query_params));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
 protected:
     VecSimIndex *index;
+
+private:
+    // save the bytearray to keep its pointer valid
+    py::bytearray tmp_bytearray;
+    const py::function create_bytearray;
+    const char *input_to_blob(py::object input) {
+        tmp_bytearray = create_bytearray(input);
+        return PyByteArray_AS_STRING(tmp_bytearray.ptr());
+    }
 };
 
-// Currently supports only floats. TODO change after serializer refactoring
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params) {
