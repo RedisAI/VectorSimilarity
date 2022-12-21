@@ -9,7 +9,6 @@ on: # TODO: delete this file when specifying a label is supported
       - '*noci'
 
 jobs:
-  #runs basics fp 32 single + multi and spaces
   bm_invoker: 
     uses: ./.github/workflows/benchmark.yml
     with:
