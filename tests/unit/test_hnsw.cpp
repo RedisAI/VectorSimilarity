@@ -2171,7 +2171,6 @@ TYPED_TEST(HNSWTest, parallelSearch) {
                          .initialCapacity = n,
                          .M = 16,
                          .efConstruction = 200};
-
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -2180,6 +2179,8 @@ TYPED_TEST(HNSWTest, parallelSearch) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
     std::atomic_int successful_searches(0);
+    // Run parallel searches where every searching thread expects to get different label as results
+    // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
         TEST_DATA_T query_val = 50+myID;
         TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
@@ -2192,7 +2193,7 @@ TYPED_TEST(HNSWTest, parallelSearch) {
         successful_searches++;
     };
 
-    size_t n_threads = 50;
+    size_t n_threads = 16;
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
