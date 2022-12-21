@@ -53,6 +53,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
     // Account for the visited nodes pool (assume that it holds one pointer to a handler).
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
+    // Fixed size allocations of the visited nodes pool inner deque.
+    est += 512 + 8*sizeof(void *) + 2*sizeof(size_t);
     est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes array
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
