@@ -37,10 +37,10 @@ foreach(data_type IN LISTS DATA_TYPE)
 	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
 endforeach(data_type IN LISTS DATA_TYPE)
 
-# ########################################################################################
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Passed this line we have optimization enabled by the compiler.                        #
 # Adding files to complie after this line will have an effect on the resulted binaries. #
-# ########################################################################################
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 include(CheckCXXCompilerFlag)
 
 # TODO: Remove this once cpu_features get support for M1

@@ -22,7 +22,7 @@ The serialized indices files that are used for micro-benchmarking and running an
 `tests/benchmark/data/hnsw_indices.txt`.  
 To download all the required files, run from the repository root directory:
 ```sh
-wget -q -i tests/benchmark/data/hnsw_indices.txt -P tests/benchmark/data
+wget -q -i tests/benchmark/data/hnsw_indices_all/hnsw_indices_all.txt -P tests/benchmark/data
 ```
 To run all test sets, call the following commands from the project root dir:
 ```sh
@@ -145,7 +145,12 @@ The `bm_dataset.py` script uses some of ANN-Benchmark datasets to measure this l
 5. mnist-784-euclidean
 6. sift-128-euclidean
 
-For each dataset, the script will build an HNSW index with pre-defined build parameters and persist it to a local file in `./data` directory that will be generated (index file name for example: `glove-25-angular-M=16-ef=100.hnsw`). Note that if the file already exists in this path, the entire index will be loaded instead of rebuilding it. Then, for 3 different pre-defined `ef_runtime` values, 1000 `Top_K` queries will be executed for `k=10` (these parameters can be modified easily in the script). For every configuration, the script outputs the following statistics:
+For each dataset, the script will build an HNSW index with pre-defined build parameters and persist it to a local file in `./data` directory that will be generated (index file name for example: `glove-25-angular-M=16-ef=100.hnsw`). Note that if the file already exists in this path, the entire index will be loaded instead of rebuilding it. 
+To download the serialized indices run from the project's root directory:
+```sh
+wget -q -i tests/benchmark/data/hnsw_indices_all/hnsw_indices_ann.txt -P tests/benchmark/data
+```
+Then, for 3 different pre-defined `ef_runtime` values, 1000 `Top_K` queries will be executed for `k=10` (these parameters can be modified easily in the script). For every configuration, the script outputs the following statistics:
 
 - Average recall
 - Query-per-second when running in brute-force mode
