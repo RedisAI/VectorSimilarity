@@ -1404,6 +1404,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
             break;
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
+            returnVisitedList(visited_nodes_handler);
             *rc = VecSim_QueryResult_TimedOut;
             return top_candidates;
         }

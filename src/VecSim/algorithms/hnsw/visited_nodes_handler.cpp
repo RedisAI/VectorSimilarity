@@ -35,7 +35,7 @@ VisitedNodesHandler::~VisitedNodesHandler() { allocator->free_allocation(element
  */
 VisitedNodesHandlerPool::VisitedNodesHandlerPool(int initial_pool_size, int cap,
                                                  const std::shared_ptr<VecSimAllocator> &allocator)
-    : VecsimBaseObject(allocator), pool(initial_pool_size, allocator) {
+    : VecsimBaseObject(allocator), pool(initial_pool_size, allocator), num_elements(cap) {
     for (int i = 0; i < initial_pool_size; i++)
         pool[i] = new (allocator) VisitedNodesHandler(cap, allocator);
 }

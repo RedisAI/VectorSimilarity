@@ -13,8 +13,8 @@ include(CTest)
 
 set(CMAKE_CXX_STANDARD 14)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -pthread")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -pthread")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
@@ -36,7 +36,7 @@ target_link_libraries(test_common PUBLIC gtest_main VectorSimilarity)
 include(GoogleTest)
 
 gtest_discover_tests(test_hnsw)
-gtest_discover_tests(test_bruteforce)
-gtest_discover_tests(test_allocator)
-gtest_discover_tests(test_spaces)
-gtest_discover_tests(test_common)
+#gtest_discover_tests(test_bruteforce)
+#gtest_discover_tests(test_allocator)
+#gtest_discover_tests(test_spaces)
+#gtest_discover_tests(test_common)

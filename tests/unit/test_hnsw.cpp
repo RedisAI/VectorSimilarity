@@ -14,6 +14,8 @@
 #include <climits>
 #include <unistd.h>
 #include <random>
+#include <thread>
+#include <atomic>
 
 template <typename index_type_t>
 class HNSWTest : public ::testing::Test {
@@ -1637,7 +1639,6 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
 
     VecSimIndex *index = this->CreateNewIndex(params);
-    ;
 
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 1.0);
 
@@ -2151,6 +2152,50 @@ TYPED_TEST(HNSWTest, allMarkedDeletedLevel) {
 
     // For completeness, we also check index integrity.
     ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, parallelSearch) {
+    size_t n = 1000;
+    size_t k = 11;
+    size_t dim = 4;
+
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    std::atomic_int successful_searches(0);
+    auto parallel_search = [&](int myID) {
+        TEST_DATA_T query_val = 50+myID;
+        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
+            ASSERT_EQ(diff_id, (res_index + 1) / 2);
+            ASSERT_EQ(score, (dim * ((res_index + 1) / 2) * ((res_index + 1) / 2)));
+        };
+        runTopKSearchTest(index, query, k, verify_res);
+        successful_searches++;
+    };
+
+    size_t n_threads = 50;
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i] = std::thread(parallel_search, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    ASSERT_EQ(successful_searches, n_threads);
 
     VecSimIndex_Free(index);
 }
