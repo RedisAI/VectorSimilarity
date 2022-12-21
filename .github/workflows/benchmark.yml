@@ -14,6 +14,11 @@ on:
         default: 'basic_fp32'
         required: false
         type: string
+      git_label:
+        description: 'The git label used to trigger the action'
+        required: true
+        type: string
+
 
 
 jobs:
@@ -78,15 +83,14 @@ jobs:
       # TODO: remove "--no-check-certificate" when possible
       - name: Download pre-generated indices
         timeout-minutes: 20
-        if: inputs.files_set != 'none'
-        run: wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_${{ inputs.files_set }}.txt -P tests/benchmark/data
+        run: ./tests/benchmark/benchmarks.sh ${{ inputs.git_label }}
       - name: Benchmark
         timeout-minutes: 120
-        run: make benchmark BM_FILTER=${{ inputs.filter }}
+        run: make benchmark BM_FILTER=${{ inputs.git_label }}
 
       - name: Collect results
         run: |
-          ./tests/benchmark/benchmarks.sh ${{ inputs.filter }} | xargs -I {} redisbench-admin export     \
+          ./tests/benchmark/benchmarks.sh ${{ inputs.git_label }} | xargs -I {} redisbench-admin export     \
           --redistimeseries_host      ${{ secrets.PERFORMANCE_RTS_HOST }}           \
           --redistimeseries_port      ${{ secrets.PERFORMANCE_RTS_PORT }}           \
           --redistimeseries_pass      ${{ secrets.PERFORMANCE_RTS_AUTH }}           \

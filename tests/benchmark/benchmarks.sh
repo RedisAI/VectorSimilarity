@@ -1,6 +1,6 @@
-BM_FILTER=$1;
+BM_GIT_LABEL=$1;
 # default label run basics fp32 single + multi, and spaces
-if [ -z "$BM_FILTER"  ] || [ "$BM_FILTER" = "ALL" ]; then 
+if [ -z "$BM_GIT_LABEL"  ] || [ "$BM_GIT_LABEL" = "benchmarks-all" ]; then 
     for bm_class in basics batch_iterator; do 
         for type in single multi; do 
             for data_type in fp32; do 
@@ -11,37 +11,37 @@ if [ -z "$BM_FILTER"  ] || [ "$BM_FILTER" = "ALL" ]; then
     echo updated_index_single_fp32
     echo spaces_fp32
     echo spaces_fp64
-elif [ "$BM_FILTER" = "BASICS_FP32_S+M_SPACES" ]; then 
+elif [ "$BM_GIT_LABEL" = "benchmarks-default" ]; then 
     echo basics_single_fp32
     echo basics_multi_fp32
     echo spaces_fp32
     echo spaces_fp64
 # Basic benchmarks
-elif [ "$BM_FILTER" = "BASICS_FP32_S" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-basics-fp32-single" ] ; then 
     echo basics_single_fp32
-elif [ "$BM_FILTER" = "BASICS_FP32_M" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-basics-fp32-multi" ] ; then 
     echo basics_multi_fp32
-elif [ "$BM_FILTER" = "BASICS_FP64_S" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-basics-fp64-single" ] ; then 
     echo basics_multi_fp64
-elif [ "$BM_FILTER" = "BASICS_FP64_M" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-basics-fp64-multi" ] ; then 
     echo basics_multi_fp64
 
 # Batch iterator benchmarks
-elif [ "$BM_FILTER" = "BI_FP32_S" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-batch-iter-fp32-single" ] ; then 
     echo batch_iterator_single_fp32
-elif [ "$BM_FILTER" = "BI_FP32_M" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-batch-iter-fp32-multi" ] ; then 
     echo batch_iterator_multi_fp32
-elif [ "$BM_FILTER" = "BI_FP64_S" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-batch-iter-fp64-single" ] ; then 
     echo batch_iterator_multi_fp64
-elif [ "$BM_FILTER" = "BI_FP64_M" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-batch-iter-fp64-multi" ] ; then 
     echo batch_iterator_multi_fp64
 
 # Updated index benchmarks
-elif [ "$BM_FILTER" = "UPDATED_FP32_S" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-updated-fp32-single" ] ; then 
     echo updated_index_single_fp32
 
 # Spaces benchmarks
-elif [ "$BM_FILTER" = "SPACES" ] ; then 
+elif [ "$BM_GIT_LABEL" = "bm-spaces" ] ; then 
     echo spaces_fp32
     echo spaces_fp64
 fi
