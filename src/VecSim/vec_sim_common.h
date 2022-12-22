@@ -67,6 +67,13 @@ typedef enum {
 } VecSimResolveCode;
 
 /**
+ * Callback signatures for asynchronous tiered index.
+ */
+typedef int (*SubmitCB)(void *job_queue, void **jobs, size_t jobs_len);
+typedef int (*UpdateMemoryCB)(void *memory_ctx, size_t memory);
+typedef void (*JobCallback)(void *);
+
+/**
  * @brief Index initialization parameters.
  *
  */
@@ -92,13 +99,80 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+// A struct that contains the common tiered index params.
+typedef struct {
+    void *jobQueue;             // External queue that holds the jobs.
+    SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
+    void *memoryCtx;            // External context that stores the index memory consumption.
+    UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
+                                // with a given memory (number).
+} TieredIndexParams;
+
+typedef struct {
+    HNSWParams hnswParams;
+    TieredIndexParams tieredParams;
+} TieredHNSWParams;
+
 typedef struct {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
+        TieredHNSWParams tieredHNSWParams;
     };
 } VecSimParams;
+
+/**
+ * The specific job types in use (to be extended in the future by demand)
+ */
+typedef enum {
+    HNSW_INSERT_VECTOR_JOB,
+    HNSW_REPAIR_NODE_CONNECTIONS_JOB,
+    HNSW_SEARCH_JOB,
+    HNSW_SWAP_JOB,
+    INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
+} JobType;
+
+/**
+ * Definition of generic job structure for asynchronous tiered index.
+ */
+typedef struct AsyncJob {
+    JobType jobType;
+    JobCallback Execute; // A callback that receives a job as its input and executes the job.
+} AsyncJob;
+
+/**
+ * Definition of a job that inserts a new vector from flat into HNSW Index.
+ */
+typedef struct HNSWInsertJob {
+    AsyncJob base;
+    void *index;
+    labelType label;
+    idType id;
+} HNSWInsertJob;
+
+/**
+ * Definition of a job that swaps last id with a deleted id in HNSW Index after delete operation.
+ */
+typedef struct HNSWSwapJob {
+    AsyncJob base;
+    void *index;
+    idType deleted_id;
+    long pending_repair_jobs_counter; // number of repair jobs left to complete before this job
+                                      // is ready to be executed (atomic counter).
+} HNSWSwapJob;
+
+/**
+ * Definition of a job that repairs a certain node's connection in HNSW Index after delete
+ * operation.
+ */
+typedef struct HNSWRepairJob {
+    AsyncJob base;
+    void *index;
+    idType node_id;
+    unsigned short level;
+    HNSWSwapJob *assosiated_swap_job;
+} HNSWRepairJob;
 
 typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
