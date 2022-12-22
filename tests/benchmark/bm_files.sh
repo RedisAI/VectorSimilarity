@@ -1,16 +1,16 @@
-GIT_LABEL=$1
-if [ -z "$GIT_LABEL"  ] || [ "$GIT_LABEL" = "benchmarks-all" ]; then 
+BM_TYPE=$1
+if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then 
     file_name="all"
-elif [ "$GIT_LABEL" = "bm-spaces" ]; then
+elif [ "$BM_TYPE" = "bm-spaces" ]; then
     :
-elif [ "$GIT_LABEL" = "benchmarks-default" ] \
-|| [ "$GIT_LABEL" = "bm-basics-fp32-single" ] \
-|| [ "$GIT_LABEL" = "bm-basics-fp32-multi" ] \
-|| [ "$GIT_LABEL" = "bm-batch-iter-fp32-single" ] \
-|| [ "$GIT_LABEL" = "bm-batch-iter-fp32-multi" ] 
+elif [ "$BM_TYPE" = "benchmarks-default" ] \
+|| [ "$BM_TYPE" = "bm-basics-fp32-single" ] \
+|| [ "$BM_TYPE" = "bm-basics-fp32-multi" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-fp32-single" ] \
+|| [ "$BM_TYPE" = "bm-batch-iter-fp32-multi" ] 
 then
     file_name="basic_fp32"
-elif [ "$GIT_LABEL" = "bm-updated-fp32-single" ]; then
+elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 fi
 
