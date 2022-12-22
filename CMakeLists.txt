@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 cmake_policy(SET CMP0077 NEW)
 
+set(CMAKE_CXX_STANDARD 20)
 option(VECSIM_BUILD_TESTS "Build tests" ON)
 
 # option(VECSIM_STATIC "Build as static library" OFF)
