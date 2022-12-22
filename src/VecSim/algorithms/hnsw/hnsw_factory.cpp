@@ -133,15 +133,11 @@ VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
     if (params->hnswParams.type == VecSimType_FLOAT32) {
         auto *hnsw_index =
             NewIndex_ChooseMultiOrSingle<float, float>(&params->hnswParams, allocator);
-        return new (allocator) TieredHNSWIndex<float, float>(
-            hnsw_index, params->tieredParams.jobQueue, params->tieredParams.submitCb,
-            params->tieredParams.memoryCtx, params->tieredParams.UpdateMemCb);
+        return new (allocator) TieredHNSWIndex<float, float>(hnsw_index, params->tieredParams);
     } else if (params->hnswParams.type == VecSimType_FLOAT64) {
         auto *hnsw_index =
             NewIndex_ChooseMultiOrSingle<double, double>(&params->hnswParams, allocator);
-        return new (allocator) TieredHNSWIndex<double, double>(
-            hnsw_index, params->tieredParams.jobQueue, params->tieredParams.submitCb,
-            params->tieredParams.memoryCtx, params->tieredParams.UpdateMemCb);
+        return new (allocator) TieredHNSWIndex<double, double>(hnsw_index, params->tieredParams);
     } else {
         return nullptr; // Invalid type
     }

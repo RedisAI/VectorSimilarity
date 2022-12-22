@@ -23,10 +23,10 @@ protected:
     std::shared_mutex mainIndexGuard;
 
 public:
-    VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, void *job_queue_, SubmitCB submitCb,
-                      void *memory_ctx, UpdateMemoryCB UpdateMemCb)
-        : VecSimIndexInterface(index_->getAllocator()), index(index_), jobQueue(job_queue_),
-          SubmitJobsToQueue(submitCb), memoryCtx(memory_ctx), UpdateIndexMemory(UpdateMemCb) {
+    VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, TieredIndexParams tieredParams)
+        : VecSimIndexInterface(index_->getAllocator()), index(index_),
+          jobQueue(tieredParams.jobQueue), SubmitJobsToQueue(tieredParams.submitCb),
+          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {
         BFParams bf_params = {.type = index_->getType(),
                               .dim = index_->getDim(),
                               .metric = index_->getMetric(),

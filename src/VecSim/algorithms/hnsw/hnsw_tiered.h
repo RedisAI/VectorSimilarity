@@ -36,10 +36,8 @@ private:
 #endif
 
 public:
-    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, void *job_queue_, SubmitCB submitCb,
-                    void *memory_ctx, UpdateMemoryCB UpdateMemCb)
-        : VecSimTieredIndex<DataType, DistType>(hnsw_index, job_queue_, submitCb, memory_ctx,
-                                                UpdateMemCb) {}
+    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams)
+        : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams) {}
     virtual ~TieredHNSWIndex() = default;
 
     // TODO: Implement the actual methods instead of these temporary ones.
