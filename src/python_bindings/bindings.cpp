@@ -56,8 +56,9 @@ private:
     std::shared_ptr<VecSimBatchIterator> batchIterator;
 
 public:
-    PyBatchIterator(const std::shared_ptr<VecSimIndex> &vecIndex, VecSimBatchIterator *batchIterator)
-        : vectorIndex(vecIndex),  batchIterator(batchIterator, VecSimBatchIterator_Free) {}
+    PyBatchIterator(const std::shared_ptr<VecSimIndex> &vecIndex,
+                    VecSimBatchIterator *batchIterator)
+        : vectorIndex(vecIndex), batchIterator(batchIterator, VecSimBatchIterator_Free) {}
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
@@ -106,19 +107,19 @@ public:
     }
 
     py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
-        VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index.get(), input_to_blob(input), radius, query_params, BY_SCORE);
+        VecSimQueryResult_List res = VecSimIndex_RangeQuery(index.get(), input_to_blob(input),
+                                                            radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
 
     PyBatchIterator createBatchIterator(py::object input, VecSimQueryParams *query_params) {
-        return PyBatchIterator(index,
-                               VecSimBatchIterator_New(index.get(), input_to_blob(input), query_params));
+        return PyBatchIterator(
+            index, VecSimBatchIterator_New(index.get(), input_to_blob(input), query_params));
     }
 
-    virtual ~PyVecSimIndex() {}  // Delete function was given to the shared pointer object
+    virtual ~PyVecSimIndex() {} // Delete function was given to the shared pointer object
 
 protected:
     std::shared_ptr<VecSimIndex> index;
@@ -142,7 +143,8 @@ public:
 
     // @params is required only in V1.
     PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
-        this->index = std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location, hnsw_params), VecSimIndex_Free);
+        this->index = std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location, hnsw_params),
+                                                   VecSimIndex_Free);
     }
 
     void setDefaultEf(size_t ef) {
