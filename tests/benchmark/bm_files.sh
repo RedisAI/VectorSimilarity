@@ -10,6 +10,12 @@ elif [ "$GIT_LABEL" = "benchmarks-default" ] \
 || [ "$GIT_LABEL" = "bm-batch-iter-fp32-multi" ] 
 then
     file_name="basic_fp32"
+elif [ "$GIT_LABEL" = "bm-basics-fp64-single" ] \
+|| [ "$GIT_LABEL" = "bm-basics-fp64-multi" ] \
+|| [ "$GIT_LABEL" = "bm-batch-iter-fp64-single" ] \
+|| [ "$GIT_LABEL" = "bm-batch-iter-fp64-multi" ] 
+then
+    file_name="basic_fp64"
 elif [ "$GIT_LABEL" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 fi
