@@ -25,8 +25,9 @@ VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> a
         return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
     } else if (params->type == VecSimType_FLOAT64) {
         return NewIndex_ChooseMultiOrSingle<double>(params, allocator);
+    } else if (params->type == VecSimType_FP32_TO_BF16) {
+        return NewIndex_ChooseMultiOrSingle<bf16, float>(params, allocator);
     }
-
     // If we got here something is wrong.
     return NULL;
 }

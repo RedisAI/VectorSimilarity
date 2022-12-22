@@ -8,6 +8,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/BF16_converter.h"
 namespace spaces {
 
 /*** Defined in spaces.h
@@ -78,5 +79,12 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dis
         *index_dist_func = L2_FP64_GetDistFunc(dim, arch_opt);
     }
 }
+
+bf16_converter_t GetBFloat16Converter(size_t dim) {
+    
+        static const Arch_Optimization arch_opt = getArchitectureOptimization();
+        return BF16_GetConveter(dim, arch_opt);
+}
+
 
 } // namespace spaces
