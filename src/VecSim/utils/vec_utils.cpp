@@ -165,6 +165,8 @@ size_t VecSimType_sizeof(VecSimType type) {
         return sizeof(int32_t);
     case VecSimType_INT64:
         return sizeof(int64_t);
+    case VecSimType_FP32_TO_BF16:
+        return sizeof(bf16);
     }
     return 0;
 }

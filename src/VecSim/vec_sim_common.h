@@ -11,6 +11,7 @@ extern "C" {
 #endif
 #include <stddef.h>
 #include <stdint.h>
+#include <cstdint>
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
@@ -24,7 +25,8 @@ typedef enum {
     VecSimType_FLOAT32,
     VecSimType_FLOAT64,
     VecSimType_INT32,
-    VecSimType_INT64
+    VecSimType_INT64,
+    VecSimType_FP32_TO_BF16
 } VecSimType;
 
 // Algorithm type/library.
@@ -39,6 +41,7 @@ typedef enum { DELETE_MARK = 0x01 } Flags;
 typedef size_t labelType;
 typedef unsigned int idType;
 
+typedef uint16_t bf16;
 /**
  * @brief Query Runtime raw parameters.
  * Use VecSimIndex_ResolveParams to generate VecSimQueryParams from array of VecSimRawParams.
