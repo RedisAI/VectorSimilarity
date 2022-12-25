@@ -784,6 +784,9 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         selected_neighbors.push_back(top_candidates.top().second);
         top_candidates.pop();
     }
+    // Done updating the neighbor's neighbors.
+    setListCount(neighbor_neighbors_list, neighbour_neighbours_idx);
+}
 
     // The closest vector that has found to be returned (and start the scan from it in the next
     // level).
