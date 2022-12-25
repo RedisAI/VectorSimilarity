@@ -756,7 +756,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(size_t level, idT
         setListCount(new_node_neighbors_list, cur_node_neighbors_count);
         if (cur_node_chosen && neighbour_neighbours_idx < max_M_cur) {
             // connection is mutual - both new node and the selected neighbor in each other's list.
-            new_node_neighbors_list[neighbour_neighbours_idx++] = new_node_id;
+            neighbor_neighbors_list[neighbour_neighbours_idx++] = new_node_id;
         } else {
             // unidirectional connection - put the new node in the neighbour's incoming edges.
             neighbour_incoming_edges->push_back(new_node_id);
