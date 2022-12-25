@@ -44,8 +44,8 @@ VisitedNodesHandler *VisitedNodesHandlerPool::getAvailableVisitedNodesHandler() 
     VisitedNodesHandler *handler;
     std::unique_lock<std::mutex> lock(pool_guard);
     if (!pool.empty()) {
-        handler = pool.front();
-        pool.pop_front();
+        handler = pool.back();
+        pool.pop_back();
     } else {
         handler = new (allocator) VisitedNodesHandler(this->num_elements, this->allocator);
     }
@@ -54,7 +54,7 @@ VisitedNodesHandler *VisitedNodesHandlerPool::getAvailableVisitedNodesHandler() 
 
 void VisitedNodesHandlerPool::returnVisitedNodesHandlerToPool(VisitedNodesHandler *handler) {
     std::unique_lock<std::mutex> lock(pool_guard);
-    pool.push_front(handler);
+    pool.push_back(handler);
 }
 
 void VisitedNodesHandlerPool::resize(size_t new_size) {
@@ -70,8 +70,8 @@ void VisitedNodesHandlerPool::resize(size_t new_size) {
 
 VisitedNodesHandlerPool::~VisitedNodesHandlerPool() {
     while (!pool.empty()) {
-        VisitedNodesHandler *handler = pool.front();
-        pool.pop_front();
+        VisitedNodesHandler *handler = pool.back();
+        pool.pop_back();
         delete handler;
     }
 }

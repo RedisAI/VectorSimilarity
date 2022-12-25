@@ -7,7 +7,7 @@
 #pragma once
 
 #include <mutex>
-#include <deque>
+#include <vector>
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
 
@@ -55,7 +55,7 @@ public:
  */
 class VisitedNodesHandlerPool : public VecsimBaseObject {
 private:
-    std::deque<VisitedNodesHandler *, VecsimSTLAllocator<VisitedNodesHandler *>> pool;
+    std::vector<VisitedNodesHandler *, VecsimSTLAllocator<VisitedNodesHandler *>> pool;
     std::mutex pool_guard;
     unsigned int num_elements;
 
