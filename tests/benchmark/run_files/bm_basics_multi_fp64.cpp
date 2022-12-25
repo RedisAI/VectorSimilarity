@@ -15,7 +15,7 @@ size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
 
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/fp64_fashion_images_multi_value-M=64-ef=512.hnsw_v2";
+    "tests/benchmark/data/fp64_fashion_images_multi_value-M64-efc512.hnsw_v2";
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/fashion_images_multi_test_vecs_fp64.raw";
 
