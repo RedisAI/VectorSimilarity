@@ -20,4 +20,4 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 fi
 
-wget --no-check-certificate -i tests/benchmark/data/hnsw_indices/hnsw_indices_$file_name.txt -P tests/benchmark/data
+wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_$file_name.txt -P tests/benchmark/data
