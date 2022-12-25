@@ -95,11 +95,9 @@ protected:
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
-#ifdef ENABLE_PARALLELIZATION
-    std::mutex global;
-    std::mutex cur_element_count_guard_;
-    std::vector<std::mutex> link_list_locks_;
-#endif
+    std::mutex entry_point_guard_;
+    std::mutex index_data_guard_;
+    mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
@@ -147,9 +145,13 @@ protected:
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
-    inline idType mutuallyConnectNewElement(idType cur_c,
-                                            candidatesMaxHeap<DistType> &top_candidates,
-                                            size_t level);
+    void revisitNeighborConnections(size_t level, idType new_node_id, idType selected_neighbor,
+                                    idType *new_node_neighbors_list,
+                                    idType *neighbor_neighbors_list,
+                                    std::unique_lock<std::mutex> &node_lock,
+                                    std::unique_lock<std::mutex> &neighbor_lock);
+    idType mutuallyConnectNewElement(idType new_node_id, candidatesMaxHeap<DistType> &top_candidates,
+                                     size_t level);
     template <bool with_timeout>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
                            void *timeoutCtx = nullptr, VecSimQueryResult_Code *rc = nullptr) const;
@@ -471,9 +473,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     tag_t *elements_tags, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
-#endif
+    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
     idType *node_links = get_linklist_at_level(curNodeId, layer);
     linkListSize links_num = getListCount(node_links);
 
@@ -525,9 +525,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     tag_t *elements_tags, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
 
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
-#endif
+    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
     idType *node_links = get_linklist_at_level(curNodeId, layer);
     linkListSize links_num = getListCount(node_links);
 
@@ -654,116 +652,195 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
 }
 
 template <typename DataType, typename DistType>
-idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
-    idType cur_c, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
-    size_t Mcurmax = level ? maxM_ : maxM0_;
+void HNSWIndex<DataType, DistType>::revisitNeighborConnections(size_t level, idType new_node_id,
+                                                               idType selected_neighbor,
+                                                               idType *new_node_neighbors_list,
+                                                               idType *neighbor_neighbors_list,
+                                                               std::unique_lock<std::mutex> &node_lock,
+                                                               std::unique_lock<std::mutex> &neighbor_lock) {
+
+    // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
+    candidatesMaxHeap<DistType> candidates(this->allocator);
+    DistType dist_cur_node_neighbor = this->dist_func(getDataByInternalId(new_node_id),
+                                                      getDataByInternalId(selected_neighbor), this->dim);
+    candidates.emplace(dist_cur_node_neighbor, new_node_id);
+
+    for (size_t j = 0; j < getListCount(neighbor_neighbors_list); j++) {
+        candidates.emplace(this->dist_func(getDataByInternalId(neighbor_neighbors_list[j]),
+                                           getDataByInternalId(selected_neighbor), this->dim),
+                           neighbor_neighbors_list[j]);
+    }
+
+    std::vector<idType> nodes_to_update;
+    auto orig_candidates = candidates;
+
+    // Candidates will store the newly selected neighbours (for the neighbor).
+    size_t max_M_cur = level ? maxM_ : maxM0_;
+    getNeighborsByHeuristic2(candidates, max_M_cur);
+
+    // Go over the original candidates set, and save the ones chosen to be removed to update later on.
+    bool cur_node_chosen = false;
+    while (orig_candidates.size() > 0) {
+        idType orig_candidate = orig_candidates.top().second;
+        if (candidates.empty() || orig_candidate != candidates.top().second) {
+            if (orig_candidate != new_node_id) {
+                nodes_to_update.push_back(orig_candidate);
+            }
+            orig_candidates.pop();
+        } else {
+            candidates.pop();
+            orig_candidates.pop();
+            if (orig_candidate == new_node_id) {
+                cur_node_chosen = true;
+            }
+        }
+    }
+
+    // Acquire all relevant locks for making the updates for the selected neighbor - all its removed
+    // neighbors, along with the neighbors itself and the cur node.
+    // but first, we release the node and neighbors lock to avoid deadlocks.
+    node_lock.unlock();
+    neighbor_lock.unlock();
+
+    nodes_to_update.push_back(selected_neighbor);
+    nodes_to_update.push_back(new_node_id);
+
+    std::sort(nodes_to_update.begin(), nodes_to_update.end());
+    size_t nodes_to_update_count = nodes_to_update.size();
+    std::unique_lock<std::mutex> locks[nodes_to_update_count];
+    for (size_t i = 0; i < nodes_to_update_count; i++) {
+        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
+    }
+
+    auto *neighbour_incoming_edges = getIncomingEdgesPtr(selected_neighbor, level);
+    size_t neighbor_neighbors_count = getListCount(neighbor_neighbors_list);
+
+    size_t neighbour_neighbours_idx = 0;
+    bool update_cur_node_required = true;
+    for (size_t i = 0; i < neighbor_neighbors_count; i++) {
+        if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(), neighbor_neighbors_list[i])) {
+            // the neighbor is not in the "to_update" nodes list - leave it as is.
+            neighbor_neighbors_list[neighbour_neighbours_idx++] = neighbor_neighbors_list[i];
+            continue;
+        } else if (neighbor_neighbors_list[i] == new_node_id) {
+            // the new node is somehow got into the neighbor's neighbours in the meantime - leave it as is.
+            neighbor_neighbors_list[neighbour_neighbours_idx++] = neighbor_neighbors_list[i];
+            update_cur_node_required = false;
+            continue;
+        }
+        // Now we know that we are looking at a node to be removed from the neighbor's neighbors.
+        auto removed_node = neighbor_neighbors_list[i];
+        auto *removed_node_incoming_edges = getIncomingEdgesPtr(removed_node, level);
+        // Perform the mutual update:
+        // if the removed node id (the neighbour's neighbour to be removed)
+        // wasn't pointing to the neighbour (i.e., the edge was uni-directional),
+        // we should remove the current neighbor from the node's incoming edges.
+        // otherwise, the edge turned from bidirectional to uni-directional, so we insert it to the neighbour's
+        // incoming edges set.
+        // Note: we assume that every update is performed atomically mutually, so it should be sufficient to look
+        // at the removed node's incoming edges set alone.
+        auto it = std::find(removed_node_incoming_edges->begin(), removed_node_incoming_edges->end(),
+                            selected_neighbor);
+        if (it != removed_node_incoming_edges->end()) {
+            removed_node_incoming_edges->erase(it);
+        } else {
+            neighbour_incoming_edges->push_back(removed_node);
+        }
+    }
+
+    size_t cur_node_neighbors_count = getListCount(new_node_neighbors_list);
+    if (update_cur_node_required && cur_node_neighbors_count < max_M_cur &&
+        !isMarkedDeleted(new_node_id) && !isMarkedDeleted(selected_neighbor)) {
+        // update the connection between the new node and the neighbor.
+        new_node_neighbors_list[cur_node_neighbors_count++] = selected_neighbor;
+        setListCount(new_node_neighbors_list, cur_node_neighbors_count);
+        if (cur_node_chosen && neighbour_neighbours_idx < max_M_cur) {
+            // connection is mutual - both new node and the selected neighbor in each other's list.
+            new_node_neighbors_list[neighbour_neighbours_idx++] = new_node_id;
+        } else {
+            // unidirectional connection - put the new node in the neighbour's incoming edges.
+            neighbour_incoming_edges->push_back(new_node_id);
+        }
+    }
+    // Done updating the neighbor's neighbors.
+    setListCount(neighbor_neighbors_list, neighbour_neighbours_idx);
+}
+
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement (
+		idType new_node_id, candidatesMaxHeap<DistType> &top_candidates, size_t level) {
+
+    // The maximum number of neighbors allowed for an existing neighbor (not new).
+    size_t max_M_cur = level ? maxM_ : maxM0_;
+
+    // Filter the top candidates to the selected neighbors by the algorithm heuristics.
     getNeighborsByHeuristic2(top_candidates, M_);
-    if (top_candidates.size() > M_)
-        throw std::runtime_error(
+    assert (top_candidates.size() <= M_ &&
             "Should be not be more than M_ candidates returned by the heuristic");
 
-    vecsim_stl::vector<idType> selectedNeighbors(this->allocator);
-    selectedNeighbors.reserve(M_);
-    while (top_candidates.size() > 0) {
-        selectedNeighbors.push_back(top_candidates.top().second);
+    vecsim_stl::vector<idType> selected_neighbors(this->allocator);
+    selected_neighbors.reserve(M_);
+    while (!top_candidates.empty()) {
+        selected_neighbors.push_back(top_candidates.top().second);
         top_candidates.pop();
     }
 
-    idType next_closest_entry_point = selectedNeighbors.back();
-    {
-        idType *ll_cur = get_linklist_at_level(cur_c, level);
-        assert(getListCount(ll_cur) == 0 &&
-               "The newly inserted element should have blank link list");
-        const linkListSize size = selectedNeighbors.size();
-        setListCount(ll_cur, size);
+    // The closest vector that has found to be returned (and start the scan from it in the next level).
+    idType next_closest_entry_point = selected_neighbors.back();
+    idType *new_node_neighbors_list = get_linklist_at_level(new_node_id, level);
+    assert(getListCount(new_node_neighbors_list) == 0 &&
+           "The newly inserted element should have blank link list");
 
-        for (auto cur_neighbor = selectedNeighbors.rbegin();
-             cur_neighbor != selectedNeighbors.rend(); ++cur_neighbor) {
+    // Create the incoming edges for the new node in the current level.
+    auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
+    setIncomingEdgesPtr(new_node_id, level, (void *)incoming_edges);
 
-            assert(*ll_cur == 0 && "Possible memory corruption");
-            assert(level <= element_levels_[*cur_neighbor] &&
-                   "Trying to make a link on a non-existent level");
-
-            *ll_cur = *cur_neighbor;
-            ll_cur++;
-        }
-
-        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-        setIncomingEdgesPtr(cur_c, level, (void *)incoming_edges);
-    }
-
-    // go over the selected neighbours - selectedNeighbor is the neighbour id
-    vecsim_stl::vector<bool> neighbors_bitmap(this->allocator);
-    for (idType selectedNeighbor : selectedNeighbors) {
-#ifdef ENABLE_PARALLELIZATION
-        std::unique_lock<std::mutex> lock(link_list_locks_[selectedNeighbor]);
-#endif
-        idType *neighbor_neighbors = get_linklist_at_level(selectedNeighbor, level);
-        linkListSize sz_link_list_other = getListCount(neighbor_neighbors);
-
-        if (sz_link_list_other > Mcurmax)
-            throw std::runtime_error("Bad value of sz_link_list_other");
-        if (selectedNeighbor == cur_c)
-            throw std::runtime_error("Trying to connect an element to itself");
-        if (level > element_levels_[selectedNeighbor])
-            throw std::runtime_error("Trying to make a link on a non-existent level");
-
-        // If the selected neighbor can add another link (hasn't reached the max) - add it.
-        if (sz_link_list_other < Mcurmax) {
-            neighbor_neighbors[sz_link_list_other] = cur_c;
-            setListCount(neighbor_neighbors, sz_link_list_other + 1);
+    for (idType selected_neighbor : selected_neighbors) {
+        std::unique_lock<std::mutex> node_lock;
+        std::unique_lock<std::mutex> neighbor_lock;
+        idType lower_id = (new_node_id < selected_neighbor) ? new_node_id : selected_neighbor;
+        if (lower_id == new_node_id) {
+            node_lock = std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
+            neighbor_lock =
+                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
         } else {
-            // try finding "weak" elements to replace it with the new one with the heuristic:
-            candidatesMaxHeap<DistType> candidates(this->allocator);
-            // (re)use the bitmap to represent the set of the original neighbours for the current
-            // selected neighbour.
-            neighbors_bitmap.assign(cur_element_count, false);
-            DistType d_max = this->dist_func(getDataByInternalId(cur_c),
-                                             getDataByInternalId(selectedNeighbor), this->dim);
-            candidates.emplace(d_max, cur_c);
-            // consider cur_c as if it was a link of the selected neighbor
-            neighbors_bitmap[cur_c] = true;
-            for (size_t j = 0; j < sz_link_list_other; j++) {
-                candidates.emplace(this->dist_func(getDataByInternalId(neighbor_neighbors[j]),
-                                                   getDataByInternalId(selectedNeighbor),
-                                                   this->dim),
-                                   neighbor_neighbors[j]);
-                neighbors_bitmap[neighbor_neighbors[j]] = true;
-            }
-
-            idType removed_links[sz_link_list_other + 1];
-            size_t removed_links_num;
-            removeExtraLinks(candidates, Mcurmax, neighbor_neighbors, neighbors_bitmap,
-                             removed_links, &removed_links_num);
-
-            // remove the current neighbor from the incoming list of nodes for the
-            // neighbours that were chosen to remove (if edge wasn't bidirectional)
-            auto *neighbour_incoming_edges = getIncomingEdgesPtr(selectedNeighbor, level);
-            for (size_t i = 0; i < removed_links_num; i++) {
-                idType node_id = removed_links[i];
-                auto *node_incoming_edges = getIncomingEdgesPtr(node_id, level);
-                // if we removed cur_c (the node just inserted), then it points to the current
-                // neighbour, but not vise versa.
-                if (node_id == cur_c) {
-                    neighbour_incoming_edges->push_back(cur_c);
-                    continue;
-                }
-
-                // if the node id (the neighbour's neighbour to be removed)
-                // wasn't pointing to the neighbour (i.e., the edge was uni-directional),
-                // we should remove the current neighbor from the node's incoming edges.
-                // otherwise, the edge turned from bidirectional to
-                // uni-directional, so we insert it to the neighbour's
-                // incoming edges set.
-                auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(),
-                                    selectedNeighbor);
-                if (it != node_incoming_edges->end()) {
-                    node_incoming_edges->erase(it);
-                } else {
-                    neighbour_incoming_edges->push_back(node_id);
-                }
-            }
+            neighbor_lock =
+                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
+            node_lock = std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
         }
+
+        // get the updated count - this may change between iterations due to releasing the lock.
+        linkListSize cur_node_neighbors_count = getListCount(new_node_neighbors_list);
+        idType *neighbor_neighbors_list = get_linklist_at_level(selected_neighbor, level);
+        linkListSize neighbor_neighbors_count = getListCount(neighbor_neighbors_list);
+
+        if (cur_node_neighbors_count == max_M_cur) {
+            // The new node cannot add more neighbors
+            continue;
+        }
+        // validations...
+        assert(cur_node_neighbors_count <= max_M_cur && "Neighbors number exceeds limit");
+        assert(selected_neighbor != new_node_id && "Trying to connect an element to itself");
+
+        // If one of the two nodes has already deleted - skip the operation.
+        if (isMarkedDeleted(new_node_id) || isMarkedDeleted(selected_neighbor)) {
+            continue;
+        }
+
+        // if the neighbor's neighbors list has the capacity to add the new node, make the update and finish.
+        if (neighbor_neighbors_count < max_M_cur) {
+            new_node_neighbors_list[cur_node_neighbors_count] = selected_neighbor;
+            setListCount(new_node_neighbors_list, cur_node_neighbors_count + 1);
+            neighbor_neighbors_list[neighbor_neighbors_count] = new_node_id;
+            setListCount(neighbor_neighbors_list, neighbor_neighbors_count + 1);
+            continue;
+        }
+
+        // Otherwise - we need to re-evaluate the neighbor's neighbors.
+        // We collect all the existing neighbors and the new node as candidates, and mutually update
+        // the neighbor's neighbors.
+        revisitNeighborConnections(level, new_node_id, selected_neighbor, new_node_neighbors_list,
+                                   neighbor_neighbors_list, node_lock, neighbor_lock);
     }
     return next_closest_entry_point;
 }
@@ -986,9 +1063,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             return;
         }
         changed = false;
-#ifdef ENABLE_PARALLELIZATION
-        std::unique_lock<std::mutex> lock(link_list_locks_[currObj]);
-#endif
+        std::unique_lock<std::mutex> lock(element_neighbors_locks_[curObj]);
         idType *node_links = get_linklist(curObj, level);
         linkListSize links_count = getListCount(node_links);
 
@@ -1026,12 +1101,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       VecSimIndexTombstone(), max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
       element_levels_(max_elements_, allocator),
-      visited_nodes_handler_pool(pool_initial_size, max_elements_, this->allocator)
-
-#ifdef ENABLE_PARALLELIZATION
-      ,
-      link_list_locks_(max_elements_)
-#endif
+      visited_nodes_handler_pool((int)pool_initial_size, max_elements_, allocator),
+      element_neighbors_locks_(max_elements_, allocator)
 {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > UINT16_MAX / 2)
@@ -1114,9 +1185,7 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     element_levels_.shrink_to_fit();
     resizeLabelLookup(new_max_elements);
     visited_nodes_handler_pool.resize(new_max_elements);
-#ifdef ENABLE_PARALLELIZATION
-    std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
-#endif
+    vecsim_stl::vector<std::mutex>(new_max_elements, this->allocator).swap(element_neighbors_locks_);
     // Reallocate base layer
     char *data_level0_memory_new = (char *)this->allocator->reallocate(
         data_level0_memory_, new_max_elements * size_data_per_element_);
@@ -1228,8 +1297,6 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
 template <typename DataType, typename DistType>
 int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
 
-    idType cur_c;
-
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
@@ -1237,35 +1304,30 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         vector_data = normalized_blob;
     }
 
-    {
-#ifdef ENABLE_PARALLELIZATION
-        std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
-#endif
+    // Choose randomly the maximum level in which the new element will be in the index.
+    int element_max_level = getRandomLevel(mult_);
 
-        if (cur_element_count >= max_elements_) {
-            size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
-            resizeIndex(max_elements_ + vectors_to_add);
-        }
-        cur_c = cur_element_count++;
-        setVectorId(label, cur_c);
+    // Access and update the index global data structures with the new vector.
+    std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
+    if (cur_element_count >= max_elements_) {
+        // Resizing should not occur in multithreading scenario.
+        // TODO: consider adding a flag to the function and validate whether resize is valid or not.
+        size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
+        resizeIndex(max_elements_ + vectors_to_add);
     }
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> lock_el(link_list_locks_[cur_c]);
-#endif
-    // choose randomly the maximum level in which the new element will be in the index.
-    size_t element_max_level = getRandomLevel(mult_);
+    idType cur_c = cur_element_count++;
+    setVectorId(label, cur_c);
     element_levels_[cur_c] = element_max_level;
+    index_data_lock.unlock();
 
-#ifdef ENABLE_PARALLELIZATION
-    std::unique_lock<std::mutex> entry_point_lock(global);
-#endif
-    size_t maxlevelcopy = maxlevel_;
+    // Hold the entry point lock and fetch a copy of it. If the new node's max level is higher than
+    // the current one, hold the lock through the entire insertion to maintain consistency of the EP.
+    std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
+    int max_level_copy = (int)maxlevel_;
+    idType curr_element = entrypoint_node_;
 
-#ifdef ENABLE_PARALLELIZATION
-    if (element_max_level <= maxlevelcopy)
+    if (element_max_level <= max_level_copy)
         entry_point_lock.unlock();
-#endif
-    idType currObj = entrypoint_node_;
 
     memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
@@ -1283,59 +1345,55 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     }
 
     // this condition only means that we are not inserting the first element.
-    if (entrypoint_node_ != HNSW_INVALID_ID) {
+    if (curr_element != HNSW_INVALID_ID) {
         DistType cur_dist = std::numeric_limits<DistType>::max();
-        if (element_max_level < maxlevelcopy) {
-            cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
-            for (size_t level = maxlevelcopy; level > element_max_level; level--) {
+        if (element_max_level < max_level_copy) {
+            cur_dist = this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
+            for (int level = max_level_copy; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
                 // a greedy search in the graph starting from the entry point
                 // at each level, and move on with the closest element we can find.
                 // When there is no improvement to do, we take a step down.
-                greedySearchLevel<false>(vector_data, level, currObj, cur_dist);
+                greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
             }
         }
 
-        auto max_common_level = std::min(element_max_level, maxlevelcopy);
+        auto max_common_level = std::min(element_max_level, max_level_copy);
         if (this->num_marked_deleted) {
-            if (element_max_level >= maxlevelcopy) {
+            if (element_max_level >= max_level_copy) {
                 // `cur_dist` is not initialized yet.
-                cur_dist = this->dist_func(vector_data, getDataByInternalId(currObj), this->dim);
+                cur_dist = this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
             }
             for (size_t level = max_common_level; (int)level >= 0; level--) {
-
                 candidatesMaxHeap<DistType> top_candidates =
-                    searchLayer<true>(currObj, vector_data, level, ef_construction_);
+                    searchLayer<true>(curr_element, vector_data, level, ef_construction_);
                 if (top_candidates.empty()) {
                     // This means that we haven't found any non-marked-deleted candidate in the
                     // layer.
-
-                    // Get currObj and cur_dist ready for the next iteration.
-                    greedySearchLevel<false>(vector_data, level, currObj, cur_dist);
+                    // Get curr_element and cur_dist ready for the next iteration.
+                    greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
                     // Set incoming edges list to empty.
                     auto ptr = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
                     setIncomingEdgesPtr(cur_c, level, ptr);
-
                 } else {
-                    currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
+                    curr_element = mutuallyConnectNewElement(cur_c, top_candidates, level);
                 }
             }
         } else {
-            for (size_t level = max_common_level; (int)level >= 0; level--) {
-
+            for (int level = max_common_level; (int)level >= 0; level--) {
                 candidatesMaxHeap<DistType> top_candidates =
-                    searchLayer<false>(currObj, vector_data, level, ef_construction_);
-                currObj = mutuallyConnectNewElement(cur_c, top_candidates, level);
+                    searchLayer<false>(curr_element, vector_data, level, ef_construction_);
+                curr_element = mutuallyConnectNewElement(cur_c, top_candidates, level);
             }
         }
 
         // updating the maximum level (holding a global lock)
-        if (element_max_level > maxlevelcopy) {
+        if (element_max_level > max_level_copy) {
             entrypoint_node_ = cur_c;
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
-            for (size_t level_idx = maxlevelcopy + 1; level_idx <= element_max_level; level_idx++) {
+            for (int level_idx = max_level_copy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
                 setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
@@ -1343,8 +1401,12 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         }
     } else {
         // Do nothing for the first element
-        entrypoint_node_ = 0;
-        for (size_t level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
+        entrypoint_node_ = cur_c;
+        if (maxlevel_ != HNSW_INVALID_LEVEL) {
+                throw std::runtime_error("we should get here only when we insert the first element to the graph, but"
+                                                                 "max level is not INVALID");
+        }
+        for (int level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
             setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
@@ -1359,10 +1421,16 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                                                           VecSimQueryResult_Code *rc) const {
     *rc = VecSim_QueryResult_OK;
 
+#ifdef ENABLE_PARALLELIZATION
+    std::unique_lock<std::mutex> lock(entry_point_guard_);
+#endif
     if (cur_element_count == 0) {
         return entrypoint_node_;
     }
     idType currObj = entrypoint_node_;
+#ifdef ENABLE_PARALLELIZATION
+    lock.unlock();
+#endif
     DistType cur_dist =
         this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
     for (size_t level = maxlevel_; level > 0 && currObj != HNSW_INVALID_ID; level--) {
