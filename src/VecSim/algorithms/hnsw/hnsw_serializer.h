@@ -27,7 +27,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
 
-    vectors = (char *)allocator->allocate_aligned(max_elements_ * element_data_size_, 64);
+    // vectors = (char *)allocator->allocate_aligned(max_elements_ * element_data_size_, 64);
+    vectors = (char *)allocator->allocate(max_elements_ * element_data_size_);
     if (vectors == nullptr) {
         throw std::runtime_error("Not enough memory: failed to allocate vectors resource.");
     }

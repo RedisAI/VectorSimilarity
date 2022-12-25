@@ -1321,7 +1321,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * maxM0_;
     level_data_size_ = sizeof(level_data) + sizeof(idType) * maxM_;
 
-    vectors = (char *)allocator->allocate_aligned(max_elements_ * element_data_size_, 64);
+    // vectors = (char *)allocator->allocate_aligned(max_elements_ * element_data_size_, 64);
+    vectors = (char *)allocator->allocate(max_elements_ * element_data_size_);
     if (vectors == nullptr) {
         throw std::runtime_error("Not enough memory: failed to allocate vectors resource.");
     }
@@ -1336,7 +1337,8 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
     for (idType id = 0; id < cur_element_count; id++) {
         destroyMetadata(getMetaDataByInternalId(id));
     }
-    this->allocator->free_allocation_aligned(vectors);
+    // this->allocator->free_allocation_aligned(vectors);
+    this->allocator->free_allocation(vectors);
     this->allocator->free_allocation(meta_data);
 }
 
@@ -1358,8 +1360,10 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
         new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
     // Reallocate vectors
-    char *vectors_new = (char *)this->allocator->reallocate_aligned(
-        vectors, new_max_elements * element_data_size_, 64);
+    // char *vectors_new = (char *)this->allocator->reallocate_aligned(
+    //     vectors, new_max_elements * element_data_size_, 64);
+    char *vectors_new = (char *)this->allocator->reallocate(
+        vectors, new_max_elements * element_data_size_);
     if (vectors_new == nullptr)
         throw std::runtime_error("Not enough memory: resizeIndex failed to allocate vectors");
     vectors = vectors_new;
