@@ -12,7 +12,6 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
-#include "VecSim/utils/data_block.h"
 #include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/vec_sim_common.h"
@@ -57,7 +56,7 @@ struct level_data {
     idType links[];
 
     level_data(std::shared_ptr<VecSimAllocator> allocator)
-        : numLinks(0), incoming_edges(new (allocator) vecsim_stl::vector<idType>(allocator)) {}
+        : numLinks(0), incoming_edges(new(allocator) vecsim_stl::vector<idType>(allocator)) {}
 };
 
 struct element_meta_data {
@@ -125,8 +124,8 @@ protected:
 
     // Index data structures
     idType entrypoint_node_;
-    vecsim_stl::vector<DataBlock> vector_blocks;
-    vecsim_stl::vector<DataBlock> meta_blocks;
+    char *vectors;
+    char *meta_data;
     vecsim_stl::vector<element_meta_data> idToMetaData;
 
     // used for synchronization only when parallel indexing / searching is enabled.
@@ -155,8 +154,8 @@ protected:
                                  idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
     inline const void
-    processCandidate(idType curNodeId, element_graph_data *cur_meta, const void *data_point, size_t layer, size_t ef,
-                     VisitedNodesHandler *visited_nodes, tag_t visited_tag,
+    processCandidate(idType curNodeId, element_graph_data *cur_meta, const void *data_point,
+                     size_t layer, size_t ef, VisitedNodesHandler *visited_nodes, tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType &lowerBound) const;
     template <bool has_marked_deleted>
@@ -190,9 +189,7 @@ protected:
     inline void destroyMetadata(element_graph_data *em);
     inline void replaceEntryPoint();
     inline void resizeIndex(size_t new_max_elements);
-    inline void SwapLastIdWithDeletedId(idType element_internal_id,
-                                        element_graph_data *last_element_meta,
-                                        void *last_element_data);
+    inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
     int appendVector(const void *vector_data, labelType label);
@@ -205,8 +202,6 @@ protected:
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
                               DistType dist, idType id) const;
 
-    inline const DataBlock &getVectorVectorBlock(idType id) const;
-    inline const DataBlock &getVectorMetaBlock(idType id) const;
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
 
 public:
@@ -285,24 +280,13 @@ labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
 
 template <typename DataType, typename DistType>
 const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_id) const {
-    return vector_blocks[internal_id / this->blockSize].getElement(internal_id % this->blockSize);
+    return vectors + internal_id * this->element_data_size_;
 }
 
 template <typename DataType, typename DistType>
 element_graph_data *
 HNSWIndex<DataType, DistType>::getMetaDataByInternalId(idType internal_id) const {
-    return (element_graph_data *)meta_blocks[internal_id / this->blockSize].getElement(
-        internal_id % this->blockSize);
-}
-
-template <typename DataType, typename DistType>
-const DataBlock &HNSWIndex<DataType, DistType>::getVectorVectorBlock(idType internal_id) const {
-    return vector_blocks.at(internal_id / this->blockSize);
-}
-
-template <typename DataType, typename DistType>
-const DataBlock &HNSWIndex<DataType, DistType>::getVectorMetaBlock(idType internal_id) const {
-    return meta_blocks.at(internal_id / this->blockSize);
+    return (element_graph_data *)(meta_data + internal_id * element_graph_data_size_);
 }
 
 template <typename DataType, typename DistType>
@@ -319,7 +303,8 @@ level_data &HNSWIndex<DataType, DistType>::getLevelData(idType internal_id, size
 }
 
 template <typename DataType, typename DistType>
-level_data &HNSWIndex<DataType, DistType>::getLevelData(element_graph_data *meta, size_t level) const {
+level_data &HNSWIndex<DataType, DistType>::getLevelData(element_graph_data *meta,
+                                                        size_t level) const {
     assert(level <= meta->toplevel);
     if (level == 0) {
         return meta->level0;
@@ -442,7 +427,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //             DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
 //             if (lowerBound > dist1 || top_candidates.size() < ef) {
 //                 // Pre-fetch current candidate meta data
-//                 my_prefetch(this->idToMetaData.data() + candidate_id);
+//                 my_prefetch(getMetaDataAddress(candidate_id));
 
 //                 candidate_set.emplace(-dist1, candidate_id);
 
@@ -472,7 +457,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //             DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
 //             if (lowerBound > dist1 || top_candidates.size() < ef) {
 //                 // Pre-fetch current candidate meta data
-//                 my_prefetch(this->idToMetaData.data() + candidate_id);
+//                 my_prefetch(getMetaDataAddress(candidate_id));
 //                 candidate_set.emplace(-dist1, candidate_id);
 
 //                 // Insert the candidate to the top candidates heap only if it is not marked as
@@ -525,7 +510,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //             this->blockSize) * sizeof(DataBlock) + 16;
 //             // my_prefetch(fetched_block_data);
 //             // Pre-fetch current candidate meta data
-//             my_prefetch(this->idToMetaData.data() + candidate_id);
+//             my_prefetch(getMetaDataAddress(candidate_id));
 //             // Pre-fetch next candidate tag address.
 //             my_prefetch(visited_nodes->getElementsTags() + node_meta.links[j + 1]);
 
@@ -569,7 +554,7 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 //             DistType dist1 = this->dist_func(data_point, currObj1, this->dim);
 //             if (lowerBound > dist1 || top_candidates.size() < ef) {
 //                 // Pre-fetch current candidate meta data
-//                 my_prefetch(this->idToMetaData.data() + candidate_id);
+//                 my_prefetch(getMetaDataAddress(candidate_id));
 //                 candidate_set.emplace(-dist1, candidate_id);
 
 //                 // Insert the candidate to the top candidates heap only if it is not marked as
@@ -616,7 +601,6 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
         for (linkListSize j = 0; j < node_meta.numLinks - 1; j++) {
 
             idType candidate_id = node_meta.links[j];
-            // const char *fetched_block_data = ((const char *)this->vector_blocks.data()) + (node_meta.links[j+2] / this->blockSize) * sizeof(DataBlock) + 16;
             // my_prefetch(fetched_block_data);
             // Pre-fetch next candidate tag address.
             my_prefetch(visited_nodes->getElementsTags() + node_meta.links[j + 1]);
@@ -625,7 +609,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
             next_data = getDataByInternalId(node_meta.links[j + 1]);
             my_prefetch(next_data);
             // Pre-fetch current candidate meta data
-            my_prefetch(this->idToMetaData.data() + candidate_id);
+            my_prefetch(getMetaDataAddress(candidate_id));
 
             if (visited_nodes->getNodeTag(candidate_id) == visited_tag)
                 continue;
@@ -658,11 +642,11 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
         // Running the last candidate outside the loop to avoid prefetching invalid candidate
         idType candidate_id = node_meta.links[node_meta.numLinks - 1];
         curr_data = next_data;
-        my_prefetch(this->idToMetaData.data() + candidate_id);
+        my_prefetch(getMetaDataAddress(candidate_id));
 
         if (visited_nodes->getNodeTag(candidate_id) != visited_tag) {
             // Pre-fetch current candidate meta data
-            // my_prefetch(this->idToMetaData.data() + candidate_id);
+            // my_prefetch(getMetaDataAddress(candidate_id));
             // const char *curr_data = getDataByInternalId(candidate_id);
             // my_prefetch(curr_data);
 
@@ -724,7 +708,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 //             DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
 //             if (candidate_dist < dyn_range) {
 //                 // Pre-fetch current candidate meta data
-//                 my_prefetch(this->idToMetaData.data() + candidate_id);
+//                 my_prefetch(getMetaDataAddress(candidate_id));
 //                 candidate_set.emplace(-candidate_dist, candidate_id);
 
 //                 // If the new candidate is in the requested radius, add it to the results set.
@@ -744,7 +728,7 @@ const void HNSWIndex<DataType, DistType>::processCandidate(
 //             DistType candidate_dist = this->dist_func(query_data, candidate_data, this->dim);
 //             if (candidate_dist < dyn_range) {
 //                 // Pre-fetch current candidate meta data
-//                 my_prefetch(this->idToMetaData.data() + candidate_id);
+//                 my_prefetch(getMetaDataAddress(candidate_id));
 //                 candidate_set.emplace(-candidate_dist, candidate_id);
 
 //                 // If the new candidate is in the requested radius, add it to the results set.
@@ -793,7 +777,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             next_data = getDataByInternalId(node_meta.links[j + 1]);
             my_prefetch(next_data);
             // Pre-fetch current candidate meta data
-            my_prefetch(this->idToMetaData.data() + candidate_id);
+            my_prefetch(getMetaDataAddress(candidate_id));
 
             if (visited_nodes->getNodeTag(candidate_id) == visited_tag)
                 continue;
@@ -814,7 +798,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         idType candidate_id = node_meta.links[node_meta.numLinks - 1];
         curr_data = next_data;
         // Pre-fetch current candidate meta data
-        my_prefetch(this->idToMetaData.data() + candidate_id);
+        my_prefetch(getMetaDataAddress(candidate_id));
 
         if (visited_nodes->getNodeTag(candidate_id) != visited_tag) {
             visited_nodes->tagNode(candidate_id, visited_tag);
@@ -871,8 +855,8 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, curr_el_meta, data_point, layer, ef,
-                                             visited_nodes, visited_tag, top_candidates,
+        processCandidate<has_marked_deleted>(curr_el_pair.second, curr_el_meta, data_point, layer,
+                                             ef, visited_nodes, visited_tag, top_candidates,
                                              candidate_set, lowerBound);
     }
 
@@ -1139,16 +1123,12 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         } else {
             // If there is no neighbors in the current level, check for any vector at
             // this level to be the new entry point.
-            idType cur_id = 0;
-            for (DataBlock &meta_block : meta_blocks) {
-                size_t size = meta_block.getLength();
-                for (size_t i = 0; i < size; i++) {
-                    auto meta = (element_graph_data *)meta_block.getElement(i);
-                    if (meta->toplevel == maxlevel_ && cur_id != old_entry) {
-                        entrypoint_node_ = cur_id;
-                        return;
-                    }
-                    cur_id++;
+
+            for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
+                auto meta = getMetaDataByInternalId(cur_id);
+                if (meta->toplevel == maxlevel_ && cur_id != old_entry) {
+                    entrypoint_node_ = cur_id;
+                    return;
                 }
             }
         }
@@ -1163,11 +1143,11 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id,
-                                                            element_graph_data *last_element_meta,
-                                                            void *last_element_data) {
+void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
     // swap label
     replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id, cur_element_count);
+
+    auto last_element_meta = getMetaDataByInternalId(cur_element_count);
 
     // swap neighbours
     auto *cur_meta = &last_element_meta->level0;
@@ -1220,6 +1200,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     memcpy((void *)metadata, last_element_meta, this->element_graph_data_size_);
 
     auto data = getDataByInternalId(element_internal_id);
+    auto last_element_data = getDataByInternalId(cur_element_count);
     memcpy((void *)data, last_element_data, this->element_data_size_);
 
     this->idToMetaData[element_internal_id] = this->idToMetaData[cur_element_count];
@@ -1296,8 +1277,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       VecSimIndexTombstone(), max_elements_(params->initialCapacity),
-      element_data_size_(VecSimType_sizeof(params->type) * this->dim), vector_blocks(allocator),
-      meta_blocks(allocator), idToMetaData(max_elements_, allocator)
+      element_data_size_(VecSimType_sizeof(params->type) * this->dim),
+      idToMetaData(max_elements_, allocator)
 
 #ifdef ENABLE_PARALLELIZATION
       ,
@@ -1340,12 +1321,14 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * maxM0_;
     level_data_size_ = sizeof(level_data) + sizeof(idType) * maxM_;
 
-    size_t initial_vector_size = this->max_elements_ / this->blockSize;
-    if (this->max_elements_ % this->blockSize != 0) {
-        initial_vector_size++;
+    vectors = (char *)allocator->allocate_aligned(max_elements_ * element_data_size_, 64);
+    if (vectors == nullptr) {
+        throw std::runtime_error("Not enough memory: failed to allocate vectors resource.");
     }
-    vector_blocks.reserve(initial_vector_size);
-    meta_blocks.reserve(initial_vector_size);
+    meta_data = (char *)allocator->allocate(max_elements_ * element_graph_data_size_);
+    if (meta_data == nullptr) {
+        throw std::runtime_error("Not enough memory: failed to allocate metadata resource.");
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1353,6 +1336,8 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
     for (idType id = 0; id < cur_element_count; id++) {
         destroyMetadata(getMetaDataByInternalId(id));
     }
+    this->allocator->free_allocation_aligned(vectors);
+    this->allocator->free_allocation(meta_data);
 }
 
 /**
@@ -1372,6 +1357,19 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
     visited_nodes_handler = std::shared_ptr<VisitedNodesHandler>(
         new (this->allocator) VisitedNodesHandler(new_max_elements, this->allocator));
 #endif
+    // Reallocate vectors
+    char *vectors_new = (char *)this->allocator->reallocate_aligned(
+        vectors, new_max_elements * element_data_size_, 64);
+    if (vectors_new == nullptr)
+        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate vectors");
+    vectors = vectors_new;
+
+    // Reallocate metadata
+    char *meta_data_new =
+        (char *)this->allocator->reallocate(meta_data, new_max_elements * element_graph_data_size_);
+    if (meta_data_new == nullptr)
+        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate metadata");
+    meta_data = meta_data_new;
 
     max_elements_ = new_max_elements;
 }
@@ -1443,20 +1441,9 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
     // We can say now that the element was deleted
     --cur_element_count;
 
-    // Get the last element's metadata and data.
-    // If we are deleting the last element, we already destroyed it's metadata.
-    DataBlock &last_vector_block = vector_blocks.back();
-    auto last_element_data = last_vector_block.removeAndFetchLastElement();
-    DataBlock &last_meta_block = meta_blocks.back();
-    auto last_element_meta = (element_graph_data *)last_meta_block.removeAndFetchLastElement();
-
     // Swap the last id with the deleted one, and invalidate the last id data.
     if (cur_element_count != element_internal_id) {
-        SwapLastIdWithDeletedId(element_internal_id, last_element_meta, last_element_data);
-    }
-    if (last_meta_block.getLength() == 0) {
-        meta_blocks.pop_back();
-        vector_blocks.pop_back();
+        SwapLastIdWithDeletedId(element_internal_id);
     }
 
     // If we need to free a complete block & there is a least one block between the
@@ -1518,19 +1505,12 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     idType currObj = entrypoint_node_;
 
     // create the new element's metadata
-    char tmpData[this->element_graph_data_size_];
-    memset(tmpData, 0, this->element_graph_data_size_);
-    auto cur_meta =
-        new (tmpData) element_graph_data(element_max_level, level_data_size_, this->allocator);
-
-    if (cur_c % this->blockSize == 0) {
-        this->vector_blocks.emplace_back(this->blockSize, element_data_size_, this->allocator);
-        this->meta_blocks.emplace_back(this->blockSize, element_graph_data_size_, this->allocator);
-    }
+    auto cur_meta = getMetaDataByInternalId(cur_c);
+    memset((void *)cur_meta, 0, this->element_graph_data_size_);
+    new (cur_meta) element_graph_data(element_max_level, level_data_size_, this->allocator);
 
     // Insert the new element to the data block
-    this->vector_blocks.back().addElement(vector_data);
-    this->meta_blocks.back().addElement(cur_meta);
+    memcpy((void *)getDataByInternalId(cur_c), vector_data, this->element_data_size_);
 
     // this condition only means that we are not inserting the first element.
     if (entrypoint_node_ != HNSW_INVALID_ID) {
@@ -1654,9 +1634,9 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, cur_meta_data, data_point, 0, ef, visited_nodes,
-                                             visited_tag, *top_candidates, candidate_set,
-                                             lowerBound);
+        processCandidate<has_marked_deleted>(curr_el_pair.second, cur_meta_data, data_point, 0, ef,
+                                             visited_nodes, visited_tag, *top_candidates,
+                                             candidate_set, lowerBound);
     }
 #ifdef ENABLE_PARALLELIZATION
     visited_nodes_handler_pool->returnVisitedNodesHandlerToPool(visited_nodes);

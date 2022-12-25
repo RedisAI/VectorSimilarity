@@ -7,7 +7,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       VecSimIndexTombstone(), Serializer(version), max_elements_(params->initialCapacity),
-      vector_blocks(allocator), meta_blocks(allocator), idToMetaData(allocator) {
+      idToMetaData(allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -27,12 +27,14 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
         new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
 #endif
 
-    size_t initial_vector_size = max_elements_ / this->blockSize;
-    if (max_elements_ % this->blockSize != 0) {
-        initial_vector_size++;
+    vectors = (char *)allocator->allocate_aligned(max_elements_ * element_data_size_, 64);
+    if (vectors == nullptr) {
+        throw std::runtime_error("Not enough memory: failed to allocate vectors resource.");
     }
-    vector_blocks.reserve(initial_vector_size);
-    meta_blocks.reserve(initial_vector_size);
+    meta_data = (char *)allocator->allocate(max_elements_ * element_graph_data_size_);
+    if (meta_data == nullptr) {
+        throw std::runtime_error("Not enough memory: failed to allocate metadata resource.");
+    }
 
     idToMetaData.resize(max_elements_);
 }
@@ -158,77 +160,52 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         setVectorId(label, id);
     }
 
-    // Get number of blocks
-    unsigned int num_blocks = 0;
-    readBinaryPOD(input, num_blocks);
-    this->vector_blocks.reserve(num_blocks);
-    this->meta_blocks.reserve(num_blocks);
-
-    // Get data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        this->vector_blocks.emplace_back(this->blockSize, this->element_data_size_,
-                                         this->allocator);
-        unsigned int block_len = 0;
-        readBinaryPOD(input, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            char cur_vec[this->element_data_size_];
-            input.read(cur_vec, this->element_data_size_);
-            this->vector_blocks.back().addElement(cur_vec);
-        }
+    // Get data
+    for (idType id = 0; id < cur_element_count; id++) {
+        input.read((char *)getDataByInternalId(id), this->element_data_size_);
     }
 
-    // Get meta blocks
-    idType cur_c = 0;
-    for (size_t i = 0; i < num_blocks; i++) {
-        this->meta_blocks.emplace_back(this->blockSize, this->element_graph_data_size_,
-                                       this->allocator);
-        unsigned int block_len = 0;
-        readBinaryPOD(input, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            char cur_meta_data[this->element_graph_data_size_];
-            input.read(cur_meta_data, this->element_graph_data_size_);
-            auto cur_meta = (element_graph_data *)cur_meta_data;
+    // Get meta
+    for (idType cur_c = 0; cur_c < cur_element_count; cur_c++) {
+        auto cur_meta = getMetaDataByInternalId(cur_c);
+        input.read((char *)cur_meta, this->element_graph_data_size_);
 
-            if (cur_meta->toplevel > 0) {
-                // Allocate space for the other levels
-                cur_meta->others = (level_data *)this->allocator->allocate(this->level_data_size_ *
-                                                                           cur_meta->toplevel);
-                if (cur_meta->others == nullptr) {
-                    throw std::runtime_error(
-                        "Not enough memory: loadIndex failed to allocate element meta data.");
-                }
-                input.read((char *)(cur_meta->others), this->level_data_size_ * cur_meta->toplevel);
+        if (cur_meta->toplevel > 0) {
+            // Allocate space for the other levels
+            cur_meta->others = (level_data *)this->allocator->allocate(this->level_data_size_ *
+                                                                       cur_meta->toplevel);
+            if (cur_meta->others == nullptr) {
+                throw std::runtime_error(
+                    "Not enough memory: loadIndex failed to allocate element meta data.");
             }
+            input.read((char *)(cur_meta->others), this->level_data_size_ * cur_meta->toplevel);
+        }
 
-            // Save the incoming edges of the current element.
-            // Level 0
+        // Save the incoming edges of the current element.
+        // Level 0
+        unsigned int size = 0;
+        readBinaryPOD(input, size);
+        cur_meta->level0.incoming_edges =
+            new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
+        for (size_t k = 0; k < size; k++) {
+            idType edge;
+            readBinaryPOD(input, edge);
+            (*cur_meta->level0.incoming_edges)[k] = edge;
+        }
+
+        // Levels 1 to maxlevel
+        for (size_t level_offset = 0; level_offset < cur_meta->toplevel; level_offset++) {
+            auto cur =
+                (level_data *)(((char *)cur_meta->others) + level_offset * this->level_data_size_);
             unsigned int size = 0;
             readBinaryPOD(input, size);
-            cur_meta->level0.incoming_edges =
+            cur->incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
             for (size_t k = 0; k < size; k++) {
                 idType edge;
                 readBinaryPOD(input, edge);
-                (*cur_meta->level0.incoming_edges)[k] = edge;
+                (*cur->incoming_edges)[k] = edge;
             }
-
-            // Levels 1 to maxlevel
-            for (size_t level_offset = 0; level_offset < cur_meta->toplevel; level_offset++) {
-                auto cur = (level_data *)(((char *)cur_meta->others) +
-                                          level_offset * this->level_data_size_);
-                unsigned int size = 0;
-                readBinaryPOD(input, size);
-                cur->incoming_edges =
-                    new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
-                for (size_t k = 0; k < size; k++) {
-                    idType edge;
-                    readBinaryPOD(input, edge);
-                    (*cur->incoming_edges)[k] = edge;
-                }
-            }
-
-            this->meta_blocks.back().addElement(cur_meta_data);
-            cur_c++;
         }
     }
 }
@@ -280,51 +257,37 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         writeBinaryPOD(output, flags);
     }
 
-    // Save number of blocks
-    unsigned int num_blocks = this->vector_blocks.size();
-    writeBinaryPOD(output, num_blocks);
-
-    // Save data blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        auto &block = this->vector_blocks[i];
-        unsigned int block_len = block.getLength();
-        writeBinaryPOD(output, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            output.write(block.getElement(j), this->element_data_size_);
-        }
+    // Save data
+    for (idType id = 0; id < this->cur_element_count; id++) {
+        output.write(getDataByInternalId(id), this->element_data_size_);
     }
 
     // Save meta blocks
-    for (size_t i = 0; i < num_blocks; i++) {
-        auto &block = this->meta_blocks[i];
-        unsigned int block_len = block.getLength();
-        writeBinaryPOD(output, block_len);
-        for (size_t j = 0; j < block_len; j++) {
-            element_graph_data *meta = (element_graph_data *)block.getElement(j);
-            output.write((char *)meta, this->element_graph_data_size_);
-            if (meta->others) // only if there are levels > 0
-                output.write((char *)meta->others, this->level_data_size_ * meta->toplevel);
+    for (idType id = 0; id < this->cur_element_count; id++) {
+        element_graph_data *meta = getMetaDataByInternalId(id);
+        output.write((char *)meta, this->element_graph_data_size_);
+        if (meta->others) // only if there are levels > 0
+            output.write((char *)meta->others, this->level_data_size_ * meta->toplevel);
 
-            // Save the incoming edges of the current element.
-            // Level 0
-            unsigned int size = meta->level0.incoming_edges->size();
+        // Save the incoming edges of the current element.
+        // Level 0
+        unsigned int size = meta->level0.incoming_edges->size();
+        writeBinaryPOD(output, size);
+        for (idType id : *meta->level0.incoming_edges) {
+            writeBinaryPOD(output, id);
+        }
+        meta->level0.incoming_edges->shrink_to_fit();
+
+        // Levels 1 to maxlevel
+        for (size_t level_offset = 0; level_offset < meta->toplevel; level_offset++) {
+            auto cur =
+                (level_data *)(((char *)meta->others) + level_offset * this->level_data_size_);
+            unsigned int size = cur->incoming_edges->size();
             writeBinaryPOD(output, size);
-            for (idType id : *meta->level0.incoming_edges) {
+            for (idType id : *cur->incoming_edges) {
                 writeBinaryPOD(output, id);
             }
-            meta->level0.incoming_edges->shrink_to_fit();
-
-            // Levels 1 to maxlevel
-            for (size_t level_offset = 0; level_offset < meta->toplevel; level_offset++) {
-                auto cur =
-                    (level_data *)(((char *)meta->others) + level_offset * this->level_data_size_);
-                unsigned int size = cur->incoming_edges->size();
-                writeBinaryPOD(output, size);
-                for (idType id : *cur->incoming_edges) {
-                    writeBinaryPOD(output, id);
-                }
-                cur->incoming_edges->shrink_to_fit();
-            }
+            cur->incoming_edges->shrink_to_fit();
         }
     }
 }
