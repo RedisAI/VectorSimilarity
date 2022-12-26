@@ -8,12 +8,13 @@
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
+#include "hnsw_tiered.h"
 
 namespace HNSWFactory {
 
 template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
-                                                 std::shared_ptr<VecSimAllocator> allocator) {
+inline HNSWIndex<DataType, DistType> *
+NewIndex_ChooseMultiOrSingle(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // check if single and return new hnsw_index
     if (params->multi)
         return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
@@ -125,6 +126,21 @@ size_t EstimateElementSize(const HNSWParams *params) {
      * (vecsim_stl::vector) Those edges' memory *is omitted completely* from this estimation.
      */
     return size_meta_data + size_total_data_per_element;
+}
+
+VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
+                            std::shared_ptr<VecSimAllocator> allocator) {
+    if (params->hnswParams.type == VecSimType_FLOAT32) {
+        auto *hnsw_index =
+            NewIndex_ChooseMultiOrSingle<float, float>(&params->hnswParams, allocator);
+        return new (allocator) TieredHNSWIndex<float, float>(hnsw_index, params->tieredParams);
+    } else if (params->hnswParams.type == VecSimType_FLOAT64) {
+        auto *hnsw_index =
+            NewIndex_ChooseMultiOrSingle<double, double>(&params->hnswParams, allocator);
+        return new (allocator) TieredHNSWIndex<double, double>(hnsw_index, params->tieredParams);
+    } else {
+        return nullptr; // Invalid type
+    }
 }
 
 #ifdef BUILD_TESTS

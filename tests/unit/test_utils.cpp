@@ -9,6 +9,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 
 VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
                                               QUERY_TYPE_RANGE};
@@ -245,4 +246,20 @@ size_t getLabelsLookupNodeSize() {
     dummy_lookup.insert({1, 1}); // Insert a dummy {key, value} element pair.
     size_t memory_after = allocator->getAllocationSize();
     return memory_after - memory_before;
+}
+
+/*
+ * Mock callbacks for testing async tiered index. We use a simple std::queue to simulate the job
+ * queue.
+ */
+int tiered_index_mock::submit_callback(void *job_queue, void **jobs, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        static_cast<JobQueue *>(job_queue)->push(jobs[i]);
+    }
+    return VecSim_OK;
+}
+
+int tiered_index_mock::update_mem_callback(void *mem_ctx, size_t mem) {
+    *(size_t *)mem_ctx = mem;
+    return VecSim_OK;
 }
