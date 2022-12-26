@@ -48,8 +48,7 @@ public:
 };
 
 /**
- * A wrapper class for using a pool of VisitedNodesHandler (relevant only when parallelization is
- * enabled).
+ * A wrapper class for using a pool of VisitedNodesHandler (relevant for parallel graph scans).
  */
 class VisitedNodesHandlerPool : public VecsimBaseObject {
 private:

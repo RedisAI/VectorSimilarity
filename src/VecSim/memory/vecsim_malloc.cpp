@@ -29,7 +29,7 @@ void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
 void *VecSimAllocator::allocate(size_t size) {
     size_t *ptr = (size_t *)vecsim_malloc(size + allocation_header_size);
     if (ptr) {
-        *this->allocated += size + allocation_header_size;
+        this->allocated += size + allocation_header_size;
         *ptr = size;
         return ptr + 1;
     }
@@ -56,7 +56,7 @@ void VecSimAllocator::free_allocation(void *p) {
     if (!p)
         return;
     size_t *ptr = ((size_t *)p) - 1;
-    *this->allocated -= (ptr[0] + allocation_header_size);
+    this->allocated -= (ptr[0] + allocation_header_size);
     vecsim_free(ptr);
 }
 
@@ -64,7 +64,7 @@ void *VecSimAllocator::callocate(size_t size) {
     size_t *ptr = (size_t *)vecsim_calloc(1, size + allocation_header_size);
 
     if (ptr) {
-        *this->allocated += size + allocation_header_size;
+        this->allocated += size + allocation_header_size;
         *ptr = size;
         return ptr + 1;
     }
@@ -77,4 +77,4 @@ void *VecSimAllocator::operator new[](size_t size) { return vecsim_malloc(size);
 void VecSimAllocator::operator delete(void *p, size_t size) { vecsim_free(p); }
 void VecSimAllocator::operator delete[](void *p, size_t size) { vecsim_free(p); }
 
-int64_t VecSimAllocator::getAllocationSize() const { return *this->allocated; }
+int64_t VecSimAllocator::getAllocationSize() const { return this->allocated; }

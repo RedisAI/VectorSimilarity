@@ -19,14 +19,13 @@ struct VecSimAllocator {
     friend inline void vecsim_free(void *p);
 
 private:
-    std::shared_ptr<std::atomic_uint64_t> allocated;
+    std::atomic_uint64_t allocated;
 
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
     static VecSimMemoryFunctions memFunctions;
 
-    VecSimAllocator()
-        : allocated(std::make_shared<std::atomic_uint64_t>(sizeof(VecSimAllocator))) {}
+    VecSimAllocator() : allocated(std::atomic_uint64_t(sizeof(VecSimAllocator))) {}
 
 public:
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();

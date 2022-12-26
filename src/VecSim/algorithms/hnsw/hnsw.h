@@ -572,7 +572,7 @@ candidatesMaxHeap<DistType>
 HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point, size_t layer,
                                            size_t ef) const {
 
-    auto visited_nodes_handler = getVisitedList();
+    auto *visited_nodes_handler = getVisitedList();
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
 
     candidatesMaxHeap<DistType> top_candidates(this->allocator);
@@ -1492,7 +1492,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
     *rc = VecSim_QueryResult_OK;
     auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
-    auto visited_nodes_handler = getVisitedList();
+    auto *visited_nodes_handler = getVisitedList();
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
 
     candidatesMaxHeap<DistType> candidate_set(this->allocator);
