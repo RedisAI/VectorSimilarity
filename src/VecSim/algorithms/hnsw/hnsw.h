@@ -95,7 +95,7 @@ protected:
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
-    std::mutex entry_point_guard_;
+    mutable std::mutex entry_point_guard_;
     std::mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
@@ -1315,9 +1315,9 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
         resizeIndex(max_elements_ + vectors_to_add);
     }
-    idType cur_c = cur_element_count++;
-    setVectorId(label, cur_c);
-    element_levels_[cur_c] = element_max_level;
+    idType new_element_id = cur_element_count++;
+    setVectorId(label, new_element_id);
+    element_levels_[new_element_id] = element_max_level;
     index_data_lock.unlock();
 
     // Hold the entry point lock and fetch a copy of it. If the new node's max level is higher than
@@ -1329,19 +1329,19 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
     if (element_max_level <= max_level_copy)
         entry_point_lock.unlock();
 
-    memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0,
+    memset(data_level0_memory_ + new_element_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
 
     // Initialisation of the data and label
-    setExternalLabel(cur_c, label);
-    memcpy(getDataByInternalId(cur_c), vector_data, data_size_);
+    setExternalLabel(new_element_id, label);
+    memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
 
     if (element_max_level > 0) {
-        linkLists_[cur_c] =
+        linkLists_[new_element_id] =
             (char *)this->allocator->allocate(size_links_per_element_ * element_max_level);
-        if (linkLists_[cur_c] == nullptr)
+        if (linkLists_[new_element_id] == nullptr)
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
-        memset(linkLists_[cur_c], 0, size_links_per_element_ * element_max_level);
+        memset(linkLists_[new_element_id], 0, size_links_per_element_ * element_max_level);
     }
 
     // this condition only means that we are not inserting the first element.
@@ -1375,41 +1375,41 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
                     greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
                     // Set incoming edges list to empty.
                     auto ptr = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-                    setIncomingEdgesPtr(cur_c, level, ptr);
+                    setIncomingEdgesPtr(new_element_id, level, ptr);
                 } else {
-                    curr_element = mutuallyConnectNewElement(cur_c, top_candidates, level);
+                    curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
                 }
             }
         } else {
             for (int level = max_common_level; (int)level >= 0; level--) {
                 candidatesMaxHeap<DistType> top_candidates =
                     searchLayer<false>(curr_element, vector_data, level, ef_construction_);
-                curr_element = mutuallyConnectNewElement(cur_c, top_candidates, level);
+                curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
             }
         }
 
         // updating the maximum level (holding a global lock)
         if (element_max_level > max_level_copy) {
-            entrypoint_node_ = cur_c;
+            entrypoint_node_ = new_element_id;
             maxlevel_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (int level_idx = max_level_copy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-                setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
+                setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
             }
         }
     } else {
         // Do nothing for the first element
-        entrypoint_node_ = cur_c;
+        entrypoint_node_ = new_element_id;
         if (maxlevel_ != HNSW_INVALID_LEVEL) {
-                throw std::runtime_error("we should get here only when we insert the first element to the graph, but"
+            throw std::runtime_error("we should get here only when we insert the first element to the graph, but"
                                                                  "max level is not INVALID");
         }
         for (int level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-            setIncomingEdgesPtr(cur_c, level_idx, incoming_edges);
+            setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
         }
         maxlevel_ = element_max_level;
     }
@@ -1421,22 +1421,19 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                                                           VecSimQueryResult_Code *rc) const {
     *rc = VecSim_QueryResult_OK;
 
-#ifdef ENABLE_PARALLELIZATION
     std::unique_lock<std::mutex> lock(entry_point_guard_);
-#endif
     if (cur_element_count == 0) {
         return entrypoint_node_;
     }
-    idType currObj = entrypoint_node_;
-#ifdef ENABLE_PARALLELIZATION
+    idType curr_element = entrypoint_node_;
     lock.unlock();
-#endif
+
     DistType cur_dist =
         this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
-    for (size_t level = maxlevel_; level > 0 && currObj != HNSW_INVALID_ID; level--) {
-        greedySearchLevel<true>(query_data, level, currObj, cur_dist, timeoutCtx, rc);
+    for (size_t level = maxlevel_; level > 0 && curr_element != HNSW_INVALID_ID; level--) {
+        greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
-    return currObj;
+    return curr_element;
 }
 
 template <typename DataType, typename DistType>
