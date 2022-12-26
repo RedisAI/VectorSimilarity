@@ -2186,8 +2186,9 @@ TYPED_TEST(HNSWTest, parallelSearchKnn) {
         TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the res
-            // label and the query val (query_val, query_val-1, query_val+1, query_val-2, query_val+2, ...)
-            // The score is the L2 distance between the vectors that correspond the ids.
+            // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
+            // query_val+2, ...) The score is the L2 distance between the vectors that correspond
+            // the ids.
             size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
             ASSERT_EQ(diff_id, (res_index + 1) / 2);
             ASSERT_EQ(score, (dim * (diff_id * diff_id)));
@@ -2237,8 +2238,9 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
         TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the res
-            // label and the query val (query_val, query_val-1, query_val+1, query_val-2, query_val+2, ...)
-            // The score is the L2 distance between the vectors that correspond the ids.
+            // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
+            // query_val+2, ...) The score is the L2 distance between the vectors that correspond
+            // the ids.
             size_t diff_id = std::abs(id - query_val);
             ASSERT_EQ(diff_id, (res_index + 1) / 2);
             ASSERT_EQ(score, (dim * (diff_id * diff_id)));
@@ -2265,9 +2267,9 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
         successful_searches++;
     };
 
-    auto parallel_batched_search =  [&](int myID) {
+    auto parallel_batched_search = [&](int myID) {
         TEST_DATA_T query[dim];
-        GenerateVector<TEST_DATA_T>(query, dim,n);
+        GenerateVector<TEST_DATA_T>(query, dim, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
         size_t iteration_num = 0;
@@ -2297,9 +2299,9 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
     size_t n_threads = 15;
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
-        if (i%3 == 0) {
+        if (i % 3 == 0) {
             thread_objs[i] = std::thread(parallel_knn_search, i);
-        } else if (i%3 == 1) {
+        } else if (i % 3 == 1) {
             thread_objs[i] = std::thread(parallel_range_search, i);
         } else {
             thread_objs[i] = std::thread(parallel_batched_search, i);
