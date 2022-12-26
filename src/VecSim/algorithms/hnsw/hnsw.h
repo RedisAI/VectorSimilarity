@@ -1619,6 +1619,7 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
     info.hnswInfo.entrypoint = this->getEntryPointLabel();
     info.hnswInfo.memory = this->getAllocationSize();
     info.hnswInfo.last_mode = this->last_mode;
+    info.hnswInfo.visitedNodesPoolSize = this->visited_nodes_handler_pool.getPoolSize();
     return info;
 }
 

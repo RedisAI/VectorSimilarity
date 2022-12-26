@@ -62,6 +62,7 @@ VisitedNodesHandler *VisitedNodesHandlerPool::getAvailableVisitedNodesHandler() 
 void VisitedNodesHandlerPool::returnVisitedNodesHandlerToPool(VisitedNodesHandler *handler) {
     std::unique_lock<std::mutex> lock(pool_guard);
     pool.push_back(handler);
+    pool.shrink_to_fit();
 }
 
 void VisitedNodesHandlerPool::resize(size_t new_size) {

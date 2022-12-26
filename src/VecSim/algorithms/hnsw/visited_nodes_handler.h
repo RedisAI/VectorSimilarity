@@ -67,5 +67,7 @@ public:
 
     void resize(size_t new_size);
 
+    inline size_t getPoolSize() { return pool.size(); }
+
     ~VisitedNodesHandlerPool() override;
 };

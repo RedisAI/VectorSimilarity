@@ -231,13 +231,14 @@ typedef struct {
             size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
             double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
             size_t max_level; // Number of graph levels.
-            size_t entrypoint;       // Entrypoint vector label.
-            VecSimMetric metric;     // Index distance metric
-            uint64_t memory;         // Index memory consumption.
-            VecSimType type;         // Datatype the index holds.
-            bool isMulti;            // Determines if the index should multi-index or not.
-            size_t dim;              // Vector size (dimension).
-            VecSearchMode last_mode; // The mode in which the last query ran.
+            size_t entrypoint;           // Entrypoint vector label.
+            VecSimMetric metric;         // Index distance metric
+            uint64_t memory;             // Index memory consumption.
+            VecSimType type;             // Datatype the index holds.
+            bool isMulti;                // Determines if the index should multi-index or not.
+            size_t dim;                  // Vector size (dimension).
+            VecSearchMode last_mode;     // The mode in which the last query ran.
+            size_t visitedNodesPoolSize; // The max number of parallel graph scans so far.
         } hnswInfo;
         struct {
             size_t indexSize;        // Current count of vectors.
