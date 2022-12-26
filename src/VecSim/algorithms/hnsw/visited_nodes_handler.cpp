@@ -80,11 +80,7 @@ void VisitedNodesHandlerPool::resize(size_t new_size) {
 void VisitedNodesHandlerPool::resize(size_t new_size) {
     this->num_elements = new_size;
     for (auto &handler : this->pool) {
-        handler->setNumElements(new_size);
-        auto *element_tags_array_new = reinterpret_cast<tag_t *>(
-            allocator->reallocate(handler->getElementsTags(), sizeof(tag_t) * new_size));
-        handler->setElementsTags(element_tags_array_new);
-        handler->reset();
+        handler->resize(new_size);
     }
 }
 
