@@ -2197,6 +2197,7 @@ TYPED_TEST(HNSWTest, parallelSearchKnn) {
         successful_searches++;
     };
 
+    size_t memory_before = index->info().hnswInfo.memory;
     size_t n_threads = 16;
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
@@ -2206,6 +2207,12 @@ TYPED_TEST(HNSWTest, parallelSearchKnn) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
+    // Make sure that we properly update the allocator atomically during the searches. The expected
+    // Memory delta should only be the visited nodes handler added to the pool.
+    size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+                                                 (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
+                                                  2 * sizeof(size_t) + sizeof(void *));
+    ASSERT_EQ(expected_memory, index->info().hnswInfo.memory);
 
     VecSimIndex_Free(index);
 }
@@ -2298,6 +2305,7 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
 
     size_t n_threads = 15;
     std::thread thread_objs[n_threads];
+    size_t memory_before = index->info().hnswInfo.memory;
     for (size_t i = 0; i < n_threads; i++) {
         if (i % 3 == 0) {
             thread_objs[i] = std::thread(parallel_knn_search, i);
@@ -2311,6 +2319,11 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-
+    // Make sure that we properly update the allocator atomically during the searches.
+    // Memory delta should only be the visited nodes handler added to the pool.
+    size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+                                                 (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
+                                                  2 * sizeof(size_t) + sizeof(void *));
+    ASSERT_EQ(expected_memory, index->info().hnswInfo.memory);
     VecSimIndex_Free(index);
 }
