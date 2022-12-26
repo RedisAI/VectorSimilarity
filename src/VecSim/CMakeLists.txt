@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.10)
 cmake_policy(SET CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
+set(CMAKE_CXX_STANDARD 20)
+
 project(VecsimLib)
 file(GLOB_RECURSE headers ./**.h)
 set(HEADER_LIST "${headers}")

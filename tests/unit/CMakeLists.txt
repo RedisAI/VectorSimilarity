@@ -11,7 +11,7 @@ project(VectorSimilarity_UnitTest)
 
 include(CTest)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
@@ -21,7 +21,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")
 
 enable_testing()
 
-add_executable(test_hnsw test_hnsw.cpp test_hnsw_multi.cpp test_utils.cpp)
+add_executable(test_hnsw test_hnsw.cpp test_hnsw_multi.cpp test_hnsw_tiered.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp test_utils.cpp)
 add_executable(test_allocator test_allocator.cpp test_utils.cpp)
 add_executable(test_spaces test_spaces.cpp)
