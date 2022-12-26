@@ -19,6 +19,13 @@ void VisitedNodesHandler::reset() {
     cur_tag = 0;
 }
 
+void VisitedNodesHandler::resize(size_t new_size) {
+    this->num_elements = new_size;
+    this->elements_tags = reinterpret_cast<tag_t *>(
+        allocator->reallocate(this->elements_tags, sizeof(tag_t) * new_size));
+    this->reset();
+}
+
 tag_t VisitedNodesHandler::getFreshTag() {
     cur_tag++;
     if (cur_tag == 0) {
@@ -31,7 +38,7 @@ tag_t VisitedNodesHandler::getFreshTag() {
 VisitedNodesHandler::~VisitedNodesHandler() { allocator->free_allocation(elements_tags); }
 
 /**
- * VisitedNodesHandlerPool Methods (when parallelization is enabled)
+ * VisitedNodesHandlerPool methods to enable parallel graph scans.
  */
 VisitedNodesHandlerPool::VisitedNodesHandlerPool(int initial_pool_size, int cap,
                                                  const std::shared_ptr<VecSimAllocator> &allocator)
@@ -60,11 +67,7 @@ void VisitedNodesHandlerPool::returnVisitedNodesHandlerToPool(VisitedNodesHandle
 void VisitedNodesHandlerPool::resize(size_t new_size) {
     this->num_elements = new_size;
     for (auto &handler : this->pool) {
-        handler->setNumElements(new_size);
-        auto *element_tags_array_new = reinterpret_cast<tag_t *>(
-            allocator->reallocate(handler->getElementsTags(), sizeof(tag_t) * new_size));
-        handler->setElementsTags(element_tags_array_new);
-        handler->reset();
+        handler->resize(new_size);
     }
 }
 
