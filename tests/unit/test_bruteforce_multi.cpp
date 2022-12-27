@@ -50,14 +50,14 @@ TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
         for (size_t i = 0; i < dim; i++) {
             a[i] = (TEST_DATA_T)i * j + i;
         }
-        VecSimIndex_AddVector(index, a, 46);
+        ASSERT_EQ(index_bf_multi->addVector(a, 46), 1);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);
     ASSERT_EQ(index_bf_multi->indexLabelCount(), 1);
 
     // Deleting the label. All the vectors should be deleted.
-    VecSimIndex_DeleteVector(index, 46);
+    ASSERT_EQ(index_bf_multi->deleteVector(46), rep);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(index_bf_multi->indexLabelCount(), 0);
@@ -92,7 +92,7 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
     // remove invalid id
-    VecSimIndex_DeleteVector(index, 3459);
+    ASSERT_EQ(bf_index->deleteVector(3459), 0);
 
     // This should do nothing
     info = VecSimIndex_Info(index);

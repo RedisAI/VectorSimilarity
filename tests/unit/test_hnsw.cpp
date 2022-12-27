@@ -2036,9 +2036,8 @@ TYPED_TEST(HNSWTest, markDelete) {
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
     VecSimIndex *index = this->CreateNewIndex(params);
-    // Try marking and unmarking non-existing label
-    ASSERT_FALSE(this->CastToHNSW(index)->markDelete(0));
-    ASSERT_FALSE(this->CastToHNSW(index)->unmarkDelete(0));
+    // Try marking and a non-existing label
+    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0), std::vector<idType>());
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -2063,7 +2062,7 @@ TYPED_TEST(HNSWTest, markDelete) {
     // Mark as deleted half of the vectors, including the entrypoint.
     for (labelType label = 0; label < n; label++)
         if (label % 2 == ep_reminder)
-            this->CastToHNSW(index)->markDelete(label);
+            ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), std::vector<idType>(1, label));
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
@@ -2093,12 +2092,13 @@ TYPED_TEST(HNSWTest, markDelete) {
         }
     }
 
-    // Unmark the previously marked vectors.
-    for (labelType label = 0; label < n; label++)
-        if (label % 2 == ep_reminder)
-            this->CastToHNSW(index)->unmarkDelete(label);
+    // Re-add the previously marked vectors.
+    for (labelType label = 0; label < n; label++) {
+        if (label % 2 == ep_reminder) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label);
+        }
+    }
 
-    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
 
     // Search for k results around the middle again. expect to find the same results we

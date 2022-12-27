@@ -20,7 +20,7 @@ public:
     BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     ~BruteForceIndex_Single();
 
-    int addVector(const void *vector_data, labelType label) override;
+    int addVector(const void *vector_data, labelType label, bool override_allowed = true) override;
     int deleteVector(labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
 
@@ -83,7 +83,7 @@ BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
-                                                          labelType label) {
+                                                          labelType label, bool override_allowed) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -97,10 +97,11 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
     if (optionalID != this->labelToIdLookup.end()) {
         idType id = optionalID->second;
         updateVector(id, vector_data);
-        return true;
+        return 0;
     }
 
-    return this->appendVector(vector_data, label);
+    this->appendVector(vector_data, label);
+    return 1;
 }
 
 template <typename DataType, typename DistType>
@@ -110,7 +111,7 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
     auto deleted_label_id_pair = this->labelToIdLookup.find(label);
     if (deleted_label_id_pair == this->labelToIdLookup.end()) {
         // Nothing to delete.
-        return true;
+        return 0;
     }
 
     // Get deleted vector id.
@@ -119,7 +120,8 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
     // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
 
-    return this->removeVector(id_to_delete);
+    this->removeVector(id_to_delete);
+    return 1;
 }
 
 template <typename DataType, typename DistType>

@@ -37,18 +37,21 @@ public:
      *
      * @param blob binary representation of the vector. Blob size should match the index data type
      * and dimension.
-     * @param id the id of the added vector
-     * @return always returns true
+     * @param label the id of the added vector
+     * @param overrideAllowed if true and id already exists in the index, override it. Otherwise,
+     * ignore the new vector.
+     * @return the number of new vectors inserted (1 for new insertion, 0 for override), or -1
+     * in case that override is not allowed and label already exists.
      */
-    virtual int addVector(const void *blob, labelType id) = 0;
+    virtual int addVector(const void *blob, labelType label, bool overrideAllowed = true) = 0;
 
     /**
      * @brief Remove a vector from an index.
      *
-     * @param id the id of the removed vector
-     * @return always returns true
+     * @param label the label of the vector to remove
+     * @return the number of vectors deleted
      */
-    virtual int deleteVector(labelType id) = 0;
+    virtual int deleteVector(labelType label) = 0;
 
     /**
      * @brief Calculate the distance of a vector from an index to a vector.

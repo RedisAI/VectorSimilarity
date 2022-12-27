@@ -51,14 +51,14 @@ TYPED_TEST(HNSWMultiTest, vector_add_multiple_test) {
         for (size_t i = 0; i < dim; i++) {
             a[i] = (TEST_DATA_T)i * j + i;
         }
-        VecSimIndex_AddVector(index, a, 46);
+        ASSERT_EQ(this->CastToHNSW_Multi(index)->addVector(a, 46), 1);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);
     ASSERT_EQ(index->indexLabelCount(), 1);
 
     // Deleting the label. All the vectors should be deleted.
-    VecSimIndex_DeleteVector(index, 46);
+    ASSERT_EQ(this->CastToHNSW_Multi(index)->deleteVector(46), rep);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(index->indexLabelCount(), 0);
@@ -80,7 +80,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
-    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(this->CastToHNSW_Multi(index)->deleteVector(0), 0);
 
     // Add one vector multiple times.
     for (size_t i = 0; i < 3; i++) {
@@ -88,7 +88,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     }
 
     // Try to remove it.
-    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(this->CastToHNSW_Multi(index)->deleteVector(1), 3);
 
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -96,7 +96,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);
 
-    // Size should be stiil zero.
+    // Size should be still zero.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
@@ -1654,8 +1654,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
 
     VecSimIndex *index = this->CreateNewIndex(params);
     // Try marking and unmarking non-existing label
-    ASSERT_FALSE(this->CastToHNSW(index)->markDelete(0));
-    ASSERT_FALSE(this->CastToHNSW(index)->unmarkDelete(0));
+    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0), std::vector<idType>());
 
     for (size_t i = 0; i < n_labels; i++) {
         for (size_t j = 0; j < per_label; j++)
@@ -1686,9 +1685,14 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
 
     unsigned char ep_reminder = index->info().hnswInfo.entrypoint % 2;
     // Mark as deleted half of the vectors including the entrypoint.
-    for (labelType label = 0; label < n_labels; label++)
-        if (label % 2 == ep_reminder)
-            this->CastToHNSW(index)->markDelete(label);
+    for (labelType label = 0; label < n_labels; label++) {
+        if (label % 2 == ep_reminder) {
+            std::vector<idType> expected_deleted_ids;
+            for (size_t j = 0; j < per_label; j++)
+                expected_deleted_ids.push_back(label*per_label + j);
+            ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), expected_deleted_ids);
+        }
+    }
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
@@ -1723,22 +1727,6 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     runRangeQueryTest(index, query, dim * even_el * even_el, verify_res_even, k, BY_SCORE);
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
-    VecSimBatchIterator_Free(batchIterator);
-
-    // Unmark the previously marked vectors.
-    for (labelType label = 0; label < n_labels; label++)
-        if (label % 2 == ep_reminder)
-            this->CastToHNSW(index)->unmarkDelete(label);
-
-    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
-
-    // Search for k results around the middle again. expect to find the same results we found in the
-    // first search.
-    runTopKSearchTest(index, query, k, verify_res);
-    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
-    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-    runBatchIteratorSearchTest(batchIterator, k, verify_res);
     VecSimBatchIterator_Free(batchIterator);
 
     VecSimIndex_Free(index);

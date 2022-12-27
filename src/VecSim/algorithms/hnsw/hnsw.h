@@ -161,10 +161,10 @@ protected:
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
-    int appendVector(const void *vector_data, labelType label);
+    void appendVector(const void *vector_data, labelType label);
 
     // Protected internal function that implements generic single vector deletion.
-    int removeVector(idType id);
+    void removeVector(idType id);
 
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
                               DistType dist, idType id) const;
@@ -389,16 +389,6 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         elementFlags *flags = get_flags(internalId);
         *flags |= DELETE_MARK;
         this->num_marked_deleted++;
-    }
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unmarkDeletedInternal(idType internalId) {
-    assert(internalId < this->cur_element_count);
-    if (isMarkedDeleted(internalId)) {
-        elementFlags *flags = get_flags(internalId);
-        *flags &= ~DELETE_MARK;
-        this->num_marked_deleted--;
     }
 }
 
@@ -1148,7 +1138,7 @@ void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
+void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
 
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
@@ -1235,11 +1225,10 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
         // Remove one block from the capacity.
         this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
     }
-    return true;
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
 
     idType cur_c;
 
@@ -1364,7 +1353,6 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         }
         maxlevel_ = element_max_level;
     }
-    return true;
 }
 
 template <typename DataType, typename DistType>

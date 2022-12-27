@@ -129,7 +129,7 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
     int64_t before = index->getAllocationSize();
-    index->addVector(blob, id);
+    index->addVector(blob, id, true);
     int64_t after = index->getAllocationSize();
     return after - before;
 }

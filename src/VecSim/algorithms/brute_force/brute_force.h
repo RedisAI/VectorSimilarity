@@ -58,10 +58,10 @@ public:
 
 protected:
     // Private internal function that implements generic single vector insertion.
-    virtual int appendVector(const void *vector_data, labelType label);
+    virtual void appendVector(const void *vector_data, labelType label);
 
     // Private internal function that implements generic single vector deletion.
-    virtual int removeVector(idType id);
+    virtual void removeVector(idType id);
 
     inline VectorBlock *getVectorVectorBlock(idType id) const {
         return vectorBlocks.at(id / this->blockSize);
@@ -113,7 +113,7 @@ BruteForceIndex<DataType, DistType>::~BruteForceIndex() {
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
-int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
+void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
 
     // Give the vector new id and increase count.
     idType id = this->count++;
@@ -151,12 +151,10 @@ int BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, l
 
     // add id to label:id map
     setVectorId(label, id);
-
-    return true;
 }
 
 template <typename DataType, typename DistType>
-int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
+void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 
     // Get last vector id and label
     idType last_idx = --this->count;
@@ -201,8 +199,6 @@ int BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
             this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
         }
     }
-
-    return true;
 }
 
 template <typename DataType, typename DistType>
