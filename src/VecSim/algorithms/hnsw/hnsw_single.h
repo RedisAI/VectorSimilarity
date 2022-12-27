@@ -108,8 +108,8 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
-                                                    const labelType label, bool override_allowed) {
+int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
+                                                    bool override_allowed) {
 
     // Checking if an element with the given label already exists.
     size_t index_size_before = this->indexSize();

@@ -141,7 +141,7 @@ int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, cons
                                                    bool override_allowed) {
 
     this->appendVector(vector_data, label);
-    return 1;  // We always add the vector, no overrides in multi.
+    return 1; // We always add the vector, no overrides in multi.
 }
 
 template <typename DataType, typename DistType>

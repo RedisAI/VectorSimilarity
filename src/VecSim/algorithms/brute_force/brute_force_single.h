@@ -82,8 +82,8 @@ template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data,
-                                                          labelType label, bool override_allowed) {
+int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
+                                                          bool override_allowed) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {

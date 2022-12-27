@@ -1689,7 +1689,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
         if (label % 2 == ep_reminder) {
             std::vector<idType> expected_deleted_ids;
             for (size_t j = 0; j < per_label; j++)
-                expected_deleted_ids.push_back(label*per_label + j);
+                expected_deleted_ids.push_back(label * per_label + j);
             ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), expected_deleted_ids);
         }
     }

@@ -23,5 +23,4 @@ public:
      * @return a vector of internal ids that has been marked as deleted (to be disposed later on).
      */
     virtual inline std::vector<idType> markDelete(labelType label) = 0;
-
 };
