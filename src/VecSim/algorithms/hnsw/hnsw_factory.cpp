@@ -43,7 +43,7 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
-    // size_t blockSize = (params->blockSize) ? params->blockSize : DEFAULT_BLOCK_SIZE;
+    size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
 
     size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
     if (params->type == VecSimType_FLOAT32) {
@@ -62,14 +62,18 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (params->initialCapacity) {
-        // size_t num_blocks = ceil((float)params->initialCapacity / (float)blockSize);
-        // est += sizeof(DataBlock) * num_blocks + sizeof(size_t); // data blocks
-        // est += sizeof(DataBlock) * num_blocks + sizeof(size_t); // meta blocks
         est += (sizeof(labelType) + sizeof(elementFlags)) * params->initialCapacity +
                sizeof(size_t); // idToMetaData
         est += sizeof(size_t) * params->initialCapacity +
                sizeof(size_t); // Labels lookup hash table buckets.
     }
+
+    // Explicit allocation calls - always allocate a header.
+
+    size_t element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * M * 2;
+    size_t element_data_size_ = params->dim * VecSimType_sizeof(params->type);
+    est += params->initialCapacity * (element_graph_data_size_ + element_data_size_);
+    est += 2 * sizeof(size_t); // allocation header
 
     return est;
 }
