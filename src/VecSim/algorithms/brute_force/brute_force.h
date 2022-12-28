@@ -116,7 +116,7 @@ BruteForceIndex<DataType, DistType>::~BruteForceIndex() {
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
-
+    assert(indexCapacity() > indexSize());
     // Give the vector new id and increase count.
     idType id = this->count++;
 

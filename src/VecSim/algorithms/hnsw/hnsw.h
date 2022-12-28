@@ -1238,7 +1238,7 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
-
+    assert(indexCapacity() > indexSize());
     idType cur_c;
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
