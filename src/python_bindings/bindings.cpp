@@ -50,11 +50,15 @@ py::object wrap_results(VecSimQueryResult_List res, size_t len) {
 
 class PyBatchIterator {
 private:
+    // Hold the index pointer, so that it will be destroyed **after** the batch iterator. Hence,
+    // the index field should come before the iterator field.
+    std::shared_ptr<VecSimIndex> vectorIndex;
     std::shared_ptr<VecSimBatchIterator> batchIterator;
 
 public:
-    PyBatchIterator(VecSimBatchIterator *batchIterator)
-        : batchIterator(batchIterator, VecSimBatchIterator_Free) {}
+    PyBatchIterator(const std::shared_ptr<VecSimIndex> &vecIndex,
+                    VecSimBatchIterator *batchIterator)
+        : vectorIndex(vecIndex), batchIterator(batchIterator, VecSimBatchIterator_Free) {}
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
@@ -84,17 +88,17 @@ public:
     PyVecSimIndex(const VecSimParams &params)
         : create_bytearray(
               py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {
-        index = VecSimIndex_New(&params);
+        index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 
     void addVector(py::object input, size_t id) {
-        VecSimIndex_AddVector(index, input_to_blob(input), id);
+        VecSimIndex_AddVector(index.get(), input_to_blob(input), id);
     }
-    void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
+    void deleteVector(size_t id) { VecSimIndex_DeleteVector(index.get(), id); }
 
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
         VecSimQueryResult_List res =
-            VecSimIndex_TopKQuery(index, input_to_blob(input), k, query_params, BY_SCORE);
+            VecSimIndex_TopKQuery(index.get(), input_to_blob(input), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
@@ -103,21 +107,22 @@ public:
     }
 
     py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
-        VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index, input_to_blob(input), radius, query_params, BY_SCORE);
+        VecSimQueryResult_List res = VecSimIndex_RangeQuery(index.get(), input_to_blob(input),
+                                                            radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
-    size_t indexSize() { return VecSimIndex_IndexSize(index); }
+    size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
 
     PyBatchIterator createBatchIterator(py::object input, VecSimQueryParams *query_params) {
-        return PyBatchIterator(VecSimBatchIterator_New(index, input_to_blob(input), query_params));
+        return PyBatchIterator(
+            index, VecSimBatchIterator_New(index.get(), input_to_blob(input), query_params));
     }
 
-    virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
+    virtual ~PyVecSimIndex() {} // Delete function was given to the shared pointer object
 
 protected:
-    VecSimIndex *index;
+    std::shared_ptr<VecSimIndex> index;
 
 private:
     // save the bytearray to keep its pointer valid
@@ -133,20 +138,21 @@ class PyHNSWLibIndex : public PyVecSimIndex {
 public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
-        this->index = VecSimIndex_New(&params);
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 
     // @params is required only in V1.
     PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
-        this->index = HNSWFactory::NewIndex(location, hnsw_params);
+        this->index = std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location, hnsw_params),
+                                                   VecSimIndex_Free);
     }
 
     void setDefaultEf(size_t ef) {
-        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index.get());
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index.get());
         hnsw->saveIndex(location);
     }
 };
@@ -155,7 +161,7 @@ class PyBFIndex : public PyVecSimIndex {
 public:
     PyBFIndex(const BFParams &bf_params) {
         VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bf_params};
-        this->index = VecSimIndex_New(&params);
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 };
 
