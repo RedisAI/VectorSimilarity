@@ -49,6 +49,8 @@ public:
         return this->index->getDistanceFrom(id, blob);
     }
     size_t indexSize() const override { return this->index->indexSize(); }
+    size_t indexCapacity() const override { return this->index->indexCapacity(); }
+    void resize() override { this->index->resize(); }
     size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {

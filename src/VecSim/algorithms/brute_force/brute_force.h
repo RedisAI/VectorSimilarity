@@ -35,7 +35,9 @@ protected:
 public:
     BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
-    virtual size_t indexSize() const override;
+    size_t indexSize() const override;
+    size_t indexCapacity() const override;
+    void resize() override;
     vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
@@ -118,19 +120,8 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // Get vector block to store the vector in.
-
-    // if vectorBlocks vector is empty or last_vector_block is full create a new block
-    if (id % this->blockSize == 0) {
-        size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
-        VectorBlock *new_vectorBlock =
-            new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
-        this->vectorBlocks.push_back(new_vectorBlock);
-    }
-
-    // get the last vectors block
+    // Get the last vectors block to store the vector in (we assume that it's not full yet).
     VectorBlock *vectorBlock = this->vectorBlocks.back();
-
     assert(vectorBlock == getVectorVectorBlock(id));
 
     // add vector data to vectorBlock
@@ -204,6 +195,19 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexSize() const {
     return this->count;
+}
+
+template <typename DataType, typename DistType>
+size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
+    return this->blockSize * this->vectorBlocks.size();
+}
+
+template <typename DataType, typename DistType>
+void BruteForceIndex<DataType, DistType>::resize() {
+    size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
+    auto *new_vector_block =
+        new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);
+    this->vectorBlocks.push_back(new_vector_block);
 }
 
 // Compute the score for every vector in the block by using the given distance function.

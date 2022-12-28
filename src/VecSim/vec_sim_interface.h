@@ -37,7 +37,7 @@ public:
      *
      * @param blob binary representation of the vector. Blob size should match the index data type
      * and dimension.
-     * @param label the id of the added vector
+     * @param label the label of the added vector.
      * @param overrideAllowed if true and id already exists in the index, override it. Otherwise,
      * ignore the new vector.
      * @return the number of new vectors inserted (1 for new insertion, 0 for override), or -1
@@ -71,6 +71,18 @@ public:
      * @return index size.
      */
     virtual size_t indexSize() const = 0;
+
+    /**
+     * @brief Return the index capacity, so we know if resize is required for adding new vectors.
+     *
+     * @return index capacity.
+     */
+    virtual size_t indexCapacity() const = 0;
+
+    /**
+     * @brief Change the index capacity (without chaning its data), by adding another block.
+     */
+    virtual void resize() = 0;
 
     /**
      * @brief Return the number of unique labels in the index using its SizeFn.

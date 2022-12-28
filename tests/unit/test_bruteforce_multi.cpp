@@ -50,7 +50,7 @@ TYPED_TEST(BruteForceMultiTest, vector_add_multiple_test) {
         for (size_t i = 0; i < dim; i++) {
             a[i] = (TEST_DATA_T)i * j + i;
         }
-        ASSERT_EQ(index_bf_multi->addVector(a, 46), 1);
+        VecSimIndex_AddVector(index, a, 46);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);

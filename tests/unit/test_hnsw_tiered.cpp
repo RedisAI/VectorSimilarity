@@ -43,10 +43,9 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
             // Move the vector from the temp flat index into the HNSW index.
             // Note that we access the vector via its internal id since in index of type MULTI,
             // this is the only way to do so (knowing the label is not enough...)
-            ASSERT_EQ(
-                my_index->addVector(my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
-                                    my_insert_job->label, false),
-                1);
+            VecSimIndex_AddVector(my_index,
+                                  my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
+                                  my_insert_job->label);
             // TODO: enable deleting vectors by internal id for the case of moving a single vector
             //  from the flat buffer in MULTI.
             VecSimIndex_DeleteVector(my_index->flatBuffer, my_insert_job->label);
