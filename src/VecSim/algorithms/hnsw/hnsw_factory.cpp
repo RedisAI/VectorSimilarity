@@ -52,13 +52,11 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     }
 
-#ifdef ENABLE_PARALLELIZATION
-    // Used for synchronization only when parallel indexing / searching is enabled.
-    est += sizeof(VisitedNodesHandlerPool) + sizeof(size_t);
-#else
+    // Account for the visited nodes pool (assume that it holds one pointer to a handler).
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
-    est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes
-#endif
+    // The visited nodes pool inner vector buffer (contains one pointer).
+    est += sizeof(void *) + sizeof(size_t);
+    est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes array
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (params->initialCapacity) {
