@@ -41,6 +41,17 @@ public:
                     std::shared_ptr<VecSimAllocator> allocator, Serializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, allocator, version),
           label_lookup_(this->max_elements_, allocator) {}
+
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
+
+        auto ids = label_lookup_.find(label);
+
+        for (idType id : ids->second) {
+            auto vec = std::vector<DataType>(this->dim);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+            vectors_output.push_back(vec);
+        }
+    }
 #endif
     ~HNSWIndex_Multi() {}
 
