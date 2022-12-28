@@ -4,6 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
+#include <cassert>
 #include "visited_nodes_handler.h"
 
 VisitedNodesHandler::VisitedNodesHandler(unsigned int cap,
@@ -42,7 +43,8 @@ VisitedNodesHandler::~VisitedNodesHandler() { allocator->free_allocation(element
  */
 VisitedNodesHandlerPool::VisitedNodesHandlerPool(int initial_pool_size, int cap,
                                                  const std::shared_ptr<VecSimAllocator> &allocator)
-    : VecsimBaseObject(allocator), pool(initial_pool_size, allocator), num_elements(cap) {
+    : VecsimBaseObject(allocator), pool(initial_pool_size, allocator), num_elements(cap),
+      total_handlers_in_use(0) {
     for (int i = 0; i < initial_pool_size; i++)
         pool[i] = new (allocator) VisitedNodesHandler(cap, allocator);
 }
@@ -55,6 +57,7 @@ VisitedNodesHandler *VisitedNodesHandlerPool::getAvailableVisitedNodesHandler() 
         pool.pop_back();
     } else {
         handler = new (allocator) VisitedNodesHandler(this->num_elements, this->allocator);
+        total_handlers_in_use++;
     }
     return handler;
 }
@@ -66,6 +69,8 @@ void VisitedNodesHandlerPool::returnVisitedNodesHandlerToPool(VisitedNodesHandle
 }
 
 void VisitedNodesHandlerPool::resize(size_t new_size) {
+    assert(total_handlers_in_use ==
+           pool.size()); // validate that there is no handlers in use outside the pool.
     this->num_elements = new_size;
     for (auto &handler : this->pool) {
         handler->resize(new_size);

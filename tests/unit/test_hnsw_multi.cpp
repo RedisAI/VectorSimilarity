@@ -1404,9 +1404,6 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     ASSERT_EQ(index->indexLabelCount(), n_labels);
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    // Reset the iterator after it was depleted.
-    VecSimBatchIterator_Reset(batchIterator);
-
     // Try to get 0 results.
     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
@@ -1769,7 +1766,8 @@ TYPED_TEST(HNSWMultiTest, parallelSearch) {
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
         TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
             ASSERT_EQ(diff_id, (res_index + 1) / 2);

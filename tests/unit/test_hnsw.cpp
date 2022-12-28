@@ -2178,7 +2178,8 @@ TYPED_TEST(HNSWTest, parallelSearchKnn) {
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
         TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the res
             // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
@@ -2203,7 +2204,8 @@ TYPED_TEST(HNSWTest, parallelSearchKnn) {
     }
     ASSERT_EQ(successful_searches, n_threads);
     // Make sure that we properly update the allocator atomically during the searches. The expected
-    // Memory delta should only be the visited nodes handler added to the pool.
+    // Memory delta should only be the visited nodes handler added to the pool. Note that the
+    // initial pool size is 1, so we subtract 1 from the current pool size to get the delta.
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
                                                  (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
                                                   2 * sizeof(size_t) + sizeof(void *));
@@ -2237,7 +2239,8 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
     // labels in the range [50+myID-5, 50+myID+5].
     auto parallel_knn_search = [&](int myID) {
         TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the res
             // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
@@ -2315,7 +2318,8 @@ TYPED_TEST(HNSWTest, parallelSearchCombined) {
     }
     ASSERT_EQ(successful_searches, n_threads);
     // Make sure that we properly update the allocator atomically during the searches.
-    // Memory delta should only be the visited nodes handler added to the pool.
+    // Memory delta should only be the visited nodes handler added to the pool. Note that the
+    // initial pool size is 1, so we subtract 1 from the current pool size to get the delta.
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
                                                  (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
                                                   2 * sizeof(size_t) + sizeof(void *));

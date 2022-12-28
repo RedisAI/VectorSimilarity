@@ -55,6 +55,7 @@ private:
     std::vector<VisitedNodesHandler *, VecsimSTLAllocator<VisitedNodesHandler *>> pool;
     std::mutex pool_guard;
     unsigned int num_elements;
+    unsigned short total_handlers_in_use;
 
 public:
     VisitedNodesHandlerPool(int initial_pool_size, int cap,
@@ -64,6 +65,7 @@ public:
 
     void returnVisitedNodesHandlerToPool(VisitedNodesHandler *handler);
 
+    // This should be called under a guarded section only (NOT in parallel).
     void resize(size_t new_size);
 
     inline size_t getPoolSize() { return pool.size(); }
