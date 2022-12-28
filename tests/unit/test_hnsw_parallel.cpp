@@ -244,5 +244,43 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsert) {
+    size_t n = 1000;
+    size_t k = 11;
+    size_t dim = 4;
 
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *parallel_index = this->CreateNewIndex(params);
+    size_t n_threads = 10;
+
+    auto parallel_insert = [&](int myID) {
+        for (labelType label = myID; label < n; label+=n_threads) {
+            GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
+        }
+    };
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i] = std::thread(parallel_insert, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n/2);
+    auto verify_res = [&](size_t id, double score, size_t res_index) {
+        // We expect to get the results with increasing order of the distance between the res
+        // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
+        // query_val+2, ...) The score is the L2 distance between the vectors that correspond
+        // the ids.
+        size_t diff_id = std::abs(int(id - n/2));
+        ASSERT_EQ(diff_id, (res_index + 1) / 2);
+        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+    };
+    runTopKSearchTest(parallel_index, query, k, verify_res);
 }
