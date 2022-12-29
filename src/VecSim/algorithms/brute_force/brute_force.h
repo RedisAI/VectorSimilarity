@@ -37,7 +37,7 @@ public:
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    void resize() override;
+    void increaseCapacity() override;
     vecsim_stl::vector<DistType> computeBlockScores(VectorBlock *block, const void *queryBlob,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
@@ -203,7 +203,7 @@ size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
 }
 
 template <typename DataType, typename DistType>
-void BruteForceIndex<DataType, DistType>::resize() {
+void BruteForceIndex<DataType, DistType>::increaseCapacity() {
     size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
     auto *new_vector_block =
         new (this->allocator) VectorBlock(this->blockSize, vector_bytes_count, this->allocator);

@@ -52,7 +52,7 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label, bool override_allowed = true) override;
+    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
 };
@@ -109,12 +109,13 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                    bool override_allowed) {
+                                                    bool overwrite_allowed) {
 
     // Checking if an element with the given label already exists.
-    size_t index_size_before = this->indexSize();
+    bool label_exists = false;
     if (label_lookup_.find(label) != label_lookup_.end()) {
-        if (override_allowed) {
+        label_exists = true;
+        if (overwrite_allowed) {
             // Remove the vector in place if override allowed (in non-async scenario)
             deleteVector(label);
         } else {
@@ -125,7 +126,7 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, con
 
     this->appendVector(vector_data, label);
     // Return the delta in the index size due to the insertion.
-    return this->indexSize() - index_size_before;
+    return label_exists ? 0 : 1;
 }
 
 template <typename DataType, typename DistType>

@@ -205,7 +205,7 @@ public:
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
-    void resize() override;
+    void increaseCapacity() override;
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
@@ -1141,7 +1141,7 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  * Index API functions
  */
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::resize() {
+void HNSWIndex<DataType, DistType>::increaseCapacity() {
     size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
     resizeIndexInternal(max_elements_ + vectors_to_add);
 }

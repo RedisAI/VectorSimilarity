@@ -22,7 +22,7 @@ public:
 
     ~BruteForceIndex_Multi() {}
 
-    int addVector(const void *vector_data, labelType label, bool override_allowed = true) override;
+    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType labelType) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
@@ -61,7 +61,7 @@ private:
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                         bool override_allowed) {
+                                                         bool overwrite_allowed) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {

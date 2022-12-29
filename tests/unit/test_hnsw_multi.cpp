@@ -1653,7 +1653,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
     VecSimIndex *index = this->CreateNewIndex(params);
-    // Try marking and unmarking non-existing label
+    // Try marking a non-existing label
     ASSERT_EQ(this->CastToHNSW(index)->markDelete(0), std::vector<idType>());
 
     for (size_t i = 0; i < n_labels; i++) {
@@ -1696,6 +1696,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(this->CastToHNSW(index)->indexLabelCount(), n_labels / 2);
 
     // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
     // This value is very close to a deleted vector
@@ -1709,7 +1710,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
         }
     }
 
-    // Search for k results around the middle. expect to find only even results.
+    // Search for k results closest to the origin. expect to find only even results.
     auto verify_res_even = [&](size_t id, double score, size_t idx) {
         ASSERT_NE(id % 2, ep_reminder);
         ASSERT_EQ(id, idx * 2);
@@ -1729,5 +1730,30 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
     VecSimBatchIterator_Free(batchIterator);
 
+    for (labelType label = 0; label < n_labels; label++) {
+        if (label % 2 == ep_reminder) {
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label * per_label + j);
+            }
+        }
+    }
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + n / 2 + 1);
+    ASSERT_EQ(this->CastToHNSW(index)->indexLabelCount(), n_labels + 1);
+
+    // Search for k results closest to the origin again. expect to find the same results we found in
+    // the first search (the validation over the internal ids is removed, as these internal ids
+    // change). Search for k results from the origin. expect to find them.
+    auto verify_res_after_reinsert = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id, idx);
+        ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
+    };
+
+    runTopKSearchTest(index, query, k, verify_res_after_reinsert);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res_after_reinsert, k,
+                      BY_SCORE);
+    batchIterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_after_reinsert);
+    VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }

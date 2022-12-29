@@ -2105,6 +2105,7 @@ TYPED_TEST(HNSWTest, markDelete) {
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + n / 2 + 1);
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
 
     // Search for k results around the middle again. expect to find the same results we
     // found in the first search.
