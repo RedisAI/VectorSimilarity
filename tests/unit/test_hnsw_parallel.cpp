@@ -1,8 +1,8 @@
 /*
-*Copyright Redis Ltd. 2021 - present
-*Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
-*the Server Side Public License v1 (SSPLv1).
-*/
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
@@ -17,16 +17,19 @@
 template <typename index_type_t>
 class HNSWTestParallel : public ::testing::Test {
 public:
-   using data_t = typename index_type_t::data_t;
-   using dist_t = typename index_type_t::dist_t;
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
 
 protected:
-   VecSimIndex *CreateNewIndex(HNSWParams &params, bool is_multi = false) {
-       return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
-   }
-   HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-       return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
-   }
+    VecSimIndex *CreateNewIndex(HNSWParams &params, bool is_multi = false) {
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
+    }
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+    }
+    HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndex *index) {
+        return reinterpret_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
+    }
 };
 
 // DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
@@ -89,7 +92,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(HNSWTestParallel, parallelSearchKNNMUlti) {
+TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     size_t dim = 4;
     size_t n = 1000;
     size_t n_labels = 100;
@@ -130,7 +133,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMUlti) {
     ASSERT_EQ(successful_searches, n_threads);
     VecSimIndex_Free(index);
 }
-
 
 TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     size_t n = 1000;
@@ -244,9 +246,9 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsert) {
-    size_t n = 1000;
+    size_t n = 10000;
     size_t k = 11;
-    size_t dim = 4;
+    size_t dim = 32;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
@@ -258,7 +260,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     size_t n_threads = 10;
 
     auto parallel_insert = [&](int myID) {
-        for (labelType label = myID; label < n; label+=n_threads) {
+        for (labelType label = myID; label < n; label += n_threads) {
             GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
         }
     };
@@ -272,15 +274,86 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
 
     TEST_DATA_T query[dim];
-    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n/2);
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 2);
     auto verify_res = [&](size_t id, double score, size_t res_index) {
         // We expect to get the results with increasing order of the distance between the res
-        // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
-        // query_val+2, ...) The score is the L2 distance between the vectors that correspond
-        // the ids.
-        size_t diff_id = std::abs(int(id - n/2));
+        // label and the query val (n/2, n/2-1, n/2+1, n/2-2, n/2+2, ...) The score is the L2
+        // distance between the vectors that correspond the ids.
+        size_t diff_id = std::abs(int(id - n / 2));
         ASSERT_EQ(diff_id, (res_index + 1) / 2);
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
+}
+
+TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
+    size_t n = 10000;
+    size_t k = 11;
+    size_t dim = 32;
+
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *parallel_index = this->CreateNewIndex(params);
+    size_t n_threads = 10;
+
+    auto parallel_insert = [&](int myID) {
+        for (labelType label = myID; label < n; label += n_threads / 2) {
+            GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
+        }
+    };
+
+    TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
+    std::atomic_int successful_searches(0);
+    auto parallel_knn_search = [&](int myID) {
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            // We expect to get the results with increasing order of the distance between the res
+            // label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is the L2
+            // distance between the vectors that correspond the ids.
+            size_t diff_id = std::abs(int(id - query_val));
+            ASSERT_EQ(diff_id, (res_index + 1) / 2);
+            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        };
+        runTopKSearchTest(parallel_index, query, k, verify_res);
+        successful_searches++;
+    };
+
+    auto hnsw_index = this->CastToHNSW_Single(parallel_index);
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        if (i < n_threads / 2) {
+            thread_objs[i] = std::thread(parallel_insert, i);
+        } else {
+            // Search threads are waiting in bust wait until the vectors of the query results are
+            // done being indexed.
+            bool wait_for_results = true;
+            while (wait_for_results) {
+                wait_for_results = false;
+                std::unique_lock<std::mutex> tmp_lock(hnsw_index->index_data_guard_);
+                for (labelType res_label = query_val - k / 2; res_label <= query_val + k / 2;
+                     res_label++) {
+                    auto &index_labels_lookup = hnsw_index->label_lookup_;
+                    if (index_labels_lookup.find(res_label) == index_labels_lookup.end() ||
+                        hnsw_index->isInProcess(index_labels_lookup[res_label])) {
+                        wait_for_results = true;
+                        break; // results are not ready yet, restart the check.
+                    }
+                }
+                if (!wait_for_results) {
+                    break; // all the results are in the index, search can begin now.
+                }
+            }
+            thread_objs[i] = std::thread(parallel_knn_search, i);
+        }
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+    ASSERT_EQ(successful_searches, n_threads / 2);
 }

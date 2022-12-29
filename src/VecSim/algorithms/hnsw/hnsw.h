@@ -407,6 +407,12 @@ bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
     return *flags & DELETE_MARK;
 }
 
+template <typename DataType, typename DistType>
+bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
+    elementFlags *flags = get_flags(internalId);
+    return *flags & IN_PROCESS;
+}
+
 /**
  * helper functions
  */
@@ -478,7 +484,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
         __builtin_prefetch(elements_tags + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
-        if (elements_tags[candidate_id] == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
             continue;
 
         elements_tags[candidate_id] = visited_tag;
@@ -533,7 +539,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         __builtin_prefetch(elements_tags + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
 
-        if (elements_tags[candidate_id] == visited_tag)
+        if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
             continue;
         elements_tags[candidate_id] = visited_tag;
         char *candidate_data = getDataByInternalId(candidate_id);
@@ -1063,7 +1069,9 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
         for (int i = 0; i < links_count; i++) {
             idType candidate = node_links[i];
             assert(candidate < this->cur_element_count && "candidate error: out of index range");
-
+            if (isInProcess(candidate)) {
+                continue;
+            }
             DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
             if (d < curDist) {
                 curDist = d;
@@ -1333,6 +1341,8 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
            size_data_per_element_);
 
     // Initialisation of the data and label
+    elementFlags *flags = get_flags(new_element_id);
+    *flags |= IN_PROCESS;
     setExternalLabel(new_element_id, label);
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
 
@@ -1429,8 +1439,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     idType curr_element = entrypoint_node_;
     lock.unlock();
 
-    DistType cur_dist =
-        this->dist_func(query_data, getDataByInternalId(entrypoint_node_), this->dim);
+    DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
     for (size_t level = maxlevel_; level > 0 && curr_element != HNSW_INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
