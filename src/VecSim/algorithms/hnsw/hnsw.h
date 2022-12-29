@@ -416,6 +416,12 @@ bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     return *flags & IN_PROCESS;
 }
 
+template <typename DataType, typename DistType>
+bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
+    elementFlags *flags = get_flags(internalId);
+    return *flags & IN_PROCESS;
+}
+
 /**
  * helper functions
  */
