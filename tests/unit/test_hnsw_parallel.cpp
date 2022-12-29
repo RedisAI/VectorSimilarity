@@ -286,6 +286,50 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     runTopKSearchTest(parallel_index, query, k, verify_res);
 }
 
+TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
+    size_t n = 10000;
+    size_t n_labels = 1000;
+    size_t per_label = n / n_labels;
+    size_t k = 11;
+    size_t dim = 32;
+
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .initialCapacity = n,
+                         .M = 16,
+                         .efConstruction = 200};
+
+    VecSimIndex *parallel_index = this->CreateNewIndex(params, true);
+    size_t n_threads = 10;
+
+    auto parallel_insert = [&](int myID) {
+        for (size_t i = myID; i < n; i += n_threads) {
+            GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, i % n_labels, i);
+        }
+    };
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i] = std::thread(parallel_insert, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+
+    TEST_DATA_T query[dim];
+    TEST_DATA_T query_val = (TEST_DATA_T)n/2 + 10;
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)query_val);
+    auto verify_res = [&](size_t id, double score, size_t res_index) {
+        // We expect to get the results with increasing order of the distance between the res
+        // label and query_val%n_labels (that is ids 10, 9, 11, ... for the current arguments).
+        // The score is the L2 distance between the vectors that correspond the ids.
+        size_t diff_id = std::abs(int(id - (size_t)query_val % n_labels));
+        ASSERT_EQ(diff_id, (res_index + 1) / 2);
+        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+    };
+    runTopKSearchTest(parallel_index, query, k, verify_res);
+}
+
 TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
     size_t n = 10000;
     size_t k = 11;
@@ -309,6 +353,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
     TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
     std::atomic_int successful_searches(0);
     auto parallel_knn_search = [&](int myID) {
+        // Make sure were still indexing in parallel to the search.
+        ASSERT_LT(VecSimIndex_IndexSize(parallel_index), n);
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
