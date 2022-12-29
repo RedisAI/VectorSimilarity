@@ -154,8 +154,8 @@ std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType l
     if (search == label_lookup_.end()) {
         return idsToDelete;
     }
-    label_lookup_.erase(search);
     this->markDeletedInternal(search->second);
     idsToDelete.push_back(search->second);
+    label_lookup_.erase(search);
     return idsToDelete;
 }
