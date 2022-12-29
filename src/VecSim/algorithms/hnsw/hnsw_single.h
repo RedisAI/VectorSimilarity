@@ -61,10 +61,9 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label) override;
+    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
-    inline int markDelete(labelType label) override;
-    inline int unmarkDelete(labelType label) override;
+    inline std::vector<idType> markDelete(labelType label) override;
 };
 
 /**
@@ -107,25 +106,36 @@ void HNSWIndex_Single<DataType, DistType>::resizeLabelLookup(size_t new_max_elem
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
-    // check that the label actually exists in the graph, and update the number of elements.
+    // Check that the label actually exists in the graph, and update the number of elements.
     if (label_lookup_.find(label) == label_lookup_.end()) {
-        return false;
+        return 0;
     }
     idType element_internal_id = label_lookup_[label];
     label_lookup_.erase(label);
-    return this->removeVector(element_internal_id);
+    this->removeVector(element_internal_id);
+    return 1;
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
-                                                    const labelType label) {
+int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
+                                                    bool overwrite_allowed) {
 
-    // Checking if an element with the given label already exists. if so, remove it.
+    // Checking if an element with the given label already exists.
+    bool label_exists = false;
     if (label_lookup_.find(label) != label_lookup_.end()) {
-        deleteVector(label);
+        label_exists = true;
+        if (overwrite_allowed) {
+            // Remove the vector in place if override allowed (in non-async scenario)
+            deleteVector(label);
+        } else {
+            // If override is not allowed, we don't do anything.
+            return -1;
+        }
     }
 
-    return this->appendVector(vector_data, label);
+    this->appendVector(vector_data, label);
+    // Return the delta in the index size due to the insertion.
+    return label_exists ? 0 : 1;
 }
 
 template <typename DataType, typename DistType>
@@ -147,27 +157,14 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
  * @param label
  */
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
+std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
+    std::vector<idType> idsToDelete;
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
-        return false;
+        return idsToDelete;
     }
-
     this->markDeletedInternal(search->second);
-    return true;
-}
-
-/**
- * Remove the deleted mark of the node, does NOT really change the current graph.
- * @param label
- */
-template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::unmarkDelete(labelType label) {
-    auto search = label_lookup_.find(label);
-    if (search == label_lookup_.end()) {
-        return false;
-    }
-
-    this->unmarkDeletedInternal(search->second);
-    return true;
+    idsToDelete.push_back(search->second);
+    label_lookup_.erase(search);
+    return idsToDelete;
 }
