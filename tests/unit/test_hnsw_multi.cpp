@@ -53,14 +53,14 @@ TYPED_TEST(HNSWMultiTest, vector_add_multiple_test) {
         for (size_t i = 0; i < dim; i++) {
             a[i] = (TEST_DATA_T)i * j + i;
         }
-        VecSimIndex_AddVector(index, a, 46);
+        ASSERT_EQ(this->CastToHNSW_Multi(index)->addVector(a, 46), 1);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);
     ASSERT_EQ(index->indexLabelCount(), 1);
 
     // Deleting the label. All the vectors should be deleted.
-    VecSimIndex_DeleteVector(index, 46);
+    ASSERT_EQ(this->CastToHNSW_Multi(index)->deleteVector(46), rep);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(index->indexLabelCount(), 0);
@@ -82,7 +82,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
-    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(this->CastToHNSW_Multi(index)->deleteVector(0), 0);
 
     // Add one vector multiple times.
     for (size_t i = 0; i < 3; i++) {
@@ -90,7 +90,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     }
 
     // Try to remove it.
-    VecSimIndex_DeleteVector(index, 1);
+    ASSERT_EQ(this->CastToHNSW_Multi(index)->deleteVector(1), 3);
 
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -98,7 +98,7 @@ TYPED_TEST(HNSWMultiTest, empty_index) {
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);
 
-    // Size should be stiil zero.
+    // Size should be still zero.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
@@ -877,9 +877,9 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index) {
     }
     // The size and the capacity should be equal.
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), VecSimIndex_IndexSize(index));
+    ASSERT_EQ(hnswIndex->indexCapacity(), VecSimIndex_IndexSize(index));
     // The capacity shouldn't be changed.
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
+    ASSERT_EQ(hnswIndex->indexCapacity(), n);
 
     // Add another vector to exceed the initial capacity.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
@@ -887,7 +887,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index) {
     // The capacity should be now aligned with the block size.
     // bs = 3, size = 11 -> capacity = 12
     // New capacity = initial capacity + blockSize - initial capacity % blockSize.
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), n + bs - n % bs);
+    ASSERT_EQ(hnswIndex->indexCapacity(), n + bs - n % bs);
     VecSimIndex_Free(index);
 }
 
@@ -913,7 +913,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
 
     // The capacity shouldn't change, should remain n.
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
+    ASSERT_EQ(hnswIndex->indexCapacity(), n);
 
     // Delete last vector, to get size % block_size == 0. size = 3
     VecSimIndex_DeleteVector(index, bs);
@@ -923,7 +923,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
 
     // New capacity = initial capacity - block_size - number_of_vectors_to_align =
     // 10  - 3 - 10 % 3 (1) = 6
-    size_t curr_capacity = hnswIndex->getIndexCapacity();
+    size_t curr_capacity = hnswIndex->indexCapacity();
     ASSERT_EQ(curr_capacity, n - bs - n % bs);
 
     // Delete all the vectors to decrease capacity by another bs.
@@ -932,20 +932,20 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largeInitialCapacity) {
         VecSimIndex_DeleteVector(index, i);
         ++i;
     }
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
     // Add and delete a vector to achieve:
     // size % block_size == 0 && size + bs <= capacity(3).
     // the capacity should be resized to zero
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
+    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
 
     // Do it again. This time after adding a vector the capacity is increased by bs.
     // Upon deletion it will be resized to zero again.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), 0);
+    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -971,7 +971,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
 
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
     // The capacity shouldn't change.
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), n);
+    ASSERT_EQ(hnswIndex->indexCapacity(), n);
 
     // Size equals capacity.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -979,7 +979,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
     // Add another vector - > the capacity is increased to a multiplication of block_size.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
 
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
 
     // Size increased by 1.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
@@ -988,7 +988,7 @@ TYPED_TEST(HNSWMultiTest, resize_and_align_index_largerBlockSize) {
     VecSimIndex_DeleteVector(index, 1);
 
     // The capacity should remain the same.
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), bs);
+    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
 
     VecSimIndex_Free(index);
 }
@@ -1016,7 +1016,7 @@ TYPED_TEST(HNSWMultiTest, emptyIndex) {
     // The capacity should change to be aligned with the block size.
 
     HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
-    size_t new_capacity = hnswIndex->getIndexCapacity();
+    size_t new_capacity = hnswIndex->indexCapacity();
     ASSERT_EQ(new_capacity, n - n % bs - bs);
 
     // Size equals 0.
@@ -1025,7 +1025,7 @@ TYPED_TEST(HNSWMultiTest, emptyIndex) {
     // Try to remove it again.
     // The capacity should remain unchanged, as we are trying to delete a label that doesn't exist.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(hnswIndex->getIndexCapacity(), new_capacity);
+    ASSERT_EQ(hnswIndex->indexCapacity(), new_capacity);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -1655,9 +1655,8 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
     VecSimIndex *index = this->CreateNewIndex(params);
-    // Try marking and unmarking non-existing label
-    ASSERT_FALSE(this->CastToHNSW(index)->markDelete(0));
-    ASSERT_FALSE(this->CastToHNSW(index)->unmarkDelete(0));
+    // Try marking a non-existing label
+    ASSERT_EQ(this->CastToHNSW(index)->markDelete(0), std::vector<idType>());
 
     for (size_t i = 0; i < n_labels; i++) {
         for (size_t j = 0; j < per_label; j++)
@@ -1688,12 +1687,18 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
 
     unsigned char ep_reminder = index->info().hnswInfo.entrypoint % 2;
     // Mark as deleted half of the vectors including the entrypoint.
-    for (labelType label = 0; label < n_labels; label++)
-        if (label % 2 == ep_reminder)
-            this->CastToHNSW(index)->markDelete(label);
+    for (labelType label = 0; label < n_labels; label++) {
+        if (label % 2 == ep_reminder) {
+            std::vector<idType> expected_deleted_ids;
+            for (size_t j = 0; j < per_label; j++)
+                expected_deleted_ids.push_back(label * per_label + j);
+            ASSERT_EQ(this->CastToHNSW(index)->markDelete(label), expected_deleted_ids);
+        }
+    }
 
     ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(this->CastToHNSW(index)->indexLabelCount(), n_labels / 2);
 
     // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
     // This value is very close to a deleted vector
@@ -1707,7 +1712,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
         }
     }
 
-    // Search for k results around the middle. expect to find only even results.
+    // Search for k results closest to the origin. expect to find only even results.
     auto verify_res_even = [&](size_t id, double score, size_t idx) {
         ASSERT_NE(id % 2, ep_reminder);
         ASSERT_EQ(id, idx * 2);
@@ -1727,22 +1732,31 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     runBatchIteratorSearchTest(batchIterator, k, verify_res_even);
     VecSimBatchIterator_Free(batchIterator);
 
-    // Unmark the previously marked vectors.
-    for (labelType label = 0; label < n_labels; label++)
-        if (label % 2 == ep_reminder)
-            this->CastToHNSW(index)->unmarkDelete(label);
+    for (labelType label = 0; label < n_labels; label++) {
+        if (label % 2 == ep_reminder) {
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label * per_label + j);
+            }
+        }
+    }
+    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + n / 2 + 1);
+    ASSERT_EQ(this->CastToHNSW(index)->indexLabelCount(), n_labels + 1);
 
-    ASSERT_EQ(this->CastToHNSW(index)->getNumMarkedDeleted(), 0);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+    // Search for k results closest to the origin again. expect to find the same results we found in
+    // the first search (the validation over the internal ids is removed, as these internal ids
+    // change). Search for k results from the origin. expect to find them.
+    auto verify_res_after_reinsert = [&](size_t id, double score, size_t idx) {
+        ASSERT_EQ(id, idx);
+        ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
+    };
 
-    // Search for k results around the middle again. expect to find the same results we found in the
-    // first search.
-    runTopKSearchTest(index, query, k, verify_res);
-    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res, k, BY_SCORE);
+    runTopKSearchTest(index, query, k, verify_res_after_reinsert);
+    runRangeQueryTest(index, query, dim * all_element * all_element, verify_res_after_reinsert, k,
+                      BY_SCORE);
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
-    runBatchIteratorSearchTest(batchIterator, k, verify_res);
+    runBatchIteratorSearchTest(batchIterator, k, verify_res_after_reinsert);
     VecSimBatchIterator_Free(batchIterator);
-
     VecSimIndex_Free(index);
 }
 

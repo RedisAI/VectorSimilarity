@@ -41,14 +41,16 @@ public:
     virtual ~TieredHNSWIndex() = default;
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    int addVector(const void *blob, labelType id) override {
-        return this->index->addVector(blob, id);
+    int addVector(const void *blob, labelType label, bool overwrite_allowed) override {
+        return this->index->addVector(blob, label, overwrite_allowed);
     }
     int deleteVector(labelType id) override { return this->index->deleteVector(id); }
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
     }
     size_t indexSize() const override { return this->index->indexSize(); }
+    size_t indexCapacity() const override { return this->index->indexCapacity(); }
+    void increaseCapacity() override { this->index->increaseCapacity(); }
     size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {
