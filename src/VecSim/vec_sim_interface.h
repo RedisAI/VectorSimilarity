@@ -38,7 +38,7 @@ public:
      * @param blob binary representation of the vector. Blob size should match the index data type
      * and dimension.
      * @param label the label of the added vector.
-     * @param overwriteAllowed if true and id already exists in the index, override it. Otherwise,
+     * @param overwriteAllowed if true and id already exists in the index, overwrite it. Otherwise,
      * ignore the new vector.
      * @return the number of new vectors inserted (1 for new insertion, 0 for override), or -1
      * in case that override is not allowed and label already exists.
