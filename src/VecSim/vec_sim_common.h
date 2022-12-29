@@ -34,7 +34,10 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
 // Vectors flags (for marking a specific vector)
-typedef enum { DELETE_MARK = 0x01 } Flags;
+typedef enum {
+    DELETE_MARK = 0x01, // vector is logically deleted, but still exists in the graph
+    IN_PROCESS = 0x02   // vector is being inserted into the graph
+} Flags;
 
 typedef size_t labelType;
 typedef unsigned int idType;
