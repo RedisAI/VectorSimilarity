@@ -7,7 +7,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
                                     params->blockSize, params->multi),
       Serializer(version), max_elements_(params->initialCapacity), epsilon_(params->epsilon),
-      element_levels_(max_elements_, allocator) {
+      element_levels_(max_elements_, allocator),
+      visited_nodes_handler_pool(1, max_elements_, allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -16,16 +17,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // We use seed = 200 and not the default value (100) to get different sequence of
     // levels value than the loaded index.
     level_generator_.seed(200);
-
-#ifdef ENABLE_PARALLELIZATION
-    this->pool_initial_size = 1;
-    this->visited_nodes_handler_pool = std::unique_ptr<VisitedNodesHandlerPool>(
-        new (this->allocator)
-            VisitedNodesHandlerPool(this->pool_initial_size, max_elements_, this->allocator));
-#else
-    this->visited_nodes_handler = std::unique_ptr<VisitedNodesHandler>(
-        new (this->allocator) VisitedNodesHandler(max_elements_, this->allocator));
-#endif
 
     data_level0_memory_ =
         (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);

@@ -7,7 +7,7 @@
 #pragma once
 
 #include <mutex>
-#include <deque>
+#include <vector>
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/memory/vecsim_base.h"
 
@@ -36,6 +36,8 @@ public:
 
     void reset();
 
+    void resize(size_t new_size);
+
     // Mark node_id with tag, to have an indication that this node has been visited.
     inline void tagNode(unsigned int node_id, tag_t tag) { elements_tags[node_id] = tag; }
 
@@ -46,14 +48,14 @@ public:
 };
 
 /**
- * A wrapper class for using a pool of VisitedNodesHandler (relevant only when parallelization is
- * enabled).
+ * A wrapper class for using a pool of VisitedNodesHandler (relevant for parallel graph scans).
  */
 class VisitedNodesHandlerPool : public VecsimBaseObject {
 private:
-    std::deque<VisitedNodesHandler *, VecsimSTLAllocator<VisitedNodesHandler *>> pool;
+    std::vector<VisitedNodesHandler *, VecsimSTLAllocator<VisitedNodesHandler *>> pool;
     std::mutex pool_guard;
     unsigned int num_elements;
+    unsigned short total_handlers_in_use;
 
 public:
     VisitedNodesHandlerPool(int initial_pool_size, int cap,
@@ -62,6 +64,11 @@ public:
     VisitedNodesHandler *getAvailableVisitedNodesHandler();
 
     void returnVisitedNodesHandlerToPool(VisitedNodesHandler *handler);
+
+    // This should be called under a guarded section only (NOT in parallel).
+    void resize(size_t new_size);
+
+    inline size_t getPoolSize() { return pool.size(); }
 
     ~VisitedNodesHandlerPool() override;
 };
