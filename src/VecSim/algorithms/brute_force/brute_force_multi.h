@@ -22,7 +22,7 @@ public:
 
     ~BruteForceIndex_Multi() {}
 
-    int addVector(const void *vector_data, labelType label) override;
+    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType labelType) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
@@ -32,7 +32,18 @@ public:
         return std::unique_ptr<vecsim_stl::abstract_results_container>(
             new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
     }
+#ifdef BUILD_TESTS
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
 
+        auto ids = labelToIdsLookup.find(label);
+
+        for (idType id : ids->second) {
+            auto vec = std::vector<DataType>(this->dim);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
+            vectors_output.push_back(vec);
+        }
+    }
+#endif
 private:
     // inline definitions
 
@@ -60,7 +71,8 @@ private:
 /******************************* Implementation **********************************/
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label) {
+int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label,
+                                                         bool overwrite_allowed) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
@@ -69,24 +81,25 @@ int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data
         vector_data = normalized_blob;
     }
 
-    return this->appendVector(vector_data, label);
+    this->appendVector(vector_data, label);
+    return 1;
 }
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Multi<DataType, DistType>::deleteVector(labelType label) {
+    int ret = 0;
 
     // Find the id to delete.
     auto deleted_label_ids_pair = this->labelToIdsLookup.find(label);
     if (deleted_label_ids_pair == this->labelToIdsLookup.end()) {
         // Nothing to delete.
-        return true;
+        return ret;
     }
-
-    int ret = true;
 
     // Deletes all vectors under the given label.
     for (auto id_to_delete : deleted_label_ids_pair->second) {
-        ret = (this->removeVector(id_to_delete) && ret);
+        this->removeVector(id_to_delete);
+        ret++;
     }
 
     // Remove the pair of the deleted vector.

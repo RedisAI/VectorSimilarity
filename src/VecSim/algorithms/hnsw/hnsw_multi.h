@@ -41,6 +41,17 @@ public:
                     std::shared_ptr<VecSimAllocator> allocator, Serializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, allocator, version),
           label_lookup_(this->max_elements_, allocator) {}
+
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
+
+        auto ids = label_lookup_.find(label);
+
+        for (idType id : ids->second) {
+            auto vec = std::vector<DataType>(this->dim);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+            vectors_output.push_back(vec);
+        }
+    }
 #endif
     ~HNSWIndex_Multi() {}
 
@@ -59,10 +70,9 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label) override;
+    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
-    inline int markDelete(labelType label) override;
-    inline int unmarkDelete(labelType label) override;
+    inline std::vector<idType> markDelete(labelType label) override;
 };
 
 /**
@@ -123,22 +133,26 @@ void HNSWIndex_Multi<DataType, DistType>::resizeLabelLookup(size_t new_max_eleme
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
+    int ret = 0;
     // check that the label actually exists in the graph, and update the number of elements.
     auto ids = label_lookup_.find(label);
     if (ids == label_lookup_.end()) {
-        return false;
+        return ret;
     }
     for (idType id : ids->second) {
         this->removeVector(id);
+        ret++;
     }
     label_lookup_.erase(ids);
-    return true;
+    return ret;
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label) {
+int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label,
+                                                   bool overwrite_allowed) {
 
-    return this->appendVector(vector_data, label);
+    this->appendVector(vector_data, label);
+    return 1; // We always add the vector, no overrides in multi.
 }
 
 template <typename DataType, typename DistType>
@@ -160,31 +174,17 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
  * @param label
  */
 template <typename DataType, typename DistType>
-int HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
+std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
+    std::vector<idType> idsToDelete;
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
-        return false;
+        return idsToDelete;
     }
 
     for (idType id : search->second) {
         this->markDeletedInternal(id);
+        idsToDelete.push_back(id);
     }
-    return true;
-}
-
-/**
- * Remove the deleted mark of the node, does NOT really change the current graph.
- * @param label
- */
-template <typename DataType, typename DistType>
-int HNSWIndex_Multi<DataType, DistType>::unmarkDelete(labelType label) {
-    auto search = label_lookup_.find(label);
-    if (search == label_lookup_.end()) {
-        return false;
-    }
-
-    for (idType id : search->second) {
-        this->unmarkDeletedInternal(id);
-    }
-    return true;
+    label_lookup_.erase(search);
+    return idsToDelete;
 }

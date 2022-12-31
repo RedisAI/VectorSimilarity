@@ -157,14 +157,14 @@ protected:
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
-    inline void resizeIndex(size_t new_max_elements);
+    inline void resizeIndexInternal(size_t new_max_elements);
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
-    int appendVector(const void *vector_data, labelType label);
+    void appendVector(const void *vector_data, labelType label);
 
     // Protected internal function that implements generic single vector deletion.
-    int removeVector(idType id);
+    void removeVector(idType id);
 
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
                               DistType dist, idType id) const;
@@ -181,7 +181,7 @@ public:
     inline void setEpsilon(double epsilon);
     inline double getEpsilon() const;
     inline size_t indexSize() const override;
-    inline size_t getIndexCapacity() const;
+    inline size_t indexCapacity() const override;
     inline size_t getEfConstruction() const;
     inline size_t getM() const;
     inline size_t getMaxLevel() const;
@@ -205,8 +205,8 @@ public:
                                       VecSimQueryParams *queryParams) override;
 
     inline void markDeletedInternal(idType internalId);
-    inline void unmarkDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
+    void increaseCapacity() override;
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
@@ -246,11 +246,11 @@ double HNSWIndex<DataType, DistType>::getEpsilon() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexSize() const {
-    return cur_element_count - num_marked_deleted;
+    return cur_element_count;
 }
 
 template <typename DataType, typename DistType>
-size_t HNSWIndex<DataType, DistType>::getIndexCapacity() const {
+size_t HNSWIndex<DataType, DistType>::indexCapacity() const {
     return max_elements_;
 }
 
@@ -396,16 +396,6 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         elementFlags *flags = get_flags(internalId);
         *flags |= DELETE_MARK;
         this->num_marked_deleted++;
-    }
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unmarkDeletedInternal(idType internalId) {
-    assert(internalId < this->cur_element_count);
-    if (isMarkedDeleted(internalId)) {
-        elementFlags *flags = get_flags(internalId);
-        *flags &= ~DELETE_MARK;
-        this->num_marked_deleted--;
     }
 }
 
@@ -1006,6 +996,35 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
     } while (changed);
 }
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements) {
+    element_levels_.resize(new_max_elements);
+    element_levels_.shrink_to_fit();
+    resizeLabelLookup(new_max_elements);
+    visited_nodes_handler_pool.resize(new_max_elements);
+#ifdef ENABLE_PARALLELIZATION
+    std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+#endif
+    // Reallocate base layer
+    char *data_level0_memory_new = (char *)this->allocator->reallocate(
+        data_level0_memory_, new_max_elements * size_data_per_element_);
+    if (data_level0_memory_new == nullptr)
+        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
+    data_level0_memory_ = data_level0_memory_new;
+
+    // Reallocate all other layers
+    char **linkLists_new =
+        (char **)this->allocator->reallocate(linkLists_, sizeof(void *) * new_max_elements);
+    if (linkLists_new == nullptr)
+        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
+    linkLists_ = linkLists_new;
+
+    max_elements_ = new_max_elements;
+}
+
+/**
+ * Ctor / Dtor
+ */
 /* typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
@@ -1109,33 +1128,13 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  * Index API functions
  */
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::resizeIndex(size_t new_max_elements) {
-    element_levels_.resize(new_max_elements);
-    element_levels_.shrink_to_fit();
-    resizeLabelLookup(new_max_elements);
-    visited_nodes_handler_pool.resize(new_max_elements);
-#ifdef ENABLE_PARALLELIZATION
-    std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
-#endif
-    // Reallocate base layer
-    char *data_level0_memory_new = (char *)this->allocator->reallocate(
-        data_level0_memory_, new_max_elements * size_data_per_element_);
-    if (data_level0_memory_new == nullptr)
-        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
-    data_level0_memory_ = data_level0_memory_new;
-
-    // Reallocate all other layers
-    char **linkLists_new =
-        (char **)this->allocator->reallocate(linkLists_, sizeof(void *) * new_max_elements);
-    if (linkLists_new == nullptr)
-        throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
-    linkLists_ = linkLists_new;
-
-    max_elements_ = new_max_elements;
+void HNSWIndex<DataType, DistType>::increaseCapacity() {
+    size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
+    resizeIndexInternal(max_elements_ + vectors_to_add);
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
+void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
 
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
@@ -1220,14 +1219,13 @@ int HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id
         size_t extra_space_to_free = max_elements_ % this->blockSize;
 
         // Remove one block from the capacity.
-        this->resizeIndex(max_elements_ - this->blockSize - extra_space_to_free);
+        this->resizeIndexInternal(max_elements_ - this->blockSize - extra_space_to_free);
     }
-    return true;
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
-
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
+    assert(indexCapacity() > indexSize());
     idType cur_c;
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
@@ -1242,10 +1240,6 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         std::unique_lock<std::mutex> templock_curr(cur_element_count_guard_);
 #endif
 
-        if (cur_element_count >= max_elements_) {
-            size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
-            resizeIndex(max_elements_ + vectors_to_add);
-        }
         cur_c = cur_element_count++;
         setVectorId(label, cur_c);
     }
@@ -1351,7 +1345,6 @@ int HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const l
         }
         maxlevel_ = element_max_level;
     }
-    return true;
 }
 
 template <typename DataType, typename DistType>

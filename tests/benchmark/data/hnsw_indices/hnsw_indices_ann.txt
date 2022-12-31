@@ -1,0 +1,6 @@
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/mnist-784-euclidean-M=32-ef=150.hnsw
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/glove-25-angular-M=16-ef=100.hnsw
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/glove-50-angular-M=24-ef=150.hnsw
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/glove-100-angular-M=36-ef=250.hnsw
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/sift-128-euclidean-M=32-ef=200.hnsw
+http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/glove-200-angular-M=48-ef=350.hnsw
