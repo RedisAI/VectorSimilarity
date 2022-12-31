@@ -96,7 +96,7 @@ protected:
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
     mutable std::mutex entry_point_guard_;
-    std::mutex index_data_guard_;
+    mutable std::mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
@@ -190,6 +190,7 @@ public:
     inline idType getEntryPointId() const;
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
+    virtual inline bool safeCheckIfLabelExistsInIndex(labelType label, bool also_done_processing = false) const = 0;
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;

@@ -64,6 +64,7 @@ public:
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
+    inline bool safeCheckIfLabelExistsInIndex(labelType label, bool also_done_processing = false) const override;
 };
 
 /**
@@ -121,6 +122,7 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, con
                                                     bool overwrite_allowed) {
 
     // Checking if an element with the given label already exists.
+    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
     bool label_exists = false;
     if (label_lookup_.find(label) != label_lookup_.end()) {
         label_exists = true;
@@ -132,7 +134,7 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, con
             return -1;
         }
     }
-
+    index_data_lock.unlock();
     this->appendVector(vector_data, label);
     // Return the delta in the index size due to the insertion.
     return label_exists ? 0 : 1;
@@ -159,6 +161,7 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
+    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
@@ -167,4 +170,15 @@ std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType l
     idsToDelete.push_back(search->second);
     label_lookup_.erase(search);
     return idsToDelete;
+}
+
+template <typename DataType, typename DistType>
+inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(labelType label,
+                                                                                bool also_done_processing) const {
+    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
+    bool exists = label_lookup_.find(label) != label_lookup_.end();
+    if (exists && also_done_processing) {
+        exists = !this->isInProcess(label_lookup_.find(label)->second);
+    }
+    return exists;
 }

@@ -341,65 +341,63 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                          .M = 16,
                          .efConstruction = 200};
 
-    VecSimIndex *parallel_index = this->CreateNewIndex(params);
-    size_t n_threads = 10;
+    for (bool is_multi : {true, false}) {
+        VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
+        size_t n_threads = 10;
 
-    auto parallel_insert = [&](int myID) {
-        for (labelType label = myID; label < n; label += n_threads / 2) {
-            GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
-        }
-    };
-
-    TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
-    std::atomic_int successful_searches(0);
-    auto parallel_knn_search = [&](int myID) {
-        // Make sure were still indexing in parallel to the search.
-        ASSERT_LT(VecSimIndex_IndexSize(parallel_index), n);
-        TEST_DATA_T query[dim];
-        GenerateVector<TEST_DATA_T>(query, dim, query_val);
-        auto verify_res = [&](size_t id, double score, size_t res_index) {
-            // We expect to get the results with increasing order of the distance between the res
-            // label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is the L2
-            // distance between the vectors that correspond the ids.
-            size_t diff_id = std::abs(int(id - query_val));
-            ASSERT_EQ(diff_id, (res_index + 1) / 2);
-            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        auto parallel_insert = [&](int myID) {
+            for (labelType label = myID; label < n; label += n_threads / 2) {
+                GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
+            }
         };
-        runTopKSearchTest(parallel_index, query, k, verify_res);
-        successful_searches++;
-    };
 
-    auto hnsw_index = this->CastToHNSW_Single(parallel_index);
-    std::thread thread_objs[n_threads];
-    for (size_t i = 0; i < n_threads; i++) {
-        if (i < n_threads / 2) {
-            thread_objs[i] = std::thread(parallel_insert, i);
-        } else {
-            // Search threads are waiting in bust wait until the vectors of the query results are
-            // done being indexed.
-            bool wait_for_results = true;
-            while (wait_for_results) {
-                wait_for_results = false;
-                std::unique_lock<std::mutex> tmp_lock(hnsw_index->index_data_guard_);
-                for (labelType res_label = query_val - k / 2; res_label <= query_val + k / 2;
-                     res_label++) {
-                    auto &index_labels_lookup = hnsw_index->label_lookup_;
-                    if (index_labels_lookup.find(res_label) == index_labels_lookup.end() ||
-                        hnsw_index->isInProcess(index_labels_lookup[res_label])) {
-                        wait_for_results = true;
-                        break; // results are not ready yet, restart the check.
+        TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
+        std::atomic_int successful_searches(0);
+        auto parallel_knn_search = [&](int myID) {
+            // Make sure were still indexing in parallel to the search.
+            ASSERT_LT(VecSimIndex_IndexSize(parallel_index), n);
+            TEST_DATA_T query[dim];
+            GenerateVector<TEST_DATA_T>(query, dim, query_val);
+            auto verify_res = [&](size_t id, double score, size_t res_index) {
+                // We expect to get the results with increasing order of the distance between the
+                // res label and the query val (n/4, n/4-1, n/4+1, n/4-2, n/4+2, ...) The score is
+                // the L2 distance between the vectors that correspond the ids.
+                size_t diff_id = std::abs(int(id - query_val));
+                ASSERT_EQ(diff_id, (res_index + 1) / 2);
+                ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+            };
+            runTopKSearchTest(parallel_index, query, k, verify_res);
+            successful_searches++;
+        };
+
+        auto hnsw_index = this->CastToHNSW(parallel_index);
+        std::thread thread_objs[n_threads];
+        for (size_t i = 0; i < n_threads; i++) {
+            if (i < n_threads / 2) {
+                thread_objs[i] = std::thread(parallel_insert, i);
+            } else {
+                // Search threads are waiting in bust wait until the vectors of the query results are done being indexed.
+                bool wait_for_results = true;
+                while (wait_for_results) {
+                    wait_for_results = false;
+                    for (labelType res_label = query_val - k / 2; res_label <= query_val + k / 2;
+                         res_label++) {
+                        if (!hnsw_index->safeCheckIfLabelExistsInIndex(res_label, true)) {
+                            wait_for_results = true;
+                            break; // results are not ready yet, restart the check.
+                        }
+                    }
+                    if (!wait_for_results) {
+                        break; // all the results are in the index, search can begin now.
                     }
                 }
-                if (!wait_for_results) {
-                    break; // all the results are in the index, search can begin now.
-                }
+                thread_objs[i] = std::thread(parallel_knn_search, i);
             }
-            thread_objs[i] = std::thread(parallel_knn_search, i);
         }
+        for (size_t i = 0; i < n_threads; i++) {
+            thread_objs[i].join();
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+        ASSERT_EQ(successful_searches, n_threads / 2);
     }
-    for (size_t i = 0; i < n_threads; i++) {
-        thread_objs[i].join();
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    ASSERT_EQ(successful_searches, n_threads / 2);
 }
