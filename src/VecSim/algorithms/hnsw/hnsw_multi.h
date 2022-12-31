@@ -73,6 +73,7 @@ public:
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
+    inline bool safeCheckIfLabelExistsInIndex(labelType label, bool also_done_processing) const override;
 };
 
 /**
@@ -187,4 +188,18 @@ std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType la
     }
     label_lookup_.erase(search);
     return idsToDelete;
+}
+
+template <typename DataType, typename DistType>
+inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(labelType label,
+                                                                               bool also_done_processing) const {
+    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
+    auto search_res = label_lookup_.find(label);
+    bool exists = search_res != label_lookup_.end();
+    if (exists && also_done_processing) {
+        for (auto id : search_res->second) {
+            exists = !this->isInProcess(id);
+        }
+    }
+    return exists;
 }
