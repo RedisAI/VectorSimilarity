@@ -9,6 +9,12 @@ on: # TODO: delete this file when specifying a label is supported
       - '*noci'
 
 jobs:
+  check:
+    name: check if label '${{ github.event.label.name }}'' triggers benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: print
+        run: echo ${{ github.event.label.name }}
   bm_invoker: 
     if: startsWith(github.event.label.name, 'bm') || startsWith(github.event.label.name, 'benchmarks')
     uses: ./.github/workflows/benchmark.yml
