@@ -10,6 +10,7 @@ on: # TODO: delete this file when specifying a label is supported
 
 jobs:
   bm_invoker: 
-    if: startsWith(${{ github.event.label.name }}, 'bm') || startsWith(${{ github.event.label.name }}, 'benchmarks')
+    name: check if label = ${{ github.event.label.name }} is a benchmark label
+    if: startsWith(github.event.label.name, 'bm') || startsWith(github.event.label.name, 'benchmarks')
     uses: ./.github/workflows/benchmark.yml
     secrets: inherit
