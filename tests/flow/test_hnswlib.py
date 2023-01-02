@@ -1,8 +1,12 @@
 # Copyright Redis Ltd. 2021 - present
 # Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
 # the Server Side Public License v1 (SSPLv1).
-
+import concurrent
+import multiprocessing
 import os
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed, wait
+
 from common import *
 import hnswlib
 
@@ -328,6 +332,7 @@ def test_serialization():
     print("\nrecall after is: \n", recall_after)
     assert recall == recall_after
 
+
 def test_range_query():
     dim = 100
     num_elements = 100000
@@ -526,3 +531,79 @@ def test_multi_range_query():
     # Expect zero results for radius==0
     hnsw_labels, hnsw_distances = index.range_query(query_data, radius=0)
     assert len(hnsw_labels[0]) == 0
+
+
+def test_parallel_insert_search():
+    dim = 32
+    num_elements = 100000
+    num_queries = 10000
+    k = 10
+
+    hnsw_params = HNSWParams()
+
+    hnsw_params.dim = dim
+    hnsw_params.metric = VecSimMetric_Cosine
+    hnsw_params.type = VecSimType_FLOAT32
+    hnsw_params.M = 16
+    hnsw_params.efConstruction = 200
+    hnsw_params.initialCapacity = num_elements
+    hnsw_params.efRuntime = 200
+
+    bf_params = BFParams()
+
+    bf_params.initialCapacity = num_elements
+    bf_params.blockSize = num_elements
+    bf_params.dim = dim
+    bf_params.type = VecSimType_FLOAT32
+    bf_params.metric = VecSimMetric_Cosine
+
+    bf_index = BFIndex(bf_params)
+
+    index = HNSWIndex(hnsw_params)
+    parallel_index = HNSWIndex(hnsw_params)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_elements, dim)))
+    start = time.time()
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+    sequential_insert_time = time.time() - start
+    print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took {sequential_insert_time} seconds")
+
+    for i, vector in enumerate(data):
+        bf_index.add_vector(vector, i)
+
+    query_data = np.float32(np.random.random((num_queries, dim)))
+
+    # Sequential search as the baseline
+    total_search_time = 0
+    total_correct = 0
+    total_res_bf = []  # ground truth
+    for i, query in enumerate(query_data):
+        start = time.time()
+        res_labels, res_distances = index.knn_query(query, k)
+        total_search_time += time.time() - start
+        res_labels_bf, res_distances_bf = bf_index.knn_query(query, k)
+        total_res_bf.append(set(res_labels[0]))
+        total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
+
+    print(f"Got {total_correct/(k*num_queries)} recall on {num_queries} queries in sequential search, average query"
+          f" time is {total_search_time/num_queries} seconds")
+
+    n_threads = 8
+    start = time.time()
+    res_labels, res_distances = index.knn_parallel(query_data, k, num_threads=n_threads)
+    total_search_time_parallel = time.time() - start
+
+    total_correct_parallel = 0
+    for i in range(num_queries):
+        total_correct_parallel += len(total_res_bf[i].intersection(set(res_labels[i])))
+
+    print(f"Got {total_correct_parallel/(k*num_queries)} recall on {num_queries} queries in parallel search, average"
+          f" query time is {total_search_time_parallel/num_queries} seconds")
+    print(f"Got {total_search_time/total_search_time_parallel} times improvement using {n_threads} threads")
+
+    # Validate that the recall of the parallel search recall is worse than the sequential recall in no more than 5%.
+    assert total_correct_parallel >= total_correct * 0.95
+    # Validate that the parallel run managed to achieve at least (n_threads - 1) times improvement in total runtime.
+    assert total_search_time/total_search_time_parallel > n_threads - 1

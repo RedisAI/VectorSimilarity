@@ -317,7 +317,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
 
     TEST_DATA_T query[dim];
-    TEST_DATA_T query_val = (TEST_DATA_T)n/2 + 10;
+    TEST_DATA_T query_val = (TEST_DATA_T)n / 2 + 10;
     GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)query_val);
     auto verify_res = [&](size_t id, double score, size_t res_index) {
         // We expect to get the results with increasing order of the distance between the res
@@ -354,8 +354,9 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
         std::atomic_int successful_searches(0);
         auto parallel_knn_search = [&](int myID) {
-            // Make sure were still indexing in parallel to the search.
-            ASSERT_LT(VecSimIndex_IndexSize(parallel_index), n);
+            // Make sure were still indexing in parallel to the search (at most 90% if the vectors
+            // were already indexed).
+            ASSERT_LT(VecSimIndex_IndexSize(parallel_index), 0.9 * n);
             TEST_DATA_T query[dim];
             GenerateVector<TEST_DATA_T>(query, dim, query_val);
             auto verify_res = [&](size_t id, double score, size_t res_index) {
@@ -376,7 +377,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
             if (i < n_threads / 2) {
                 thread_objs[i] = std::thread(parallel_insert, i);
             } else {
-                // Search threads are waiting in bust wait until the vectors of the query results are done being indexed.
+                // Search threads are waiting in bust wait until the vectors of the query results
+                // are done being indexed.
                 bool wait_for_results = true;
                 while (wait_for_results) {
                     wait_for_results = false;

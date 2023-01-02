@@ -64,7 +64,8 @@ public:
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
-    inline bool safeCheckIfLabelExistsInIndex(labelType label, bool also_done_processing = false) const override;
+    inline bool safeCheckIfLabelExistsInIndex(labelType label,
+                                              bool also_done_processing = false) const override;
 };
 
 /**
@@ -173,10 +174,12 @@ std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType l
 }
 
 template <typename DataType, typename DistType>
-inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(labelType label,
-                                                                                bool also_done_processing) const {
+inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
+    labelType label, bool also_done_processing) const {
     std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
     bool exists = label_lookup_.find(label) != label_lookup_.end();
+    // If we want to make sure that the vector stored under the label was already indexed,
+    // we go on and check that its associated internal id is no longer in process.
     if (exists && also_done_processing) {
         exists = !this->isInProcess(label_lookup_.find(label)->second);
     }

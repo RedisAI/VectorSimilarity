@@ -190,7 +190,8 @@ public:
     inline idType getEntryPointId() const;
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
-    virtual inline bool safeCheckIfLabelExistsInIndex(labelType label, bool also_done_processing = false) const = 0;
+    virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
+                                                      bool also_done_processing = false) const = 0;
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
