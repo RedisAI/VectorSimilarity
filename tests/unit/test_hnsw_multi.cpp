@@ -11,8 +11,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include <cmath>
 #include <map>
-#include <thread>
-#include <atomic>
 
 template <typename index_type_t>
 class HNSWMultiTest : public ::testing::Test {

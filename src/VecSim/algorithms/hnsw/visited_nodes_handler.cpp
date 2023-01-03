@@ -77,13 +77,6 @@ void VisitedNodesHandlerPool::resize(size_t new_size) {
     }
 }
 
-void VisitedNodesHandlerPool::resize(size_t new_size) {
-    this->num_elements = new_size;
-    for (auto &handler : this->pool) {
-        handler->resize(new_size);
-    }
-}
-
 VisitedNodesHandlerPool::~VisitedNodesHandlerPool() {
     while (!pool.empty()) {
         VisitedNodesHandler *handler = pool.back();
