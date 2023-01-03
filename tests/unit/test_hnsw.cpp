@@ -13,6 +13,8 @@
 #include "VecSim/query_result_struct.h"
 #include <unistd.h>
 #include <random>
+#include <thread>
+#include <atomic>
 
 template <typename index_type_t>
 class HNSWTest : public ::testing::Test {
