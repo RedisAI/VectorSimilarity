@@ -14,6 +14,8 @@
 #include "pybind11/stl.h"
 #include <cstring>
 #include <thread>
+#include <VecSim/algorithms/hnsw/hnsw_single.h>
+#include <VecSim/algorithms/brute_force/brute_force_single.h>
 
 namespace py = pybind11;
 
@@ -102,6 +104,10 @@ protected:
         return VecSimIndex_TopKQuery(index.get(), input, k, query_params, BY_SCORE);
     }
 
+	void addVectorInternal(const char *input, size_t id) {
+		VecSimIndex_AddVector(index.get(), input, id);
+	}
+
 public:
     PyVecSimIndex()
         : getBytearray(
@@ -113,23 +119,42 @@ public:
         index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 
-    void addVector(const py::object &input, size_t id) {
-        VecSimIndex_AddVector(index.get(), input_to_blob(input), id);
-    }
+    int addVector(const py::object &input, size_t id) {
+	    const char *blob = input_to_blob(input);
+            //py::gil_scoped_release py_gil;
+	    addVectorInternal(blob, id);
+            return 1;
+	}
+
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index.get(), id); }
 
     py::object knn(const py::object &input, size_t k, VecSimQueryParams *query_params) {
-        auto res = searchKnnInternal(input_to_blob(input), k, query_params);
+		const char *blob = input_to_blob(input);
+	    VecSimQueryResult_List res;
+	    {
+		    py::gil_scoped_release py_gil;
+		    res = searchKnnInternal(blob, k, query_params);
+	    }
         return wrap_results(&res, k);
     }
 
     py::object range(const py::object &input, double radius, VecSimQueryParams *query_params) {
-        VecSimQueryResult_List res = VecSimIndex_RangeQuery(index.get(), input_to_blob(input),
-                                                            radius, query_params, BY_SCORE);
+	    const char *blob = input_to_blob(input);
+	    VecSimQueryResult_List res;
+	    {
+		    py::gil_scoped_release py_gil;
+			res = VecSimIndex_RangeQuery(index.get(), blob, radius, query_params, BY_SCORE);
+		}
         return wrap_results(&res, VecSimQueryResult_Len(res));
     }
 
-    size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
+    size_t indexSize() {
+        return VecSimIndex_IndexSize(index.get());
+    }
+
+    double getDistanceFrom(const py::object &input, labelType label) {
+		return VecSimIndex_GetDistanceFrom(index.get(), label, input_to_blob(input));
+	}
 
     PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
         return PyBatchIterator(
@@ -171,7 +196,7 @@ public:
 
         // Use number of hardware cores as default number of threads, unless specified otherwise.
         if (n_threads <= 0) {
-            n_threads = std::thread::hardware_concurrency();
+            n_threads = (int)std::thread::hardware_concurrency();
         }
         VecSimQueryResult_List results[n_queries];
         std::atomic_int global_counter(0);
@@ -205,6 +230,84 @@ public:
         }
         return wrap_results(results, k, n_queries);
     }
+
+	void addVectorsParallel(const py::object &vectors_data, const py::object &vectors_labels, int n_threads) {
+		// TODO: assume float for now, handle generic later.
+		py::array_t<float, py::array::c_style | py::array::forcecast> data(vectors_data);
+		py::array_t<labelType , py::array::c_style | py::array::forcecast> labels(vectors_labels);
+
+		if (data.ndim() != 2) {
+			throw std::runtime_error("Input vectors data array must be 2D array");
+		}
+		if (labels.ndim() != 1) {
+			throw std::runtime_error("Input vectors labels array must be 1D array");
+		}
+		if (data.shape(0) != labels.shape(0)) {
+			throw std::runtime_error("The first dim of vectors data and labels arrays must be equal");
+		}
+		size_t n_vectors = data.shape(0);
+		// Use number of hardware cores as default number of threads, unless specified otherwise.
+		if (n_threads <= 0) {
+			n_threads = (int)std::thread::hardware_concurrency();
+		}
+
+		std::atomic_int global_counter(0);
+		auto parallel_insert = [&](const py::object &vectors_data,
+				const py::array_t<labelType , py::array::c_style | py::array::forcecast>& labels) {
+			while (true) {
+				int ind = global_counter.fetch_add(1);
+				if (ind >= n_vectors) {
+					break;
+				}
+				const char *blob;
+				{
+					// input_to_blob should acquire the python GIL for the conversion (access a
+					// python code).
+					py::gil_scoped_acquire py_gil;
+					blob = input_to_blob(vectors_data, ind);
+				}
+				this->addVectorInternal(blob, labels.at(ind));
+			}
+		};
+		std::thread thread_objs[n_threads];
+		{
+			// Release python GIL while threads are running.
+			py::gil_scoped_release py_gil;
+			for (size_t i = 0; i < n_threads; i++) {
+				thread_objs[i] = std::thread(parallel_insert, vectors_data, labels);
+			}
+			for (size_t i = 0; i < n_threads; i++) {
+				thread_objs[i].join();
+			}
+		}
+	}
+
+	bool checkIntegrity() {
+		auto type = VecSimIndex_Info(this->index.get()).hnswInfo.type;
+		if (type == VecSimType_FLOAT32) {
+			return reinterpret_cast<HNSWIndex<float, float> *>(this->index.get())->checkIntegrity().valid_state;
+		} else if (type == VecSimType_FLOAT64) {
+			return reinterpret_cast<HNSWIndex<double, double> *>(this->index.get())->checkIntegrity().valid_state;
+		} else {
+			throw std::runtime_error("Invalid index data type");
+		}
+	}
+
+	py::object getVector(labelType label) {
+		std::vector<std::vector<float>> res;
+		reinterpret_cast<HNSWIndex_Single<float, float> *>(this->index.get())->GetDataByLabel(label, res);
+		size_t dim = index->info().hnswInfo.dim;
+		auto *data_numpy_d = new float[dim];
+
+		memcpy(data_numpy_d, res[0].data(), sizeof(float) * dim);
+
+		py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
+		return py::array_t<float>(
+						{(size_t)dim},             // shape
+						{dim * sizeof(float)}, // C-style contiguous strides for double
+						data_numpy_d,                               // the data pointer
+						free_when_done_d);
+	}
 };
 
 class PyBFIndex : public PyVecSimIndex {
@@ -212,6 +315,21 @@ public:
     PyBFIndex(const BFParams &bf_params) {
         VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bf_params};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+    }
+    py::object getVector(labelType label) {
+        std::vector<std::vector<float>> res;
+        reinterpret_cast<BruteForceIndex_Single<float, float> *>(this->index.get())->GetDataByLabel(label, res);
+        size_t dim = index->info().bfInfo.dim;
+        auto *data_numpy_d = new float[dim];
+
+        memcpy(data_numpy_d, res[0].data(), sizeof(float) * dim);
+
+        py::capsule free_when_done_d(data_numpy_d, [](void *f) { delete[] f; });
+        return py::array_t<float>(
+            {(size_t)dim},             // shape
+            {dim * sizeof(float)}, // C-style contiguous strides for double
+            data_numpy_d,                               // the data pointer
+            free_when_done_d);
     }
 };
 
@@ -286,6 +404,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_query", &PyVecSimIndex::range, py::arg("vector"), py::arg("radius"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
+		.def("get_distance_from", &PyVecSimIndex::getDistanceFrom)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr);
 
@@ -299,11 +418,16 @@ PYBIND11_MODULE(VecSim, m) {
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
         .def("save_index", &PyHNSWLibIndex::saveIndex)
         .def("knn_parallel", &PyHNSWLibIndex::searchKnnParallel, py::arg("queries"), py::arg("k"),
-             py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
+             py::arg("query_param") = nullptr, py::arg("num_threads") = -1)
+		.def("add_vector_parallel", &PyHNSWLibIndex::addVectorsParallel, py::arg("vectors"), py::arg("labels"),
+			 py::arg("num_threads") = -1)
+		 .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
+		 .def("get_vector", &PyHNSWLibIndex::getVector);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
-             py::arg("params"));
+             py::arg("params"))
+		 .def("get_vector", &PyBFIndex::getVector);
 
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
