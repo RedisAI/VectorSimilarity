@@ -210,6 +210,7 @@ public:
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
+    inline bool isInProcess(idType internalId) const;
     void increaseCapacity() override;
 
     // inline priority queue getter that need to be implemented by derived class
@@ -1090,9 +1091,8 @@ void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements)
     element_levels_.shrink_to_fit();
     resizeLabelLookup(new_max_elements);
     visited_nodes_handler_pool.resize(new_max_elements);
-#ifdef ENABLE_PARALLELIZATION
-    std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
-#endif
+    vecsim_stl::vector<std::mutex>(new_max_elements, this->allocator)
+        .swap(element_neighbors_locks_);
     // Reallocate base layer
     char *data_level0_memory_new = (char *)this->allocator->reallocate(
         data_level0_memory_, new_max_elements * size_data_per_element_);
@@ -1309,7 +1309,6 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
     assert(indexCapacity() > indexSize());
-    idType cur_c;
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1321,9 +1320,8 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // Choose randomly the maximum level in which the new element will be in the index.
     int element_max_level = getRandomLevel(mult_);
 
-        cur_c = cur_element_count++;
-        setVectorId(label, cur_c);
-    }
+    // Access and update the index global data structures with the new vector.
+    std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
     idType new_element_id = cur_element_count++;
     setVectorId(label, new_element_id);
     element_levels_[new_element_id] = element_max_level;
@@ -1427,6 +1425,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         }
         maxlevel_ = element_max_level;
     }
+    *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
 }
 
 template <typename DataType, typename DistType>
