@@ -540,14 +540,14 @@ def test_multi_range_query():
 
 def test_parallel_insert_search():
     dim = 32
-    num_elements = 5000
-    num_queries = 100
+    num_elements = 100000
+    num_queries = 10000
     k = 10
-    n_threads = 10
+    n_threads = int(os.cpu_count() / 2)
     hnsw_params = HNSWParams()
 
     hnsw_params.dim = dim
-    hnsw_params.metric = VecSimMetric_L2
+    hnsw_params.metric = VecSimMetric_Cosine
     hnsw_params.type = VecSimType_FLOAT32
     hnsw_params.M = 16
     hnsw_params.efConstruction = 200
@@ -560,81 +560,53 @@ def test_parallel_insert_search():
     bf_params.blockSize = num_elements
     bf_params.dim = dim
     bf_params.type = VecSimType_FLOAT32
-    bf_params.metric = VecSimMetric_L2
+    bf_params.metric = VecSimMetric_Cosine
 
     bf_index = BFIndex(bf_params)
 
-    #index = HNSWIndex(hnsw_params)
+    index = HNSWIndex(hnsw_params)
     parallel_index = HNSWIndex(hnsw_params)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
-    # start = time.time()
-    # for i, vector in enumerate(data):
-    #     index.add_vector(vector, i)
-    # sequential_insert_time = time.time() - start
-    # assert index.index_size() == num_elements
-    # print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took {sequential_insert_time} seconds")
+    start = time.time()
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+    sequential_insert_time = time.time() - start
+    print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took {sequential_insert_time} seconds")
 
     start = time.time()
     parallel_index.add_vector_parallel(data, np.array(range(num_elements)), n_threads)
     parallel_insert_time = time.time() - start
     assert parallel_index.index_size() == num_elements
     assert parallel_index.check_integrity()
+    # Validate that the parallel index contains the same vectors as the sequential one.
+    for label in range(num_elements):
+        assert_allclose(index.get_vector(label), parallel_index.get_vector(label))
+
     print(f"Inserting {num_elements} vectors of dim {dim} into HNSW in parallel took {parallel_insert_time} seconds")
-    # print(f"Got {sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads")
-    # assert sequential_insert_time/parallel_insert_time > n_threads - 2
+    print(f"Got {sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
+    assert sequential_insert_time/parallel_insert_time > n_threads - 2
+
     for i, vector in enumerate(data):
         bf_index.add_vector(vector, i)
 
-    assert bf_index.index_size() == num_elements
     query_data = np.float32(np.random.random((num_queries, dim)))
 
     # Sequential search as the baseline
     total_search_time = 0
     total_correct = 0
-    total_res_bf = []  # ground truth
+    total_res_bf = []  # save the ground truth
     for i, query in enumerate(query_data):
-        # start = time.time()
-        # res_labels, res_distances = index.knn_query(query, k)
-        # total_search_time += time.time() - start
+        start = time.time()
+        res_labels, res_distances = index.knn_query(query, k)
+        total_search_time += time.time() - start
         res_labels_bf, res_distances_bf = bf_index.knn_query(query, k)
         total_res_bf.append(set(res_labels_bf[0]))
-        # total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
+        total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
 
-    # print(f"Got {total_correct / (k * num_queries)} recall on {num_queries} queries in sequential search, average query"
-    #       f" time is {total_search_time / num_queries} seconds")
-
-    query = query_data[0]
-    for label in range(num_elements):
-        if not math.isclose(parallel_index.get_distance_from(query/np.linalg.norm(query), label),
-                            bf_index.get_distance_from(query/np.linalg.norm(query), label)):
-            print(label, "mismatch")
-        else:
-            print(label, "OK")
-        print(data[label])
-        print(list(np.float32(parallel_index.get_vector(label))))
-        print(list(np.float32(bf_index.get_vector(label))))
-
-    return
-
-    radius = 0.13
-    overall_intersection_rate = 0
-    total_results = 0
-    for i, query in enumerate(query_data):
-        res_labels_range, res_distances_range = index.range_query(query, radius)
-        res_labels_bf_range, res_distances_bf_range = bf_index.range_query(query, radius)
-        # diff = set(res_labels_range[0]).difference(set(res_labels_bf_range[0]))
-        # if len(diff) > 0:
-        #     print("diff in query num: ", i)
-        #     for label in diff:
-        #         print(f"dist from {label} in hnsw is {index.get_distance_from(query/np.linalg.norm(query), label)}")
-        #         print(f"dist from {label} in bf is {bf_index.get_distance_from(query/np.linalg.norm(query), label)}")
-        # assert set(res_labels_range[0]).issubset(set(res_labels_bf_range[0]))
-        total_results += res_labels_bf_range[0].size
-        overall_intersection_rate += res_labels_range[0].size / res_labels_bf_range[0].size
-    print(f"Range queries - avg results: {total_results/num_queries} and HNSW success rate:"
-          f" {overall_intersection_rate/num_queries}")
+    print(f"Running sequential search, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time / num_queries} seconds")
 
     start = time.time()
     res_labels, res_distances = index.knn_parallel(query_data, k, num_threads=n_threads)
@@ -644,10 +616,9 @@ def test_parallel_insert_search():
     for i in range(num_queries):
         total_correct_parallel += len(total_res_bf[i].intersection(set(res_labels[i])))
 
-    print(
-        f"Got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries in parallel search, average"
-        f" query time is {total_search_time_parallel / num_queries} seconds")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement using {n_threads} threads")
+    print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time_parallel / num_queries} seconds")
+    print(f"Got {total_search_time / total_search_time_parallel} times improvement un runtime using {n_threads} threads\n")
 
     # Validate that the recall of the parallel search recall is worse than the sequential recall in no more than 5%.
     assert total_correct_parallel >= total_correct * 0.95
@@ -662,12 +633,10 @@ def test_parallel_insert_search():
     total_correct_parallel = 0
     for i in range(num_queries):
         total_correct_parallel += len(total_res_bf[i].intersection(set(res_labels[i])))
-    print(f"Got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries in parallel search in"
-          f" index that was created using parallel insert, average query time is"
+    print(f"Running parallel search on index that was created using parallel insert, got "
+          f"{total_correct_parallel / (k * num_queries)} recall on {num_queries} queries, average query time is"
           f" {total_search_time_parallel / num_queries} seconds")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement using {n_threads} threads")
     assert total_correct_parallel >= total_correct * 0.95
-    assert total_search_time / total_search_time_parallel > n_threads - 2
 
     # Insert vectors to the index and search in parallel.
     parallel_index = HNSWIndex(hnsw_params)
@@ -713,10 +682,11 @@ def test_parallel_insert_search():
 
 def test_parallel_with_range():
     dim = 32
-    num_elements = 100
-    num_queries = 1000
+    num_elements = 100000
+    num_queries = 10000
     radius = 3.0
     n_threads = int(os.cpu_count() / 2)
+    PADDING_LABEL = -1  # used for padding empty labels entries in a single query results
 
     hnsw_params = HNSWParams()
 
@@ -743,49 +713,41 @@ def test_parallel_with_range():
     data = np.float32(np.random.random((num_elements, dim)))
     for i, vector in enumerate(data):
         bf_index.add_vector(vector, i)
-        # parallel_index.add_vector(vector, i)
-    #X=input("now")
+
     parallel_index.add_vector_parallel(data, range(num_elements), n_threads)
-    print("index built")
     query_data = np.float32(np.random.random((num_queries, dim)))
 
     # Run serial range queries
     total_search_time = 0
     total_res_bf = []  # ground truth
-    # the ratio between then umber of results returned by HNSW and the total number of vectors in the range
+    # The ratio between then number of results returned by HNSW and the total number of vectors in the range.
     overall_intersection_rate = 0
+    total_results = 0
     for i, query in enumerate(query_data):
         start = time.time()
-        res_labels, res_distances = parallel_index.range_query(query, radius)
+        res_labels_range, res_distances_range = parallel_index.range_query(query, radius)
         total_search_time += time.time() - start
-        res_labels_bf, res_distances_bf = bf_index.range_query(query, radius)
-        total_res_bf.append(res_labels_bf[0])
-        # print(f"hnsw res labels ({len(list(res_labels[0]))}): ", res_labels[0])
-        # print("hnsw res dists: ", res_distances[0])
-        # print(f"bf res labels ({len(list(res_labels_bf[0]))}): ", res_labels_bf[0])
-        # print("bf res dists: ", res_distances_bf[0])
-        # diff = set(res_labels[0]).difference(set(res_labels_bf[0]))
-        # print("diff: ", diff)
-        # for label in diff:
-        #     print(f"dist from {label} in hnsw is {parallel_index.get_distance_from(query, label)}")
-        #     print(f"dist from {label} in bf is {bf_index.get_distance_from(query, label)}")
-        assert set(res_labels[0]).issubset(set(res_labels_bf[0]))
-    #     overall_intersection_rate += res_labels[0].size / res_labels_bf[0].size
-    # avg_results_num = sum([bf_res.size for bf_res in total_res_bf]) / num_queries
-    # print(f"Total runtime for running {num_queries} range queries sequentially is {total_search_time} seconds, got"
-    #       f" {avg_results_num} average results per query with {overall_intersection_rate/num_queries} success rate"
-    #       f" in HNSW")
-    #
-    # results = {}
-    #
-    # def run_range_query(query, ind):
-    #     hnsw_labels, hnsw_dists = parallel_index.range_query(query, radius=radius)
-    #     results[ind] = (hnsw_labels[0], hnsw_dists[0])
-    #
-    # # create a thread pool with worker threads
-    # executor = ThreadPoolExecutor(max_workers=n_threads)
-    # start = time.time()
-    # futures = [executor.submit(run_range_query, query, i) for i, query in enumerate(query_data)]
-    # done, not_done = wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
-    # total_range_query_time = time.time() - start
+        res_labels_bf_range, res_distances_bf_range = bf_index.range_query(query, radius)
+        assert set(res_labels_range[0]).issubset(set(res_labels_bf_range[0]))
+        total_res_bf.append(res_labels_bf_range[0])
+        total_results += res_labels_bf_range[0].size
+        overall_intersection_rate += res_labels_range[0].size / res_labels_bf_range[0].size\
+            if res_labels_bf_range[0].size > 0 else 1
+    print(f"Range queries - running {num_queries} queries sequentially, average number of results is:"
+          f" {total_results/num_queries} and HNSW success rate is: {overall_intersection_rate/num_queries}."
+          f" Average query time is {total_search_time/num_queries} seconds")
 
+    start = time.time()
+    hnsw_labels_range_parallel, _ = parallel_index.range_parallel(query_data, radius=radius)
+    total_range_query_parallel_time = time.time() - start
+    overall_intersection_rate_parallel = 0
+    for i in range(num_queries):
+        query_results_set = set(hnsw_labels_range_parallel[i])
+        query_results_set.discard(PADDING_LABEL)  # remove the irrelevant padding values
+        assert query_results_set.issubset(set(total_res_bf[i]))
+        overall_intersection_rate_parallel += len(query_results_set) / total_res_bf[i].size \
+            if total_res_bf[i].size > 0 else 1
+    print(f"Running the same {num_queries} queries in parallel, average query time is"
+          f" {total_range_query_parallel_time/num_queries}, and intersection rate is: "
+          f"{overall_intersection_rate_parallel/num_queries}")
+    print(f"Got improvement of {total_search_time/total_range_query_parallel_time} times using {n_threads} threads\n")
