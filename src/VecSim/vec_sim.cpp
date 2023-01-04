@@ -132,7 +132,7 @@ extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_
     if (index->indexSize() == index->indexCapacity()) {
         index->increaseCapacity();
     }
-    assert(index->addVector(blob, id, false) > 0);
+    index->addVector(blob, id, true);
     int64_t after = index->getAllocationSize();
     return after - before;
 }
