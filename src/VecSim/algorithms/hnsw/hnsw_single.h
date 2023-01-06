@@ -35,7 +35,7 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, allocator, version),
           label_lookup_(this->max_elements_, allocator) {}
 
-    void GetDataByLabel(labelType label, std::vector<const char *> &vectors_output) {
+    void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const {
 
         auto id = label_lookup_.at(label);
 

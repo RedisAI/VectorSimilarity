@@ -32,7 +32,7 @@ public:
 
     inline size_t indexLabelCount() const override { return this->count; }
 #ifdef BUILD_TESTS
-    void GetDataByLabel(labelType label, std::vector<const char *> &vectors_output) {
+    void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const {
 
         auto id = labelToIdLookup.at(label);
 
