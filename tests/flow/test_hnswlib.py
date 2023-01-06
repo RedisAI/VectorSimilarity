@@ -12,6 +12,24 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from common import *
 import hnswlib
 
+
+# Helper function for creating an index,uses the default HNSW parameters if not specified.
+def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
+                      is_multi=False):
+    hnsw_params = HNSWParams()
+
+    hnsw_params.dim = dim
+    hnsw_params.metric = metric
+    hnsw_params.type = data_type
+    hnsw_params.M = m
+    hnsw_params.efConstruction = ef_construction
+    hnsw_params.initialCapacity = num_elements
+    hnsw_params.efRuntime = ef_runtime
+    hnsw_params.epsilon = epsilon
+    hnsw_params.multi = is_multi
+
+    return HNSWIndex(hnsw_params)
+
 # compare results with the original version of hnswlib - do not use elements deletion.
 def test_sanity_hnswlib_index_L2():
     dim = 16
@@ -19,24 +37,9 @@ def test_sanity_hnswlib_index_L2():
     space = 'l2'
     M = 16
     efConstruction = 100
-
     efRuntime = 10
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_L2
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     p = hnswlib.Index(space=space, dim=dim)
     p.init_index(max_elements=num_elements, ef_construction=efConstruction, M=M)
@@ -60,24 +63,9 @@ def test_sanity_hnswlib_index_cosine():
     space = 'cosine'
     M = 16
     efConstruction = 100
-
     efRuntime = 10
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_Cosine
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     p = hnswlib.Index(space=space, dim=dim)
     p.init_index(max_elements=num_elements, ef_construction=efConstruction, M=M)
@@ -108,16 +96,7 @@ def test_recall_for_hnswlib_index_with_deletion():
     k = 10
     efRuntime = 0
 
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-    hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.metric = VecSimMetric_L2
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -162,16 +141,7 @@ def test_batch_iterator():
     efRuntime = 180
     num_queries = 10
 
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-    hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.metric = VecSimMetric_L2
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     # Add 100k random vectors to the index
     rng = np.random.default_rng(seed=47)
@@ -265,22 +235,13 @@ def test_serialization():
     num_elements = 10000
     M = 16
     efConstruction = 100
+    data_type = VecSimType_FLOAT32
 
     num_queries = 10
     k = 10
     efRuntime = 50
 
-    data_type = VecSimType_FLOAT32
-
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.dim = dim
-    hnswparams.type = data_type
-    hnswparams.metric = VecSimMetric_L2
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, data_type, efConstruction, M, efRuntime)
     hnsw_index.set_ef(efRuntime)
 
     data = np.float32(np.random.random((num_elements, dim)))
@@ -340,21 +301,8 @@ def test_range_query():
     num_elements = 100000
     epsilon = 0.01
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_L2
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = 32
-    hnswparams.efConstruction = 200
-    hnswparams.initialCapacity = num_elements
-    hnswparams.epsilon = epsilon
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, ef_construction=200, m=32,
+                                   epsilon=epsilon)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
@@ -403,24 +351,14 @@ def test_recall_for_hnsw_multi_value():
     num_per_label = 16
     M = 16
     efConstruction = 100
-
     num_queries = 10
     k = 10
     efRuntime = 0
 
     num_elements = num_labels * num_per_label
 
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-    hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.metric = VecSimMetric_Cosine
-    hnswparams.multi = True
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M,
+                                   efRuntime, is_multi=True)
 
     data = np.float32(np.random.random((num_labels, dim)))
     vectors = []
@@ -466,27 +404,11 @@ def test_multi_range_query():
     dim = 100
     num_labels = 20000
     per_label = 5
-
     epsilon = 0.01
-
     num_elements = num_labels * per_label
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_L2
-    hnswparams.multi = True
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = 32
-    hnswparams.efConstruction = 200
-    hnswparams.initialCapacity = num_elements
-    hnswparams.epsilon = epsilon
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, ef_construction=200, m=32,
+                              epsilon=epsilon, is_multi=True)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_labels, per_label, dim)))
@@ -544,15 +466,12 @@ def test_parallel_insert_search():
     num_queries = 10000
     k = 10
     n_threads = int(os.cpu_count() / 2)
-    hnsw_params = HNSWParams()
+    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
+    expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
 
-    hnsw_params.dim = dim
-    hnsw_params.metric = VecSimMetric_Cosine
-    hnsw_params.type = VecSimType_FLOAT32
-    hnsw_params.M = 16
-    hnsw_params.efConstruction = 200
-    hnsw_params.initialCapacity = num_elements
-    hnsw_params.efRuntime = 200
+    # Create two HNSW indexes, one for sequential insertion and one for parallel insertion of vectors.
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, ef_runtime=200)
+    parallel_index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, ef_runtime=200)
 
     bf_params = BFParams()
 
@@ -563,9 +482,6 @@ def test_parallel_insert_search():
     bf_params.metric = VecSimMetric_Cosine
 
     bf_index = BFIndex(bf_params)
-
-    index = HNSWIndex(hnsw_params)
-    parallel_index = HNSWIndex(hnsw_params)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
@@ -586,7 +502,7 @@ def test_parallel_insert_search():
 
     print(f"Inserting {num_elements} vectors of dim {dim} into HNSW in parallel took {parallel_insert_time} seconds")
     print(f"Got {sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
-    assert sequential_insert_time/parallel_insert_time > n_threads - 2
+    assert sequential_insert_time/parallel_insert_time > expected_speedup
 
     for i, vector in enumerate(data):
         bf_index.add_vector(vector, i)
@@ -599,9 +515,9 @@ def test_parallel_insert_search():
     total_res_bf = []  # save the ground truth
     for i, query in enumerate(query_data):
         start = time.time()
-        res_labels, res_distances = index.knn_query(query, k)
+        res_labels, _ = index.knn_query(query, k)
         total_search_time += time.time() - start
-        res_labels_bf, res_distances_bf = bf_index.knn_query(query, k)
+        res_labels_bf, _ = bf_index.knn_query(query, k)
         total_res_bf.append(set(res_labels_bf[0]))
         total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
 
@@ -609,7 +525,7 @@ def test_parallel_insert_search():
           f" average query time is {total_search_time / num_queries} seconds")
 
     start = time.time()
-    res_labels, res_distances = index.knn_parallel(query_data, k, num_threads=n_threads)
+    res_labels, _ = index.knn_parallel(query_data, k, num_threads=n_threads)
     total_search_time_parallel = time.time() - start
 
     total_correct_parallel = 0
@@ -620,14 +536,14 @@ def test_parallel_insert_search():
           f" average query time is {total_search_time_parallel / num_queries} seconds")
     print(f"Got {total_search_time / total_search_time_parallel} times improvement un runtime using {n_threads} threads\n")
 
-    # Validate that the recall of the parallel search recall is worse than the sequential recall in no more than 5%.
-    assert total_correct_parallel >= total_correct * 0.95
+    # Validate that the recall of the parallel search recall is the same as the sequential search recall.
+    assert total_correct_parallel == total_correct
     # Validate that the parallel run managed to achieve at least (n_threads - 1) times improvement in total runtime.
-    assert total_search_time / total_search_time_parallel > n_threads - 2
+    assert total_search_time / total_search_time_parallel > expected_speedup
 
     # Run search with parallel index and assert that similar recall achieved.
     start = time.time()
-    res_labels, res_distances = parallel_index.knn_parallel(query_data, k, num_threads=n_threads)
+    res_labels, _ = parallel_index.knn_parallel(query_data, k, num_threads=n_threads)
     total_search_time_parallel = time.time() - start
 
     total_correct_parallel = 0
@@ -639,7 +555,7 @@ def test_parallel_insert_search():
     assert total_correct_parallel >= total_correct * 0.95
 
     # Insert vectors to the index and search in parallel.
-    parallel_index = HNSWIndex(hnsw_params)
+    parallel_index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, ef_runtime=200)
     assert parallel_index.index_size() == 0
 
     def insert_vectors():
@@ -649,7 +565,7 @@ def test_parallel_insert_search():
 
     def run_queries():
         nonlocal res_labels_g
-        res_labels_g, res_distances_g = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
+        res_labels_g, _ = parallel_index.knn_parallel(query_data, k, num_threads=int(n_threads/2))
 
     t_insert = threading.Thread(target=insert_vectors)
     t_query = threading.Thread(target=run_queries)
@@ -687,15 +603,10 @@ def test_parallel_with_range():
     radius = 3.0
     n_threads = int(os.cpu_count() / 2)
     PADDING_LABEL = -1  # used for padding empty labels entries in a single query results
+    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
+    expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
 
-    hnsw_params = HNSWParams()
-
-    hnsw_params.dim = dim
-    hnsw_params.metric = VecSimMetric_L2
-    hnsw_params.type = VecSimType_FLOAT32
-    hnsw_params.M = 16
-    hnsw_params.efConstruction = 200
-    hnsw_params.initialCapacity = num_elements
+    parallel_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, ef_runtime=200)
 
     bf_params = BFParams()
 
@@ -706,8 +617,6 @@ def test_parallel_with_range():
     bf_params.blockSize = num_elements
 
     bf_index = BFIndex(bf_params)
-
-    parallel_index = HNSWIndex(hnsw_params)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
@@ -737,6 +646,7 @@ def test_parallel_with_range():
           f" {total_results/num_queries} and HNSW success rate is: {overall_intersection_rate/num_queries}."
           f" Average query time is {total_search_time/num_queries} seconds")
 
+    # Run range queries in parallel
     start = time.time()
     hnsw_labels_range_parallel, _ = parallel_index.range_parallel(query_data, radius=radius)
     total_range_query_parallel_time = time.time() - start
@@ -750,4 +660,111 @@ def test_parallel_with_range():
     print(f"Running the same {num_queries} queries in parallel, average query time is"
           f" {total_range_query_parallel_time/num_queries}, and intersection rate is: "
           f"{overall_intersection_rate_parallel/num_queries}")
+    assert overall_intersection_rate_parallel == overall_intersection_rate
     print(f"Got improvement of {total_search_time/total_range_query_parallel_time} times using {n_threads} threads\n")
+    assert total_search_time/total_range_query_parallel_time >= expected_speedup
+
+
+def test_parallel_with_multi():
+    dim = 32
+    num_labels = 10000
+    per_label = 5
+    epsilon = 0.01
+    k = 10
+    num_elements = num_labels * per_label
+    metric = VecSimMetric_L2
+    data_type = VecSimType_FLOAT64
+    num_queries = 10000
+    n_threads = int(os.cpu_count() / 2)
+    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
+    expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
+
+    multi_index = create_hnsw_index(dim, num_elements, metric, data_type, m=32, ef_runtime=200,
+                                    epsilon=epsilon, is_multi=True)
+    parallel_multi_index = create_hnsw_index(dim, num_elements, metric, data_type, m=32, ef_runtime=200,
+                                             epsilon=epsilon, is_multi=True)
+    bf_params = BFParams()
+
+    bf_params.dim = dim
+    bf_params.metric = metric
+    bf_params.type = data_type
+    bf_params.initialCapacity = num_elements
+    bf_params.blockSize = num_elements
+    bf_params.multi = True
+
+    bf_index = BFIndex(bf_params)
+
+    np.random.seed(47)
+    data = np.random.random((num_labels, per_label, dim))
+    sequential_insert_time = 0
+    for label, vectors in enumerate(data):
+        for vector in vectors:
+            start = time.time()
+            multi_index.add_vector(vector, label)
+            sequential_insert_time += time.time() - start
+            bf_index.add_vector(vector, label)
+    print(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW ({per_label} vectors per label) sequentially"
+          f" took {sequential_insert_time} seconds")
+
+    # Insert vectors to multi index in parallel
+    data = data.reshape(num_elements, dim)
+    labels = np.concatenate([[i]*per_label for i in range(num_labels)])
+    start = time.time()
+    parallel_multi_index.add_vector_parallel(data, labels, n_threads)
+    parallel_insert_time = time.time() - start
+    assert parallel_multi_index.index_size() == num_elements
+    assert parallel_multi_index.check_integrity()
+    # Validate that the parallel index contains the same vectors as the sequential one. vectors are not necessarily
+    # at the same order, so we flatten the array and check that elements are set equal.
+    # x=input("now")
+    for label in range(num_labels):
+        vectors_s = multi_index.get_vector(label)
+        vectors_p = parallel_multi_index.get_vector(label)
+        assert vectors_s.shape == vectors_p.shape
+        assert set(vectors_s.flatten()) == set(vectors_p.flatten())
+
+    print(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW in parallel ({per_label} vectors per label)"
+          f" took {parallel_insert_time} seconds")
+    print(f"Got {sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
+    assert sequential_insert_time/parallel_insert_time > expected_speedup
+
+    # Run queries over the multi-index
+    query_data = np.random.random((num_queries, dim))
+
+    # Sequential search as the baseline
+    total_search_time = 0
+    total_correct = 0
+    total_res_bf = []  # save the ground truth res_labels for every query
+    total_res_hnsw_sequential = []  # save sequential search results, tuple of (res_labels, res_dists) for every query
+    for i, query in enumerate(query_data):
+        start = time.time()
+        res_labels, res_dists = multi_index.knn_query(query, k)
+        total_search_time += time.time() - start
+        res_labels_bf, res_dists_bf = bf_index.knn_query(query, k)
+        total_res_hnsw_sequential.append((res_labels[0], res_dists[0]))
+        total_res_bf.append(res_labels_bf[0])
+        total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
+    print(f"Running sequential search, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time / num_queries} seconds")
+
+    start = time.time()
+    res_labels_parallel, res_dists_parallel = parallel_multi_index.knn_parallel(query_data, k, num_threads=n_threads)
+    total_search_time_parallel = time.time() - start
+
+    # # Validate that we got the same results as in the sequential index
+    # for res_labels, res_dists, sequential_res in zip(res_labels_parallel, res_dists_parallel, total_res_hnsw_sequential):
+    #     assert_allclose(res_dists, sequential_res[1])
+    #     assert set(res_labels) == set(sequential_res[0])
+
+    total_correct_parallel = 0
+    for res_labels, ground_truth in zip(res_labels_parallel, total_res_bf):
+        total_correct_parallel += len(set(res_labels).intersection(set(ground_truth)))
+
+    print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time_parallel / num_queries} seconds")
+    print(f"Got {total_search_time / total_search_time_parallel} times improvement un runtime using"
+          f" {n_threads} threads\n")
+    assert total_correct_parallel >= total_correct*0.95
+    assert total_search_time/total_search_time_parallel >= expected_speedup
+
+    # todo: cont testing parallel insert+search

@@ -33,7 +33,7 @@ public:
             new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
     }
 #ifdef BUILD_TESTS
-    void GetDataByLabel(labelType label, std::vector<const char *> &vectors_output) {
+    void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const {
 
         auto ids = labelToIdsLookup.find(label);
 
