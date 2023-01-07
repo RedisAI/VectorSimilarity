@@ -186,6 +186,7 @@ public:
      * @param vectors_output empty vector to be modified, should store the blob(s) associated with
      * the label.
      */
-    virtual void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const = 0;
+    virtual void getDataByLabel(labelType label,
+                                std::vector<const char *> &vectors_output) const = 0;
 #endif
 };
