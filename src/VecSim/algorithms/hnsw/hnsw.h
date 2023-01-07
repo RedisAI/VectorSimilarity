@@ -192,6 +192,8 @@ public:
     inline labelType getExternalLabel(idType internal_id) const;
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
+    inline void lockNodeLinks(idType node_id) const;
+    inline void unlockNodeLinks(idType node_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
@@ -414,6 +416,16 @@ template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     elementFlags *flags = get_flags(internalId);
     return *flags & IN_PROCESS;
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::lockNodeLinks(idType node_id) const {
+    element_neighbors_locks_[node_id].lock();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
+    element_neighbors_locks_[node_id].unlock();
 }
 
 /**

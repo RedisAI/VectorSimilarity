@@ -75,5 +75,4 @@ public:
     void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const override {
 
     }
-
 };

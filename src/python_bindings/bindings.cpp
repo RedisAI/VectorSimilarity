@@ -74,8 +74,11 @@ public:
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
     py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
-        VecSimQueryResult_List results =
-            VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
+        VecSimQueryResult_List results;
+        {
+            py::gil_scoped_release py_gil;
+            results = VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
+        }
         // The number of results may be lower than n_res, if there are less than n_res remaining
         // vectors in the index that hadn't been returned yet.
         size_t actual_n_res = VecSimQueryResult_Len(results);
@@ -88,24 +91,27 @@ public:
 // @input or @query arguments are a py::object object. (numpy arrays are acceptable)
 class PyVecSimIndex {
 private:
-	template<typename DataType>
-	inline py::object rawVectorsAsNumpy(const std::vector<const char *> &vectors, size_t dim) {
+    template <typename DataType>
+    inline py::object rawVectorsAsNumpy(const std::vector<const char *> &vectors, size_t dim) {
 
-		size_t n_vectors = vectors.size();
-		auto *data_numpy = new DataType[n_vectors * dim];
-		// Copy the vector blobs into one contiguous array of data, and free the original buffer afterwards.
-		for (size_t i = 0; i < n_vectors; i++) {
-			memcpy(data_numpy + i * dim, vectors[i], dim * sizeof(DataType));
-			delete[] vectors[i];
-		}
+        size_t n_vectors = vectors.size();
+        auto *data_numpy = new DataType[n_vectors * dim];
+        // Copy the vector blobs into one contiguous array of data, and free the original buffer
+        // afterwards.
+        for (size_t i = 0; i < n_vectors; i++) {
+            memcpy(data_numpy + i * dim, vectors[i], dim * sizeof(DataType));
+            delete[] vectors[i];
+        }
 
-		py::capsule free_when_done(data_numpy, [](void *vector_data) { delete[] (DataType *)vector_data; });
-		return py::array_t<DataType>(
-				{n_vectors, dim},                           // shape
-				{dim * sizeof(DataType), sizeof(DataType)}, // C-style contiguous strides for the data type
-				data_numpy,                                 // the data pointer
-				free_when_done);
-	}
+        py::capsule free_when_done(data_numpy,
+                                   [](void *vector_data) { delete[](DataType *) vector_data; });
+        return py::array_t<DataType>(
+            {n_vectors, dim}, // shape
+            {dim * sizeof(DataType),
+             sizeof(DataType)}, // C-style contiguous strides for the data type
+            data_numpy,         // the data pointer
+            free_when_done);
+    }
 
 protected:
     std::shared_ptr<VecSimIndex> index;
@@ -132,14 +138,15 @@ public:
     }
 
     void addVector(const py::object &input, size_t id) {
-	    py::array vector_data(input);
+        py::array vector_data(input);
+        py::gil_scoped_release py_gil;
         addVectorInternal((const char *)vector_data.data(0), id);
     }
 
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index.get(), id); }
 
     py::object knn(const py::object &input, size_t k, VecSimQueryParams *query_params) {
-		py::array query(input);
+        py::array query(input);
         VecSimQueryResult_List res;
         {
             py::gil_scoped_release py_gil;
@@ -149,7 +156,7 @@ public:
     }
 
     py::object range(const py::object &input, double radius, VecSimQueryParams *query_params) {
-	    py::array query(input);
+        py::array query(input);
         VecSimQueryResult_List res;
         {
             py::gil_scoped_release py_gil;
@@ -161,79 +168,78 @@ public:
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
 
     PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
-	    py::array query(input);
-		return PyBatchIterator(
+        py::array query(input);
+        return PyBatchIterator(
             index, VecSimBatchIterator_New(index.get(), (const char *)query.data(0), query_params));
     }
 
-	py::object getVector(labelType label) {
-		std::vector<const char *> res;
-		reinterpret_cast<VecSimIndexInterface *>(this->index.get())->getDataByLabel(label, res);
-		if (index->info().algo == VecSimAlgo_BF) {
-			size_t dim = index->info().bfInfo.dim;
-			if (index->info().bfInfo.type == VecSimType_FLOAT32) {
-				return rawVectorsAsNumpy<float>(res, dim);
-			} else if (index->info().bfInfo.type == VecSimType_FLOAT64) {
-				return rawVectorsAsNumpy<double>(res, dim);
-			} else {
-				throw std::runtime_error("Invalid vector data type");
-			}
-		} else if (index->info().algo == VecSimAlgo_HNSWLIB) {
-			size_t dim = index->info().hnswInfo.dim;
-			if (index->info().hnswInfo.type == VecSimType_FLOAT32) {
-				return rawVectorsAsNumpy<float>(res, dim);
-			} else if (index->info().hnswInfo.type == VecSimType_FLOAT64) {
-				return rawVectorsAsNumpy<double>(res, dim);
-			} else {
-				throw std::runtime_error("Invalid vector data type");
-			}
-		} else {
-			throw std::runtime_error("Invalid index algorithm");
-		}
-	}
+    py::object getVector(labelType label) {
+        std::vector<const char *> res;
+        reinterpret_cast<VecSimIndexInterface *>(this->index.get())->getDataByLabel(label, res);
+        if (index->info().algo == VecSimAlgo_BF) {
+            size_t dim = index->info().bfInfo.dim;
+            if (index->info().bfInfo.type == VecSimType_FLOAT32) {
+                return rawVectorsAsNumpy<float>(res, dim);
+            } else if (index->info().bfInfo.type == VecSimType_FLOAT64) {
+                return rawVectorsAsNumpy<double>(res, dim);
+            } else {
+                throw std::runtime_error("Invalid vector data type");
+            }
+        } else if (index->info().algo == VecSimAlgo_HNSWLIB) {
+            size_t dim = index->info().hnswInfo.dim;
+            if (index->info().hnswInfo.type == VecSimType_FLOAT32) {
+                return rawVectorsAsNumpy<float>(res, dim);
+            } else if (index->info().hnswInfo.type == VecSimType_FLOAT64) {
+                return rawVectorsAsNumpy<double>(res, dim);
+            } else {
+                throw std::runtime_error("Invalid vector data type");
+            }
+        } else {
+            throw std::runtime_error("Invalid index algorithm");
+        }
+    }
 
     virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
 };
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
-	template<typename searchParam>  // size_t/double for KNN/range queries.
-	using QueryFunc = std::function<VecSimQueryResult_List(const char *, searchParam, VecSimQueryParams *)>;
+    template <typename searchParam> // size_t/double for KNN/range queries.
+    using QueryFunc =
+        std::function<VecSimQueryResult_List(const char *, searchParam, VecSimQueryParams *)>;
 
-	template<typename searchParam>  // size_t/double for KNN / range queries.
-	void runParallelQueries(const py::array &queries, size_t n_queries, searchParam param,
-							VecSimQueryParams *query_params, int n_threads,	QueryFunc<searchParam> queryFunc,
-							VecSimQueryResult_List *results) {
+    template <typename searchParam> // size_t/double for KNN / range queries.
+    void runParallelQueries(const py::array &queries, size_t n_queries, searchParam param,
+                            VecSimQueryParams *query_params, int n_threads,
+                            QueryFunc<searchParam> queryFunc, VecSimQueryResult_List *results) {
 
-		// Use number of hardware cores as default number of threads, unless specified otherwise.
-		if (n_threads <= 0) {
-			n_threads = (int)std::thread::hardware_concurrency();
-		}
-		std::atomic_int global_counter(0);
+        // Use number of hardware cores as default number of threads, unless specified otherwise.
+        if (n_threads <= 0) {
+            n_threads = (int)std::thread::hardware_concurrency();
+        }
+        std::atomic_int global_counter(0);
 
-		auto parallel_search =
-				[&](const py::array &items) {
-					while (true) {
-						int ind = global_counter.fetch_add(1);
-						if (ind >= n_queries) {
-							break;
-						}
-						results[ind] =
-								queryFunc((const char *)items.data(ind), param, query_params);
-					}
-				};
-		std::thread thread_objs[n_threads];
-		{
-			// Release python GIL while threads are running.
-			py::gil_scoped_release py_gil;
-			for (size_t i = 0; i < n_threads; i++) {
-				thread_objs[i] = std::thread(parallel_search, queries);
-			}
-			for (size_t i = 0; i < n_threads; i++) {
-				thread_objs[i].join();
-			}
-		}
-	}
+        auto parallel_search = [&](const py::array &items) {
+            while (true) {
+                int ind = global_counter.fetch_add(1);
+                if (ind >= n_queries) {
+                    break;
+                }
+                results[ind] = queryFunc((const char *)items.data(ind), param, query_params);
+            }
+        };
+        std::thread thread_objs[n_threads];
+        {
+            // Release python GIL while threads are running.
+            py::gil_scoped_release py_gil;
+            for (size_t i = 0; i < n_threads; i++) {
+                thread_objs[i] = std::thread(parallel_search, queries);
+            }
+            for (size_t i = 0; i < n_threads; i++) {
+                thread_objs[i].join();
+            }
+        }
+    }
 
 public:
     explicit PyHNSWLibIndex(const HNSWParams &hnsw_params) {
@@ -258,17 +264,19 @@ public:
     py::object searchKnnParallel(const py::object &input, size_t k, VecSimQueryParams *query_params,
                                  int n_threads) {
 
-	    py::array queries(input);
-	    if (queries.ndim() != 2) {
-		    throw std::runtime_error("Input queries array must be 2D array");
-	    }
-	    size_t n_queries = queries.shape(0);
-		std::function<VecSimQueryResult_List(const char *, size_t, VecSimQueryParams *)> searchKnnWrapper (
-			[this] (const char *query_, size_t k_, VecSimQueryParams *query_params_)->VecSimQueryResult_List {
-				return this->searchKnnInternal(query_, k_, query_params_);
-		});
-	    VecSimQueryResult_List results[n_queries];
-	    runParallelQueries<size_t>(queries, n_queries, k, query_params, n_threads, searchKnnWrapper, results);
+        py::array queries(input);
+        if (queries.ndim() != 2) {
+            throw std::runtime_error("Input queries array must be 2D array");
+        }
+        size_t n_queries = queries.shape(0);
+        std::function<VecSimQueryResult_List(const char *, size_t, VecSimQueryParams *)>
+            searchKnnWrapper([this](const char *query_, size_t k_,
+                                    VecSimQueryParams *query_params_) -> VecSimQueryResult_List {
+                return this->searchKnnInternal(query_, k_, query_params_);
+            });
+        VecSimQueryResult_List results[n_queries];
+        runParallelQueries<size_t>(queries, n_queries, k, query_params, n_threads, searchKnnWrapper,
+                                   results);
         return wrap_results(results, k, n_queries);
     }
     py::object searchRangeParallel(const py::object &input, double radius,
@@ -278,12 +286,14 @@ public:
             throw std::runtime_error("Input queries array must be 2D array");
         }
         size_t n_queries = queries.shape(0);
-	    std::function<VecSimQueryResult_List(const char *, double, VecSimQueryParams *)> searchRangeWrapper (
-			    [this] (const char *query_, double radius_, VecSimQueryParams *query_params_)->VecSimQueryResult_List {
-				    return this->searchRangeInternal(query_, radius_, query_params_);
-			    });
-	    VecSimQueryResult_List results[n_queries];
-	    runParallelQueries<double>(queries, n_queries, radius, query_params, n_threads, searchRangeWrapper, results);
+        std::function<VecSimQueryResult_List(const char *, double, VecSimQueryParams *)>
+            searchRangeWrapper([this](const char *query_, double radius_,
+                                      VecSimQueryParams *query_params_) -> VecSimQueryResult_List {
+                return this->searchRangeInternal(query_, radius_, query_params_);
+            });
+        VecSimQueryResult_List results[n_queries];
+        runParallelQueries<double>(queries, n_queries, radius, query_params, n_threads,
+                                   searchRangeWrapper, results);
         size_t max_results_num = 1;
         for (size_t i = 0; i < n_queries; i++) {
             if (VecSimQueryResult_Len(results[i]) > max_results_num) {
@@ -297,7 +307,7 @@ public:
 
     void addVectorsParallel(const py::object &input, const py::object &vectors_labels,
                             int n_threads) {
-	    py::array vectors_data(input);
+        py::array vectors_data(input);
         py::array_t<labelType, py::array::c_style | py::array::forcecast> labels(vectors_labels);
 
         if (vectors_data.ndim() != 2) {
@@ -438,7 +448,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("index_size", &PyVecSimIndex::indexSize)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
-	    .def("get_vector", &PyVecSimIndex::getVector);
+        .def("get_vector", &PyVecSimIndex::getVector);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
@@ -455,7 +465,7 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("labels"), py::arg("num_threads") = -1)
         .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
-			 py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
+             py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
