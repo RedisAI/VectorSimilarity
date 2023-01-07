@@ -357,7 +357,7 @@ def test_recall_for_hnsw_multi_value():
 
     num_elements = num_labels * num_per_label
 
-    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M,
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M,
                                    efRuntime, is_multi=True)
 
     data = np.float32(np.random.random((num_labels, dim)))
@@ -465,7 +465,7 @@ def test_parallel_insert_search():
     num_elements = 100000
     num_queries = 10000
     k = 10
-    n_threads = int(os.cpu_count() / 2)
+    n_threads = min(os.cpu_count(), 8)
     expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
     expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
 
@@ -534,7 +534,7 @@ def test_parallel_insert_search():
 
     print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
           f" average query time is {total_search_time_parallel / num_queries} seconds")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement un runtime using {n_threads} threads\n")
+    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using {n_threads} threads\n")
 
     # Validate that the recall of the parallel search recall is the same as the sequential search recall.
     assert total_correct_parallel == total_correct
@@ -601,7 +601,7 @@ def test_parallel_with_range():
     num_elements = 100000
     num_queries = 10000
     radius = 3.0
-    n_threads = int(os.cpu_count() / 2)
+    n_threads = min(os.cpu_count(), 8)
     PADDING_LABEL = -1  # used for padding empty labels entries in a single query results
     expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
     expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
@@ -675,7 +675,7 @@ def test_parallel_with_multi():
     metric = VecSimMetric_L2
     data_type = VecSimType_FLOAT64
     num_queries = 10000
-    n_threads = int(os.cpu_count() / 2)
+    n_threads = min(os.cpu_count(), 8)
     expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
     expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
 
@@ -757,7 +757,7 @@ def test_parallel_with_multi():
 
     print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
           f" average query time is {total_search_time_parallel / num_queries} seconds")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement un runtime using"
+    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using"
           f" {n_threads} threads\n")
     assert total_correct_parallel >= total_correct*0.95
     assert total_search_time/total_search_time_parallel >= expected_speedup
@@ -811,7 +811,7 @@ def test_parallel_batch_search():
     num_queries = 5000
     batch_size = 100
     n_batches = 5
-    n_threads = int(os.cpu_count() / 2)
+    n_threads = min(os.cpu_count(), 8)
     expected_parallel_rate = 0.85  # we expect that at least 85% of the insert/search time will be executed in parallel
     expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
 
