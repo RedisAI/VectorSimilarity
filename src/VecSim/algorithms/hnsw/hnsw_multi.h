@@ -42,14 +42,14 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, allocator, version),
           label_lookup_(this->max_elements_, allocator) {}
 
-    void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const {
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
 
         auto ids = label_lookup_.find(label);
 
         for (idType id : ids->second) {
-            auto *vec_copy = new DataType[this->dim];
-            memcpy(vec_copy, this->getDataByInternalId(id), this->data_size_);
-            vectors_output.push_back((const char *)vec_copy);
+            auto vec = std::vector<DataType>(this->dim);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+            vectors_output.push_back(vec);
         }
     }
 #endif
