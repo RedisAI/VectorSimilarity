@@ -72,7 +72,4 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->index->setLastSearchMode(mode);
     }
-    void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const override {
-
-    }
 };

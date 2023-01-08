@@ -12,7 +12,6 @@
 
 #include <stddef.h>
 #include <stdexcept>
-#include <vector>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
@@ -177,16 +176,4 @@ public:
     inline static void setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
         VecSimIndexInterface::timeoutCallback = callback;
     }
-#ifdef BUILD_TESTS
-    /**
-     * @brief Used for testing - store vector(s) data associated with a given label. This function
-     * copies the vector(s)' data buffer(s) and place its pointer(s) in the output vector
-     *
-     * @param label
-     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
-     * the label.
-     */
-    virtual void getDataByLabel(labelType label,
-                                std::vector<const char *> &vectors_output) const = 0;
-#endif
 };
