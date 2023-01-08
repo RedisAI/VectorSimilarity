@@ -81,7 +81,7 @@ void normalizeVector(DataType *input_vector, size_t dim) {
     double sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
-        sum += input_vector[i] * input_vector[i];
+        sum += (double)input_vector[i] * (double)input_vector[i];
     }
     DataType norm = sqrt(sum);
 
