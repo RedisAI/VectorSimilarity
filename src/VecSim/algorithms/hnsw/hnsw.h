@@ -1486,7 +1486,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
         return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = maxlevel_; level > 0; level--) {
+    for (size_t level = maxlevel_; level > 0 && curr_element != HNSW_INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;
