@@ -414,7 +414,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
             thread_objs[i].join();
         }
         ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-        ASSERT_EQ(successful_searches, n_threads / 2);
+        ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
         ASSERT_GT(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads / 2);
     }
 }
