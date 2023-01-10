@@ -37,16 +37,16 @@ protected:
 TYPED_TEST_SUITE(HNSWTestParallel, DataTypeSet);
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
-    size_t n = 10000;
+    size_t n = 20000;
     size_t k = 11;
-    size_t dim = 4;
+    size_t dim = 45;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
-                         .M = 16,
+                         .M = 64,
                          .efConstruction = 200,
-                         .efRuntime = 500};
+                         .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -59,7 +59,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
         TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the res
             // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
@@ -74,7 +75,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     };
 
     size_t memory_before = index->info().hnswInfo.memory;
-    size_t n_threads = 16;
+    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -83,7 +84,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, 1);
+    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, n_threads / 2);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
@@ -95,12 +96,13 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
-    size_t dim = 4;
-    size_t n = 1000;
-    size_t n_labels = 100;
+    size_t dim = 45;
+    size_t n = 20000;
+    size_t n_labels = 1000;
     size_t k = 11;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 64, .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params, true);
 
     for (size_t i = 0; i < n; i++) {
@@ -114,7 +116,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
         TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
             ASSERT_EQ(diff_id, (res_index + 1) / 2);
@@ -124,7 +127,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
         successful_searches++;
     };
 
-    size_t n_threads = 16;
+    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -133,7 +136,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, 1);
+    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, n_threads / 2);
 
     VecSimIndex_Free(index);
 }
@@ -141,14 +144,14 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
 TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     size_t n = 10000;
     size_t k = 11;
-    size_t dim = 4;
+    size_t dim = 64;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
-                         .M = 16,
+                         .M = 64,
                          .efConstruction = 200,
-                         .efRuntime = 500};
+                         .efRuntime = n};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -164,7 +167,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     // labels in the range [50+myID-5, 50+myID+5].
     auto parallel_knn_search = [&](int myID) {
         TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[] = {query_val, query_val, query_val, query_val};
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the res
             // label and the query val (query_val, query_val-1, query_val+1, query_val-2,
@@ -225,7 +229,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
         successful_searches++;
     };
 
-    size_t n_threads = 15;
+    size_t n_threads = MIN(15, std::thread::hardware_concurrency());
     std::thread thread_objs[n_threads];
     size_t memory_before = index->info().hnswInfo.memory;
     for (size_t i = 0; i < n_threads; i++) {
@@ -241,7 +245,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, 1);
+    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, n_threads / 2);
 
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
@@ -347,13 +351,13 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
-                         .M = 16,
+                         .M = 64,
                          .efConstruction = 200,
-                         .efRuntime = 500};
+                         .efRuntime = n};
 
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
-        size_t n_threads = 10;
+        size_t n_threads = MIN(10, std::thread::hardware_concurrency());
 
         auto parallel_insert = [&](int myID) {
             for (labelType label = myID; label < n; label += n_threads / 2) {
