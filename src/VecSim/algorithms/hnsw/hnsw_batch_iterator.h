@@ -62,7 +62,12 @@ public:
 
     void reset() override;
 
-    virtual ~HNSW_BatchIterator() { index->returnVisitedList(this->visited_list); }
+    virtual ~HNSW_BatchIterator() {
+        index->returnVisitedList(this->visited_list);
+#ifdef BUILD_TESTS
+        index->num_parallel_workers--;
+#endif
+    }
 };
 
 /******************** Ctor / Dtor **************/
@@ -78,7 +83,7 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 
     this->dist_func = index->getDistFunc();
     this->dim = index->getDim();
-    this->entry_point = index->getEntryPointId();
+    this->entry_point = index->safeGetEntryPointCopy();
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = index->getVisitedList();
     this->visited_tag = this->visited_list->getFreshTag();
@@ -88,6 +93,14 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
     } else {
         this->ef = this->index->getEf();
     }
+#ifdef BUILD_TESTS
+    index->debug_info_guard.lock();
+    index->num_parallel_workers++;
+    if (index->num_parallel_workers > index->max_parallel_workers) {
+        index->max_parallel_workers = index->num_parallel_workers;
+    }
+    index->debug_info_guard.unlock();
+#endif
 }
 
 /******************** Implementation **************/

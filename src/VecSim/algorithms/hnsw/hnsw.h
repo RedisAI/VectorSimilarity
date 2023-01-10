@@ -145,13 +145,15 @@ protected:
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
-    void revisitNeighborConnections(size_t level, idType new_node_id, idType selected_neighbor,
+    void revisitNeighborConnections(size_t level, idType new_node_id,
+                                    const std::pair<DistType, idType> &neighbor_data,
                                     idType *new_node_neighbors_list,
                                     idType *neighbor_neighbors_list,
                                     std::unique_lock<std::mutex> &node_lock,
                                     std::unique_lock<std::mutex> &neighbor_lock);
-    idType mutuallyConnectNewElement(idType new_node_id,
-                                     candidatesMaxHeap<DistType> &top_candidates, size_t level);
+    inline idType mutuallyConnectNewElement(idType new_node_id,
+                                            candidatesMaxHeap<DistType> &top_candidates,
+                                            size_t level);
     template <bool with_timeout>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
                            void *timeoutCtx = nullptr, VecSimQueryResult_Code *rc = nullptr) const;
@@ -187,11 +189,11 @@ public:
     inline size_t getEfConstruction() const;
     inline size_t getM() const;
     inline size_t getMaxLevel() const;
-    inline idType getEntryPointId() const;
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
+    inline idType safeGetEntryPointCopy() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
@@ -213,10 +215,18 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
     inline bool isInProcess(idType internalId) const;
+    inline void markInProcess(idType internalId);
+    inline void unmarkInProcess(idType internalId);
     void increaseCapacity() override;
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
+
+#ifdef BUILD_TESTS
+    mutable std::atomic_int num_parallel_workers = 0;
+    mutable int max_parallel_workers = 0;
+    mutable std::mutex debug_info_guard;
+#endif
 
 protected:
     // inline label to id setters that need to be implemented by derived class
@@ -381,11 +391,6 @@ void HNSWIndex<DataType, DistType>::setListCount(idType *list, const linkListSiz
 }
 
 template <typename DataType, typename DistType>
-idType HNSWIndex<DataType, DistType>::getEntryPointId() const {
-    return entrypoint_node_;
-}
-
-template <typename DataType, typename DistType>
 VisitedNodesHandler *HNSWIndex<DataType, DistType>::getVisitedList() const {
     return visited_nodes_handler_pool.getAvailableVisitedNodesHandler();
 }
@@ -416,6 +421,18 @@ template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     elementFlags *flags = get_flags(internalId);
     return *flags & IN_PROCESS;
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
+    elementFlags *flags = get_flags(internalId);
+    *flags |= IN_PROCESS;
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
+    elementFlags *flags = get_flags(internalId);
+    *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
 }
 
 template <typename DataType, typename DistType>
@@ -664,16 +681,16 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
-    size_t level, idType new_node_id, idType selected_neighbor, idType *new_node_neighbors_list,
-    idType *neighbor_neighbors_list, std::unique_lock<std::mutex> &node_lock,
-    std::unique_lock<std::mutex> &neighbor_lock) {
+    size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
+    idType *new_node_neighbors_list, idType *neighbor_neighbors_list,
+    std::unique_lock<std::mutex> &node_lock, std::unique_lock<std::mutex> &neighbor_lock) {
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
     candidatesMaxHeap<DistType> candidates(this->allocator);
-    DistType dist_cur_node_neighbor = this->dist_func(
-        getDataByInternalId(new_node_id), getDataByInternalId(selected_neighbor), this->dim);
-    candidates.emplace(dist_cur_node_neighbor, new_node_id);
+    // Add the new node along with the pre-calculated distance to the current neighbor,
+    candidates.emplace(neighbor_data.first, new_node_id);
 
+    idType selected_neighbor = neighbor_data.second;
     for (size_t j = 0; j < getListCount(neighbor_neighbors_list); j++) {
         candidates.emplace(this->dist_func(getDataByInternalId(neighbor_neighbors_list[j]),
                                            getDataByInternalId(selected_neighbor), this->dim),
@@ -730,11 +747,12 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     for (size_t i = 0; i < neighbor_neighbors_count; i++) {
         if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(),
                                 neighbor_neighbors_list[i])) {
-            // the neighbor is not in the "to_update" nodes list - leave it as is.
+            // The neighbor is not in the "to_update" nodes list - leave it as is.
             neighbor_neighbors_list[neighbour_neighbours_idx++] = neighbor_neighbors_list[i];
             continue;
         } else if (neighbor_neighbors_list[i] == new_node_id) {
-            // the new node is somehow got into the neighbor's neighbours in the meantime - leave it
+            // The new node got into the neighbor's neighbours - this means there was an update in
+            // another thread during between we released and reacquire the locks - leave it
             // as is.
             neighbor_neighbors_list[neighbour_neighbours_idx++] = neighbor_neighbors_list[i];
             update_cur_node_required = false;
@@ -790,16 +808,17 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(top_candidates.size() <= M_ &&
            "Should be not be more than M_ candidates returned by the heuristic");
 
-    vecsim_stl::vector<idType> selected_neighbors(this->allocator);
+    // Hold (distance_from_new_node_id, neighbor_id) pair for every selected neighbor.
+    vecsim_stl::vector<std::pair<DistType, idType>> selected_neighbors(this->allocator);
     selected_neighbors.reserve(M_);
     while (!top_candidates.empty()) {
-        selected_neighbors.push_back(top_candidates.top().second);
+        selected_neighbors.push_back(top_candidates.top());
         top_candidates.pop();
     }
 
     // The closest vector that has found to be returned (and start the scan from it in the next
     // level).
-    idType next_closest_entry_point = selected_neighbors.back();
+    idType next_closest_entry_point = selected_neighbors.back().second;
     idType *new_node_neighbors_list = get_linklist_at_level(new_node_id, level);
     assert(getListCount(new_node_neighbors_list) == 0 &&
            "The newly inserted element should have blank link list");
@@ -808,7 +827,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
     setIncomingEdgesPtr(new_node_id, level, (void *)incoming_edges);
 
-    for (idType selected_neighbor : selected_neighbors) {
+    for (auto &neighbor_data : selected_neighbors) {
+        idType selected_neighbor = neighbor_data.second; // neighbor's id
         std::unique_lock<std::mutex> node_lock;
         std::unique_lock<std::mutex> neighbor_lock;
         idType lower_id = (new_node_id < selected_neighbor) ? new_node_id : selected_neighbor;
@@ -827,13 +847,14 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         idType *neighbor_neighbors_list = get_linklist_at_level(selected_neighbor, level);
         linkListSize neighbor_neighbors_count = getListCount(neighbor_neighbors_list);
 
-        if (cur_node_neighbors_count == max_M_cur) {
-            // The new node cannot add more neighbors
-            continue;
-        }
         // validations...
         assert(cur_node_neighbors_count <= max_M_cur && "Neighbors number exceeds limit");
         assert(selected_neighbor != new_node_id && "Trying to connect an element to itself");
+
+        if (cur_node_neighbors_count == max_M_cur) {
+            // The new node cannot add more neighbors
+            break;
+        }
 
         // If one of the two nodes has already deleted - skip the operation.
         if (isMarkedDeleted(new_node_id) || isMarkedDeleted(selected_neighbor)) {
@@ -853,7 +874,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // Otherwise - we need to re-evaluate the neighbor's neighbors.
         // We collect all the existing neighbors and the new node as candidates, and mutually update
         // the neighbor's neighbors.
-        revisitNeighborConnections(level, new_node_id, selected_neighbor, new_node_neighbors_list,
+        revisitNeighborConnections(level, new_node_id, neighbor_data, new_node_neighbors_list,
                                    neighbor_neighbors_list, node_lock, neighbor_lock);
     }
     return next_closest_entry_point;
@@ -1145,7 +1166,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       VecSimIndexTombstone(), max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
       element_levels_(max_elements_, allocator),
-      visited_nodes_handler_pool((int)pool_initial_size, max_elements_, allocator),
+      visited_nodes_handler_pool(pool_initial_size, max_elements_, allocator),
       element_neighbors_locks_(max_elements_, allocator) {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > UINT16_MAX / 2)
@@ -1321,6 +1342,14 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
     assert(indexCapacity() > indexSize());
+#ifdef BUILD_TESTS
+    debug_info_guard.lock();
+    num_parallel_workers++;
+    if (num_parallel_workers > max_parallel_workers) {
+        max_parallel_workers = num_parallel_workers;
+    }
+    debug_info_guard.unlock();
+#endif
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1345,7 +1374,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
     int max_level_copy = (int)maxlevel_;
     idType curr_element = entrypoint_node_;
-
     if (element_max_level <= max_level_copy)
         entry_point_lock.unlock();
 
@@ -1353,8 +1381,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
            size_data_per_element_);
 
     // Initialisation of the data and label
-    elementFlags *flags = get_flags(new_element_id);
-    *flags |= IN_PROCESS;
+    markInProcess(new_element_id);
     setExternalLabel(new_element_id, label);
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
 
@@ -1437,7 +1464,16 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         }
         maxlevel_ = element_max_level;
     }
-    *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
+    unmarkInProcess(new_element_id);
+#ifdef BUILD_TESTS
+    num_parallel_workers--;
+#endif
+}
+
+template <typename DataType, typename DistType>
+idType HNSWIndex<DataType, DistType>::safeGetEntryPointCopy() const {
+    std::unique_lock<std::mutex> lock(entry_point_guard_);
+    return entrypoint_node_;
 }
 
 template <typename DataType, typename DistType>
@@ -1445,15 +1481,12 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                                                           VecSimQueryResult_Code *rc) const {
     *rc = VecSim_QueryResult_OK;
 
-    std::unique_lock<std::mutex> lock(entry_point_guard_);
-    if (cur_element_count == 0) {
-        return entrypoint_node_;
-    }
-    idType curr_element = entrypoint_node_;
-    lock.unlock();
+    idType curr_element = safeGetEntryPointCopy();
+    if (curr_element == HNSW_INVALID_ID)
+        return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = maxlevel_; level > 0 && curr_element != HNSW_INVALID_ID; level--) {
+    for (size_t level = maxlevel_; level > 0; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;
@@ -1517,6 +1550,14 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
                                                                 VecSimQueryParams *queryParams) {
 
+#ifdef BUILD_TESTS
+    debug_info_guard.lock();
+    num_parallel_workers++;
+    if (num_parallel_workers > max_parallel_workers) {
+        max_parallel_workers = num_parallel_workers;
+    }
+    debug_info_guard.unlock();
+#endif
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
 
@@ -1568,6 +1609,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         }
     }
     delete results;
+#ifdef BUILD_TESTS
+    num_parallel_workers--;
+#endif
     return rl;
 }
 
@@ -1644,6 +1688,15 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
                                                                  double radius,
                                                                  VecSimQueryParams *queryParams) {
+#ifdef BUILD_TESTS
+    debug_info_guard.lock();
+    num_parallel_workers++;
+    if (num_parallel_workers > max_parallel_workers) {
+        max_parallel_workers = num_parallel_workers;
+    }
+    debug_info_guard.unlock();
+#endif
+
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
 
@@ -1683,7 +1736,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     else
         rl.results = searchRangeBottomLayer_WithTimeout<false>(bottom_layer_ep, query_data, epsilon,
                                                                radius, timeoutCtx, &rl.code);
-
+#ifdef BUILD_TESTS
+    num_parallel_workers--;
+#endif
     return rl;
 }
 
