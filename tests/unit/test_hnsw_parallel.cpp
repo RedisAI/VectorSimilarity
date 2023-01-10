@@ -299,6 +299,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
+    VecSimIndex_Free(parallel_index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
@@ -344,6 +345,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         ASSERT_EQ(score, (dim * (diff_id * diff_id)));
     };
     runTopKSearchTest(parallel_index, query, k, verify_res);
+    VecSimIndex_Free(parallel_index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
@@ -416,5 +418,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
         ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
         ASSERT_GT(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads / 2);
+
+        VecSimIndex_Free(parallel_index);
     }
 }
