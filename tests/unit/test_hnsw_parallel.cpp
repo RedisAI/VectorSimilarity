@@ -37,7 +37,7 @@ protected:
 TYPED_TEST_SUITE(HNSWTestParallel, DataTypeSet);
 
 TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
-    size_t n = 1000;
+    size_t n = 10000;
     size_t k = 11;
     size_t dim = 4;
 
@@ -45,7 +45,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
                          .M = 16,
-                         .efConstruction = 200};
+                         .efConstruction = 200,
+                         .efRuntime = 500};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -82,6 +83,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
+    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, 1);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
@@ -131,11 +133,13 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
+    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, 1);
+
     VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
-    size_t n = 1000;
+    size_t n = 10000;
     size_t k = 11;
     size_t dim = 4;
 
@@ -143,7 +147,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
                          .M = 16,
-                         .efConstruction = 200};
+                         .efConstruction = 200,
+                         .efRuntime = 500};
     VecSimIndex *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
@@ -236,6 +241,8 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
+    ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, 1);
+
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
@@ -272,6 +279,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         thread_objs[i].join();
     }
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+    ASSERT_EQ(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads);
 
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 2);
@@ -315,6 +323,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         thread_objs[i].join();
     }
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
+    ASSERT_EQ(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads);
 
     TEST_DATA_T query[dim];
     TEST_DATA_T query_val = (TEST_DATA_T)n / 2 + 10;
@@ -339,7 +348,8 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                          .metric = VecSimMetric_L2,
                          .initialCapacity = n,
                          .M = 16,
-                         .efConstruction = 200};
+                         .efConstruction = 200,
+                         .efRuntime = 500};
 
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
@@ -389,9 +399,6 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                             break; // results are not ready yet, restart the check.
                         }
                     }
-                    if (!wait_for_results) {
-                        break; // all the results are in the index, search can begin now.
-                    }
                 }
                 thread_objs[i] = std::thread(parallel_knn_search, i);
             }
@@ -401,5 +408,6 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
         ASSERT_EQ(successful_searches, n_threads / 2);
+        ASSERT_GT(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads / 2);
     }
 }
