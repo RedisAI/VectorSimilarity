@@ -63,7 +63,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
         est += sizeof(size_t) * params->initialCapacity +
                sizeof(size_t); // Labels lookup hash table buckets.
-        est += sizeof(vecsim_stl::one_byte_mutex) * params->initialCapacity + sizeof(size_t); // lock per vector
+        est += sizeof(vecsim_stl::one_byte_mutex) * params->initialCapacity +
+               sizeof(size_t); // lock per vector
     }
 
     // Explicit allocation calls - always allocate a header.
