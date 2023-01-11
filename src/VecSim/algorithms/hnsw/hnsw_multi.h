@@ -205,7 +205,7 @@ inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(
             // If we find at least one internal id that is still in process, consider it as not
             // ready.
             if (!exists)
-                break;
+                return false;
         }
     }
     return exists;
