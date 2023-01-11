@@ -54,10 +54,15 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
+    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
     // Run parallel searches where every searching thread expects to get different labels as results
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
+        completed_tasks[myID]++;
         TEST_DATA_T query_val = 50 + myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
@@ -75,7 +80,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     };
 
     size_t memory_before = index->info().hnswInfo.memory;
-    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -84,8 +88,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-    // Todo: test parallelism when we have more cores in CI testing runners.
-    // ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, n_threads / 2);
+
+    // Validate that every thread executed a single job.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
@@ -112,10 +118,15 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
+    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
     // Run parallel searches where every searching thread expects to get different label as results
     // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
     auto parallel_search = [&](int myID) {
+        completed_tasks[myID]++;
         TEST_DATA_T query_val = 50 + myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
@@ -128,7 +139,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
         successful_searches++;
     };
 
-    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -137,8 +147,9 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-    // Todo: test parallelism when we have more cores in CI testing runners.
-    // ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, n_threads / 2);
+    // Validate that every thread executed a single job.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
 
     VecSimIndex_Free(index);
 }
@@ -161,13 +172,17 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
+    size_t n_threads = MIN(15, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
 
     /* Run parallel searches of three kinds: KNN, range, and batched search. */
 
     // In knn, we expect to get different labels as results (determined by the thread id), which are
     // labels in the range [50+myID-5, 50+myID+5].
     auto parallel_knn_search = [&](int myID) {
+        completed_tasks[myID]++;
         TEST_DATA_T query_val = 50 + myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
@@ -185,6 +200,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     };
 
     auto parallel_range_search = [&](int myID) {
+        completed_tasks[myID]++;
         TEST_DATA_T pivot_id = 100 + myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, pivot_id);
@@ -203,6 +219,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     };
 
     auto parallel_batched_search = [&](int myID) {
+        completed_tasks[myID]++;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, n);
 
@@ -231,7 +248,6 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
         successful_searches++;
     };
 
-    size_t n_threads = MIN(15, std::thread::hardware_concurrency());
     std::thread thread_objs[n_threads];
     size_t memory_before = index->info().hnswInfo.memory;
     for (size_t i = 0; i < n_threads; i++) {
@@ -247,8 +263,9 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
         thread_objs[i].join();
     }
     ASSERT_EQ(successful_searches, n_threads);
-    // Todo: test parallelism when we have more cores in CI testing runners.
-    // ASSERT_GT(this->CastToHNSW(index)->max_parallel_workers, n_threads / 2);
+    // Validate that every thread executed a single job.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
 
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
@@ -273,8 +290,12 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
     VecSimIndex *parallel_index = this->CreateNewIndex(params);
     size_t n_threads = 10;
 
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
     auto parallel_insert = [&](int myID) {
         for (labelType label = myID; label < n; label += n_threads) {
+            completed_tasks[myID]++;
             GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
         }
     };
@@ -286,7 +307,10 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         thread_objs[i].join();
     }
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    ASSERT_EQ(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads);
+    // Validate that every thread executed a single job.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), n / n_threads);
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
+              ceil((double)n / n_threads));
 
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 2);
@@ -318,8 +342,11 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
     VecSimIndex *parallel_index = this->CreateNewIndex(params, true);
     size_t n_threads = 10;
 
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
     auto parallel_insert = [&](int myID) {
         for (size_t i = myID; i < n; i += n_threads) {
+            completed_tasks[myID]++;
             GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, i % n_labels, i);
         }
     };
@@ -331,7 +358,10 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         thread_objs[i].join();
     }
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    ASSERT_EQ(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads);
+    // Validate that every thread executed a single job.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), n / n_threads);
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
+              ceil((double)n / n_threads));
 
     TEST_DATA_T query[dim];
     TEST_DATA_T query_val = (TEST_DATA_T)n / 2 + 10;
@@ -363,9 +393,12 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
         size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+        // Save the number fo tasks done by thread i in the i-th entry.
+        std::vector<size_t> completed_tasks(n_threads, 0);
 
         auto parallel_insert = [&](int myID) {
             for (labelType label = myID; label < n; label += n_threads / 2) {
+                completed_tasks[myID]++;
                 GenerateAndAddVector<TEST_DATA_T>(parallel_index, dim, label, label);
             }
         };
@@ -373,6 +406,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
         std::atomic_int successful_searches(0);
         auto parallel_knn_search = [&](int myID) {
+            completed_tasks[myID]++;
             // Make sure were still indexing in parallel to the search (at most 90% if the vectors
             // were already indexed).
             ASSERT_LT(VecSimIndex_IndexSize(parallel_index), 0.9 * n);
@@ -417,8 +451,17 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
         ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
-        ASSERT_GT(this->CastToHNSW(parallel_index)->max_parallel_workers, n_threads / 2);
-
+        // Validate that every thread executed a single job.
+        ASSERT_EQ(
+            *std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+            n / (n_threads / 2));
+        ASSERT_EQ(
+            *std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+            ceil((double)n / (n_threads / 2)));
+        ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
+                  1);
+        ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
+                  1);
         VecSimIndex_Free(parallel_index);
     }
 }

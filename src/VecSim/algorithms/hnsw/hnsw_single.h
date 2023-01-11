@@ -177,11 +177,12 @@ template <typename DataType, typename DistType>
 inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
     labelType label, bool also_done_processing) const {
     std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
-    bool exists = label_lookup_.find(label) != label_lookup_.end();
+    auto it = label_lookup_.find(label);
+    bool exists = it != label_lookup_.end();
     // If we want to make sure that the vector stored under the label was already indexed,
     // we go on and check that its associated internal id is no longer in process.
     if (exists && also_done_processing) {
-        exists = !this->isInProcess(label_lookup_.find(label)->second);
+        return !this->isInProcess(it->second);
     }
     return exists;
 }

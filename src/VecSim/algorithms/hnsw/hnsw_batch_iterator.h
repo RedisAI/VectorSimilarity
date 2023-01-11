@@ -62,12 +62,7 @@ public:
 
     void reset() override;
 
-    virtual ~HNSW_BatchIterator() {
-        index->returnVisitedList(this->visited_list);
-#ifdef BUILD_TESTS
-        index->num_parallel_workers--;
-#endif
-    }
+    virtual ~HNSW_BatchIterator() { index->returnVisitedList(this->visited_list); }
 };
 
 /******************** Ctor / Dtor **************/
@@ -93,14 +88,6 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
     } else {
         this->ef = this->index->getEf();
     }
-#ifdef BUILD_TESTS
-    index->debug_info_guard.lock();
-    index->num_parallel_workers++;
-    if (index->num_parallel_workers > index->max_parallel_workers) {
-        index->max_parallel_workers = index->num_parallel_workers;
-    }
-    index->debug_info_guard.unlock();
-#endif
 }
 
 /******************** Implementation **************/

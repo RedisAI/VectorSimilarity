@@ -48,6 +48,12 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
+// Vectors flags (for marking a specific vector)
+typedef enum {
+    DELETE_MARK = 0x01, // vector is logically deleted, but still exists in the graph
+    IN_PROCESS = 0x02   // vector is being inserted into the graph
+} Flags;
+
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
                   public VecSimIndexTombstone
@@ -145,6 +151,10 @@ protected:
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
     void getNeighborsByHeuristic2(candidatesMaxHeap<DistType> &top_candidates, size_t M);
+    // Helper function for re-selecting node's neighbors which was selected as a neighbor for
+    // a newly inserted node. Also, responsible for mutually connect the new node and the neighbor
+    // (unidirectional or bidirectional connection).
+    // *Note that node_lock and neighbor_lock should be locked upon calling this function*
     void revisitNeighborConnections(size_t level, idType new_node_id,
                                     const std::pair<DistType, idType> &neighbor_data,
                                     idType *new_node_neighbors_list,
@@ -191,6 +201,8 @@ public:
     inline size_t getMaxLevel() const;
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
+    // Check if the given label exists in the labels lookup while holding the index data lock.
+    // Optionally validate that the associated vector(s) are not in process and done indexing.
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
     inline idType safeGetEntryPointCopy() const;
@@ -221,12 +233,6 @@ public:
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
-
-#ifdef BUILD_TESTS
-    mutable std::atomic_int num_parallel_workers = 0;
-    mutable int max_parallel_workers = 0;
-    mutable std::mutex debug_info_guard;
-#endif
 
 protected:
     // inline label to id setters that need to be implemented by derived class
@@ -684,6 +690,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
     idType *new_node_neighbors_list, idType *neighbor_neighbors_list,
     std::unique_lock<std::mutex> &node_lock, std::unique_lock<std::mutex> &neighbor_lock) {
+    // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
     candidatesMaxHeap<DistType> candidates(this->allocator);
@@ -709,11 +716,16 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     bool cur_node_chosen = false;
     while (orig_candidates.size() > 0) {
         idType orig_candidate = orig_candidates.top().second;
+        // If the current original candidate was not selected as neighbor by the heuristics, it
+        // should be updated and removed from the neighbor's neighbors.
         if (candidates.empty() || orig_candidate != candidates.top().second) {
+            // Don't add the new_node_id to nodes_to_update, it will be inserted either way later.
             if (orig_candidate != new_node_id) {
                 nodes_to_update.push_back(orig_candidate);
             }
             orig_candidates.pop();
+            // Otherwise, the original candidate was selected to remain a neighbor - no need to
+            // update.
         } else {
             candidates.pop();
             orig_candidates.pop();
@@ -1342,14 +1354,6 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
     assert(indexCapacity() > indexSize());
-#ifdef BUILD_TESTS
-    debug_info_guard.lock();
-    num_parallel_workers++;
-    if (num_parallel_workers > max_parallel_workers) {
-        max_parallel_workers = num_parallel_workers;
-    }
-    debug_info_guard.unlock();
-#endif
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1465,9 +1469,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         maxlevel_ = element_max_level;
     }
     unmarkInProcess(new_element_id);
-#ifdef BUILD_TESTS
-    num_parallel_workers--;
-#endif
 }
 
 template <typename DataType, typename DistType>
@@ -1550,14 +1551,6 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
                                                                 VecSimQueryParams *queryParams) {
 
-#ifdef BUILD_TESTS
-    debug_info_guard.lock();
-    num_parallel_workers++;
-    if (num_parallel_workers > max_parallel_workers) {
-        max_parallel_workers = num_parallel_workers;
-    }
-    debug_info_guard.unlock();
-#endif
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
 
@@ -1609,9 +1602,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
         }
     }
     delete results;
-#ifdef BUILD_TESTS
-    num_parallel_workers--;
-#endif
     return rl;
 }
 
@@ -1688,14 +1678,6 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
                                                                  double radius,
                                                                  VecSimQueryParams *queryParams) {
-#ifdef BUILD_TESTS
-    debug_info_guard.lock();
-    num_parallel_workers++;
-    if (num_parallel_workers > max_parallel_workers) {
-        max_parallel_workers = num_parallel_workers;
-    }
-    debug_info_guard.unlock();
-#endif
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
@@ -1736,9 +1718,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     else
         rl.results = searchRangeBottomLayer_WithTimeout<false>(bottom_layer_ep, query_data, epsilon,
                                                                radius, timeoutCtx, &rl.code);
-#ifdef BUILD_TESTS
-    num_parallel_workers--;
-#endif
     return rl;
 }
 
