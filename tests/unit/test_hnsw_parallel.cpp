@@ -307,7 +307,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
         thread_objs[i].join();
     }
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    // Validate that every thread executed a single job.
+    // Validate that every thread executed n/n_threads jobs.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), n / n_threads);
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
               ceil((double)n / n_threads));
@@ -358,7 +358,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
         thread_objs[i].join();
     }
     ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
-    // Validate that every thread executed a single job.
+    // Validate that every thread executed n/n_threads jobs.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()), n / n_threads);
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
               ceil((double)n / n_threads));
@@ -451,13 +451,14 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
         ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
-        // Validate that every thread executed a single job.
+        // Validate that every insertion thread executed n/(n_threads/2_ jobs.
         ASSERT_EQ(
             *std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
             n / (n_threads / 2));
         ASSERT_EQ(
             *std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
             ceil((double)n / (n_threads / 2)));
+        // Validate that every search thread executed a single job.
         ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
                   1);
         ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),

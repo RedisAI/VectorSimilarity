@@ -202,7 +202,8 @@ public:
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
     // Check if the given label exists in the labels lookup while holding the index data lock.
-    // Optionally validate that the associated vector(s) are not in process and done indexing.
+    // Optionally validate that the associated vector(s) are not in process and done indexing
+    // (this option is used currently for tests).
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
     inline idType safeGetEntryPointCopy() const;
