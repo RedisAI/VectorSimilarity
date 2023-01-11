@@ -63,6 +63,7 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
         est += sizeof(size_t) * params->initialCapacity +
                sizeof(size_t); // Labels lookup hash table buckets.
+        est += sizeof(std::mutex) * params->initialCapacity + sizeof(size_t); // lock per vector
     }
 
     // Explicit allocation calls - always allocate a header.
@@ -115,6 +116,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
     // lookup hash map.
     size_t size_meta_data =
         sizeof(tag_t) + sizeof(size_t) + sizeof(size_t) + size_label_lookup_node;
+    size_t size_lock = sizeof(std::mutex);
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of
@@ -123,7 +125,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
      * 2. The incoming edges that aren't bidirectional are stored in a dynamic array
      * (vecsim_stl::vector) Those edges' memory *is omitted completely* from this estimation.
      */
-    return size_meta_data + size_total_data_per_element;
+    return size_meta_data + size_total_data_per_element + size_lock;
 }
 
 VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
