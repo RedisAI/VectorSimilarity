@@ -12,7 +12,6 @@
 
 #include <stddef.h>
 #include <stdexcept>
-#include <vector>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
