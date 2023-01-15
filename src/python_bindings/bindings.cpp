@@ -92,8 +92,9 @@ public:
 class PyVecSimIndex {
 private:
     template <typename DataType>
-    inline py::object rawVectorsAsNumpy(const std::vector<const char *> &vectors, size_t dim) {
-
+    inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
+        std::vector<const char *> vectors;
+        reinterpret_cast<VecSimIndexInterface *>(this->index.get())->getDataByLabel(label, vectors);
         size_t n_vectors = vectors.size();
         auto *data_numpy = new DataType[n_vectors * dim];
         // Copy the vector blobs into one contiguous array of data, and free the original buffer
@@ -174,23 +175,21 @@ public:
     }
 
     py::object getVector(labelType label) {
-        std::vector<const char *> res;
-        reinterpret_cast<VecSimIndexInterface *>(this->index.get())->getDataByLabel(label, res);
         if (index->info().algo == VecSimAlgo_BF) {
             size_t dim = index->info().bfInfo.dim;
             if (index->info().bfInfo.type == VecSimType_FLOAT32) {
-                return rawVectorsAsNumpy<float>(res, dim);
+                return rawVectorsAsNumpy<float>(label, dim);
             } else if (index->info().bfInfo.type == VecSimType_FLOAT64) {
-                return rawVectorsAsNumpy<double>(res, dim);
+                return rawVectorsAsNumpy<double>(label, dim);
             } else {
                 throw std::runtime_error("Invalid vector data type");
             }
         } else if (index->info().algo == VecSimAlgo_HNSWLIB) {
             size_t dim = index->info().hnswInfo.dim;
             if (index->info().hnswInfo.type == VecSimType_FLOAT32) {
-                return rawVectorsAsNumpy<float>(res, dim);
+                return rawVectorsAsNumpy<float>(label, dim);
             } else if (index->info().hnswInfo.type == VecSimType_FLOAT64) {
-                return rawVectorsAsNumpy<double>(res, dim);
+                return rawVectorsAsNumpy<double>(label, dim);
             } else {
                 throw std::runtime_error("Invalid vector data type");
             }
@@ -204,14 +203,14 @@ public:
 
 class PyHNSWLibIndex : public PyVecSimIndex {
 private:
-    template <typename searchParam> // size_t/double for KNN/range queries.
+    template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
-        std::function<VecSimQueryResult_List(const char *, searchParam, VecSimQueryParams *)>;
+        std::function<VecSimQueryResult_List(const char *, search_param_t, VecSimQueryParams *)>;
 
-    template <typename searchParam> // size_t/double for KNN / range queries.
-    void runParallelQueries(const py::array &queries, size_t n_queries, searchParam param,
+    template <typename search_param_t> // size_t/double for KNN / range queries.
+    void runParallelQueries(const py::array &queries, size_t n_queries, search_param_t param,
                             VecSimQueryParams *query_params, int n_threads,
-                            QueryFunc<searchParam> queryFunc, VecSimQueryResult_List *results) {
+                            QueryFunc<search_param_t> queryFunc, VecSimQueryResult_List *results) {
 
         // Use number of hardware cores as default number of threads, unless specified otherwise.
         if (n_threads <= 0) {

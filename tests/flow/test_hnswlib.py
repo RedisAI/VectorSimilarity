@@ -460,6 +460,73 @@ def test_multi_range_query():
     assert len(hnsw_labels[0]) == 0
 
 
+def test_parallel_search():
+    dim = 32
+    num_elements = 100000
+    num_queries = 10000
+    k = 10
+    n_threads = min(os.cpu_count(), 8)
+    expected_parallel_rate = 0.9  # we expect that at least 90% of the insert/search time will be executed in parallel
+    expected_speedup = 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)  # by Amdahl's law
+
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, ef_runtime=200)
+
+    bf_params = BFParams()
+
+    bf_params.initialCapacity = num_elements
+    bf_params.blockSize = num_elements
+    bf_params.dim = dim
+    bf_params.type = VecSimType_FLOAT32
+    bf_params.metric = VecSimMetric_Cosine
+
+    bf_index = BFIndex(bf_params)
+
+    np.random.seed(47)
+    data = np.float32(np.random.random((num_elements, dim)))
+    start = time.time()
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+    sequential_insert_time = time.time() - start
+    print(f"Inserting {num_elements} vectors of dim {dim} into HNSW sequentially took {sequential_insert_time} seconds")
+
+    for i, vector in enumerate(data):
+        bf_index.add_vector(vector, i)
+
+    query_data = np.float32(np.random.random((num_queries, dim)))
+
+    # Sequential search as the baseline
+    total_search_time = 0
+    total_correct = 0
+    total_res_bf = []  # save the ground truth
+    for i, query in enumerate(query_data):
+        start = time.time()
+        res_labels, _ = index.knn_query(query, k)
+        total_search_time += time.time() - start
+        res_labels_bf, _ = bf_index.knn_query(query, k)
+        total_res_bf.append(set(res_labels_bf[0]))
+        total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
+
+    print(f"Running sequential search, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time / num_queries} seconds")
+
+    start = time.time()
+    res_labels, _ = index.knn_parallel(query_data, k, num_threads=n_threads)
+    total_search_time_parallel = time.time() - start
+
+    total_correct_parallel = 0
+    for i in range(num_queries):
+        total_correct_parallel += len(total_res_bf[i].intersection(set(res_labels[i])))
+
+    print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time_parallel / num_queries} seconds")
+    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using {n_threads} threads\n")
+
+    # Validate that the recall of the parallel search recall is the same as the sequential search recall.
+    assert total_correct_parallel == total_correct
+    # Validate that the parallel run managed to achieve at least the expected speedup in total runtime.
+    assert total_search_time / total_search_time_parallel > expected_speedup
+
+
 def test_parallel_insert_search():
     dim = 32
     num_elements = 100000
@@ -509,37 +576,21 @@ def test_parallel_insert_search():
 
     query_data = np.float32(np.random.random((num_queries, dim)))
 
-    # Sequential search as the baseline
-    total_search_time = 0
-    total_correct = 0
+    # Collect the ground truth results
     total_res_bf = []  # save the ground truth
     for i, query in enumerate(query_data):
-        start = time.time()
-        res_labels, _ = index.knn_query(query, k)
-        total_search_time += time.time() - start
-        res_labels_bf, _ = bf_index.knn_query(query, k)
-        total_res_bf.append(set(res_labels_bf[0]))
-        total_correct += len(set(res_labels[0]).intersection(set(res_labels_bf[0])))
+        total_res_bf.append(set(bf_index.knn_query(query, k)[0][0]))
 
-    print(f"Running sequential search, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
-          f" average query time is {total_search_time / num_queries} seconds")
-
+    # Run search over non-parallel index as the baseline
     start = time.time()
     res_labels, _ = index.knn_parallel(query_data, k, num_threads=n_threads)
-    total_search_time_parallel = time.time() - start
+    total_search_time = time.time() - start
 
-    total_correct_parallel = 0
+    total_correct = 0
     for i in range(num_queries):
-        total_correct_parallel += len(total_res_bf[i].intersection(set(res_labels[i])))
-
-    print(f"Running parallel search, got {total_correct_parallel / (k * num_queries)} recall on {num_queries} queries,"
-          f" average query time is {total_search_time_parallel / num_queries} seconds")
-    print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using {n_threads} threads\n")
-
-    # Validate that the recall of the parallel search recall is the same as the sequential search recall.
-    assert total_correct_parallel == total_correct
-    # Validate that the parallel run managed to achieve at least (n_threads - 1) times improvement in total runtime.
-    assert total_search_time / total_search_time_parallel > expected_speedup
+        total_correct += len(total_res_bf[i].intersection(set(res_labels[i])))
+    print(f"Running search over sequential index, got {total_correct / (k * num_queries)} recall on {num_queries} queries,"
+          f" average query time is {total_search_time / num_queries} seconds")
 
     # Run search with parallel index and assert that similar recall achieved.
     start = time.time()
@@ -587,11 +638,9 @@ def test_parallel_insert_search():
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(total_res_bf[j].intersection(set(res_labels_g[j])))
-        if i == chunk_size:  # first iteration, there is no previous chunk
-            total_correct_prev_chunk = total_correct_cur_chunk
-        else:
+        if i != chunk_size:  # not the first iteration, there is no previous chunk
             assert total_correct_cur_chunk >= total_correct_prev_chunk
-            total_correct_prev_chunk = total_correct_cur_chunk
+        total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(k*chunk_size)}")
 
@@ -716,7 +765,6 @@ def test_parallel_with_multi():
     assert parallel_multi_index.check_integrity()
     # Validate that the parallel index contains the same vectors as the sequential one. vectors are not necessarily
     # at the same order, so we flatten the array and check that elements are set equal.
-    # x=input("now")
     for label in range(num_labels):
         vectors_s = multi_index.get_vector(label)
         vectors_p = parallel_multi_index.get_vector(label)
@@ -748,7 +796,7 @@ def test_parallel_with_multi():
           f" average query time is {total_search_time / num_queries} seconds")
 
     start = time.time()
-    res_labels_parallel, res_dists_parallel = parallel_multi_index.knn_parallel(query_data, k, num_threads=n_threads)
+    res_labels_parallel, res_dists_parallel = multi_index.knn_parallel(query_data, k, num_threads=n_threads)
     total_search_time_parallel = time.time() - start
 
     total_correct_parallel = 0
@@ -796,12 +844,10 @@ def test_parallel_with_multi():
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(set(total_res_bf[j]).intersection(set(res_labels_g[j])))
-        if i == chunk_size:  # first iteration, there is no previous chunk
-            total_correct_prev_chunk = total_correct_cur_chunk
-        else:
+        if i != chunk_size:  # not the first iteration, there is no previous chunk
             assert total_correct_cur_chunk >= total_correct_prev_chunk
-            total_correct_prev_chunk = total_correct_cur_chunk
-        print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
+        total_correct_prev_chunk = total_correct_cur_chunk
+        print(f"Recall for queries' chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} is:"
               f" {total_correct_cur_chunk/(k*chunk_size)}")
 
 
@@ -921,10 +967,8 @@ def test_parallel_batch_search():
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(total_res_bf[j].intersection(total_results_parallel[j]))
-        if i == chunk_size:  # first iteration, there is no previous chunk
-            total_correct_prev_chunk = total_correct_cur_chunk
-        else:
+        if i != chunk_size:  # not the first iteration, there is no previous chunk
             assert total_correct_cur_chunk >= total_correct_prev_chunk
-            total_correct_prev_chunk = total_correct_cur_chunk
+        total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")
