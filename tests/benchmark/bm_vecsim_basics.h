@@ -25,7 +25,7 @@ public:
 
 private:
     // Vectors of vector to store deleted labels' data.
-    using LabelData = std::vector<const char *>;
+    using LabelData = std::vector<std::vector<data_t>>;
 };
 
 template <typename index_type_t>
@@ -103,8 +103,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         size_t vec_count = removed_labels_data[label_idx].size();
         // Reinsert all the deleted vectors under this label.
         for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
-            VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx], label_idx);
-            delete[] removed_labels_data[label_idx][vec_idx];
+            VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
         }
     }
 }

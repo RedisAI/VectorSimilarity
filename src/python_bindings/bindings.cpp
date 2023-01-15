@@ -93,15 +93,21 @@ class PyVecSimIndex {
 private:
     template <typename DataType>
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
-        std::vector<const char *> vectors;
-        reinterpret_cast<VecSimIndexInterface *>(this->index.get())->getDataByLabel(label, vectors);
+        std::vector<std::vector<DataType>> vectors;
+        if (index->info().algo == VecSimAlgo_BF) {
+            reinterpret_cast<BruteForceIndex<DataType, DataType> *>(this->index.get())
+                ->getDataByLabel(label, vectors);
+        } else {
+            // index is HNSW
+            reinterpret_cast<HNSWIndex<DataType, DataType> *>(this->index.get())
+                ->getDataByLabel(label, vectors);
+        }
         size_t n_vectors = vectors.size();
         auto *data_numpy = new DataType[n_vectors * dim];
         // Copy the vector blobs into one contiguous array of data, and free the original buffer
         // afterwards.
         for (size_t i = 0; i < n_vectors; i++) {
-            memcpy(data_numpy + i * dim, vectors[i], dim * sizeof(DataType));
-            delete[] vectors[i];
+            memcpy(data_numpy + i * dim, vectors[i].data(), dim * sizeof(DataType));
         }
 
         py::capsule free_when_done(data_numpy,

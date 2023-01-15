@@ -235,6 +235,19 @@ public:
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
+#ifdef BUILD_TESTS
+    /**
+     * @brief Used for testing - store vector(s) data associated with a given label. This function
+     * copies the vector(s)' data buffer(s) and place it in the output vector
+     *
+     * @param label
+     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
+     * the label.
+     */
+    virtual void getDataByLabel(labelType label,
+                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
+#endif
+
 protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>

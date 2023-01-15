@@ -638,8 +638,7 @@ def test_parallel_insert_search():
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(total_res_bf[j].intersection(set(res_labels_g[j])))
-        if i != chunk_size:  # not the first iteration, there is no previous chunk
-            assert total_correct_cur_chunk >= total_correct_prev_chunk
+        assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(k*chunk_size)}")
@@ -844,8 +843,7 @@ def test_parallel_with_multi():
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(set(total_res_bf[j]).intersection(set(res_labels_g[j])))
-        if i != chunk_size:  # not the first iteration, there is no previous chunk
-            assert total_correct_cur_chunk >= total_correct_prev_chunk
+        assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for queries' chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} is:"
               f" {total_correct_cur_chunk/(k*chunk_size)}")
@@ -967,8 +965,7 @@ def test_parallel_batch_search():
         total_correct_cur_chunk = 0
         for j in range(i, i+chunk_size):
             total_correct_cur_chunk += len(total_res_bf[j].intersection(total_results_parallel[j]))
-        if i != chunk_size:  # not the first iteration, there is no previous chunk
-            assert total_correct_cur_chunk >= total_correct_prev_chunk
+        assert total_correct_cur_chunk >= total_correct_prev_chunk
         total_correct_prev_chunk = total_correct_cur_chunk
         print(f"Recall for chunk {int(i/chunk_size)+1}/{int(num_queries/chunk_size)} of queries is:"
               f" {total_correct_cur_chunk/(batch_size*n_batches*chunk_size)}")

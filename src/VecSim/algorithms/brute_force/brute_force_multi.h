@@ -33,14 +33,14 @@ public:
             new (this->allocator) vecsim_stl::unique_results_container(cap, this->allocator));
     }
 #ifdef BUILD_TESTS
-    void getDataByLabel(labelType label, std::vector<const char *> &vectors_output) const {
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
 
         auto ids = labelToIdsLookup.find(label);
 
         for (idType id : ids->second) {
-            auto *vec_copy = new DataType[this->dim];
-            memcpy(vec_copy, this->getDataByInternalId(id), this->dim * sizeof(DataType));
-            vectors_output.push_back((const char *)vec_copy);
+            auto vec = std::vector<DataType>(this->dim);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
+            vectors_output.push_back(vec);
         }
     }
 #endif
