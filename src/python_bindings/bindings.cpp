@@ -35,10 +35,8 @@ py::object wrap_results(VecSimQueryResult_List *res, size_t num_res, size_t num_
         size_t res_ind = i * num_res;
         while (VecSimQueryResult_IteratorHasNext(iterator)) {
             VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
-            size_t id = VecSimQueryResult_GetId(item);
-            double score = VecSimQueryResult_GetScore(item);
-            data_numpy_d[res_ind] = score;
-            data_numpy_l[res_ind++] = (long)id;
+            data_numpy_d[res_ind] = VecSimQueryResult_GetScore(item);
+            data_numpy_l[res_ind++] = (long)VecSimQueryResult_GetId(item);
         }
         VecSimQueryResult_IteratorFree(iterator);
         VecSimQueryResult_Free(res[i]);
@@ -76,6 +74,8 @@ public:
     py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
         VecSimQueryResult_List results;
         {
+            // We create this object inside the scpe to enable parallel execution of the batch
+            // iterator from different Python threads.
             py::gil_scoped_release py_gil;
             results = VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
         }
