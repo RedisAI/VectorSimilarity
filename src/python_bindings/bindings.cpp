@@ -74,7 +74,7 @@ public:
     py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
         VecSimQueryResult_List results;
         {
-            // We create this object inside the scpe to enable parallel execution of the batch
+            // We create this object inside the scope to enable parallel execution of the batch
             // iterator from different Python threads.
             py::gil_scoped_release py_gil;
             results = VecSimBatchIterator_Next(batchIterator.get(), n_res, order);
