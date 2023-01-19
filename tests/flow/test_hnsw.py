@@ -1,36 +1,25 @@
 # Copyright Redis Ltd. 2021 - present
 # Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
 # the Server Side Public License v1 (SSPLv1).
-
+import concurrent
+import math
+import multiprocessing
 import os
+import time
 from common import *
 import hnswlib
+
 
 # compare results with the original version of hnswlib - do not use elements deletion.
 def test_sanity_hnswlib_index_L2():
     dim = 16
     num_elements = 10000
     space = 'l2'
-    M=16
+    M = 16
     efConstruction = 100
-
     efRuntime = 10
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_L2
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime=efRuntime
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     p = hnswlib.Index(space=space, dim=dim)
     p.init_index(max_elements=num_elements, ef_construction=efConstruction, M=M)
@@ -44,34 +33,19 @@ def test_sanity_hnswlib_index_L2():
     query_data = np.float32(np.random.random((1, dim)))
     hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
     redis_labels, redis_distances = index.knn_query(query_data, 10)
-    assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
-    assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
+    assert_allclose(hnswlib_labels, redis_labels, rtol=1e-5, atol=0)
+    assert_allclose(hnswlib_distances, redis_distances, rtol=1e-5, atol=0)
 
 
 def test_sanity_hnswlib_index_cosine():
     dim = 16
     num_elements = 10000
     space = 'cosine'
-    M=16
+    M = 16
     efConstruction = 100
-
     efRuntime = 10
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_Cosine
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime=efRuntime
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     p = hnswlib.Index(space=space, dim=dim)
     p.init_index(max_elements=num_elements, ef_construction=efConstruction, M=M)
@@ -85,8 +59,8 @@ def test_sanity_hnswlib_index_cosine():
     query_data = np.float32(np.random.random((1, dim)))
     hnswlib_labels, hnswlib_distances = p.knn_query(query_data, k=10)
     redis_labels, redis_distances = index.knn_query(query_data, 10)
-    assert_allclose(hnswlib_labels, redis_labels,  rtol=1e-5, atol=0)
-    assert_allclose(hnswlib_distances, redis_distances,  rtol=1e-5, atol=0)
+    assert_allclose(hnswlib_labels, redis_labels, rtol=1e-5, atol=0)
+    assert_allclose(hnswlib_distances, redis_distances, rtol=1e-5, atol=0)
 
 
 # Validate correctness of delete implementation comparing the brute force search. We test the search recall which is not
@@ -99,19 +73,10 @@ def test_recall_for_hnswlib_index_with_deletion():
     efConstruction = 100
 
     num_queries = 10
-    k=10
+    k = 10
     efRuntime = 0
 
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-    hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.metric = VecSimMetric_L2
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -139,13 +104,13 @@ def test_recall_for_hnswlib_index_with_deletion():
         for label in hnswlib_labels[0]:
             for correct_label in keys:
                 if label == correct_label:
-                    correct+=1
+                    correct += 1
                     break
 
     # Measure recall
-    recall = float(correct)/(k*num_queries)
+    recall = float(correct) / (k * num_queries)
     print("\nrecall is: \n", recall)
-    assert(recall > 0.9)
+    assert (recall > 0.9)
 
 
 def test_batch_iterator():
@@ -156,16 +121,7 @@ def test_batch_iterator():
     efRuntime = 180
     num_queries = 10
 
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-    hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.metric = VecSimMetric_L2
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, efConstruction, M, efRuntime)
 
     # Add 100k random vectors to the index
     rng = np.random.default_rng(seed=47)
@@ -181,17 +137,17 @@ def test_batch_iterator():
     labels_first_batch, distances_first_batch = batch_iterator.get_next_results(10, BY_ID)
     for i, _ in enumerate(labels_first_batch[0][:-1]):
         # Assert sorting by id
-        assert(labels_first_batch[0][i] < labels_first_batch[0][i+1])
+        assert (labels_first_batch[0][i] < labels_first_batch[0][i + 1])
 
     labels_second_batch, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
     should_have_return_in_first_batch = []
     for i, dist in enumerate(distances_second_batch[0][:-1]):
         # Assert sorting by score
-        assert(distances_second_batch[0][i] < distances_second_batch[0][i+1])
+        assert (distances_second_batch[0][i] < distances_second_batch[0][i + 1])
         # Assert that every distance in the second batch is higher than any distance of the first batch
         if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
             should_have_return_in_first_batch.append(dist)
-    assert(len(should_have_return_in_first_batch) <= 2)
+    assert (len(should_have_return_in_first_batch) <= 2)
 
     # Verify that runtime args are sent properly to the batch iterator.
     query_params = VecSimQueryParams()
@@ -232,11 +188,12 @@ def test_batch_iterator():
                 keys = [key for _, key in dists[:returned_results_num]]
                 correct += len(set(accumulated_labels).intersection(set(keys)))
                 break
-        assert iterations == np.ceil(total_res/batch_size)
+        assert iterations == np.ceil(total_res / batch_size)
         recall = float(correct) / total_res
         assert recall >= 0.89
         total_recall += recall
-    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ', total_recall/num_queries)
+    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
+          total_recall / num_queries)
 
     # Run again a single query in batches until it is depleted.
     batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
@@ -249,7 +206,7 @@ def test_batch_iterator():
         # Verify that we got new scores in each iteration.
         assert len(accumulated_labels.intersection(set(labels[0]))) == 0
         accumulated_labels = accumulated_labels.union(set(labels[0]))
-    assert len(accumulated_labels) >= 0.95*num_elements
+    assert len(accumulated_labels) >= 0.95 * num_elements
     print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
 
 
@@ -258,24 +215,14 @@ def test_serialization():
     num_elements = 10000
     M = 16
     efConstruction = 100
+    data_type = VecSimType_FLOAT32
 
     num_queries = 10
     k = 10
     efRuntime = 50
 
-    data_type = VecSimType_FLOAT32
-
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.dim = dim
-    hnswparams.type = data_type
-    hnswparams.metric = VecSimMetric_L2
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, data_type, efConstruction, M, efRuntime)
     hnsw_index.set_ef(efRuntime)
-
 
     data = np.float32(np.random.random((num_elements, dim)))
     vectors = []
@@ -301,11 +248,11 @@ def test_serialization():
                     correct += 1
                     break
     # Measure recall
-    recall = float(correct)/(k*num_queries)
+    recall = float(correct) / (k * num_queries)
     print("\nrecall is: \n", recall)
 
     # Persist, delete and restore index.
-    file_name = os.getcwd()+"/dump"
+    file_name = os.getcwd() + "/dump"
     hnsw_index.save_index(file_name)
 
     new_hnsw_index = HNSWIndex(file_name)
@@ -324,30 +271,18 @@ def test_serialization():
                     break
 
     # Compare recall after reloading the index
-    recall_after = float(correct_after)/(k*num_queries)
+    recall_after = float(correct_after) / (k * num_queries)
     print("\nrecall after is: \n", recall_after)
     assert recall == recall_after
+
 
 def test_range_query():
     dim = 100
     num_elements = 100000
     epsilon = 0.01
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_L2
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = 32
-    hnswparams.efConstruction = 200
-    hnswparams.initialCapacity = num_elements
-    hnswparams.epsilon = epsilon
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, ef_construction=200, m=32,
+                                   epsilon=epsilon)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_elements, dim)))
@@ -372,14 +307,15 @@ def test_range_query():
         dists = sorted([(key, spatial.distance.sqeuclidean(query_data.flat, vec)) for key, vec in vectors])
         actual_results = [(key, dist) for key, dist in dists if dist <= radius]
 
-        print(f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
-              f' got {res_num} results, which are {res_num/len(actual_results)} of the entire results in the range.')
+        print(
+            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
         assert np.all(np.isin(hnsw_labels, np.array([label for label, _ in actual_results])))
 
         assert max(hnsw_distances[0]) <= radius
-        recalls[epsilon_rt] = res_num/len(actual_results)
+        recalls[epsilon_rt] = res_num / len(actual_results)
 
     # Expect higher recalls for higher epsilon values.
     assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
@@ -395,24 +331,14 @@ def test_recall_for_hnsw_multi_value():
     num_per_label = 16
     M = 16
     efConstruction = 100
-
     num_queries = 10
-    k=10
+    k = 10
     efRuntime = 0
 
     num_elements = num_labels * num_per_label
 
-    hnswparams = HNSWParams()
-    hnswparams.M = M
-    hnswparams.efConstruction = efConstruction
-    hnswparams.initialCapacity = num_elements
-    hnswparams.efRuntime = efRuntime
-    hnswparams.dim = dim
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.metric = VecSimMetric_Cosine
-    hnswparams.multi = True
-
-    hnsw_index = HNSWIndex(hnswparams)
+    hnsw_index = create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M,
+                                   efRuntime, is_multi=True)
 
     data = np.float32(np.random.random((num_labels, dim)))
     vectors = []
@@ -427,7 +353,7 @@ def test_recall_for_hnsw_multi_value():
     correct = 0
     for target_vector in query_data:
         hnswlib_labels, hnswlib_distances = hnsw_index.knn_query(target_vector, 10)
-        assert(len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
+        assert (len(hnswlib_labels[0]) == len(np.unique(hnswlib_labels[0])))
 
         # sort distances of every vector from the target vector and get actual k nearest vectors
         dists = {}
@@ -435,7 +361,8 @@ def test_recall_for_hnsw_multi_value():
             # Setting or updating the score for each label. If it's the first time we calculate a score for a label,
             # dists.get(key, 3) will return 3, which is more than a Cosine score can be,
             # so we will choose the actual score the first time.
-            dists[key] = min(spatial.distance.cosine(target_vector, vec), dists.get(key, 3)) # cosine distance is always <= 2
+            dists[key] = min(spatial.distance.cosine(target_vector, vec),
+                             dists.get(key, 3))  # cosine distance is always <= 2
 
         dists = list(dists.items())
         dists = sorted(dists, key=lambda pair: pair[1])[:k]
@@ -444,40 +371,24 @@ def test_recall_for_hnsw_multi_value():
         for label in hnswlib_labels[0]:
             for correct_label in keys:
                 if label == correct_label:
-                    correct+=1
+                    correct += 1
                     break
 
     # Measure recall
-    recall = float(correct)/(k*num_queries)
+    recall = float(correct) / (k * num_queries)
     print("\nrecall is: \n", recall)
-    assert(recall > 0.9)
+    assert (recall > 0.9)
 
 
 def test_multi_range_query():
     dim = 100
     num_labels = 20000
     per_label = 5
-
     epsilon = 0.01
-
     num_elements = num_labels * per_label
 
-    params = VecSimParams()
-    hnswparams = HNSWParams()
-
-    params.algo = VecSimAlgo_HNSWLIB
-
-    hnswparams.dim = dim
-    hnswparams.metric = VecSimMetric_L2
-    hnswparams.multi = True
-    hnswparams.type = VecSimType_FLOAT32
-    hnswparams.M = 32
-    hnswparams.efConstruction = 200
-    hnswparams.initialCapacity = num_elements
-    hnswparams.epsilon = epsilon
-
-    params.hnswParams = hnswparams
-    index = VecSimIndex(params)
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32, ef_construction=200, m=32,
+                              epsilon=epsilon, is_multi=True)
 
     np.random.seed(47)
     data = np.float32(np.random.random((num_labels, per_label, dim)))
@@ -500,16 +411,17 @@ def test_multi_range_query():
     dists = sorted(dists, key=lambda pair: pair[1])
     keys = [key for key, dist in dists if dist <= radius]
 
-    for epsilon_rt in [0.001, 0.01, 0.1]:                   
-        query_params = VecSimQueryParams()                  
-        query_params.hnswRuntimeParams.epsilon = epsilon_rt                 
-        start = time.time()                 
-        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)                    
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        hnsw_labels, hnsw_distances = index.range_query(query_data, radius=radius, query_param=query_params)
         end = time.time()
         res_num = len(hnsw_labels[0])
 
-        print(f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
-              f' got {res_num} results, which are {res_num/len(keys)} of the entire results in the range.')
+        print(
+            f'\nlookup time for ({num_labels} X {per_label}) vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            f' got {res_num} results, which are {res_num / len(keys)} of the entire results in the range.')
 
         # Compare the number of vectors that are actually within the range to the returned results.
         assert np.all(np.isin(hnsw_labels, np.array(keys)))
@@ -518,7 +430,7 @@ def test_multi_range_query():
         assert len(hnsw_labels[0]) == len(np.unique(hnsw_labels[0]))
 
         assert max(hnsw_distances[0]) <= radius
-        recalls[epsilon_rt] = res_num/len(keys)
+        recalls[epsilon_rt] = res_num / len(keys)
 
     # Expect higher recalls for higher epsilon values.
     assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]

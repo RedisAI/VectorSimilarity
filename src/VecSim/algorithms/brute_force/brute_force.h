@@ -57,6 +57,18 @@ public:
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     virtual ~BruteForceIndex();
+#ifdef BUILD_TESTS
+    /**
+     * @brief Used for testing - store vector(s) data associated with a given label. This function
+     * copies the vector(s)' data buffer(s) and place it in the output vector
+     *
+     * @param label
+     * @param vectors_output empty vector to be modified, should store the blob(s) associated with
+     * the label.
+     */
+    virtual void getDataByLabel(labelType label,
+                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
+#endif
 
 protected:
     // Private internal function that implements generic single vector insertion.

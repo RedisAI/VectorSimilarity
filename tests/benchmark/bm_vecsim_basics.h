@@ -81,7 +81,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         st.PauseTiming();
         LabelData data(0);
         // Get label id(s) data.
-        index->GetDataByLabel(label_to_remove, data);
+        index->getDataByLabel(label_to_remove, data);
 
         removed_labels_data.push_back(data);
 
