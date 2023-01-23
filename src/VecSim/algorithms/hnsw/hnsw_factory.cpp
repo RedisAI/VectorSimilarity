@@ -63,7 +63,8 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
         est += sizeof(size_t) * params->initialCapacity +
                sizeof(size_t); // Labels lookup hash table buckets.
-        est += sizeof(std::mutex) * params->initialCapacity + sizeof(size_t); // lock per vector
+        est += sizeof(vecsim_stl::one_byte_mutex) * params->initialCapacity +
+               sizeof(size_t); // lock per vector
     }
 
     // Explicit allocation calls - always allocate a header.
@@ -116,7 +117,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
     // lookup hash map.
     size_t size_meta_data =
         sizeof(tag_t) + sizeof(size_t) + sizeof(size_t) + size_label_lookup_node;
-    size_t size_lock = sizeof(std::mutex);
+    size_t size_lock = sizeof(vecsim_stl::one_byte_mutex);
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of

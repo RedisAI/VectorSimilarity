@@ -103,7 +103,7 @@ protected:
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
     mutable std::mutex entry_point_guard_;
     mutable std::mutex index_data_guard_;
-    mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
+    mutable vecsim_stl::vector<vecsim_stl::one_byte_mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
@@ -159,11 +159,10 @@ protected:
                                     const std::pair<DistType, idType> &neighbor_data,
                                     idType *new_node_neighbors_list,
                                     idType *neighbor_neighbors_list,
-                                    std::unique_lock<std::mutex> &node_lock,
-                                    std::unique_lock<std::mutex> &neighbor_lock);
-    inline idType mutuallyConnectNewElement(idType new_node_id,
-                                            candidatesMaxHeap<DistType> &top_candidates,
-                                            size_t level);
+                                    std::unique_lock<vecsim_stl::one_byte_mutex> &node_lock,
+                                    std::unique_lock<vecsim_stl::one_byte_mutex> &neighbor_lock);
+    idType mutuallyConnectNewElement(idType new_node_id,
+                                     candidatesMaxHeap<DistType> &top_candidates, size_t level);
     template <bool with_timeout>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
                            void *timeoutCtx = nullptr, VecSimQueryResult_Code *rc = nullptr) const;
@@ -521,7 +520,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     tag_t *elements_tags, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
-    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    std::unique_lock<vecsim_stl::one_byte_mutex> lock(element_neighbors_locks_[curNodeId]);
     idType *node_links = get_linklist_at_level(curNodeId, layer);
     linkListSize links_num = getListCount(node_links);
 
@@ -573,7 +572,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     tag_t *elements_tags, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
 
-    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    std::unique_lock<vecsim_stl::one_byte_mutex> lock(element_neighbors_locks_[curNodeId]);
     idType *node_links = get_linklist_at_level(curNodeId, layer);
     linkListSize links_num = getListCount(node_links);
 
@@ -703,7 +702,8 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
     idType *new_node_neighbors_list, idType *neighbor_neighbors_list,
-    std::unique_lock<std::mutex> &node_lock, std::unique_lock<std::mutex> &neighbor_lock) {
+    std::unique_lock<vecsim_stl::one_byte_mutex> &node_lock,
+    std::unique_lock<vecsim_stl::one_byte_mutex> &neighbor_lock) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
@@ -760,9 +760,10 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
 
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
-    std::unique_lock<std::mutex> locks[nodes_to_update_count];
+    std::unique_lock<vecsim_stl::one_byte_mutex> locks[nodes_to_update_count];
     for (size_t i = 0; i < nodes_to_update_count; i++) {
-        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
+        locks[i] = std::unique_lock<vecsim_stl::one_byte_mutex>(
+            element_neighbors_locks_[nodes_to_update[i]]);
     }
 
     auto *neighbour_incoming_edges = getIncomingEdgesPtr(selected_neighbor, level);
@@ -855,17 +856,19 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     for (auto &neighbor_data : selected_neighbors) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
-        std::unique_lock<std::mutex> node_lock;
-        std::unique_lock<std::mutex> neighbor_lock;
+        std::unique_lock<vecsim_stl::one_byte_mutex> node_lock;
+        std::unique_lock<vecsim_stl::one_byte_mutex> neighbor_lock;
         idType lower_id = (new_node_id < selected_neighbor) ? new_node_id : selected_neighbor;
         if (lower_id == new_node_id) {
-            node_lock = std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
-            neighbor_lock =
-                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
+            node_lock =
+                std::unique_lock<vecsim_stl::one_byte_mutex>(element_neighbors_locks_[new_node_id]);
+            neighbor_lock = std::unique_lock<vecsim_stl::one_byte_mutex>(
+                element_neighbors_locks_[selected_neighbor]);
         } else {
-            neighbor_lock =
-                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
-            node_lock = std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
+            neighbor_lock = std::unique_lock<vecsim_stl::one_byte_mutex>(
+                element_neighbors_locks_[selected_neighbor]);
+            node_lock =
+                std::unique_lock<vecsim_stl::one_byte_mutex>(element_neighbors_locks_[new_node_id]);
         }
 
         // get the updated count - this may change between iterations due to releasing the lock.
@@ -1124,7 +1127,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             return;
         }
         changed = false;
-        std::unique_lock<std::mutex> lock(element_neighbors_locks_[curObj]);
+        std::unique_lock<vecsim_stl::one_byte_mutex> lock(element_neighbors_locks_[curObj]);
         idType *node_links = get_linklist(curObj, level);
         linkListSize links_count = getListCount(node_links);
 
@@ -1150,7 +1153,7 @@ void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements)
     element_levels_.shrink_to_fit();
     resizeLabelLookup(new_max_elements);
     visited_nodes_handler_pool.resize(new_max_elements);
-    vecsim_stl::vector<std::mutex>(new_max_elements, this->allocator)
+    vecsim_stl::vector<vecsim_stl::one_byte_mutex>(new_max_elements, this->allocator)
         .swap(element_neighbors_locks_);
     // Reallocate base layer
     char *data_level0_memory_new = (char *)this->allocator->reallocate(
