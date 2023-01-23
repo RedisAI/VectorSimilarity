@@ -702,7 +702,8 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
     idType *new_node_neighbors_list, idType *neighbor_neighbors_list,
-    std::unique_lock<vecsim_stl::one_byte_mutex> &node_lock, std::unique_lock<vecsim_stl::one_byte_mutex> &neighbor_lock) {
+    std::unique_lock<vecsim_stl::one_byte_mutex> &node_lock,
+    std::unique_lock<vecsim_stl::one_byte_mutex> &neighbor_lock) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
