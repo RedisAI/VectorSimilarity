@@ -24,11 +24,22 @@ private:
 
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
-    static void executeInsertJobWrapper(HNSWInsertJob *job) {
-        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(job->index)->executeInsertJob(job);
+    static void executeInsertJobWrapper(void *job) {
+        HNSWInsertJob *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
+        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index)
+            ->executeInsertJob(insert_job);
     }
-    static void executeRepairJobWrapper(HNSWRepairJob *job) {
-        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(job->index)->executeRepairJob(job);
+    static void executeRepairJobWrapper(void *job) {
+        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(
+            reinterpret_cast<HNSWRepairJob *>(job)->index)->executeRepairJob(job);
+    }
+
+    AsyncJob *createHNSWIngestJob(labelType label, idType internal_id) {
+        return (AsyncJob *) new HNSWInsertJob {.base = AsyncJob {.jobType = HNSW_INSERT_VECTOR_JOB,
+                                                              .Execute = executeInsertJobWrapper},
+                                             .index = this,
+                                             .label = label,
+                                             .id = internal_id};
     }
 
 #ifdef BUILD_TESTS
@@ -41,14 +52,14 @@ public:
     virtual ~TieredHNSWIndex() = default;
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    int addVector(const void *blob, labelType label, bool overwrite_allowed) override {
-        return this->index->addVector(blob, label, overwrite_allowed);
-    }
+    int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
     int deleteVector(labelType id) override { return this->index->deleteVector(id); }
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
     }
-    size_t indexSize() const override { return this->index->indexSize(); }
+    size_t indexSize() const override {
+        return this->index->indexSize() + this->flatBuffer->indexSize();
+    }
     size_t indexCapacity() const override { return this->index->indexCapacity(); }
     void increaseCapacity() override { this->index->increaseCapacity(); }
     size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
@@ -73,3 +84,26 @@ public:
         return this->index->setLastSearchMode(mode);
     }
 };
+
+/**
+ ******************************* Implementation **************************
+ */
+
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
+                                                   bool overwrite_allowed) {
+    /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
+    this->flatIndexGuard.lock();
+    idType new_id = this->flatBuffer->indexSize();
+    this->flatBuffer->addVector(blob, label, false);
+    AsyncJob *new_insert_job = this->createHNSWIngestJob(label, new_id);
+    // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
+    this->labelToInsertJobs[label].push_back((HNSWInsertJob *)new_insert_job);
+    this->flatIndexGuard.unlock();
+
+    // Insert job to the queue and signal the workers updater
+    auto **jobs = array_new<AsyncJob *>(1);
+    jobs = array_append(jobs, new_insert_job);
+    this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
+    return 1;
+}
