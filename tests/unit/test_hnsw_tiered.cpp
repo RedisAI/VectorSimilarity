@@ -168,3 +168,44 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         VecSimIndex_Free(tiered_index);
     }
 }
+
+TYPED_TEST(HNSWTieredIndexTest, addVector) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    for (auto is_multi : {true, false}) {
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        auto *jobQ = new JobQueue();
+        size_t memory_ctx = 0;
+        TieredIndexParams tiered_params = {.jobQueue = jobQ,
+                                           .submitCb = submit_callback,
+                                           .memoryCtx = &memory_ctx,
+                                           .UpdateMemCb = update_mem_callback};
+        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+
+        // Create a vector and add it to the tiered index.
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim);
+        labelType vector_label = 1;
+        VecSimIndex_AddVector(tiered_index, vector, vector_label);
+
+        // Validate that the vector was inserted to the flat buffer
+        ASSERT_EQ(tiered_index->indexSize(), 1);
+        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
+        ASSERT_EQ(tiered_index->index->indexSize(), 0);
+        ASSERT_EQ(tiered_index->labelToInsertJobs[vector_label].size(), 1);
+        ASSERT_EQ(tiered_index->flatBuffer->getDistanceFrom(vector_label, vector), 0);
+        ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
+        // todo: validate that memory ctx is as expected.
+
+        // Cleanup.
+        delete jobQ;
+        VecSimIndex_Free(tiered_index);
+    }
+}
