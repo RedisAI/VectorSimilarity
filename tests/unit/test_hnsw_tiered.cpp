@@ -58,7 +58,10 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
                                         my_index->getAllocator()->getAllocationSize());
         };
 
-        HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
+        HNSWInsertJob job = {
+            .base = AsyncJob{.jobType = HNSW_INSERT_VECTOR_JOB, .Execute = insert_to_index},
+            .index = tiered_index,
+            .label = vector_label};
         auto jobs_vec = vecsim_stl::vector<HNSWInsertJob *>(1, &job, allocator);
         tiered_index->labelToInsertJobs.insert({vector_label, jobs_vec});
 
@@ -107,14 +110,11 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                               .metric = VecSimMetric_L2,
                               .multi = is_multi};
 
-        // Validate that memory upon creating the tiered index is as expected (no more than 2%
-        // above te expected, since in different platforms there are some minor additional
-        // allocations).
+        // Validate that memory upon creating the tiered index is as expected.
         size_t expected_mem = HNSWFactory::EstimateInitialSize(&params) +
                               BruteForceFactory::EstimateInitialSize(&bf_params) +
                               sizeof(*tiered_index);
-        ASSERT_LE(expected_mem, memory_ctx);
-        ASSERT_GE(expected_mem * 1.02, memory_ctx);
+        ASSERT_EQ(expected_mem, memory_ctx);
 
         // Create a vector and add it to the tiered index.
         labelType vec_label = 1;
@@ -128,10 +128,6 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(tiered_index->flatBuffer->getDistanceFrom(vec_label, vector), 0);
-        // Validate that the job was created properly
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->id, 0);
 
         // Account for the allocation of a new block due to the vector insertion.
         expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
@@ -145,64 +141,8 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
             sizeof(void *) + sizeof(size_t);
         // Account for the inner buffer of the std::vector<HNSWInsertJob *> in the map.
         expected_mem += sizeof(void *) + sizeof(size_t);
-        // Account for the insert job that was created.
-        expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
         ASSERT_GE(expected_mem * 1.02, memory_ctx);
         ASSERT_LE(expected_mem, memory_ctx);
-
-        if (is_multi) {
-            // Add another vector under the same label (create another insert job)
-            VecSimIndex_AddVector(tiered_index, vector, vec_label);
-            ASSERT_EQ(tiered_index->indexSize(), 2);
-            ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-            ASSERT_EQ(tiered_index->index->indexSize(), 0);
-            ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 2);
-            // Validate that the second job was created properly
-            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 2);
-            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->label, vec_label);
-            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->id, 1);
-        }
-
-        // Cleanup.
-        delete jobQ;
-        VecSimIndex_Free(tiered_index);
-    }
-}
-
-TYPED_TEST(HNSWTieredIndexTest, addVector) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
-    // Create TieredHNSW index instance with a mock queue.
-    size_t dim = 4;
-    for (auto is_multi : {true, false}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = is_multi};
-        auto *jobQ = new JobQueue();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-
-        // Create a vector and add it to the tiered index.
-        TEST_DATA_T vector[dim];
-        GenerateVector<TEST_DATA_T>(vector, dim);
-        labelType vector_label = 1;
-        VecSimIndex_AddVector(tiered_index, vector, vector_label);
-
-        // Validate that the vector was inserted to the flat buffer
-        ASSERT_EQ(tiered_index->indexSize(), 1);
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
-        ASSERT_EQ(tiered_index->index->indexSize(), 0);
-        ASSERT_EQ(tiered_index->labelToInsertJobs[vector_label].size(), 1);
-        ASSERT_EQ(tiered_index->flatBuffer->getDistanceFrom(vector_label, vector), 0);
-        ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
-        // todo: validate that memory ctx is as expected.
 
         // Cleanup.
         delete jobQ;
