@@ -11,8 +11,8 @@ class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
     // In MULTI, we can have more than one insert job pending per label
-    vecsim_stl::unordered_map<labelType, std::vector<HNSWInsertJob *>> labelToInsertJobs;
-    vecsim_stl::unordered_map<idType, std::vector<HNSWRepairJob *>> idToRepairJobs;
+    vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>> labelToInsertJobs;
+    vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
 
     // Todo: implement these methods later on
@@ -24,47 +24,32 @@ private:
 
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
-    static void executeInsertJobWrapper(void *job) {
-        auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
-        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index)
-            ->executeInsertJob(insert_job);
-    }
-    static void executeRepairJobWrapper(void *job) {
-        reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(
-            reinterpret_cast<HNSWRepairJob *>(job)->index)->executeRepairJob(job);
-    }
+    static void executeInsertJobWrapper(void *job);
+    static void executeRepairJobWrapper(void *job) {}
 
-    AsyncJob *createHNSWIngestJob(labelType label, idType internal_id) {
-        return (AsyncJob *) new HNSWInsertJob {.base = AsyncJob {.jobType = HNSW_INSERT_VECTOR_JOB,
-                                                              .Execute = executeInsertJobWrapper},
-                                             .index = this,
-                                             .label = label,
-                                             .id = internal_id};
-    }
+    AsyncJob *createHNSWIngestJob(labelType label, idType internal_id);
+    void submitSingleJob(AsyncJob *job);
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
 
 public:
-    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams)
-        : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams),
-            labelToInsertJobs(hnsw_index->getIndexAllocator()),
-          idToRepairJobs(hnsw_index->getIndexAllocator()),
-          idToSwapJob(hnsw_index->getIndexAllocator()) {}
+    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
     virtual ~TieredHNSWIndex() = default;
 
-    // TODO: Implement the actual methods instead of these temporary ones.
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
+    size_t indexSize() const override;
+    size_t indexCapacity() const override;
+    // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
+    // needed.
+    void increaseCapacity() override {}
+
+    // TODO: Implement the actual methods instead of these temporary ones.
     int deleteVector(labelType id) override { return this->index->deleteVector(id); }
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
     }
-    size_t indexSize() const override {
-        return this->index->indexSize() + this->flatBuffer->indexSize();
-    }
-    size_t indexCapacity() const override { return this->index->indexCapacity(); }
-    void increaseCapacity() override { this->index->increaseCapacity(); }
     size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {
@@ -92,6 +77,54 @@ public:
  ******************************* Implementation **************************
  */
 
+/* Helper methods */
+
+template <typename DataType, typename DistType>
+AsyncJob *TieredHNSWIndex<DataType, DistType>::createHNSWIngestJob(labelType label,
+                                                                   idType internal_id) {
+    return (AsyncJob *)new HNSWInsertJob{
+        .base = AsyncJob{.jobType = HNSW_INSERT_VECTOR_JOB, .Execute = executeInsertJobWrapper},
+        .index = this,
+        .label = label,
+        .id = internal_id};
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(void *job) {
+    auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
+    reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index)
+        ->executeInsertJob(insert_job);
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::submitSingleJob(AsyncJob *job) {
+    auto **jobs = array_new<AsyncJob *>(1);
+    jobs = array_append(jobs, job);
+    this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
+    array_free(jobs);
+}
+
+/******************** Index API ****************************************/
+
+template <typename DataType, typename DistType>
+TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
+                                                     TieredIndexParams tieredParams)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams),
+      labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
+      idToSwapJob(this->allocator) {
+    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
+}
+
+template <typename DataType, typename DistType>
+size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
+    return this->index->indexSize() + this->flatBuffer->indexSize();
+}
+
+template <typename DataType, typename DistType>
+size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
+    return this->index->indexCapacity() + this->flatBuffer->indexCapacity();
+}
+
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
                                                    bool overwrite_allowed) {
@@ -104,13 +137,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     this->flatBuffer->addVector(blob, label, false);
     AsyncJob *new_insert_job = this->createHNSWIngestJob(label, new_id);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
-    this->labelToInsertJobs[label].push_back((HNSWInsertJob *)new_insert_job);
+    auto jobs_vec =
+        vecsim_stl::vector<HNSWInsertJob *>(1, (HNSWInsertJob *)new_insert_job, this->allocator);
+    this->labelToInsertJobs.insert({label, jobs_vec});
     this->flatIndexGuard.unlock();
 
     // Insert job to the queue and signal the workers updater
-    auto **jobs = array_new<AsyncJob *>(1);
-    jobs = array_append(jobs, new_insert_job);
-    this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
+    this->submitSingleJob(new_insert_job);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return 1;
 }
