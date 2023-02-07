@@ -5,6 +5,43 @@
 #include "hnsw_factory.h"
 
 #include <unordered_map>
+/**
+ * Definition of a job that inserts a new vector from flat into HNSW Index.
+ */
+struct HNSWInsertJob : public AsyncJob {
+    void *index;
+    labelType label;
+    idType id;
+
+    HNSWInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
+                  JobCallback insertCb, void *index_)
+        : AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, insertCb), index(index_), label(label_),
+          id(id_) {}
+};
+
+/**
+ * Definition of a job that swaps last id with a deleted id in HNSW Index after delete operation.
+ */
+struct HNSWSwapJob : public AsyncJob {
+    void *index;
+    idType deleted_id;
+    long pending_repair_jobs_counter; // number of repair jobs left to complete before this job
+                                      // is ready to be executed (atomic counter).
+    // TODO: implement contractor
+};
+
+/**
+ * Definition of a job that repairs a certain node's connection in HNSW Index after delete
+ * operation.
+ */
+struct HNSWRepairJob : public AsyncJob {
+    void *index;
+    idType node_id;
+    unsigned short level;
+    HNSWSwapJob *associated_swap_job;
+
+    // TODO: implement contractor
+};
 
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
@@ -27,7 +64,6 @@ private:
     static void executeInsertJobWrapper(void *job);
     static void executeRepairJobWrapper(void *job) {}
 
-    AsyncJob *createHNSWIngestJob(labelType label, idType internal_id);
     void submitSingleJob(AsyncJob *job);
 
 #ifdef BUILD_TESTS
@@ -36,7 +72,13 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
-    virtual ~TieredHNSWIndex() = default;
+    virtual ~TieredHNSWIndex() {
+        for (auto jobs : this->labelToInsertJobs) {
+            for (auto *job : jobs.second) {
+                delete job;
+            }
+        }
+    }
 
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
     size_t indexSize() const override;
@@ -78,17 +120,6 @@ public:
  */
 
 /* Helper methods */
-
-template <typename DataType, typename DistType>
-AsyncJob *TieredHNSWIndex<DataType, DistType>::createHNSWIngestJob(labelType label,
-                                                                   idType internal_id) {
-    return (AsyncJob *)new HNSWInsertJob{
-        .base = AsyncJob{.jobType = HNSW_INSERT_VECTOR_JOB, .Execute = executeInsertJobWrapper},
-        .index = this,
-        .label = label,
-        .id = internal_id};
-}
-
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(void *job) {
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
@@ -135,7 +166,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     idType new_id = this->flatBuffer->indexSize();
     this->flatBuffer->addVector(blob, label, false);
-    AsyncJob *new_insert_job = this->createHNSWIngestJob(label, new_id);
+    AsyncJob *new_insert_job = new (this->allocator)
+        HNSWInsertJob(this->allocator, label, new_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
     auto jobs_vec =
         vecsim_stl::vector<HNSWInsertJob *>(1, (HNSWInsertJob *)new_insert_job, this->allocator);

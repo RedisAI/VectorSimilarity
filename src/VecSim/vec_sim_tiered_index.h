@@ -13,7 +13,10 @@ struct AsyncJob : public VecsimBaseObject {
     JobCallback Execute; // A callback that receives a job as its input and executes the job.
 
     AsyncJob(std::shared_ptr<VecSimAllocator> allocator, JobType type, JobCallback callback)
-        : VecsimBaseObject(allocator), jobType(type), Execute(callback) {}
+        : VecsimBaseObject(allocator) {
+        jobType = type;
+        Execute = callback;
+    }
 };
 
 template <typename DataType, typename DistType>
@@ -32,13 +35,6 @@ protected:
     // std::shared_mutex
     std::shared_mutex flatIndexGuard;
     std::shared_mutex mainIndexGuard;
-
-    void submitSingleJob(AsyncJob *job) {
-        auto **jobs = array_new<AsyncJob *>(1);
-        jobs = array_append(jobs, job);
-        this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
-        array_free(jobs);
-    }
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, TieredIndexParams tieredParams)
