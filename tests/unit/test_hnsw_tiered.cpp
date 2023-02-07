@@ -58,10 +58,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
                                         my_index->getAllocator()->getAllocationSize());
         };
 
-        HNSWInsertJob job = {
-            .base = AsyncJob{.jobType = HNSW_INSERT_VECTOR_JOB, .Execute = insert_to_index},
-            .index = tiered_index,
-            .label = vector_label};
+        HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
         auto jobs_vec = vecsim_stl::vector<HNSWInsertJob *>(1, &job, allocator);
         tiered_index->labelToInsertJobs.insert({vector_label, jobs_vec});
 
@@ -141,6 +138,8 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
             sizeof(void *) + sizeof(size_t);
         // Account for the inner buffer of the std::vector<HNSWInsertJob *> in the map.
         expected_mem += sizeof(void *) + sizeof(size_t);
+        // Account for the insert job that was created.
+        expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
         ASSERT_GE(expected_mem * 1.02, memory_ctx);
         ASSERT_LE(expected_mem, memory_ctx);
 
