@@ -53,7 +53,7 @@ private:
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
 
     // Todo: implement these methods later on
-    void executeInsertJob(HNSWInsertJob *job) {}
+    void executeInsertJob(HNSWInsertJob *job);
     void executeRepairJob(HNSWRepairJob *job) {}
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper.
@@ -65,6 +65,7 @@ private:
     static void executeRepairJobWrapper(void *job) {}
 
     void submitSingleJob(AsyncJob *job);
+    inline HNSWIndex<DataType, DistType> *getHNSWIndex();
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -128,6 +129,78 @@ void TieredHNSWIndex<DataType, DistType>::submitSingleJob(AsyncJob *job) {
     this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
     array_free(jobs);
 }
+
+template <typename DataType, typename DistType>
+HNSWIndex<DataType, DistType> * TieredHNSWIndex<DataType, DistType>::getHNSWIndex() {
+    return reinterpret_cast<HNSWIndex<DataType, DistType *>>(this->index);
+}
+
+
+/******************** Job's callbacks **********************************/
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
+    HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
+    this->flatIndexGuard.lock_shared();
+    if (job->label == HNSW_INVALID_LABEL) {
+        // Job has been invalidated in the meantime.
+        this->flatIndexGuard.unlock_shared();
+        goto finish;
+    }
+    // Acquire the index data lock, so we can immediately insert the vector to HNSW labels lookup.
+    // If it becomes invalid afterwards, it will require another delete job.
+    this->mainIndexGuard.lock_shared();
+    hnsw_index->index_data_guard_.lock();
+
+    // Check if resizing is needed for HNSW index (requires write lock).
+    if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+        hnsw_index->index_data_guard_.unlock();
+        this->flatIndexGuard.unlock_shared();
+        this->mainIndexGuard.unlock_shared();
+        this->mainIndexGuard.lock();
+        hnsw_index->increaseCapacity();
+        this->mainIndexGuard.unlock();
+        // reacquire the read locks
+        this->flatIndexGuard.lock_shared();
+        this->mainIndexGuard.lock_shared();
+        hnsw_index->index_data_guard_.lock();
+    }
+
+    if (job->label == HNSW_INVALID_LABEL) {
+        // Job has been invalidated in the meantime.
+        this->flatIndexGuard.unlock_shared();
+        this->mainIndexGuard.unlock_shared();
+        goto finish;
+    }
+    // Set the label with a temporary invalid ID to indicate that the label exists (in case a
+    // different thread will try to delete/overwrite this label).
+    hnsw_index->setVectorId(job->label, HNSW_INVALID_ID);
+    hnsw_index->index_data_guard_.unlock();
+
+    // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
+    hnsw_index->addVector(job->label, this->flatBuffer->getDataByInternalId(job->id), false);
+    this->mainIndexGuard.unlock_shared();
+
+    // Remove the vector and the insert job from the flat buffer.
+    this->flatIndexGuard.unlock_shared();
+    this->flatIndexGuard.lock();
+
+    if (job->label != HNSW_INVALID_LABEL) {
+        // Job has been invalidated in the meantime (vector was overwritten).
+        this->flatBuffer->deleteVectorById(job->label, job->id);
+    }
+    finish:
+    // Delete the job
+    auto &jobs = labelToInsertJobs.at(job->label);
+    for (size_t i = 0; i < jobs.size(); i++) {
+        if (jobs[i]->id == job->id) {
+            delete job;
+            jobs.erase(jobs.begin() + i);
+            break;
+        }
+    }
+    this->flatIndexGuard.unlock();
+}
+
 
 /******************** Index API ****************************************/
 

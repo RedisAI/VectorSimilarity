@@ -39,6 +39,7 @@ using std::pair;
 
 #define HNSW_INVALID_ID    UINT_MAX
 #define HNSW_INVALID_LEVEL SIZE_MAX
+#define HNSW_INVALID_LABEL SIZE_MAX
 
 typedef uint16_t linkListSize;
 typedef uint16_t elementFlags;

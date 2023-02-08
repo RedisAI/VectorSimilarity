@@ -24,6 +24,7 @@ public:
 
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType labelType) override;
+    int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
@@ -106,6 +107,27 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVector(labelType label) {
     // Remove the pair of the deleted vector.
     labelToIdsLookup.erase(label);
     return ret;
+}
+
+template <typename DataType, typename DistType>
+int BruteForceIndex_Multi<DataType, DistType>::deleteVectorById(labelType label, idType id) {
+    // Find the id to delete.
+    auto deleted_label_ids_pair = this->labelToIdsLookup.find(label);
+    if (deleted_label_ids_pair == this->labelToIdsLookup.end()) {
+        // Nothing to delete.
+        return 0;
+    }
+
+    // Delete the specific vector id which is under the given label.
+    auto &ids = deleted_label_ids_pair->second;
+    for (size_t i = 0; i < ids.size(); i++) {
+        if (ids[i] == id) {
+            this->removeVector(id);
+            ids.erase(ids.begin() + i);
+            return 1;
+        }
+    }
+    assert(false && "id to delete was not found under the given label");
 }
 
 template <typename DataType, typename DistType>

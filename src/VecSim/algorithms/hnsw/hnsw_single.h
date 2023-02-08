@@ -124,19 +124,14 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, con
                                                     bool overwrite_allowed) {
 
     // Checking if an element with the given label already exists.
-    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
     bool label_exists = false;
-    if (label_lookup_.find(label) != label_lookup_.end()) {
-        label_exists = true;
-        if (overwrite_allowed) {
+    if (overwrite_allowed) {
+        if (label_lookup_.find(label) != label_lookup_.end()) {
+            label_exists = true;
             // Remove the vector in place if override allowed (in non-async scenario)
             deleteVector(label);
-        } else {
-            // If override is not allowed, we don't do anything.
-            return -1;
         }
     }
-    index_data_lock.unlock();
     this->appendVector(vector_data, label);
     // Return the delta in the index size due to the insertion.
     return label_exists ? 0 : 1;

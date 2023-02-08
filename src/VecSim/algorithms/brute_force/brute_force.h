@@ -68,6 +68,7 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+    virtual int deleteVectorById(labelType label, idType id) = 0;
 #endif
 
 protected:
