@@ -132,7 +132,7 @@ void TieredHNSWIndex<DataType, DistType>::submitSingleJob(AsyncJob *job) {
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> * TieredHNSWIndex<DataType, DistType>::getHNSWIndex() {
-    return reinterpret_cast<HNSWIndex<DataType, DistType *>>(this->index);
+    return reinterpret_cast<HNSWIndex<DataType, DistType>*>(this->index);
 }
 
 
@@ -177,7 +177,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     hnsw_index->index_data_guard_.unlock();
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-    hnsw_index->addVector(job->label, this->flatBuffer->getDataByInternalId(job->id), false);
+    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, false);
     this->mainIndexGuard.unlock_shared();
 
     // Remove the vector and the insert job from the flat buffer.
@@ -194,7 +194,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     for (size_t i = 0; i < jobs.size(); i++) {
         if (jobs[i]->id == job->id) {
             delete job;
-            jobs.erase(jobs.begin() + i);
+            jobs.erase(jobs.begin() + (long)i);
             break;
         }
     }

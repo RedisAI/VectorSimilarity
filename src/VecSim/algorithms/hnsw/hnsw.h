@@ -103,7 +103,6 @@ protected:
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
     mutable std::mutex entry_point_guard_;
-    mutable std::mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
@@ -248,13 +247,14 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
 #endif
+    mutable std::mutex index_data_guard_;
+    virtual inline void setVectorId(labelType label, idType id) = 0;
 
 protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const = 0;
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
-    virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
 };
 

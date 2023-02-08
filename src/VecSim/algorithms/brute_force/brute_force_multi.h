@@ -128,6 +128,7 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVectorById(labelType label,
         }
     }
     assert(false && "id to delete was not found under the given label");
+    return 0;
 }
 
 template <typename DataType, typename DistType>
