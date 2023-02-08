@@ -72,16 +72,11 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
-    virtual ~TieredHNSWIndex() {
-        for (auto jobs : this->labelToInsertJobs) {
-            for (auto *job : jobs.second) {
-                delete job;
-            }
-        }
-    }
+    virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
     size_t indexSize() const override;
+    size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
@@ -92,7 +87,6 @@ public:
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
     }
-    size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {
         return this->index->topKQuery(queryBlob, k, queryParams);
@@ -147,6 +141,16 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
 }
 
 template <typename DataType, typename DistType>
+TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
+    // Delete all the pending insert jobs.
+    for (auto jobs : this->labelToInsertJobs) {
+        for (auto *job : jobs.second) {
+            delete job;
+        }
+    }
+}
+
+template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     return this->index->indexSize() + this->flatBuffer->indexSize();
 }
@@ -154,6 +158,11 @@ size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
     return this->index->indexCapacity() + this->flatBuffer->indexCapacity();
+}
+
+template <typename DataType, typename DistType>
+size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
+    return this->flatBuffer->indexLabelCount() + this->index->indexLabelCount();
 }
 
 template <typename DataType, typename DistType>
@@ -169,9 +178,16 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     AsyncJob *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
-    auto jobs_vec =
-        vecsim_stl::vector<HNSWInsertJob *>(1, (HNSWInsertJob *)new_insert_job, this->allocator);
-    this->labelToInsertJobs.insert({label, jobs_vec});
+    if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
+        // There's already a pending insert job for this label, add another one
+        // (only possible in multi index)
+        assert(this->index->isMulti);
+        this->labelToInsertJobs.at(label).push_back((HNSWInsertJob *)new_insert_job);
+    } else {
+        auto new_jobs_vec = vecsim_stl::vector<HNSWInsertJob *>(1, (HNSWInsertJob *)new_insert_job,
+                                                                this->allocator);
+        this->labelToInsertJobs.insert({label, new_jobs_vec});
+    }
     this->flatIndexGuard.unlock();
 
     // Insert job to the queue and signal the workers updater

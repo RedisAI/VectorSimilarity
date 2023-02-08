@@ -125,6 +125,10 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(tiered_index->flatBuffer->getDistanceFrom(vec_label, vector), 0);
+        // Validate that the job was created properly
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->id, 0);
 
         // Account for the allocation of a new block due to the vector insertion.
         expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
@@ -142,6 +146,19 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
         ASSERT_GE(expected_mem * 1.02, memory_ctx);
         ASSERT_LE(expected_mem, memory_ctx);
+
+        if (is_multi) {
+            // Add another vector under the same label (create another insert job)
+            VecSimIndex_AddVector(tiered_index, vector, vec_label);
+            ASSERT_EQ(tiered_index->indexSize(), 2);
+            ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+            ASSERT_EQ(tiered_index->index->indexSize(), 0);
+            ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 2);
+            // Validate that the second job was created properly
+            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 2);
+            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->label, vec_label);
+            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->id, 1);
+        }
 
         // Cleanup.
         delete jobQ;
