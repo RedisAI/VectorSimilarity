@@ -9,12 +9,12 @@
  * Definition of a job that inserts a new vector from flat into HNSW Index.
  */
 struct HNSWInsertJob : public AsyncJob {
-    void *index;
+    VecSimIndex *index;
     labelType label;
     idType id;
 
     HNSWInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
-                  JobCallback insertCb, void *index_)
+                  JobCallback insertCb, VecSimIndex *index_)
         : AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, insertCb), index(index_), label(label_),
           id(id_) {}
 };
@@ -23,7 +23,7 @@ struct HNSWInsertJob : public AsyncJob {
  * Definition of a job that swaps last id with a deleted id in HNSW Index after delete operation.
  */
 struct HNSWSwapJob : public AsyncJob {
-    void *index;
+    VecSimIndex *index;
     idType deleted_id;
     long pending_repair_jobs_counter; // number of repair jobs left to complete before this job
                                       // is ready to be executed (atomic counter).
@@ -35,7 +35,7 @@ struct HNSWSwapJob : public AsyncJob {
  * operation.
  */
 struct HNSWRepairJob : public AsyncJob {
-    void *index;
+    VecSimIndex *index;
     idType node_id;
     unsigned short level;
     HNSWSwapJob *associated_swap_job;
