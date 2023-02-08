@@ -185,7 +185,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         this->labelToInsertJobs.at(label).push_back((HNSWInsertJob *)new_insert_job);
     } else {
         vecsim_stl::vector<HNSWInsertJob *> new_jobs_vec(1, (HNSWInsertJob *)new_insert_job,
-                                                                this->allocator);
+                                                         this->allocator);
         this->labelToInsertJobs.insert({label, new_jobs_vec});
     }
     this->flatIndexGuard.unlock();
