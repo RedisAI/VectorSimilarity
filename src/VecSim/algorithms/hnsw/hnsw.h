@@ -199,7 +199,6 @@ public:
     inline size_t getEfConstruction() const;
     inline size_t getM() const;
     inline size_t getMaxLevel() const;
-    inline std::shared_ptr<VecSimAllocator> getIndexAllocator();
     inline labelType getEntryPointLabel() const;
     inline labelType getExternalLabel(idType internal_id) const;
     // Check if the given label exists in the labels lookup while holding the index data lock.
@@ -305,11 +304,6 @@ size_t HNSWIndex<DataType, DistType>::getM() const {
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
     return maxlevel_;
-}
-
-template <typename DataType, typename DistType>
-std::shared_ptr<VecSimAllocator> HNSWIndex<DataType, DistType>::getIndexAllocator() {
-    return this->getAllocator();
 }
 
 template <typename DataType, typename DistType>
