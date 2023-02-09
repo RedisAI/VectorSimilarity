@@ -9,6 +9,7 @@
 #include <functional>
 #include <cmath>
 #include <exception>
+#include <thread>
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
@@ -129,7 +130,12 @@ inline double GetInfVal(VecSimType type) {
     }
 
 namespace tiered_index_mock {
-using JobQueue = std::queue<void *>;
+#define THREAD_POOL_SIZE 8
+using JobQueue = std::queue<AsyncJob *>;
 int submit_callback(void *job_queue, void **jobs, size_t len);
 int update_mem_callback(void *mem_ctx, size_t mem);
+extern std::vector<std::thread> thread_pool;
+extern std::mutex queue_guard;
+extern std::condition_variable queue_cond;
+
 } // namespace tiered_index_mock

@@ -252,9 +252,22 @@ size_t getLabelsLookupNodeSize() {
  * Mock callbacks for testing async tiered index. We use a simple std::queue to simulate the job
  * queue.
  */
+
+std::mutex tiered_index_mock::queue_guard;
+std::condition_variable tiered_index_mock::queue_cond;
+std::vector<std::thread> tiered_index_mock::thread_pool;
+
 int tiered_index_mock::submit_callback(void *job_queue, void **jobs, size_t len) {
-    for (size_t i = 0; i < len; i++) {
-        static_cast<JobQueue *>(job_queue)->push(jobs[i]);
+    {
+        std::unique_lock<std::mutex> lock(queue_guard);
+        for (size_t i = 0; i < len; i++) {
+            static_cast<JobQueue *>(job_queue)->push(static_cast<AsyncJob *>(jobs[i]));
+        }
+    }
+    if (len == 1) {
+        queue_cond.notify_one();
+    } else {
+        queue_cond.notify_all();
     }
     return VecSim_OK;
 }

@@ -73,7 +73,7 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
-    virtual ~TieredHNSWIndex();
+    virtual ~TieredHNSWIndex() = default;
 
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
     size_t indexSize() const override;
@@ -146,8 +146,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.unlock_shared();
         goto finish;
     }
-    // Acquire the index data lock, so we can immediately insert the vector to HNSW labels lookup.
-    // If it becomes invalid afterwards, it will require another delete job.
+    // Acquire the index data lock, so we know what is the exact index size at this time.
     this->mainIndexGuard.lock_shared();
     hnsw_index->index_data_guard_.lock();
 
@@ -162,8 +161,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // reacquire the read locks
         this->flatIndexGuard.lock_shared();
         this->mainIndexGuard.lock_shared();
-        hnsw_index->index_data_guard_.lock();
     }
+    hnsw_index->index_data_guard_.unlock();
 
     if (job->label == HNSW_INVALID_LABEL) {
         // Job has been invalidated in the meantime.
@@ -171,10 +170,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->mainIndexGuard.unlock_shared();
         goto finish;
     }
-    // Set the label with a temporary invalid ID to indicate that the label exists (in case a
-    // different thread will try to delete/overwrite this label).
-    hnsw_index->setVectorId(job->label, HNSW_INVALID_ID);
-    hnsw_index->index_data_guard_.unlock();
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
     hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, false);
@@ -185,20 +180,35 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     this->flatIndexGuard.lock();
 
     if (job->label != HNSW_INVALID_LABEL) {
-        // Job has been invalidated in the meantime (vector was overwritten).
-        this->flatBuffer->deleteVectorById(job->label, job->id);
+        // Remove the vector from the flat buffer.
+        int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
+        // This will cause the last id to swap with the deleted id.
+        if (deleted && this->flatBuffer->indexSize() > 0) {
+            labelType last_idx_label = this->flatBuffer->getIdToLabelMap()[job->id];
+            if (this->labelToInsertJobs.find(last_idx_label) != this->labelToInsertJobs.end()) {
+                // There is a pending job for the label of the swapped last id - update its id.
+                for (HNSWInsertJob *job_it : this->labelToInsertJobs.at(last_idx_label)) {
+                    if (job_it->id == this->flatBuffer->indexSize()) {
+                        job_it->id = job->id;
+                    }
+                }
+            }
+        }
     }
     finish:
-    // Delete the job
+    // Remove the job pointer from the labelToInsertJobs mapping.
     auto &jobs = labelToInsertJobs.at(job->label);
     for (size_t i = 0; i < jobs.size(); i++) {
         if (jobs[i]->id == job->id) {
-            delete job;
             jobs.erase(jobs.begin() + (long)i);
             break;
         }
     }
+    if (labelToInsertJobs.at(job->label).empty()) {
+        labelToInsertJobs.erase(job->label);
+    }
     this->flatIndexGuard.unlock();
+    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 
@@ -211,16 +221,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
-}
-
-template <typename DataType, typename DistType>
-TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
-    // Delete all the pending insert jobs.
-    for (auto jobs : this->labelToInsertJobs) {
-        for (auto *job : jobs.second) {
-            delete job;
-        }
-    }
 }
 
 template <typename DataType, typename DistType>

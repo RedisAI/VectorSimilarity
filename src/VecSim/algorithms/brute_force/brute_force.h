@@ -56,6 +56,7 @@ public:
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
+    inline const vecsim_stl::vector<labelType> &getIdToLabelMap() const { return idToLabelMapping; }
     virtual ~BruteForceIndex();
 #ifdef BUILD_TESTS
     /**
