@@ -209,7 +209,8 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
         ASSERT_EQ(tiered_index->indexSize(), 1);
         ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
         ASSERT_EQ(tiered_index->index->indexSize(), 1);
-        // HNSW index should have allocated a single block, while flat index should remove the block.
+        // HNSW index should have allocated a single block, while flat index should remove the
+        // block.
         ASSERT_EQ(tiered_index->index->indexCapacity(), DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
         ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), 0);
@@ -230,10 +231,8 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     size_t n = 5000;
-    HNSWParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .multi = false};
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     auto *jobQ = new JobQueue();
     size_t memory_ctx = 0;
     TieredIndexParams tiered_params = {.jobQueue = jobQ,
@@ -249,8 +248,9 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     auto thread_fn = [jobQ, &run_thread]() {
         while (run_thread) {
             std::unique_lock<std::mutex> lock(queue_guard);
-            queue_cond.wait(lock, [jobQ, &run_thread](){ return !jobQ->empty() || !run_thread; });
-            if (!run_thread) return;
+            queue_cond.wait(lock, [jobQ, &run_thread]() { return !jobQ->empty() || !run_thread; });
+            if (!run_thread)
+                return;
             auto *job = jobQ->front();
             jobQ->pop();
             lock.unlock();
@@ -270,7 +270,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-    while(true) {
+    while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         std::unique_lock<std::mutex> lock(queue_guard);
         if (jobQ->empty()) {

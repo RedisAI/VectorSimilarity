@@ -131,10 +131,9 @@ void TieredHNSWIndex<DataType, DistType>::submitSingleJob(AsyncJob *job) {
 }
 
 template <typename DataType, typename DistType>
-HNSWIndex<DataType, DistType> * TieredHNSWIndex<DataType, DistType>::getHNSWIndex() {
-    return reinterpret_cast<HNSWIndex<DataType, DistType>*>(this->index);
+HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() {
+    return reinterpret_cast<HNSWIndex<DataType, DistType> *>(this->index);
 }
-
 
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
@@ -195,7 +194,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             }
         }
     }
-    finish:
+finish:
     // Remove the job pointer from the labelToInsertJobs mapping.
     auto &jobs = labelToInsertJobs.at(job->label);
     for (size_t i = 0; i < jobs.size(); i++) {
@@ -210,7 +209,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     this->flatIndexGuard.unlock();
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
-
 
 /******************** Index API ****************************************/
 
