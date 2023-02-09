@@ -3,6 +3,7 @@ project(VectorSimilaritySpaces_no_optimization)
 add_library(VectorSimilaritySpaces_no_optimization
 	L2/L2.cpp
 	IP/IP.cpp
+	converters/bf16/BF16_converter_impl.cpp
 )
 
 include(CheckCXXCompilerFlag)
@@ -56,6 +57,7 @@ add_library(VectorSimilaritySpaces
 	L2_space.cpp
 	IP_space.cpp
 	spaces.cpp
+	BF16_converter.cpp
 )
 
 target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization)

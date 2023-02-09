@@ -21,6 +21,8 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/BF16_converter.h"
+#include "VecSim/vec_sim_common.h"
 
 class SpacesTest : public ::testing::Test {
 
@@ -396,6 +398,33 @@ INSTANTIATE_TEST_SUITE_P(
                     std::make_pair(7, spaces_test::L2_dist_funcs_2ExtResiduals),
                     std::make_pair(7, spaces_test::IP_dist_funcs_2ExtResiduals)));
 
+
+int little_endian(){
+    int x = 1;
+    return *(char*)&x;
+}
+int big_endian(){
+    return !little_endian();
+}
+
+TEST_F(SpacesTest, test_bf16_convert) {
+    ASSERT_TRUE(little_endian());
+    
+    using namespace spaces;
+    fp32_to_bf16_converter_t converter = Get_FP32_to_BF16_Converter(1, ARCH_OPT_NONE);
+    float f = 1.0;
+    bf16 bf;
+    converter(&f, &bf, 1);
+    ASSERT_TRUE(memcmp(((char*)&f)+2, &bf, sizeof(bf16)) == 0);
+
+    float f2;
+    memset(&f2, 0, sizeof(float));
+    memcpy(((char*)&f2)+2, &bf, sizeof(bf16));
+
+    ASSERT_EQ(f, f2);
+
+
+}
 #endif // CPU_FEATURES_ARCH_X86_64
 
 #endif // M1/X86_64

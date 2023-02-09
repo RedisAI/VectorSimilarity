@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/spaces/conveters/bf16/BF16_converter_impl.h"
+#include "VecSim/spaces/converters/bf16/BF16_converter_impl.h"
 #include "VecSim/vec_sim_common.h"
 #include <memory.h>
 
@@ -16,7 +16,7 @@ void FP32_to_BF16(const void *pVect1v, void *pVect2v, size_t qty) {
 
     while (pVect1 < pEnd1) {
 
-        memcpy(pVect2, pVect1, sizeof(bf16));
+        memcpy(pVect2, ((char*)pVect1)+2, sizeof(bf16));
         pVect1++;
         pVect2++;
     }

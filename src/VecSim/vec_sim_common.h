@@ -11,7 +11,6 @@ extern "C" {
 #endif
 #include <stddef.h>
 #include <stdint.h>
-#include <cstdint>
 
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16

@@ -83,7 +83,7 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dis
 bf16_converter_t GetBFloat16Converter(size_t dim) {
     
         static const Arch_Optimization arch_opt = getArchitectureOptimization();
-        return BF16_GetConveter(dim, arch_opt);
+        return Get_FP32_to_BF16_Converter(dim, arch_opt);
 }
 
 

@@ -3,7 +3,7 @@
  *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
  *the Server Side Public License v1 (SSPLv1).
  */
-#include "VecSim/spaces/conveters/bf16/BF16_converter_AVX512.h"
+#include "VecSim/spaces/converters/bf16/BF16_converter_AVX512.h"
 #include "VecSim/vec_sim_common.h"
 #include <immintrin.h>
 #include <memory.h>
