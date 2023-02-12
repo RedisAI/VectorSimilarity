@@ -64,8 +64,6 @@ private:
     static void executeInsertJobWrapper(void *job);
     static void executeRepairJobWrapper(void *job) {}
 
-    void submitSingleJob(AsyncJob *job);
-
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -121,14 +119,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(void *job) {
         ->executeInsertJob(insert_job);
 }
 
-template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::submitSingleJob(AsyncJob *job) {
-    auto **jobs = array_new<AsyncJob *>(1);
-    jobs = array_append(jobs, job);
-    this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
-    array_free(jobs);
-}
-
 /******************** Index API ****************************************/
 
 template <typename DataType, typename DistType>
@@ -173,10 +163,10 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     if (this->flatBuffer->indexCapacity() == this->flatBuffer->indexSize()) {
         this->flatBuffer->increaseCapacity();
     }
-    idType new_id = this->flatBuffer->indexSize();
+    idType new_flat_id = this->flatBuffer->indexSize();
     this->flatBuffer->addVector(blob, label, false);
     AsyncJob *new_insert_job = new (this->allocator)
-        HNSWInsertJob(this->allocator, label, new_id, executeInsertJobWrapper, this);
+        HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
     if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
         // There's already a pending insert job for this label, add another one (without overwrite,
