@@ -107,11 +107,14 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                               .metric = VecSimMetric_L2,
                               .multi = is_multi};
 
-        // Validate that memory upon creating the tiered index is as expected.
+        // Validate that memory upon creating the tiered index is as expected (no more than 2%
+        // above te expected, since in different platforms there are some minor additional
+        // allocations).
         size_t expected_mem = HNSWFactory::EstimateInitialSize(&params) +
                               BruteForceFactory::EstimateInitialSize(&bf_params) +
                               sizeof(*tiered_index);
-        ASSERT_EQ(expected_mem, memory_ctx);
+        ASSERT_LE(expected_mem, memory_ctx);
+        ASSERT_GE(expected_mem * 1.02, memory_ctx);
 
         // Create a vector and add it to the tiered index.
         labelType vec_label = 1;
