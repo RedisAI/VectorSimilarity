@@ -73,7 +73,7 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
-    virtual ~TieredHNSWIndex() = default;
+    virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
     size_t indexSize() const override;
@@ -206,6 +206,7 @@ finish:
     if (labelToInsertJobs.at(job->label).empty()) {
         labelToInsertJobs.erase(job->label);
     }
+    delete job;
     this->flatIndexGuard.unlock();
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
@@ -219,6 +220,16 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
+}
+
+template <typename DataType, typename DistType>
+TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
+    // Delete all the pending insert jobs.
+    for (auto &jobs : this->labelToInsertJobs) {
+        for (auto *job : jobs.second) {
+            delete job;
+        }
+    }
 }
 
 template <typename DataType, typename DistType>

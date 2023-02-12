@@ -161,10 +161,6 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         }
 
         // Cleanup.
-        while (!jobQ->empty()) {
-            delete jobQ->front();
-            jobQ->pop();
-        }
         delete jobQ;
         VecSimIndex_Free(tiered_index);
     }
@@ -219,7 +215,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
 
         // Cleanup.
-        delete insert_job;
         delete jobQ;
         VecSimIndex_Free(tiered_index);
     }
@@ -255,7 +250,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
             jobQ->pop();
             lock.unlock();
             job->Execute(job);
-            delete job;
         }
     };
 
