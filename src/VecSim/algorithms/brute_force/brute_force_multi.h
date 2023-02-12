@@ -124,6 +124,9 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVectorById(labelType label,
         if (ids[i] == id) {
             this->removeVector(id);
             ids.erase(ids.begin() + i);
+            if (ids.empty()) {
+                labelToIdsLookup.erase(label);
+            }
             return 1;
         }
     }
