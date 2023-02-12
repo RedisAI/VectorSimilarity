@@ -294,7 +294,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     thread_pool.clear();
 }
 
-
 TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -334,9 +333,9 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     }
 
     // Insert vectors
-    for (size_t i = 0; i < n/per_label; i++) {
+    for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i*per_label + j);
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i * per_label + j);
         }
     }
     ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
@@ -355,12 +354,12 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
         thread_pool[i].join();
     }
     EXPECT_EQ(tiered_index->index->indexSize(), n);
-    EXPECT_EQ(tiered_index->indexLabelCount(), n/per_label);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n / per_label);
     EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(jobQ->size(), 0);
     // Verify that the vectors were inserted to HNSW as expected
-    for (size_t i = 0; i < n/per_label; i++) {
+    for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
             // The distance from every vector that is stored under the label i should be zero
             TEST_DATA_T expected_vector[dim];
@@ -374,4 +373,3 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     VecSimIndex_Free(tiered_index);
     thread_pool.clear();
 }
-

@@ -181,20 +181,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // The job might have been invalidated due to overwrite in the meantime. In this case,
         // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
         if (job->label != HNSW_INVALID_LABEL) {
-            // Remove the vector from the flat buffer.
-            int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
-            // This will cause the last id to swap with the deleted id.
-            if (deleted && this->flatBuffer->indexSize() > 0) {
-                labelType last_idx_label = this->flatBuffer->getIdToLabelMap()[job->id];
-                if (this->labelToInsertJobs.find(last_idx_label) != this->labelToInsertJobs.end()) {
-                    // There is a pending job for the label of the swapped last id - update its id.
-                    for (HNSWInsertJob *job_it : this->labelToInsertJobs.at(last_idx_label)) {
-                        if (job_it->id == this->flatBuffer->indexSize()) {
-                            job_it->id = job->id;
-                        }
-                    }
-                }
-            }
             // Remove the job pointer from the labelToInsertJobs mapping.
             auto &jobs = labelToInsertJobs.at(job->label);
             for (size_t i = 0; i < jobs.size(); i++) {
@@ -205,6 +191,21 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             }
             if (labelToInsertJobs.at(job->label).empty()) {
                 labelToInsertJobs.erase(job->label);
+            }
+            // Remove the vector from the flat buffer.
+            int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
+            // This will cause the last id to swap with the deleted id - update the job with the
+            // pending job with the last id if exists.
+            if (deleted && this->flatBuffer->indexSize() > 0) {
+                labelType last_idx_label = this->flatBuffer->getIdToLabelMap()[job->id];
+                if (this->labelToInsertJobs.find(last_idx_label) != this->labelToInsertJobs.end()) {
+                    // There is a pending job for the label of the swapped last id - update its id.
+                    for (HNSWInsertJob *job_it : this->labelToInsertJobs.at(last_idx_label)) {
+                        if (job_it->id == this->flatBuffer->indexSize()) {
+                            job_it->id = job->id;
+                        }
+                    }
+                }
             }
         }
     }
