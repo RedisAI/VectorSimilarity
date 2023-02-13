@@ -94,9 +94,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t expected_memory = memory_before + (index->index_ref->info().hnswInfo.visitedNodesPoolSize - 1) *
-                                                 (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
-                                                  2 * sizeof(size_t) + sizeof(void *));
+    size_t expected_memory =
+        memory_before +
+        (index->index_ref->info().hnswInfo.visitedNodesPoolSize - 1) *
+            (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n + 2 * sizeof(size_t) + sizeof(void *));
     ASSERT_EQ(expected_memory, index->index_ref->info().hnswInfo.memory);
 
     VecSimIndex_Free(index);
@@ -269,9 +270,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t expected_memory = memory_before + (index->index_ref->info().hnswInfo.visitedNodesPoolSize - 1) *
-                                                 (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
-                                                  2 * sizeof(size_t) + sizeof(void *));
+    size_t expected_memory =
+        memory_before +
+        (index->index_ref->info().hnswInfo.visitedNodesPoolSize - 1) *
+            (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n + 2 * sizeof(size_t) + sizeof(void *));
     ASSERT_EQ(expected_memory, index->index_ref->info().hnswInfo.memory);
     VecSimIndex_Free(index);
 }

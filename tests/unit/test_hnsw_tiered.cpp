@@ -32,7 +32,8 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         TEST_DATA_T vector[tiered_index->index->getDim()];
         GenerateVector<TEST_DATA_T>(vector, tiered_index->index->getDim());
         labelType vector_label = 1;
-        VecSimIndex_AddVector(tiered_index->flatBuffer, vector, vector_label);
+        tiered_index->flatBuffer->increaseCapacity();
+        tiered_index->flatBuffer->addVector(vector, vector_label);
 
         // Create a mock job that inserts some vector into the HNSW index.
         auto insert_to_index = [](void *job) {
@@ -43,12 +44,12 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
             // Move the vector from the temp flat index into the HNSW index.
             // Note that we access the vector via its internal id since in index of type MULTI,
             // this is the only way to do so (knowing the label is not enough...)
-            VecSimIndex_AddVector(my_index,
-                                  my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
-                                  my_insert_job->label);
+            my_index->index->increaseCapacity();
+            my_index->index->addVector(my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
+                                       my_insert_job->label);
             // TODO: enable deleting vectors by internal id for the case of moving a single vector
             //  from the flat buffer in MULTI.
-            VecSimIndex_DeleteVector(my_index->flatBuffer, my_insert_job->label);
+            my_index->flatBuffer->deleteVector(my_insert_job->label);
             auto it = my_index->labelToInsertJobs[my_insert_job->label].begin();
             ASSERT_EQ(job, *it); // Assert pointers equation
             // Here we update labelToInsertJobs mapping, as we except that for every insert job
@@ -83,6 +84,6 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         // Cleanup.
         delete jobQ;
         array_free(jobs);
-        VecSimIndex_Free(tiered_index);
+        delete tiered_index;
     }
 }

@@ -41,7 +41,7 @@ public:
     virtual ~TieredHNSWIndex() = default;
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    int addVector(const void *blob, labelType label, bool overwrite_allowed) override {
+    int addVector(const void *blob, labelType label, bool overwrite_allowed = true) override {
         return this->index->addVector(blob, label, overwrite_allowed);
     }
     int deleteVector(labelType id) override { return this->index->deleteVector(id); }

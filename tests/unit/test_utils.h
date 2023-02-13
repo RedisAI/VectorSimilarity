@@ -55,7 +55,7 @@ inline VecSimParams CreateParams(const BFParams &bf_params) {
 namespace test_utils {
 template <typename IndexParams>
 inline VecSimIndexRef *CreateNewIndex(IndexParams &index_params, VecSimType type,
-                                   bool is_multi = false) {
+                                      bool is_multi = false) {
     index_params.type = type;
     index_params.multi = is_multi;
     VecSimParams params = CreateParams(index_params);

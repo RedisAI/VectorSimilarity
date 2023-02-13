@@ -43,7 +43,7 @@ public:
      * @return the number of new vectors inserted (1 for new insertion, 0 for override), or -1
      * in case that override is not allowed and label already exists.
      */
-    virtual int addVector(const void *blob, labelType label, bool overwriteAllowed) = 0;
+    virtual int addVector(const void *blob, labelType label, bool overwriteAllowed = true) = 0;
 
     /**
      * @brief Remove a vector from an index.

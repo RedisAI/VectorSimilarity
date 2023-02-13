@@ -220,11 +220,11 @@ VecSimIndexRef *NewIndex(const std::string &location, const HNSWParams *v1_param
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     if (params.type == VecSimType_FLOAT32) {
-        return new (allocator) VecSimIndexRef(allocator,
-                                              NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version));
+        return new (allocator) VecSimIndexRef(
+            allocator, NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version));
     } else if (params.type == VecSimType_FLOAT64) {
-        return new (allocator) VecSimIndexRef(allocator,
-                                              NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version));
+        return new (allocator) VecSimIndexRef(
+            allocator, NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version));
     } else {
         throw std::runtime_error("Cannot load index: bad index data type");
     }

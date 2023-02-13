@@ -167,10 +167,13 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     }
 }
 
-extern "C" size_t VecSimIndex_IndexSize(VecSimIndexRef *index) { return index->index_ref->indexSize(); }
+extern "C" size_t VecSimIndex_IndexSize(VecSimIndexRef *index) {
+    return index->index_ref->indexSize();
+}
 
-extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndexRef *index, VecSimRawParam *rparams,
-                                                       int paramNum, VecSimQueryParams *qparams,
+extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndexRef *index,
+                                                       VecSimRawParam *rparams, int paramNum,
+                                                       VecSimQueryParams *qparams,
                                                        VecsimQueryType query_type) {
 
     if (!qparams || (!rparams && (paramNum != 0))) {
@@ -220,8 +223,9 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndexRef *index, Ve
     return res;
 }
 
-extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndexRef *index, const void *queryBlob,
-                                                        size_t k, VecSimQueryParams *queryParams,
+extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndexRef *index,
+                                                        const void *queryBlob, size_t k,
+                                                        VecSimQueryParams *queryParams,
                                                         VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
@@ -234,8 +238,8 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndexRef *index, c
     return results;
 }
 
-extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndexRef *index, const void *queryBlob,
-                                                         double radius,
+extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndexRef *index,
+                                                         const void *queryBlob, double radius,
                                                          VecSimQueryParams *queryParams,
                                                          VecSimQueryResult_Order order) {
     if (order != BY_ID && order != BY_SCORE) {
@@ -260,13 +264,16 @@ extern "C" void VecSimIndex_Free(VecSimIndexRef *index) {
     delete index;
 }
 
-extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndexRef *index) { return index->index_ref->info(); }
+extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndexRef *index) {
+    return index->index_ref->info();
+}
 
 extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndexRef *index) {
     return index->index_ref->infoIterator();
 }
 
-extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndexRef *index, const void *queryBlob,
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndexRef *index,
+                                                        const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
     return index->index_ref->newBatchIterator(queryBlob, queryParams);
 }
