@@ -7,4 +7,8 @@
 #pragma once
 #include <cstdlib>
 
-void FP32_to_BF16(const void *pVect1v, void *pVect2v, size_t qty);
+void FP32_to_BF16_BigEndian(const void *pVect1v, void *pVect2v, size_t qty);
+void FP32_to_BF16_LittleEndian(const void *pVect1v, void *pVect2v, size_t qty);
+
+void BF16_to_FP32_BigEndian(const void *pVect1v, void *pVect2v, size_t qty);
+void BF16_to_FP32_LittleEndian(const void *pVect1v, void *pVect2v, size_t qty);

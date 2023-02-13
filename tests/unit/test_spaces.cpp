@@ -399,31 +399,35 @@ INSTANTIATE_TEST_SUITE_P(
                     std::make_pair(7, spaces_test::IP_dist_funcs_2ExtResiduals)));
 
 
-int little_endian(){
-    int x = 1;
-    return *(char*)&x;
-}
-int big_endian(){
-    return !little_endian();
-}
-
-TEST_F(SpacesTest, test_bf16_convert) {
-    ASSERT_TRUE(little_endian());
+TEST_F(SpacesTest, test_bf16_convertors) {
     
     using namespace spaces;
-    fp32_to_bf16_converter_t converter = Get_FP32_to_BF16_Converter(1, ARCH_OPT_NONE);
-    float f = 1.0;
-    bf16 bf;
-    converter(&f, &bf, 1);
-    ASSERT_TRUE(memcmp(((char*)&f)+2, &bf, sizeof(bf16)) == 0);
+    fp32_to_bf16_converter_t fp32_to_bf16_converter = Get_FP32_to_BF16_Converter(1, ARCH_OPT_NONE, false);
+    bf16_to_fp32_converter_t bf16_to_fp32_converter = Get_BF16_to_FP32_Converter(1, ARCH_OPT_NONE, false);
+    size_t dim = 128;
+    float v[dim] = {0};
+    bf16 v_bf[dim] = {0};
+    float v2[dim] = {0};
 
-    float f2;
-    memset(&f2, 0, sizeof(float));
-    memcpy(((char*)&f2)+2, &bf, sizeof(bf16));
+    uint16_t blobs[dim] = {0};
+    for (size_t i = 0; i < dim; i++) {
+        // Generate random 16 bits
+        blobs[i] = rand()%(UINT16_MAX);
+        // Copy 16 bits to the 2nd and 3rd byte of the float
+        memcpy(((char*)&v[i])+2, &blobs[i], sizeof(uint16_t));
+    }
 
-    ASSERT_EQ(f, f2);
+    // Convert to bf16
+    fp32_to_bf16_converter(v, v_bf, dim);
 
+    // Validate that the converted values are the same as the original
+    ASSERT_TRUE(memcmp(blobs, v_bf, sizeof(bf16)*dim) == 0);
+    
+    // Convert back to fp32
+    bf16_to_fp32_converter(v_bf, v2, dim);
 
+    // Validate that the converted values are the same as the original
+    ASSERT_TRUE(memcmp(v, v2, sizeof(float)*dim) == 0);
 }
 #endif // CPU_FEATURES_ARCH_X86_64
 

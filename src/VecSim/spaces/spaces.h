@@ -38,6 +38,6 @@ CalculationGuideline FP64_GetCalculationGuideline(size_t dim);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<float> *index_dist_func);
 void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dist_func);
 
-bf16_converter_t GetBFloat16Converter(size_t dim);
+fp32_to_bf16_converter_t GetFP32ToBFloat16Converter(size_t dim);
 
 } // namespace spaces

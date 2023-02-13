@@ -80,10 +80,18 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dis
     }
 }
 
-bf16_converter_t GetBFloat16Converter(size_t dim) {
+int little_endian(){
+    int x = 1;
+    return *(char*)&x;
+}
+int big_endian(){
+    return !little_endian();
+}
+
+fp32_to_bf16_converter_t GetFP32ToBFloat16Converter(size_t dim) {
     
         static const Arch_Optimization arch_opt = getArchitectureOptimization();
-        return Get_FP32_to_BF16_Converter(dim, arch_opt);
+        return Get_FP32_to_BF16_Converter(dim, arch_opt, big_endian());
 }
 
 

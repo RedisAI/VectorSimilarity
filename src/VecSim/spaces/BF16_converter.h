@@ -8,6 +8,8 @@
 #include "VecSim/spaces/spaces.h"
 
 namespace spaces {
-fp32_to_bf16_converter_t Get_FP32_to_BF16_Converter(size_t dim, const Arch_Optimization arch_opt);
+fp32_to_bf16_converter_t Get_FP32_to_BF16_Converter(size_t dim, const Arch_Optimization arch_opt, bool big_endian);
+
+bf16_to_fp32_converter_t Get_BF16_to_FP32_Converter(size_t dim, const Arch_Optimization arch_opt, bool big_endian);
 
 } // namespace spaces
