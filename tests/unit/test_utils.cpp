@@ -44,7 +44,7 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
     return QueryParams;
 }
 
-void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
+void runTopKSearchTest(VecSimIndexRef *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
@@ -218,7 +218,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
  * helper function to run range query and iterate over the results. ResCB is a callback that takes
  * the id, score and index of a result, and performs test-specific logic for each.
  */
-void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
+void runRangeQueryTest(VecSimIndexRef *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryResult_Order order,
                        VecSimQueryParams *params) {

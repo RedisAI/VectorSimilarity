@@ -177,3 +177,9 @@ public:
         VecSimIndexInterface::timeoutCallback = callback;
     }
 };
+
+struct VecSimIndexInterfaceRef : public VecsimBaseObject {
+    std::shared_ptr<VecSimIndexInterface> index_ref;
+    VecSimIndexInterfaceRef(std::shared_ptr<VecSimAllocator> allocator, VecSimIndexInterface *index)
+        : VecsimBaseObject(allocator), index_ref(index) {}
+};

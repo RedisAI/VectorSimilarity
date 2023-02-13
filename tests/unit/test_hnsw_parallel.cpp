@@ -21,14 +21,14 @@ public:
     using dist_t = typename index_type_t::dist_t;
 
 protected:
-    VecSimIndex *CreateNewIndex(HNSWParams &params, bool is_multi = false) {
+    VecSimIndexRef *CreateNewIndex(HNSWParams &params, bool is_multi = false) {
         return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
     }
-    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndexRef *index) {
+        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index->index_ref.get());
     }
-    HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
+    HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndexRef *index) {
+        return reinterpret_cast<HNSWIndex_Single<data_t, dist_t> *>(index->index_ref.get());
     }
 };
 
@@ -47,7 +47,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
                          .M = 64,
                          .efConstruction = 200,
                          .efRuntime = n};
-    VecSimIndex *index = this->CreateNewIndex(params);
+    VecSimIndexRef *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -79,7 +79,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
         successful_searches++;
     };
 
-    size_t memory_before = index->info().hnswInfo.memory;
+    size_t memory_before = index->index_ref->info().hnswInfo.memory;
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -94,10 +94,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+    size_t expected_memory = memory_before + (index->index_ref->info().hnswInfo.visitedNodesPoolSize - 1) *
                                                  (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
                                                   2 * sizeof(size_t) + sizeof(void *));
-    ASSERT_EQ(expected_memory, index->info().hnswInfo.memory);
+    ASSERT_EQ(expected_memory, index->index_ref->info().hnswInfo.memory);
 
     VecSimIndex_Free(index);
 }
@@ -110,13 +110,13 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
 
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 64, .efRuntime = n};
-    VecSimIndex *index = this->CreateNewIndex(params, true);
+    VecSimIndexRef *index = this->CreateNewIndex(params, true);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(index->indexLabelCount(), n_labels);
+    ASSERT_EQ(index->index_ref->indexLabelCount(), n_labels);
 
     size_t n_threads = MIN(8, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
@@ -165,7 +165,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
                          .M = 64,
                          .efConstruction = 200,
                          .efRuntime = n};
-    VecSimIndex *index = this->CreateNewIndex(params);
+    VecSimIndexRef *index = this->CreateNewIndex(params);
 
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -249,7 +249,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     };
 
     std::thread thread_objs[n_threads];
-    size_t memory_before = index->info().hnswInfo.memory;
+    size_t memory_before = index->index_ref->info().hnswInfo.memory;
     for (size_t i = 0; i < n_threads; i++) {
         if (i % 3 == 0) {
             thread_objs[i] = std::thread(parallel_knn_search, i);
@@ -269,10 +269,10 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+    size_t expected_memory = memory_before + (index->index_ref->info().hnswInfo.visitedNodesPoolSize - 1) *
                                                  (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
                                                   2 * sizeof(size_t) + sizeof(void *));
-    ASSERT_EQ(expected_memory, index->info().hnswInfo.memory);
+    ASSERT_EQ(expected_memory, index->index_ref->info().hnswInfo.memory);
     VecSimIndex_Free(index);
 }
 
@@ -287,7 +287,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsert) {
                          .M = 16,
                          .efConstruction = 200};
 
-    VecSimIndex *parallel_index = this->CreateNewIndex(params);
+    VecSimIndexRef *parallel_index = this->CreateNewIndex(params);
     size_t n_threads = 10;
 
     // Save the number fo tasks done by thread i in the i-th entry.
@@ -339,7 +339,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertMulti) {
                          .M = 16,
                          .efConstruction = 200};
 
-    VecSimIndex *parallel_index = this->CreateNewIndex(params, true);
+    VecSimIndexRef *parallel_index = this->CreateNewIndex(params, true);
     size_t n_threads = 10;
 
     // Save the number fo tasks done by thread i in the i-th entry.
@@ -391,7 +391,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                          .efRuntime = n};
 
     for (bool is_multi : {true, false}) {
-        VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
+        VecSimIndexRef *parallel_index = this->CreateNewIndex(params, is_multi);
         size_t n_threads = MIN(10, std::thread::hardware_concurrency());
         // Save the number fo tasks done by thread i in the i-th entry.
         std::vector<size_t> completed_tasks(n_threads, 0);

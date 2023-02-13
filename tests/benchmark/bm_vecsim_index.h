@@ -11,15 +11,15 @@ public:
 
     static std::vector<std::vector<data_t>> queries;
 
-    static std::vector<VecSimIndex *> indices;
+    static std::vector<VecSimIndexRef *> indices;
 
     BM_VecSimIndex();
 
     virtual ~BM_VecSimIndex();
 
 protected:
-    static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
-        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index);
+    static inline HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndexRef *index) {
+        return reinterpret_cast<HNSWIndex<data_t, dist_t> *>(index->index_ref.get());
     }
     static inline char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
@@ -42,17 +42,17 @@ template <>
 std::vector<std::vector<double>> BM_VecSimIndex<fp64_index_t>::queries{};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<fp32_index_t>::indices{};
+std::vector<VecSimIndexRef *> BM_VecSimIndex<fp32_index_t>::indices{};
 
 template <>
-std::vector<VecSimIndex *> BM_VecSimIndex<fp64_index_t>::indices{};
+std::vector<VecSimIndexRef *> BM_VecSimIndex<fp64_index_t>::indices{};
 
 template <typename index_type_t>
 BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     ref_count--;
     if (ref_count == 0) {
-        VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
+        delete indices[VecSimAlgo_BF];
+        delete indices[VecSimAlgo_HNSWLIB];
     }
 }
 

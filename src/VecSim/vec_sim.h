@@ -16,6 +16,7 @@ extern "C" {
 #include "info_iterator.h"
 
 typedef struct VecSimIndexInterface VecSimIndex;
+typedef struct VecSimIndexInterfaceRef VecSimIndexRef;
 
 /**
  * @brief Create a new VecSim index based on the given params.
@@ -23,7 +24,7 @@ typedef struct VecSimIndexInterface VecSimIndex;
  * algorithm-related params).
  * @return A pointer to the created index.
  */
-VecSimIndex *VecSimIndex_New(const VecSimParams *params);
+VecSimIndexRef *VecSimIndex_New(const VecSimParams *params);
 
 /**
  * @brief Estimates the size of an empty index according to the parameters.
@@ -45,7 +46,7 @@ size_t VecSimIndex_EstimateElementSize(const VecSimParams *params);
  * @brief Release an index and its internal data.
  * @param index the index to release.
  */
-void VecSimIndex_Free(VecSimIndex *index);
+void VecSimIndex_Free(VecSimIndexRef *index);
 
 /**
  * @brief Add a vector to an index.
@@ -55,7 +56,7 @@ void VecSimIndex_Free(VecSimIndex *index);
  * @param id the id of the added vector
  * @return always returns true
  */
-int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
+int VecSimIndex_AddVector(VecSimIndexRef *index, const void *blob, size_t id);
 
 /**
  * @brief Remove a vector from an index.
@@ -63,7 +64,7 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
  * @param id the id of the removed vector
  * @return always returns true
  */
-int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
+int VecSimIndex_DeleteVector(VecSimIndexRef *index, size_t id);
 
 /**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
@@ -77,7 +78,7 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
  * @return The distance (according to the index's distance metric) between `blob` and the vector
  * with id `id`.
  */
-double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob);
+double VecSimIndex_GetDistanceFrom(VecSimIndexRef *index, size_t id, const void *blob);
 
 /**
  * @brief normalize the vector blob in place.
@@ -93,7 +94,7 @@ void VecSim_Normalize(void *blob, size_t dim, VecSimType type);
  * @param index the index whose size is requested.
  * @return index size.
  */
-size_t VecSimIndex_IndexSize(VecSimIndex *index);
+size_t VecSimIndex_IndexSize(VecSimIndexRef *index);
 
 /**
  * @brief Resolves VecSimRawParam array and generate VecSimQueryParams struct.
@@ -104,7 +105,7 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * @param query_type indicates if query is hybrid, range or "standard" VSS query.
  * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
  */
-VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
+VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndexRef *index, VecSimRawParam *rparams,
                                             int paramNum, VecSimQueryParams *qparams,
                                             VecsimQueryType query_type);
 
@@ -121,7 +122,7 @@ VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
-VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndexRef *index, const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams,
                                              VecSimQueryResult_Order);
 
@@ -138,7 +139,7 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
-VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndexRef *index, const void *queryBlob,
                                               double radius, VecSimQueryParams *queryParams,
                                               VecSimQueryResult_Order);
 /**
@@ -146,7 +147,7 @@ VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *qu
  * @param index the index to return its info.
  * @return Index general and specific meta-data.
  */
-VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
+VecSimIndexInfo VecSimIndex_Info(VecSimIndexRef *index);
 
 /**
  * @brief Returns an info iterator for generic reply purposes.
@@ -154,7 +155,7 @@ VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
  * @param index this index to return its info.
  * @return VecSimInfoIterator* An iterable containing the index general and specific meta-data.
  */
-VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
+VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndexRef *index);
 
 /**
  * @brief Create a new batch iterator for a specific index, for a specific query vector,
@@ -166,7 +167,7 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
  * @param queryParams run time params for the search, which are algorithm-specific.
  * @return Fresh batch iterator
  */
-VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
+VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndexRef *index, const void *queryBlob,
                                              VecSimQueryParams *queryParams);
 
 /**
@@ -181,7 +182,7 @@ VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *que
  * @param initial_check flag to indicate if this check is performed for the first time (upon
  * creating the hybrid iterator), or after running batches.
  */
-bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
+bool VecSimIndex_PreferAdHocSearch(VecSimIndexRef *index, size_t subsetSize, size_t k,
                                    bool initial_check);
 
 /**

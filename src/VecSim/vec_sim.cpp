@@ -13,6 +13,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/vec_sim_interface.h"
 #include <cassert>
 #include "memory.h"
 
@@ -99,8 +100,8 @@ static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
     return VecSimParamResolver_OK;
 }
 
-extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
-    VecSimIndex *index = NULL;
+extern "C" VecSimIndexRef *VecSimIndex_New(const VecSimParams *params) {
+    VecSimIndex *index = nullptr;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
         switch (params->algo) {
@@ -114,7 +115,7 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     } catch (...) {
         // Index will delete itself. For now, do nothing.
     }
-    return index;
+    return new (allocator) VecSimIndexRef(allocator, index);
 }
 
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
@@ -127,25 +128,25 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     return -1;
 }
 
-extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    int64_t before = index->getAllocationSize();
-    if (index->indexSize() == index->indexCapacity()) {
-        index->increaseCapacity();
+extern "C" int VecSimIndex_AddVector(VecSimIndexRef *index, const void *blob, size_t id) {
+    int64_t before = index->index_ref->getAllocationSize();
+    if (index->index_ref->indexSize() == index->index_ref->indexCapacity()) {
+        index->index_ref->increaseCapacity();
     }
-    index->addVector(blob, id, true);
-    int64_t after = index->getAllocationSize();
+    index->index_ref->addVector(blob, id, true);
+    int64_t after = index->index_ref->getAllocationSize();
     return after - before;
 }
 
-extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
-    int64_t before = index->getAllocationSize();
-    index->deleteVector(id);
-    int64_t after = index->getAllocationSize();
+extern "C" int VecSimIndex_DeleteVector(VecSimIndexRef *index, size_t id) {
+    int64_t before = index->index_ref->getAllocationSize();
+    index->index_ref->deleteVector(id);
+    int64_t after = index->index_ref->getAllocationSize();
     return after - before;
 }
 
-extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob) {
-    return index->getDistanceFrom(id, blob);
+extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndexRef *index, size_t id, const void *blob) {
+    return index->index_ref->getDistanceFrom(id, blob);
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
@@ -166,16 +167,16 @@ extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {
     }
 }
 
-extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->indexSize(); }
+extern "C" size_t VecSimIndex_IndexSize(VecSimIndexRef *index) { return index->index_ref->indexSize(); }
 
-extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
+extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndexRef *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
                                                        VecsimQueryType query_type) {
 
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
     }
-    VecSimAlgo index_type = index->info().algo;
+    VecSimAlgo index_type = index->index_ref->info().algo;
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
@@ -214,18 +215,18 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
         return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
     }
     if (qparams->searchMode != 0) {
-        index->setLastSearchMode(qparams->searchMode);
+        index->index_ref->setLastSearchMode(qparams->searchMode);
     }
     return res;
 }
 
-extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndexRef *index, const void *queryBlob,
                                                         size_t k, VecSimQueryParams *queryParams,
                                                         VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryResult_List results;
-    results = index->topKQuery(queryBlob, k, queryParams);
+    results = index->index_ref->topKQuery(queryBlob, k, queryParams);
 
     if (order == BY_ID) {
         sort_results_by_id(results);
@@ -233,7 +234,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     return results;
 }
 
-extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndexRef *index, const void *queryBlob,
                                                          double radius,
                                                          VecSimQueryParams *queryParams,
                                                          VecSimQueryResult_Order order) {
@@ -243,7 +244,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, con
     if (radius < 0) {
         throw std::runtime_error("radius must be non-negative");
     }
-    VecSimQueryResult_List results = index->rangeQuery(queryBlob, radius, queryParams);
+    VecSimQueryResult_List results = index->index_ref->rangeQuery(queryBlob, radius, queryParams);
 
     if (order == BY_SCORE) {
         sort_results_by_score(results);
@@ -253,28 +254,28 @@ extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, con
     return results;
 }
 
-extern "C" void VecSimIndex_Free(VecSimIndex *index) {
+extern "C" void VecSimIndex_Free(VecSimIndexRef *index) {
     std::shared_ptr<VecSimAllocator> allocator =
-        index->getAllocator(); // Save allocator so it will not deallocate itself
+        index->index_ref->getAllocator(); // Save allocator so it will not deallocate itself
     delete index;
 }
 
-extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
+extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndexRef *index) { return index->index_ref->info(); }
 
-extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
-    return index->infoIterator();
+extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndexRef *index) {
+    return index->index_ref->infoIterator();
 }
 
-extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
+extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndexRef *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
-    return index->newBatchIterator(queryBlob, queryParams);
+    return index->index_ref->newBatchIterator(queryBlob, queryParams);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
     VecSimAllocator::setMemoryFunctions(memoryfunctions);
 }
 
-extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
+extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndexRef *index, size_t subsetSize, size_t k,
                                               bool initial_check) {
-    return index->preferAdHocSearch(subsetSize, k, initial_check);
+    return index->index_ref->preferAdHocSearch(subsetSize, k, initial_check);
 }

@@ -36,7 +36,7 @@ static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
 }
 
 template <typename data_t>
-int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value = 1.0) {
+int GenerateAndAddVector(VecSimIndexRef *index, size_t dim, size_t id, data_t value = 1.0) {
     data_t v[dim];
     GenerateVector(v, dim, value);
     return VecSimIndex_AddVector(index, v, id);
@@ -54,7 +54,7 @@ inline VecSimParams CreateParams(const BFParams &bf_params) {
 
 namespace test_utils {
 template <typename IndexParams>
-inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,
+inline VecSimIndexRef *CreateNewIndex(IndexParams &index_params, VecSimType type,
                                    bool is_multi = false) {
     index_params.type = type;
     index_params.multi = is_multi;
@@ -82,7 +82,7 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
 inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2); }
-void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
+void runTopKSearchTest(VecSimIndexRef *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,
                        VecSimQueryResult_Order order = BY_SCORE);
@@ -96,7 +96,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
-void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
+void runRangeQueryTest(VecSimIndexRef *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryResult_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);

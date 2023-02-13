@@ -51,6 +51,7 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     } else if (params->type == VecSimType_FLOAT64) {
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     }
+    est += sizeof(VecSimIndexInterfaceRef) + sizeof(size_t);
 
     // Account for the visited nodes pool (assume that it holds one pointer to a handler).
     est += sizeof(VisitedNodesHandler) + sizeof(size_t);
@@ -183,7 +184,7 @@ static void InitializeParams(const HNSWParams *source_params, HNSWParams &params
     params.epsilon = source_params->epsilon ? source_params->epsilon : HNSW_DEFAULT_EPSILON;
 }
 
-VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) {
+VecSimIndexRef *NewIndex(const std::string &location, const HNSWParams *v1_params) {
 
     std::ifstream input(location, std::ios::binary);
     if (!input.is_open()) {
@@ -219,9 +220,11 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     if (params.type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
+        return new (allocator) VecSimIndexRef(allocator,
+                                              NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version));
     } else if (params.type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
+        return new (allocator) VecSimIndexRef(allocator,
+                                              NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version));
     } else {
         throw std::runtime_error("Cannot load index: bad index data type");
     }

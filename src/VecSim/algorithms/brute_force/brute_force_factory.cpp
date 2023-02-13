@@ -49,8 +49,8 @@ size_t EstimateInitialSize(const BFParams *params) {
     } else if (params->type == VecSimType_FLOAT64) {
         est += EstimateInitialSize_ChooseMultiOrSingle<double>(params->multi);
     }
+    est += sizeof(VecSimIndexInterfaceRef) + sizeof(size_t);
     // Parameters related part.
-
     if (params->initialCapacity) {
         est += params->initialCapacity * sizeof(labelType) + sizeof(size_t);
     }

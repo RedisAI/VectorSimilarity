@@ -26,7 +26,7 @@ size_t EstimateElementSize(const HNSWParams *params);
 // @params is only used for backward compatibility with V1. It won't be used if V2 and up is loaded.
 // Required fields: type, dim, metric and multi
 // Permission fields that *** must be initalized to zero ***: blockSize, epsilon *
-VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params = nullptr);
+VecSimIndexRef *NewIndex(const std::string &location, const HNSWParams *v1_params = nullptr);
 
 #endif
 }; // namespace HNSWFactory

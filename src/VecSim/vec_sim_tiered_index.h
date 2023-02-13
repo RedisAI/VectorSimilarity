@@ -35,7 +35,7 @@ public:
             BruteForceFactory::NewIndex(&bf_params, index->getAllocator()));
     }
     ~VecSimTieredIndex() {
-        VecSimIndex_Free(index);
-        VecSimIndex_Free(flatBuffer);
+        delete index;
+        delete flatBuffer;
     }
 };

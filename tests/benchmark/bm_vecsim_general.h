@@ -62,9 +62,9 @@ protected:
         return params;
     }
 
-    // Gets HNSWParams or BFParams parameters struct, and creates new VecSimIndex.
+    // Gets HNSWParams or BFParams parameters struct, and creates new VecSimIndexRef.
     template <typename IndexParams>
-    static inline VecSimIndex *CreateNewIndex(IndexParams &index_params) {
+    static inline VecSimIndexRef *CreateNewIndex(IndexParams &index_params) {
         VecSimParams params = CreateParams(index_params);
         return VecSimIndex_New(&params);
     }

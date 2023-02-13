@@ -32,7 +32,7 @@ template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
     size_t index_size = N_VECTORS;
-    size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t initial_label_count = (INDICES[st.range(0)])->index_ref->indexLabelCount();
 
     // In a single vector per label index, index size should equal label count.
     size_t vec_per_label = index_size % initial_label_count == 0
@@ -61,9 +61,9 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
-    size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t new_label_count = (INDICES[st.range(0)])->index_ref->indexLabelCount();
     for (size_t label = initial_label_count; label < new_label_count; label++) {
-        VecSimIndex_DeleteVector(INDICES[st.range(0)], label);
+        (INDICES[st.range(0)])->index_ref->deleteVector(label);
     }
 
     assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
@@ -89,7 +89,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         st.ResumeTiming();
 
         // Delete label
-        auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
+        auto delta = (double)index->deleteVector(label_to_remove++);
         memory_delta += delta;
     }
 
@@ -103,7 +103,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         size_t vec_count = removed_labels_data[label_idx].size();
         // Reinsert all the deleted vectors under this label.
         for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
-            VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
+            index->addVector(removed_labels_data[label_idx][vec_idx].data(), label_idx);
         }
     }
 }
