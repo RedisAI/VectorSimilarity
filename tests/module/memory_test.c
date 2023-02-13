@@ -25,7 +25,7 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 }
 
 // Adds 'amount' vectors to the index. could be 0.
-void _add_vectors(VecSimIndex *index, long long amount) {
+void _add_vectors(VecSimIndexRef *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
     size_t dim;
     switch (indexInfo.algo) {
@@ -48,13 +48,13 @@ void _add_vectors(VecSimIndex *index, long long amount) {
 
 // Deletes 'amount' vectors from the index. could be 0 or larger from the number of vectors in the
 // index.
-void _delete_vectors(VecSimIndex *index, long long amount) {
+void _delete_vectors(VecSimIndexRef *index, long long amount) {
     for (long long i = 0; i < amount; i++)
         VecSimIndex_DeleteVector(index, i);
 }
 
 // Creates a generic index, supports Broute Force and HNSW.
-VecSimIndex *_create_index(VecSimAlgo algo) {
+VecSimIndexRef *_create_index(VecSimAlgo algo) {
 
     VecSimParams param = {0};
     param.algo = algo;
@@ -106,7 +106,7 @@ int _VecSim_memory_create_check_impl(RedisModuleCtx *ctx, VecSimAlgo algo, long 
     long long startMemory, endMemory;
     startMemory = _get_memory_usage(ctx); // Gets memory usage before creating the index.
 
-    VecSimIndex *index = _create_index(algo);
+    VecSimIndexRef *index = _create_index(algo);
     _add_vectors(index, addNum);
     _delete_vectors(index, delNum);
 
