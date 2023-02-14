@@ -27,7 +27,7 @@ float BFP16_InnerProduct_impl(const void *pVect1, const void *pVect2, size_t qty
     return res;
 }
 
-float BFP16_InnerProduct(const void *pVect1, const void *pVect2, size_t qty)  {
+float BFP16_InnerProduct(const void *pVect1, const void *pVect2, size_t qty) {
     return 1.0f - BFP16_InnerProduct_impl(pVect1, pVect2, qty);
 }
 

@@ -30,9 +30,11 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     dist_func_t<DistType>
-        dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
-    VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
-    bool isMulti;            // Determines if the index should multi-index or not.
+        dist_func; // Index's distance function. Chosen by the type, metric and dimension.
+
+    encode_func_t encode_func; // Index's encode function. Chosen by the type, metric and dimension.
+    VecSearchMode last_mode;   // The last search mode in RediSearch (used for debug/testing).
+    bool isMulti;              // Determines if the index should multi-index or not.
 
 public:
     /**
@@ -45,19 +47,35 @@ public:
           blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
           isMulti(multi) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, &dist_func);
+        switch (vecType) {
+        case VecSimType_FLOAT32:
+        case VecSimType_FLOAT64:
+            spaces::SetDistFunc(metric, dim, &dist_func);
+
+            break;
+
+        default:
+            break;
+        }
+
+        if (vecType == VecSimType_FLOAT32 || vecType == VecSimType_FLOAT64) {
+            spaces::SetDistFunc(metric, dim, &dist_func);
+        } else if (vecType)
     }
+}
 
-    /**
-     * @brief Destroy the Vec Sim Index object
-     *
-     */
-    virtual ~VecSimIndexAbstract() {}
+/**
+ * @brief Destroy the Vec Sim Index object
+ *
+ */
+virtual ~VecSimIndexAbstract() {
+}
 
-    inline dist_func_t<DistType> getDistFunc() const { return dist_func; }
-    inline size_t getDim() const { return dim; }
-    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
-    inline bool isMultiValue() const { return isMulti; }
-    inline VecSimType getType() const { return vecType; }
-    inline VecSimMetric getMetric() const { return metric; }
-};
+inline dist_func_t<DistType> getDistFunc() const { return dist_func; }
+inline size_t getDim() const { return dim; }
+inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
+inline bool isMultiValue() const { return isMulti; }
+inline VecSimType getType() const { return vecType; }
+inline VecSimMetric getMetric() const { return metric; }
+}
+;

@@ -8,7 +8,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
-#include "VecSim/spaces/BF16_converter.h"
+#include "VecSim/spaces/BF16_encoder.h"
 namespace spaces {
 
 /*** Defined in spaces.h
@@ -80,19 +80,16 @@ void SetDistFunc(VecSimMetric metric, size_t dim, dist_func_t<double> *index_dis
     }
 }
 
-int little_endian(){
+int little_endian() {
     int x = 1;
-    return *(char*)&x;
+    return *(char *)&x;
 }
-int big_endian(){
-    return !little_endian();
-}
+int big_endian() { return !little_endian(); }
 
-fp32_to_bf16_converter_t GetFP32ToBFloat16Converter(size_t dim) {
-    
-        static const Arch_Optimization arch_opt = getArchitectureOptimization();
-        return Get_FP32_to_BF16_Converter(dim, arch_opt, big_endian());
-}
+fp32_to_bf16_encoder_t GetFP32ToBFloat16Encoder(size_t dim) {
 
+    static const Arch_Optimization arch_opt = getArchitectureOptimization();
+    return Get_FP32_to_BF16_Encoder(dim, arch_opt, big_endian());
+}
 
 } // namespace spaces
