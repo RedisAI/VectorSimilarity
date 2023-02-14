@@ -113,7 +113,8 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         // allocations).
         size_t expected_mem = HNSWFactory::EstimateInitialSize(&params) +
                               BruteForceFactory::EstimateInitialSize(&bf_params) +
-                              sizeof(*tiered_index) - 2*(sizeof(VecSimIndexInterfaceRef) + sizeof(size_t));
+                              sizeof(*tiered_index) -
+                              2 * (sizeof(VecSimIndexInterfaceRef) + sizeof(size_t));
         ASSERT_LE(expected_mem, memory_ctx);
         ASSERT_GE(expected_mem * 1.02, memory_ctx);
 
