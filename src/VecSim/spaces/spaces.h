@@ -13,6 +13,8 @@ namespace spaces {
 template <typename RET_TYPE>
 using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 
+using bf16_converter_t = void (*)(const void *, const void *, size_t);
+
 // General optimization logic:
 // SIMD16 perform computations on 16 float at a time in each iteration, while SIMD4 perform
 // computations on 16 float on most of the vector, and on the residual performing on 4 floats at
