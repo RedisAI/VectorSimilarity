@@ -63,12 +63,14 @@ typedef enum {
     VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime
 } VecSimResolveCode;
 
+typedef struct AsyncJob AsyncJob; // forward declaration.
+
 /**
  * Callback signatures for asynchronous tiered index.
  */
-typedef int (*SubmitCB)(void *job_queue, void **jobs, size_t jobs_len);
+typedef int (*SubmitCB)(void *job_queue, AsyncJob **jobs, size_t jobs_len, void *index_ctx);
 typedef int (*UpdateMemoryCB)(void *memory_ctx, size_t memory);
-typedef void (*JobCallback)(void *);
+typedef void (*JobCallback)(AsyncJob *);
 
 /**
  * @brief Index initialization parameters.
@@ -99,6 +101,7 @@ typedef struct {
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;             // External queue that holds the jobs.
+    void *indexCtx;             // External context to be sent to the submit callback.
     SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
     void *memoryCtx;            // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx

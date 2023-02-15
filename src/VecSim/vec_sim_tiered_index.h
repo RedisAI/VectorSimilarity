@@ -11,9 +11,11 @@
 struct AsyncJob : public VecsimBaseObject {
     JobType jobType;
     JobCallback Execute; // A callback that receives a job as its input and executes the job.
+    VecSimIndex *index;
 
-    AsyncJob(std::shared_ptr<VecSimAllocator> allocator, JobType type, JobCallback callback)
-        : VecsimBaseObject(allocator), jobType(type), Execute(callback) {}
+    AsyncJob(std::shared_ptr<VecSimAllocator> allocator, JobType type, JobCallback callback,
+             VecSimIndex *index_ref)
+        : VecsimBaseObject(allocator), jobType(type), Execute(callback), index(index_ref) {}
 };
 
 template <typename DataType, typename DistType>
@@ -23,28 +25,28 @@ protected:
     VecSimIndexAbstract<DistType> *index;
 
     void *jobQueue;
+    void *indexCtx; // External context to be sent to the submit callback.
     SubmitCB SubmitJobsToQueue;
 
     void *memoryCtx;
     UpdateMemoryCB UpdateIndexMemory;
 
-    // Consider putting these in the derived class instead. Also - see if we should use
-    // std::shared_mutex
     std::shared_mutex flatIndexGuard;
     std::shared_mutex mainIndexGuard;
 
     void submitSingleJob(AsyncJob *job) {
         auto **jobs = array_new<AsyncJob *>(1);
         jobs = array_append(jobs, job);
-        this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
+        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)jobs, 1, this->indexCtx);
         array_free(jobs);
     }
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, TieredIndexParams tieredParams)
         : VecSimIndexInterface(index_->getAllocator()), index(index_),
-          jobQueue(tieredParams.jobQueue), SubmitJobsToQueue(tieredParams.submitCb),
-          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {
+          jobQueue(tieredParams.jobQueue), indexCtx(tieredParams.indexCtx),
+          SubmitJobsToQueue(tieredParams.submitCb), memoryCtx(tieredParams.memoryCtx),
+          UpdateIndexMemory(tieredParams.UpdateMemCb) {
         BFParams bf_params = {.type = index_->getType(),
                               .dim = index_->getDim(),
                               .metric = index_->getMetric(),

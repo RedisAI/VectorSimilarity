@@ -129,7 +129,18 @@ inline double GetInfVal(VecSimType type) {
     }
 
 namespace tiered_index_mock {
-using JobQueue = std::queue<void *>;
-int submit_callback(void *job_queue, void **jobs, size_t len);
+
+typedef struct OwnedJob {
+    AsyncJob *job;
+    std::weak_ptr<VecSimIndex> relatedIndex;
+} OwnedJob;
+
+using JobQueue = std::queue<OwnedJob>;
+int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx);
 int update_mem_callback(void *mem_ctx, size_t mem);
+
+typedef struct IndexExtCtx {
+    std::shared_ptr<VecSimIndex> index_ref;
+} IndexExtCtx;
+
 } // namespace tiered_index_mock
