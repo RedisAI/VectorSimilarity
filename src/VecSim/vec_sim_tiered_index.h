@@ -33,6 +33,13 @@ protected:
     std::shared_mutex flatIndexGuard;
     std::shared_mutex mainIndexGuard;
 
+    void submitSingleJob(AsyncJob *job) {
+        auto **jobs = array_new<AsyncJob *>(1);
+        jobs = array_append(jobs, job);
+        this->SubmitJobsToQueue(this->jobQueue, (void **)jobs, 1);
+        array_free(jobs);
+    }
+
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, TieredIndexParams tieredParams)
         : VecSimIndexInterface(index_->getAllocator()), index(index_),
