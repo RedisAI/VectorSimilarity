@@ -230,6 +230,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
                 EXPECT_EQ(jobQ->front().relatedIndex.use_count(), 2);
                 reinterpret_cast<AsyncJob *>(jobQ->front().job)->Execute(jobQ->front().job);
             }
+            jobQ->pop();
         };
         std::thread t1(run_fn);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -239,7 +240,6 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         // Expect that the first job will succeed.
         ASSERT_GE(memory_ctx, initial_mem);
         size_t cur_mem = memory_ctx;
-        jobQ->pop();
 
         // The second job should not run, since the weak reference is not supposed to become a
         // strong references now.
