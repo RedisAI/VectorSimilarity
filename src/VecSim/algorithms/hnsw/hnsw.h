@@ -103,6 +103,7 @@ protected:
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
     mutable std::mutex entry_point_guard_;
+    mutable std::mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
@@ -207,6 +208,8 @@ public:
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
     inline idType safeGetEntryPointCopy() const;
+    inline void lockIndexDataGuard() const;
+    inline void unlockIndexDataGuard() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
@@ -247,7 +250,6 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
 #endif
-    mutable std::mutex index_data_guard_;
 
 protected:
     // inline label to id setters that need to be implemented by derived class
@@ -454,6 +456,16 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
     elementFlags *flags = get_flags(internalId);
     *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::lockIndexDataGuard() const {
+    index_data_guard_.lock();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
+    index_data_guard_.unlock();
 }
 
 template <typename DataType, typename DistType>

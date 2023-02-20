@@ -125,6 +125,8 @@ int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, con
 
     // Checking if an element with the given label already exists.
     bool label_exists = false;
+    // Note that is it the caller responsibility to ensure that this label doesn't exist in the
+    // index before calling this, if overwrite_allowed is false.
     if (overwrite_allowed) {
         if (label_lookup_.find(label) != label_lookup_.end()) {
             label_exists = true;

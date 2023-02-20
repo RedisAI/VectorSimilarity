@@ -117,8 +117,10 @@ public:
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(void *job) {
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
-    reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index)
-        ->executeInsertJob(insert_job);
+    auto *this_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
+    this_index->executeInsertJob(insert_job);
+    this_index->UpdateIndexMemory(this_index->memoryCtx, this_index->getAllocationSize());
+    delete insert_job;
 }
 
 template <typename DataType, typename DistType>
@@ -129,36 +131,54 @@ HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
+    // Note: this method had not been tested with yet overwriting scenarios, where job may
+    // have been invalidate before it is executed (TODO in the future).
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
     this->flatIndexGuard.lock_shared();
     if (job->label == HNSW_INVALID_LABEL) {
         // Job has been invalidated in the meantime.
         this->flatIndexGuard.unlock_shared();
-        goto finish;
+        return;
     }
     // Acquire the index data lock, so we know what is the exact index size at this time.
+    // To avoid deadlocks, we always acquire the main index lock *before* we take internal HNSW
+    // locks.
     this->mainIndexGuard.lock_shared();
-    hnsw_index->index_data_guard_.lock();
+    hnsw_index->lockIndexDataGuard();
+    bool unlock_hnsw_data_guard_required = true;
 
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
-        hnsw_index->index_data_guard_.unlock();
+        // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
+        hnsw_index->unlockIndexDataGuard();
+        unlock_hnsw_data_guard_required = false;
+
+        // Release the read locks before we acquire the HNSW write lock.
         this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
+
         this->mainIndexGuard.lock();
-        hnsw_index->increaseCapacity();
+        // Check if resizing is still required (another thread might have done it in the meantime
+        // while we release the shared lock).
+        if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+            hnsw_index->increaseCapacity();
+        }
         this->mainIndexGuard.unlock();
-        // reacquire the read locks
+
+        // Reacquire the read locks
         this->flatIndexGuard.lock_shared();
         this->mainIndexGuard.lock_shared();
     }
-    hnsw_index->index_data_guard_.unlock();
+    if (unlock_hnsw_data_guard_required) {
+        hnsw_index->unlockIndexDataGuard();
+    }
 
     if (job->label == HNSW_INVALID_LABEL) {
-        // Job has been invalidated in the meantime.
+        // Job has been invalidated in the meantime (by overwriting this label) while we released
+        // the flat index guard.
         this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
-        goto finish;
+        return;
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
@@ -186,8 +206,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             // Remove the vector from the flat buffer.
             int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
             // This will cause the last id to swap with the deleted id - update the job with the
-            // pending job with the last id if exists.
-            if (deleted && this->flatBuffer->indexSize() > 0) {
+            // pending job with the last id, unless the deleted id is the last id.
+            if (deleted && job->id != this->flatBuffer->indexSize()) {
                 labelType last_idx_label = this->flatBuffer->getIdToLabelMap()[job->id];
                 if (this->labelToInsertJobs.find(last_idx_label) != this->labelToInsertJobs.end()) {
                     // There is a pending job for the label of the swapped last id - update its id.
@@ -200,9 +220,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             }
         }
     }
-finish:
-    delete job;
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 /******************** Index API ****************************************/

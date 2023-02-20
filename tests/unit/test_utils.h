@@ -130,7 +130,7 @@ inline double GetInfVal(VecSimType type) {
     }
 
 namespace tiered_index_mock {
-#define THREAD_POOL_SIZE 8
+static const size_t THREAD_POOL_SIZE = 8;
 using JobQueue = std::queue<AsyncJob *>;
 int submit_callback(void *job_queue, void **jobs, size_t len);
 int update_mem_callback(void *mem_ctx, size_t mem);
