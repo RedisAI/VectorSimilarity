@@ -101,7 +101,7 @@ typedef struct {
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;             // External queue that holds the jobs.
-    void *indexCtx;             // External context to be sent to the submit callback.
+    void *jobQueueCtx;          // External context to be sent to the submit callback.
     SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
     void *memoryCtx;            // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx

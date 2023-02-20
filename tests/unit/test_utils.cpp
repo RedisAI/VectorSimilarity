@@ -256,8 +256,9 @@ int tiered_index_mock::submit_callback(void *job_queue, AsyncJob **jobs, size_t 
                                        void *index_ctx) {
     for (size_t i = 0; i < len; i++) {
         // Wrap the job with a struct that contains a weak reference to the related index.
-        auto owned_job = OwnedJob{
-            .job = jobs[i], .relatedIndex = reinterpret_cast<IndexExtCtx *>(index_ctx)->index_ref};
+        auto owned_job = RefManagedJob{
+            .job = jobs[i],
+            .index_weak_ref = reinterpret_cast<IndexExtCtx *>(index_ctx)->index_strong_ref};
         static_cast<JobQueue *>(job_queue)->push(owned_job);
     }
     return VecSim_OK;

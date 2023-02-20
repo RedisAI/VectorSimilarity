@@ -21,10 +21,10 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
                              .metric = VecSimMetric_L2,
                              .multi = is_multi};
         auto *jobQ = new JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto jobQueueCtx = IndexExtCtx();
         size_t memory_ctx = 0;
         TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                           .indexCtx = &index_ctx,
+                                           .jobQueueCtx = &jobQueueCtx,
                                            .submitCb = submit_callback,
                                            .memoryCtx = &memory_ctx,
                                            .UpdateMemCb = update_mem_callback};
@@ -32,7 +32,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
             HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
-        index_ctx.index_ref.reset(tiered_index);
+        jobQueueCtx.index_strong_ref.reset(tiered_index);
 
         // Add a vector to the flat index.
         TEST_DATA_T vector[tiered_index->index->getDim()];
@@ -101,7 +101,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
         TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                           .indexCtx = &index_ctx,
+                                           .jobQueueCtx = &index_ctx,
                                            .submitCb = submit_callback,
                                            .memoryCtx = &memory_ctx,
                                            .UpdateMemCb = update_mem_callback};
@@ -109,7 +109,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
             HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
-        index_ctx.index_ref.reset(tiered_index);
+        index_ctx.index_strong_ref.reset(tiered_index);
 
         BFParams bf_params = {.type = TypeParam::get_index_type(),
                               .dim = dim,
@@ -191,7 +191,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         auto *index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
         TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                           .indexCtx = index_ctx,
+                                           .jobQueueCtx = index_ctx,
                                            .submitCb = submit_callback,
                                            .memoryCtx = &memory_ctx,
                                            .UpdateMemCb = update_mem_callback};
@@ -199,8 +199,8 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
             HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
-        index_ctx->index_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx->index_ref.use_count(), 1);
+        index_ctx->index_strong_ref.reset(tiered_index);
+        EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
         size_t initial_mem = memory_ctx;
 
         // Create a dummy job callback that insert one vector to the underline HNSW index.
@@ -226,16 +226,23 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
 
         // Execute the job from the queue asynchronously, delete the index in the meantime.
         auto run_fn = [&jobQ]() {
-            if (auto temp_ref = jobQ->front().relatedIndex.lock()) {
-                EXPECT_EQ(jobQ->front().relatedIndex.use_count(), 2);
-                reinterpret_cast<AsyncJob *>(jobQ->front().job)->Execute(jobQ->front().job);
+            // Create a temporary strong reference of the index from the weak reference that the
+            // job holds, to ensure that the index is not deleted while the job is running.
+            if (auto temp_ref = jobQ->front().index_weak_ref.lock()) {
+                // At this point we wish to validate that we have both the index strong ref (stored
+                // in index_ctx) and the weak ref owned by the job (that we currently promoted).
+                EXPECT_EQ(jobQ->front().index_weak_ref.use_count(), 2);
+
+                jobQ->front().job->Execute(jobQ->front().job);
             }
             jobQ->pop();
         };
         std::thread t1(run_fn);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // Delete the index while the job is still running, to ensure that the weak ref protects
+        // the index.
         delete index_ctx;
-        EXPECT_EQ(jobQ->front().relatedIndex.use_count(), 1);
+        EXPECT_EQ(jobQ->front().index_weak_ref.use_count(), 1);
         t1.join();
         // Expect that the first job will succeed.
         ASSERT_GE(memory_ctx, initial_mem);
@@ -243,7 +250,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
 
         // The second job should not run, since the weak reference is not supposed to become a
         // strong references now.
-        ASSERT_EQ(jobQ->front().relatedIndex.use_count(), 0);
+        ASSERT_EQ(jobQ->front().index_weak_ref.use_count(), 0);
         std::thread t2(run_fn);
         t2.join();
         ASSERT_EQ(memory_ctx, cur_mem);

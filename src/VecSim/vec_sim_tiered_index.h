@@ -25,7 +25,7 @@ protected:
     VecSimIndexAbstract<DistType> *index;
 
     void *jobQueue;
-    void *indexCtx; // External context to be sent to the submit callback.
+    void *jobQueueCtx; // External context to be sent to the submit callback.
     SubmitCB SubmitJobsToQueue;
 
     void *memoryCtx;
@@ -37,14 +37,14 @@ protected:
     void submitSingleJob(AsyncJob *job) {
         auto **jobs = array_new<AsyncJob *>(1);
         jobs = array_append(jobs, job);
-        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)jobs, 1, this->indexCtx);
+        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)jobs, 1, this->jobQueueCtx);
         array_free(jobs);
     }
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, TieredIndexParams tieredParams)
         : VecSimIndexInterface(index_->getAllocator()), index(index_),
-          jobQueue(tieredParams.jobQueue), indexCtx(tieredParams.indexCtx),
+          jobQueue(tieredParams.jobQueue), jobQueueCtx(tieredParams.jobQueueCtx),
           SubmitJobsToQueue(tieredParams.submitCb), memoryCtx(tieredParams.memoryCtx),
           UpdateIndexMemory(tieredParams.UpdateMemCb) {
         BFParams bf_params = {.type = index_->getType(),
