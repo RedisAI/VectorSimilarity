@@ -9,21 +9,18 @@
  * Definition of a job that inserts a new vector from flat into HNSW Index.
  */
 struct HNSWInsertJob : public AsyncJob {
-    VecSimIndex *index;
     labelType label;
     idType id;
 
     HNSWInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
                   JobCallback insertCb, VecSimIndex *index_)
-        : AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, insertCb), index(index_), label(label_),
-          id(id_) {}
+        : AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, insertCb, index_), label(label_), id(id_) {}
 };
 
 /**
  * Definition of a job that swaps last id with a deleted id in HNSW Index after delete operation.
  */
 struct HNSWSwapJob : public AsyncJob {
-    VecSimIndex *index;
     idType deleted_id;
     long pending_repair_jobs_counter; // number of repair jobs left to complete before this job
                                       // is ready to be executed (atomic counter).
@@ -35,7 +32,6 @@ struct HNSWSwapJob : public AsyncJob {
  * operation.
  */
 struct HNSWRepairJob : public AsyncJob {
-    VecSimIndex *index;
     idType node_id;
     unsigned short level;
     HNSWSwapJob *associated_swap_job;
@@ -61,8 +57,8 @@ private:
 
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
-    static void executeInsertJobWrapper(void *job);
-    static void executeRepairJobWrapper(void *job) {}
+    static void executeInsertJobWrapper(AsyncJob *job);
+    static void executeRepairJobWrapper(AsyncJob *job) {}
 
     inline HNSWIndex<DataType, DistType> *getHNSWIndex();
 
@@ -115,7 +111,7 @@ public:
 
 /* Helper methods */
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(void *job) {
+void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job) {
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *this_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     this_index->executeInsertJob(insert_job);
