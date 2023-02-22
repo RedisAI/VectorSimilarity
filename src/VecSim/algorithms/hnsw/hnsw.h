@@ -1382,6 +1382,12 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // Access and update the index global data structures with the new vector.
     std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
     idType new_element_id = cur_element_count++;
+    memset(data_level0_memory_ + new_element_id * size_data_per_element_ + offsetLevel0_, 0,
+           size_data_per_element_);
+    // We mark id as in process *before* we set it in the label lookup, otherwise we might check
+    // that the label exist with safeCheckIfLabelExistsInIndex and see that IN_PROCESS flag is
+    // clear.
+    markInProcess(new_element_id);
     setVectorId(label, new_element_id);
     element_levels_[new_element_id] = element_max_level;
     index_data_lock.unlock();
@@ -1395,11 +1401,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     if (element_max_level <= max_level_copy)
         entry_point_lock.unlock();
 
-    memset(data_level0_memory_ + new_element_id * size_data_per_element_ + offsetLevel0_, 0,
-           size_data_per_element_);
-
     // Initialisation of the data and label
-    markInProcess(new_element_id);
     setExternalLabel(new_element_id, label);
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
 
