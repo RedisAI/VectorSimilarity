@@ -161,8 +161,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // Reacquire the read lock
         this->flatIndexGuard.lock_shared();
     }
-    hnsw_index->incrementIndexSize();
-    hnsw_index->unlockIndexDataGuard();
 
     if (job->label == HNSW_INVALID_LABEL) {
         // Job has been invalidated in the meantime (by overwriting this label) while we released
@@ -170,6 +168,9 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.unlock_shared();
         return;
     }
+
+    hnsw_index->incrementIndexSize();
+    hnsw_index->unlockIndexDataGuard();
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
     this->mainIndexGuard.lock_shared();
