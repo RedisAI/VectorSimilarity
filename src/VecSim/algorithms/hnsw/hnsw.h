@@ -176,7 +176,8 @@ protected:
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
-    void appendVector(const void *vector_data, labelType label);
+    void appendVector(const void *vector_data, labelType label,
+                      idType new_vector_id = HNSW_INVALID_ID);
 
     // Protected internal function that implements generic single vector deletion.
     void removeVector(idType id);
@@ -233,6 +234,7 @@ public:
     inline bool isInProcess(idType internalId) const;
     inline void markInProcess(idType internalId);
     inline void unmarkInProcess(idType internalId);
+    inline void incrementIndexSize();
     void increaseCapacity() override;
 
     // inline priority queue getter that need to be implemented by derived class
@@ -456,6 +458,11 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
     elementFlags *flags = get_flags(internalId);
     *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::incrementIndexSize() {
+    cur_element_count++;
 }
 
 template <typename DataType, typename DistType>
@@ -1379,8 +1386,9 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
-    assert(indexCapacity() > indexSize());
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
+                                                 idType new_element_id) {
+    assert(indexCapacity() >= indexSize());
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1394,7 +1402,11 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
 
     // Access and update the index global data structures with the new vector.
     std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
-    idType new_element_id = cur_element_count++;
+    if (new_element_id == HNSW_INVALID_ID) {
+        // Unless there is main index (such as tiered index) that has already updated the index size
+        // and sent the element id from outside, we do it now and use a fresh id.
+        new_element_id = cur_element_count++;
+    }
     setVectorId(label, new_element_id);
     element_levels_[new_element_id] = element_max_level;
     index_data_lock.unlock();

@@ -70,7 +70,7 @@ public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
     virtual ~TieredHNSWIndex();
 
-    int addVector(const void *blob, labelType label, bool overwrite_allowed) override;
+    int addVector(const void *blob, labelType label, idType new_vec_id = -1) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
@@ -137,48 +137,43 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         return;
     }
     // Acquire the index data lock, so we know what is the exact index size at this time.
-    // To avoid deadlocks, we always acquire the main index lock *before* we take internal HNSW
-    // locks.
-    this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
-    bool unlock_hnsw_data_guard_required = true;
+    idType new_vec_id = hnsw_index->indexSize();
 
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         hnsw_index->unlockIndexDataGuard();
-        unlock_hnsw_data_guard_required = false;
 
-        // Release the read locks before we acquire the HNSW write lock.
+        // Release before we acquire the HNSW write lock.
         this->flatIndexGuard.unlock_shared();
-        this->mainIndexGuard.unlock_shared();
 
         this->mainIndexGuard.lock();
+        hnsw_index->lockIndexDataGuard();
         // Check if resizing is still required (another thread might have done it in the meantime
         // while we release the shared lock).
         if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
             hnsw_index->increaseCapacity();
         }
         this->mainIndexGuard.unlock();
+        new_vec_id = hnsw_index->indexSize();
 
-        // Reacquire the read locks
+        // Reacquire the read lock
         this->flatIndexGuard.lock_shared();
-        this->mainIndexGuard.lock_shared();
     }
-    if (unlock_hnsw_data_guard_required) {
-        hnsw_index->unlockIndexDataGuard();
-    }
+    hnsw_index->incrementIndexSize();
+    hnsw_index->unlockIndexDataGuard();
 
     if (job->label == HNSW_INVALID_LABEL) {
         // Job has been invalidated in the meantime (by overwriting this label) while we released
         // the flat index guard.
         this->flatIndexGuard.unlock_shared();
-        this->mainIndexGuard.unlock_shared();
         return;
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, false);
+    this->mainIndexGuard.lock_shared();
+    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, new_vec_id);
     this->mainIndexGuard.unlock_shared();
 
     // Remove the vector and the insert job from the flat buffer.
@@ -256,7 +251,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
-                                                   bool overwrite_allowed) {
+                                                   idType new_vec_id) {
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
     this->flatIndexGuard.lock();
     if (this->flatBuffer->indexCapacity() == this->flatBuffer->indexSize()) {

@@ -208,7 +208,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
             if (my_index->index->indexCapacity() == my_index->index->indexSize()) {
                 my_index->index->increaseCapacity();
             }
-            my_index->index->addVector(vector, my_index->index->indexSize(), false);
+            my_index->index->addVector(vector, my_index->index->indexSize());
         };
 
         AsyncJob job(tiered_index->allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
