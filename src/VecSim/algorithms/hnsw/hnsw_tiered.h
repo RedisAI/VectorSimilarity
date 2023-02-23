@@ -70,7 +70,7 @@ public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
     virtual ~TieredHNSWIndex();
 
-    int addVector(const void *blob, labelType label, idType new_vec_id = -1) override;
+    int addVector(const void *blob, labelType label, idType new_vec_id = HNSW_INVALID_ID) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
@@ -138,7 +138,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     }
     // Acquire the index data lock, so we know what is the exact index size at this time.
     hnsw_index->lockIndexDataGuard();
-    idType new_vec_id = hnsw_index->indexSize();
 
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
@@ -156,7 +155,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             hnsw_index->increaseCapacity();
         }
         this->mainIndexGuard.unlock();
-        new_vec_id = hnsw_index->indexSize();
 
         // Reacquire the read lock
         this->flatIndexGuard.lock_shared();
@@ -169,6 +167,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         return;
     }
 
+    idType new_vec_id = hnsw_index->indexSize();
     hnsw_index->incrementIndexSize();
     hnsw_index->unlockIndexDataGuard();
 

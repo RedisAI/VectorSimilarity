@@ -1388,7 +1388,6 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
                                                  idType new_element_id) {
-    assert(indexCapacity() >= indexSize());
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -1407,6 +1406,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         // and sent the element id from outside, we do it now and use a fresh id.
         new_element_id = cur_element_count++;
     }
+    assert(indexCapacity() >= indexSize());
     memset(data_level0_memory_ + new_element_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
     // We mark id as in process *before* we set it in the label lookup, otherwise we might check
