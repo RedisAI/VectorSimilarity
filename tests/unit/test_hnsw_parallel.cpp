@@ -466,3 +466,94 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         VecSimIndex_Free(parallel_index);
     }
 }
+
+TYPED_TEST(HNSWTestParallel, parallelRepairs) {
+    size_t n = 1000;
+    size_t k = 11;
+    size_t dim = 32;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
+
+    auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
+    size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector(hnsw_index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n);
+
+    // Define a simple repair job and job queue for the sake of this test
+    typedef struct repairJob {
+        idType node_id;
+        size_t level;
+    } repairJob;
+    auto jobQ = std::queue<repairJob>();
+    std::mutex queue_guard;
+
+    // Collect all the nodes that require repairment due to the deletions, from top level down.
+    for (size_t element_id = 0; element_id < n; element_id += 2) {
+        hnsw_index->markDelete(element_id);
+        size_t element_top_level = hnsw_index->element_levels_[element_id];
+
+        for (size_t level = 0; level <= element_top_level; level++) {
+            idType *node_neighbours = hnsw_index->getNodeNeighborsAtLevel(element_id, level);
+            auto neighbours_count = hnsw_index->getNodeNeighborsCount(node_neighbours);
+
+            // Go over the neighbours of the element in a specific level.
+            for (size_t i = 0; i < neighbours_count; i++) {
+                idType cur_neighbor = node_neighbours[i];
+                auto *neighbour_neighbours =
+                    hnsw_index->getNodeNeighborsAtLevel(cur_neighbor, level);
+                auto neighbor_neighbours_count = hnsw_index->getNodeNeighborsCount(node_neighbours);
+                for (size_t j = 0; j < neighbor_neighbours_count; j++) {
+                    // If the edge is bidirectional, do repair for this neighbor
+                    if (neighbour_neighbours[j] == element_id) {
+                        jobQ.push(repairJob{cur_neighbor, level});
+                        break;
+                    }
+                }
+            }
+            // Next, go over the rest of incoming edges (the ones that are not bidirectional)
+            // and make repairs.
+            auto *incoming_edges = hnsw_index->getIncomingEdgesPtr(element_id, level);
+            for (auto incoming_edge : *incoming_edges) {
+                jobQ.push(repairJob{incoming_edge, level});
+            }
+        }
+    }
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
+    // Every deleted node should have at least 1 connection ot repair.
+    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n / 2);
+
+    auto executeRepairJob = [&](int myID) {
+        queue_guard.lock();
+        while (!jobQ.empty()) {
+            auto job = jobQ.front();
+            jobQ.pop();
+            queue_guard.unlock();
+            hnsw_index->repairNodeConnections(job.node_id, job.level);
+            completed_tasks[myID]++;
+            queue_guard.lock();
+        }
+        queue_guard.unlock();
+    };
+
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i] = std::thread(executeRepairJob, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    // Check index integrity, also make sure that no node is pointing to a deleted node.
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_TRUE(report.valid_state);
+    ASSERT_EQ(report.connection_to_repair, 0);
+
+    ASSERT_GE(*std::min_element(completed_tasks.begin(), completed_tasks.end()),
+              0.5 * *std::max_element(completed_tasks.begin(), completed_tasks.end()));
+
+    VecSimIndex_Free(hnsw_index);
+}

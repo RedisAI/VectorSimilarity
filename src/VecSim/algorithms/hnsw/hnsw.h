@@ -436,6 +436,7 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         elementFlags *flags = getElementFlags(internalId);
         *flags |= DELETE_MARK;
         this->num_marked_deleted++;
+        // TODO: consider replacing the entry point if its the deleted one.
     }
 }
 
@@ -1339,11 +1340,11 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // store the newly selected neighbours (for the node).
     auto orig_candidates = neighbors_candidates;
     size_t max_M_cur = level ? maxM_ : maxM0_;
-    getNeighborsByHeuristic2(orig_candidates, max_M_cur);
+    getNeighborsByHeuristic2(neighbors_candidates, max_M_cur);
 
-    while (!neighbors_candidates.empty()) {
+    while (!orig_candidates.empty()) {
         idType orig_candidate = orig_candidates.top().second;
-        if (orig_candidates.top().second != neighbors_candidates.top().second) {
+        if (neighbors_candidates.empty() || orig_candidate != neighbors_candidates.top().second) {
             if (node_orig_neighbours_set[orig_candidates.top().second]) {
                 neighbors_to_remove.push_back(orig_candidate);
                 nodes_to_update.push_back(orig_candidate);
@@ -1356,14 +1357,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             orig_candidates.pop();
         }
     }
-    while (orig_candidates.size() > 0) {
-        idType orig_candidate = orig_candidates.top().second;
-        if (node_orig_neighbours_set[orig_candidate]) {
-            neighbors_to_remove.push_back(orig_candidate);
-            nodes_to_update.push_back(orig_candidate);
-        }
-        orig_candidates.pop();
-    }
+
     // Perform the actual updates for the node and the impacted neighbors while holding the nodes'
     // locks.
     mutuallyUpdateForRepairedNode(node_id, level, neighbors_to_remove, nodes_to_update,
