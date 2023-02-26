@@ -16,10 +16,6 @@ extern "C" {
 #define INVALID_ID    UINT_MAX
 #define INVALID_LABEL SIZE_MAX
 
-// Use the "not a number" value to represent invalid score. This is for distinguishing the invalid
-// score from "inf" score (which is valid).
-#define INVALID_SCORE std::numeric_limits<double>::quiet_NaN()
-
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
