@@ -22,7 +22,8 @@ public:
 
     ~BruteForceIndex_Multi() {}
 
-    int addVector(const void *vector_data, labelType label, idType new_vec_id = -1) override;
+    int addVector(const void *vector_data, labelType label,
+                  idType new_vec_id = INVALID_ID) override;
     int deleteVector(labelType labelType) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;

@@ -46,7 +46,7 @@ public:
      * appropriate.
      * @return the number of new vectors inserted (1 for new insertion, 0 for override).
      */
-    virtual int addVector(const void *blob, labelType label, idType new_vec_id = -1) = 0;
+    virtual int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) = 0;
 
     /**
      * @brief Remove a vector from an index.

@@ -37,10 +37,6 @@
 
 using std::pair;
 
-#define HNSW_INVALID_ID    UINT_MAX
-#define HNSW_INVALID_LEVEL SIZE_MAX
-#define HNSW_INVALID_LABEL SIZE_MAX
-
 typedef uint16_t linkListSize;
 typedef uint16_t elementFlags;
 
@@ -176,8 +172,7 @@ protected:
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
-    void appendVector(const void *vector_data, labelType label,
-                      idType new_vector_id = HNSW_INVALID_ID);
+    void appendVector(const void *vector_data, labelType label, idType new_vector_id = INVALID_ID);
 
     // Protected internal function that implements generic single vector deletion.
     void removeVector(idType id);
@@ -313,7 +308,7 @@ size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
 
 template <typename DataType, typename DistType>
 labelType HNSWIndex<DataType, DistType>::getEntryPointLabel() const {
-    if (entrypoint_node_ != HNSW_INVALID_ID)
+    if (entrypoint_node_ != INVALID_ID)
         return getExternalLabel(entrypoint_node_);
     return SIZE_MAX;
 }
@@ -1043,7 +1038,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             maxlevel_--;
             if ((int)maxlevel_ < 0) {
                 maxlevel_ = HNSW_INVALID_LEVEL;
-                entrypoint_node_ = HNSW_INVALID_ID;
+                entrypoint_node_ = INVALID_ID;
             }
         }
     }
@@ -1140,7 +1135,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
     do {
         if (with_timeout && VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
-            curObj = HNSW_INVALID_ID;
+            curObj = INVALID_ID;
             return;
         }
         changed = false;
@@ -1230,7 +1225,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     num_marked_deleted = 0;
 
     // initializations for special treatment of the first node
-    entrypoint_node_ = HNSW_INVALID_ID;
+    entrypoint_node_ = INVALID_ID;
     maxlevel_ = HNSW_INVALID_LEVEL;
 
     if (M <= 1)
@@ -1401,7 +1396,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
 
     // Access and update the index global data structures with the new vector.
     std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
-    if (new_element_id == HNSW_INVALID_ID) {
+    if (new_element_id == INVALID_ID) {
         // Unless there is main index (such as tiered index) that has already updated the index size
         // and sent the element id from outside, we do it now and use a fresh id.
         new_element_id = cur_element_count++;
@@ -1439,7 +1434,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     }
 
     // this condition only means that we are not inserting the first element.
-    if (curr_element != HNSW_INVALID_ID) {
+    if (curr_element != INVALID_ID) {
         DistType cur_dist = std::numeric_limits<DistType>::max();
         if (element_max_level < max_level_copy) {
             cur_dist = this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
@@ -1524,11 +1519,11 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     *rc = VecSim_QueryResult_OK;
 
     idType curr_element = safeGetEntryPointCopy();
-    if (curr_element == HNSW_INVALID_ID)
+    if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = maxlevel_; level > 0 && curr_element != HNSW_INVALID_ID; level--) {
+    for (size_t level = maxlevel_; level > 0 && curr_element != INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;

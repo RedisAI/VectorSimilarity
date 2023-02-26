@@ -72,7 +72,7 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label,
-                  idType new_vec_id = HNSW_INVALID_ID) override;
+                  idType new_vec_id = INVALID_ID) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,

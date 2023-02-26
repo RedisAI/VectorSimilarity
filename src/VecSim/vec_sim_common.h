@@ -12,12 +12,23 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
+// Common definitions
+#define INVALID_ID    UINT_MAX
+#define INVALID_LABEL SIZE_MAX
+
+// Use the "not a number" value to represent invalid score. This is for distinguishing the invalid
+// score from "inf" score (which is valid).
+#define INVALID_SCORE std::numeric_limits<double>::quiet_NaN()
+
 // HNSW default parameters
 #define HNSW_DEFAULT_M       16
 #define HNSW_DEFAULT_EF_C    200
 #define HNSW_DEFAULT_EF_RT   10
 #define HNSW_DEFAULT_EPSILON 0.01
 #define DEFAULT_BLOCK_SIZE   1024
+
+#define HNSW_INVALID_LEVEL SIZE_MAX
+#define INVALID_JOB_ID     UINT_MAX
 
 // Datatypes for indexing.
 typedef enum {

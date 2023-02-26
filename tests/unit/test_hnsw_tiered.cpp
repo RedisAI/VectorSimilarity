@@ -394,10 +394,13 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
         thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
     }
 
-    // Insert vectors
+    // Create and insert vectors, store them in this continuous array.
+    TEST_DATA_T vectors[n * dim];
     for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i * per_label + j);
+            GenerateVector<TEST_DATA_T>(vectors + i * dim * per_label + j * dim, dim,
+                                        i * per_label + j);
+            tiered_index->addVector(vectors + i * dim * per_label + j * dim, i);
         }
     }
     ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
@@ -424,9 +427,9 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
             // The distance from every vector that is stored under the label i should be zero
-            TEST_DATA_T expected_vector[dim];
-            GenerateVector<TEST_DATA_T>(expected_vector, dim, i * per_label + j);
-            EXPECT_EQ(tiered_index->index->getDistanceFrom(i, expected_vector), 0);
+            EXPECT_EQ(
+                tiered_index->index->getDistanceFrom(i, vectors + i * per_label * dim + j * dim),
+                0);
         }
     }
 

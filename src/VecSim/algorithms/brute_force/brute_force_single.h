@@ -20,7 +20,8 @@ public:
     BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     ~BruteForceIndex_Single();
 
-    int addVector(const void *vector_data, labelType label, idType new_vec_id = -1) override;
+    int addVector(const void *vector_data, labelType label,
+                  idType new_vec_id = INVALID_ID) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;

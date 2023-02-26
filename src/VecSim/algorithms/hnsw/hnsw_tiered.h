@@ -70,7 +70,7 @@ public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
     virtual ~TieredHNSWIndex();
 
-    int addVector(const void *blob, labelType label, idType new_vec_id = HNSW_INVALID_ID) override;
+    int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
@@ -113,9 +113,9 @@ public:
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job) {
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
-    auto *this_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
-    this_index->executeInsertJob(insert_job);
-    this_index->UpdateIndexMemory(this_index->memoryCtx, this_index->getAllocationSize());
+    auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
+    job_index->executeInsertJob(insert_job);
+    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
     delete insert_job;
 }
 
@@ -130,8 +130,9 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // Note: this method had not been tested with yet overwriting scenarios, where job may
     // have been invalidate before it is executed (TODO in the future).
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
+    // Note that accessing the job fields should occur with flat index guard held (here and later).
     this->flatIndexGuard.lock_shared();
-    if (job->label == HNSW_INVALID_LABEL) {
+    if (job->id == INVALID_JOB_ID) {
         // Job has been invalidated in the meantime.
         this->flatIndexGuard.unlock_shared();
         return;
@@ -160,7 +161,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.lock_shared();
     }
 
-    if (job->label == HNSW_INVALID_LABEL) {
+    if (job->id == INVALID_JOB_ID) {
         // Job has been invalidated in the meantime (by overwriting this label) while we released
         // the flat index guard.
         this->flatIndexGuard.unlock_shared();
@@ -182,7 +183,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         // The job might have been invalidated due to overwrite in the meantime. In this case,
         // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
-        if (job->label != HNSW_INVALID_LABEL) {
+        if (job->id != INVALID_JOB_ID) {
             // Remove the job pointer from the labelToInsertJobs mapping.
             auto &jobs = labelToInsertJobs.at(job->label);
             for (size_t i = 0; i < jobs.size(); i++) {
@@ -199,7 +200,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             // This will cause the last id to swap with the deleted id - update the job with the
             // pending job with the last id, unless the deleted id is the last id.
             if (deleted && job->id != this->flatBuffer->indexSize()) {
-                labelType last_idx_label = this->flatBuffer->getIdToLabelMap()[job->id];
+                labelType last_idx_label = this->flatBuffer->getLabelByInternalId(job->id);
                 if (this->labelToInsertJobs.find(last_idx_label) != this->labelToInsertJobs.end()) {
                     // There is a pending job for the label of the swapped last id - update its id.
                     for (HNSWInsertJob *job_it : this->labelToInsertJobs.at(last_idx_label)) {
