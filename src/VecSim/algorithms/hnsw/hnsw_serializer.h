@@ -62,8 +62,8 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             num_deleted++;
         }
         for (size_t l = 0; l <= this->element_levels_[i]; l++) {
-            idType *cur_links = this->get_linklist_at_level(i, l);
-            linkListSize size = this->getListCount(cur_links);
+            idType *cur_links = this->getNodeNeighborsAtLevel(i, l);
+            linkListSize size = this->getNodeNeighborsCount(cur_links);
             std::set<idType> s;
             for (unsigned int j = 0; j < size; j++) {
                 // Check if we found an invalid neighbor.
@@ -75,8 +75,8 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                idType *other_links = this->get_linklist_at_level(cur_links[j], l);
-                linkListSize size_other = this->getListCount(other_links);
+                idType *other_links = this->getNodeNeighborsAtLevel(cur_links[j], l);
+                linkListSize size_other = this->getNodeNeighborsCount(other_links);
                 for (int r = 0; r < size_other; r++) {
                     if (other_links[r] == (idType)i) {
                         double_connections++;

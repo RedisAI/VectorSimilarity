@@ -2089,8 +2089,8 @@ TYPED_TEST(HNSWTest, markDelete) {
     // Add a new vector, make sure it has no link to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
     for (size_t level = 0; level <= this->CastToHNSW(index)->element_levels_[n]; level++) {
-        idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
-        linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
+        idType *neighbors = this->CastToHNSW(index)->getNodeNeighborsAtLevel(n, level);
+        linkListSize size = this->CastToHNSW(index)->getNodeNeighborsCount(neighbors);
         for (size_t idx = 0; idx < size; idx++) {
             ASSERT_TRUE(neighbors[idx] % 2 != ep_reminder)
                 << "Got a link to " << neighbors[idx] << " on level " << level;
@@ -2154,6 +2154,52 @@ TYPED_TEST(HNSWTest, allMarkedDeletedLevel) {
 
     // If we passed the previous loop, it means that we successfully added a vector without invalid
     // memory access.
+
+    // For completeness, we also check index integrity.
+    ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
+    size_t dim = 8;
+    size_t n = dim;
+    size_t M = 8;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    // Add 8 vectors, expect to get a full graph in level 0 (all nodes pairs are connected)
+    TEST_DATA_T vec[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (size_t i = 0; i < n; i++) {
+        vec[i] = 1.0;
+        VecSimIndex_AddVector(index, vec, i);
+        vec[i] = 0.0;
+    }
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_EQ(hnsw_index->getNodeNeighborsCount(hnsw_index->getNodeNeighborsAtLevel(i, 0)),
+                  n - 1);
+    }
+
+    // Mark element 0 as deleted, and repair all of its neighbors.
+    hnsw_index->markDelete(0);
+    for (size_t i = 1; i < n; i++) {
+        hnsw_index->repairNodeConnections(i, 0);
+        // After the repair expect that to have all nodes except for element 0 as neighbors.
+        ASSERT_EQ(hnsw_index->getNodeNeighborsCount(hnsw_index->getNodeNeighborsAtLevel(i, 0)),
+                  n - 2);
+    }
+
+    // Mark elements 1 and 2 as deleted.
+    hnsw_index->markDelete(1);
+    hnsw_index->markDelete(2);
+    for (size_t i = 3; i < n; i++) {
+        hnsw_index->repairNodeConnections(i, 0);
+        // After the repair expect that to have all nodes except for elements 0-2 as neighbors.
+        ASSERT_EQ(hnsw_index->getNodeNeighborsCount(hnsw_index->getNodeNeighborsAtLevel(i, 0)),
+                  n - 4);
+    }
 
     // For completeness, we also check index integrity.
     ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
