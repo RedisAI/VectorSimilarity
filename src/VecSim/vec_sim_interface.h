@@ -38,12 +38,15 @@ public:
      * @param blob binary representation of the vector. Blob size should match the index data type
      * and dimension.
      * @param label the label of the added vector.
-     * @param overwriteAllowed if true and id already exists in the index, overwrite it. Otherwise,
-     * ignore the new vector.
-     * @return the number of new vectors inserted (1 for new insertion, 0 for override), or -1
-     * in case that override is not allowed and label already exists.
+     * @param new_vec_id if this is not the main index (but a layer in a tiered index for example)
+     * we use a predefined internal id for this vector. Otherwise, if new_vec_id is -1 ,use a new
+     * fresh id.
+     * In addition, if id is not given, and this label already exists overwrite it. Otherwise,
+     * it's the caller main index responsibility to validate that the new label and id are
+     * appropriate.
+     * @return the number of new vectors inserted (1 for new insertion, 0 for override).
      */
-    virtual int addVector(const void *blob, labelType label, bool overwriteAllowed) = 0;
+    virtual int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) = 0;
 
     /**
      * @brief Remove a vector from an index.

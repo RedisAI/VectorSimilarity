@@ -56,6 +56,9 @@ public:
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
+    inline const labelType getLabelByInternalId(idType internal_id) const {
+        return idToLabelMapping[internal_id];
+    }
     virtual ~BruteForceIndex();
 #ifdef BUILD_TESTS
     /**
@@ -68,6 +71,7 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
+    virtual int deleteVectorById(labelType label, idType id) = 0;
 #endif
 
 protected:

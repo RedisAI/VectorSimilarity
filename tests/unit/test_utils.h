@@ -9,6 +9,7 @@
 #include <functional>
 #include <cmath>
 #include <exception>
+#include <thread>
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
@@ -142,5 +143,12 @@ int update_mem_callback(void *mem_ctx, size_t mem);
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;
 } IndexExtCtx;
+
+static const size_t THREAD_POOL_SIZE = 8;
+extern std::vector<std::thread> thread_pool;
+extern std::mutex queue_guard;
+extern std::condition_variable queue_cond;
+
+void thread_main_loop(JobQueue &jobQ, bool &run_thread);
 
 } // namespace tiered_index_mock

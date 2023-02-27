@@ -252,14 +252,27 @@ size_t getLabelsLookupNodeSize() {
  * Mock callbacks for testing async tiered index. We use a simple std::queue to simulate the job
  * queue.
  */
+
+std::mutex tiered_index_mock::queue_guard;
+std::condition_variable tiered_index_mock::queue_cond;
+std::vector<std::thread> tiered_index_mock::thread_pool;
+
 int tiered_index_mock::submit_callback(void *job_queue, AsyncJob **jobs, size_t len,
                                        void *index_ctx) {
-    for (size_t i = 0; i < len; i++) {
-        // Wrap the job with a struct that contains a weak reference to the related index.
-        auto owned_job = RefManagedJob{
-            .job = jobs[i],
-            .index_weak_ref = reinterpret_cast<IndexExtCtx *>(index_ctx)->index_strong_ref};
-        static_cast<JobQueue *>(job_queue)->push(owned_job);
+    {
+        std::unique_lock<std::mutex> lock(queue_guard);
+        for (size_t i = 0; i < len; i++) {
+            // Wrap the job with a struct that contains a weak reference to the related index.
+            auto owned_job = RefManagedJob{
+                .job = jobs[i],
+                .index_weak_ref = reinterpret_cast<IndexExtCtx *>(index_ctx)->index_strong_ref};
+            static_cast<JobQueue *>(job_queue)->push(owned_job);
+        }
+    }
+    if (len == 1) {
+        queue_cond.notify_one();
+    } else {
+        queue_cond.notify_all();
     }
     return VecSim_OK;
 }
@@ -267,4 +280,25 @@ int tiered_index_mock::submit_callback(void *job_queue, AsyncJob **jobs, size_t 
 int tiered_index_mock::update_mem_callback(void *mem_ctx, size_t mem) {
     *(size_t *)mem_ctx = mem;
     return VecSim_OK;
+}
+
+// Main loop for background worker threads that execute the jobs form the job queue.
+// run_thread uses as a signal to the thread that indicates whether it should keep running or
+// stop and terminate the thread.
+void tiered_index_mock::thread_main_loop(JobQueue &jobQ, bool &run_thread) {
+    while (run_thread) {
+        std::unique_lock<std::mutex> lock(queue_guard);
+        // Wake up and acquire the lock (atomically) ONLY if the job queue is not empty at that
+        // point, or if the thread should not run anymore (and quit in that case).
+        queue_cond.wait(lock, [&jobQ, &run_thread]() { return !jobQ.empty() || !run_thread; });
+        if (!run_thread)
+            return;
+        auto managed_job = jobQ.front();
+        jobQ.pop();
+        lock.unlock();
+        // Upgrade the index weak reference to a strong ref while we run the job over the index.
+        if (auto temp_ref = managed_job.index_weak_ref.lock()) {
+            managed_job.job->Execute(managed_job.job);
+        }
+    }
 }

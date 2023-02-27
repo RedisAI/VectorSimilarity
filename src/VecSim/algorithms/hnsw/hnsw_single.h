@@ -62,7 +62,8 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
+    int addVector(const void *vector_data, labelType label,
+                  idType new_vec_id = INVALID_ID) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
@@ -121,23 +122,21 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                    bool overwrite_allowed) {
+                                                    idType new_vec_id) {
 
     // Checking if an element with the given label already exists.
-    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
     bool label_exists = false;
-    if (label_lookup_.find(label) != label_lookup_.end()) {
-        label_exists = true;
-        if (overwrite_allowed) {
+    // Note that is it the caller responsibility to ensure that this label doesn't exist in the
+    // index and increase the element count before calling this, if new_vec_id is *not*
+    // INVALID_ID.
+    if (new_vec_id == INVALID_ID) {
+        if (label_lookup_.find(label) != label_lookup_.end()) {
+            label_exists = true;
             // Remove the vector in place if override allowed (in non-async scenario)
             deleteVector(label);
-        } else {
-            // If override is not allowed, we don't do anything.
-            return -1;
         }
     }
-    index_data_lock.unlock();
-    this->appendVector(vector_data, label);
+    this->appendVector(vector_data, label, new_vec_id);
     // Return the delta in the index size due to the insertion.
     return label_exists ? 0 : 1;
 }
