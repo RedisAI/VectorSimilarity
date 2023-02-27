@@ -84,9 +84,7 @@ public:
         return this->index->getDistanceFrom(id, blob);
     }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                     VecSimQueryParams *queryParams) override {
-        return this->index->topKQuery(queryBlob, k, queryParams);
-    }
+                                     VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override {
         return this->index->rangeQuery(queryBlob, radius, queryParams);
@@ -273,4 +271,47 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     this->submitSingleJob(new_insert_job);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return 1;
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryResult_List TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                                                      VecSimQueryParams *queryParams) {
+    this->flatIndexGuard.lock();
+
+    // If the flat buffer is empty, we can simply query the HNSW index.
+    if (this->flatBuffer->indexSize() == 0) {
+        // Release the flat lock and acquire the main lock.
+        this->flatIndexGuard.unlock();
+        this->mainIndexGuard.lock();
+
+        // Simply query the HNSW index and return the results.
+        return this->index->topKQuery(queryBlob, k, queryParams);
+    } else {
+        // No luck... first query the flat buffer and release the lock.
+        VecSimQueryResult_List flat_results = this->flatBuffer->topKQuery(queryBlob, k, queryParams);
+        this->flatIndexGuard.unlock();
+
+        // If the query failed (currently only on timeout), return the error code.
+        if (flat_results.code != VecSim_QueryResult_OK) {
+            assert(flat_results.results == nullptr);
+            return flat_results;
+        }
+
+        // Lock the main index and query it.
+        this->mainIndexGuard.lock();
+        auto hnsw_results = this->index->topKQuery(queryBlob, k, queryParams);
+        this->mainIndexGuard.unlock();
+
+        // If the query failed (currently only on timeout), return the error code.
+        if (hnsw_results.code != VecSim_QueryResult_OK) {
+            // Free the flat results.
+            VecSimQueryResult_Free(flat_results);
+
+            assert(hnsw_results.results == nullptr);
+            return hnsw_results;
+        }
+
+        // Merge the results and return, avoiding duplicates.
+        return merge_results(hnsw_results, flat_results, k);
+    }
 }
