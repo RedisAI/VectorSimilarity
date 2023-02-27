@@ -20,8 +20,10 @@ public:
     BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
     ~BruteForceIndex_Single();
 
-    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
+    int addVector(const void *vector_data, labelType label,
+                  idType new_vec_id = INVALID_ID) override;
     int deleteVector(labelType label) override;
+    int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
 
     inline std::unique_ptr<vecsim_stl::abstract_results_container>
@@ -93,7 +95,7 @@ BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                          bool overwrite_allowed) {
+                                                          idType new_vec_id) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -132,6 +134,11 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 
     this->removeVector(id_to_delete);
     return 1;
+}
+
+template <typename DataType, typename DistType>
+int BruteForceIndex_Single<DataType, DistType>::deleteVectorById(labelType label, idType id) {
+    return deleteVector(label);
 }
 
 template <typename DataType, typename DistType>

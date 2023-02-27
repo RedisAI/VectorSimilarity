@@ -952,11 +952,6 @@ TYPED_TEST(HNSWTest, hnsw_override) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    // Try to override when overriding is not allowed.
-    TEST_DATA_T vec[dim];
-    GenerateVector<TEST_DATA_T>(vec, dim, n);
-    ASSERT_EQ(this->CastToHNSW_Single(index)->addVector(vec, 0, false), -1);
-
     // Insert again 300 vectors, the first 100 will be overwritten (deleted first).
     n = 300;
     for (size_t i = 0; i < n; i++) {
