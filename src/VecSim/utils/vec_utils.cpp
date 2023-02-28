@@ -171,53 +171,66 @@ size_t VecSimType_sizeof(VecSimType type) {
     return 0;
 }
 
-VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second, size_t limit) {
+// Assumes that the results array is sorted by score and that the res score >= the last result
+// score.
+// TODO: if we can guarantee that the results array is secondarily sorted by id, we can check only
+// the last result.
+static bool contains(const VecSimQueryResult *results, VecSimQueryResult *res) {
+    const auto res_score = VecSimQueryResult_GetScore(res);
+    const auto res_id = VecSimQueryResult_GetId(res);
+    for (size_t idx = array_len(results);
+         idx > 0 && VecSimQueryResult_GetScore(&results[idx - 1]) == res_score; idx--) {
+        if (VecSimQueryResult_GetId(&results[idx]) == res_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void maybe_append_result(VecSimQueryResult *results, VecSimQueryResult *res,
+                                size_t &counter) {
+    if (!contains(results, res)) {
+        array_append(results, *res);
+        counter--;
+    }
+}
+
+static void concat_results(VecSimQueryResult *dst, VecSimQueryResult *src,
+                           const VecSimQueryResult *src_end, size_t limit) {
+    // First result might be a duplicate, so we check and maybe skip it.
+    if (contains(dst, src)) {
+        src++;
+    }
+    // Now we append the rest of the results.
+    while (limit && src != src_end) {
+        array_append(dst, *src);
+        src++;
+        limit--;
+    }
+}
+
+VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second,
+                                     size_t limit) {
 
     VecSimQueryResult *results = array_new<VecSimQueryResult>(limit);
     VecSimQueryResult_List mergedResults{.results = results, .code = VecSim_QueryResult_OK};
     VecSimQueryResult *cur_first = first.results;
     VecSimQueryResult *cur_second = second.results;
-    size_t left_in_first = VecSimQueryResult_Len(first);
-    size_t left_in_second = VecSimQueryResult_Len(second);
+    const auto first_end = cur_first + VecSimQueryResult_Len(first);
+    const auto second_end = cur_second + VecSimQueryResult_Len(second);
 
-    std::unordered_set<size_t> seen_ids;
-    size_t i = 0;
-
-    while (i < limit && left_in_first && left_in_second) {
-        if (cmpVecSimQueryResultByScore(cur_first, cur_second) > 0) {
-            if (seen_ids.find(VecSimQueryResult_GetId(cur_second)) == seen_ids.end()) {
-                array_append(results, *cur_second);
-                seen_ids.insert(VecSimQueryResult_GetId(cur_second));
-                i++;
-            }
-            cur_second++;
-            left_in_second--;
-        } else { // if (score_first < score_second) {
-            if (seen_ids.find(VecSimQueryResult_GetId(cur_first)) == seen_ids.end()) {
-                array_append(results, *cur_first);
-                seen_ids.insert(VecSimQueryResult_GetId(cur_first));
-                i++;
-            }
-            cur_first++;
-            left_in_first--;
-        }
+    while (limit && cur_first != first_end && cur_second != second_end) {
+        auto &which =
+            cmpVecSimQueryResultByScore(cur_first, cur_second) > 0 ? cur_second : cur_first;
+        maybe_append_result(results, which++, limit);
     }
 
-    while (i < limit && left_in_first) {
-        if (seen_ids.find(VecSimQueryResult_GetId(cur_first)) == seen_ids.end()) {
-            array_append(results, *cur_first);
-            i++;
+    if (limit != 0) {
+        if (cur_first != first_end) {
+            concat_results(results, cur_first, first_end, limit);
+        } else /* if cur_second != second_end */ {
+            concat_results(results, cur_second, second_end, limit);
         }
-        cur_first++;
-        left_in_first--;
-    }
-    while (i < limit && left_in_second) {
-        if (seen_ids.find(VecSimQueryResult_GetId(cur_second)) == seen_ids.end()) {
-            array_append(results, *cur_second);
-            i++;
-        }
-        cur_second++;
-        left_in_second--;
     }
 
     VecSimQueryResult_Free(first);

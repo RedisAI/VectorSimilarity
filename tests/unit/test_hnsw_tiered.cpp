@@ -486,13 +486,15 @@ TYPED_TEST(HNSWTieredIndexTest, knn_search) {
 
     // TEST 2: Search for 10 vectors so all the vectors will be from the flat index.
     // TEST 3: Search for 10 vectors so all the vectors will be from the main index.
-    // TEST 4: Search for 10 vectors so some of the vectors will be from the main index and some from the flat index.
+    // TEST 4: Search for 10 vectors so some of the vectors will be from the main index and some
+    // from the flat index.
 
     // ADD some overlapping vectors to the flat index (or add some vectors to the main index).
 
     // TEST 5: Search for 10 vectors so all the vectors will be from the flat index.
     // TEST 6: Search for 10 vectors so all the vectors will be from the main index.
-    // TEST 7: Search for 10 vectors so some of the vectors will be from the main index and some from the flat index.
+    // TEST 7: Search for 10 vectors so some of the vectors will be from the main index and some
+    // from the flat index.
 
     // MORE TESTS:
     // 2. Search for vectors when the flat index is not empty but the main index is empty.
@@ -500,7 +502,6 @@ TYPED_TEST(HNSWTieredIndexTest, knn_search) {
     // 4. Search for less vectors than the index size, but more than the flat and main index sizes.
     // 5. Search for more vectors than the flat index size, but less than the main index size.
     // 6. Search for more vectors than the main index size, but less than the flat index size.
-
 
     // Cleanup.
     delete jobQ;

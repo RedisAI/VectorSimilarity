@@ -274,8 +274,9 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                                                      VecSimQueryParams *queryParams) {
+VecSimQueryResult_List
+TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                               VecSimQueryParams *queryParams) {
     this->flatIndexGuard.lock();
 
     // If the flat buffer is empty, we can simply query the HNSW index.
