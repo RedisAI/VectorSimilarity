@@ -436,3 +436,72 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     // Cleanup.
     thread_pool.clear();
 }
+
+TYPED_TEST(HNSWTieredIndexTest, knn_search) {
+    size_t dim = 4;
+    size_t num_of_vectors = 100;
+    size_t k = 10;
+
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    auto *jobQ = new JobQueue();
+    auto *index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {
+        .jobQueue = jobQ,
+        .jobQueueCtx = index_ctx,
+        .submitCb = submit_callback,
+        .memoryCtx = &memory_ctx,
+        .UpdateMemCb = update_mem_callback,
+    };
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx->index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+
+    auto hnsw_index = tiered_index->index;
+    auto flat_index = tiered_index->flatBuffer;
+
+    TEST_DATA_T query_0[dim];
+    GenerateVector<TEST_DATA_T>(query_0, dim, 0);
+
+    // Search for vectors when the index is empty.
+    runTopKSearchTest(tiered_index, query_0, k, nullptr);
+
+    // Insert 100 vectors to the main index.
+    for (size_t i = 0; i < 100; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+    }
+
+    // TEST 1: Search for 10 vectors with the flat index empty.
+
+    // ADD some non-existing vectors to the flat index.
+
+    // TEST 2: Search for 10 vectors so all the vectors will be from the flat index.
+    // TEST 3: Search for 10 vectors so all the vectors will be from the main index.
+    // TEST 4: Search for 10 vectors so some of the vectors will be from the main index and some from the flat index.
+
+    // ADD some overlapping vectors to the flat index (or add some vectors to the main index).
+
+    // TEST 5: Search for 10 vectors so all the vectors will be from the flat index.
+    // TEST 6: Search for 10 vectors so all the vectors will be from the main index.
+    // TEST 7: Search for 10 vectors so some of the vectors will be from the main index and some from the flat index.
+
+    // MORE TESTS:
+    // 2. Search for vectors when the flat index is not empty but the main index is empty.
+    // 3. Search for more vectors than the index size.
+    // 4. Search for less vectors than the index size, but more than the flat and main index sizes.
+    // 5. Search for more vectors than the flat index size, but less than the main index size.
+    // 6. Search for more vectors than the main index size, but less than the flat index size.
+
+
+    // Cleanup.
+    delete jobQ;
+}

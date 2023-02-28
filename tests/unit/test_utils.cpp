@@ -47,8 +47,9 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
+    size_t expected_num_res = std::min(VecSimIndex_IndexSize(index), k);
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
-    ASSERT_EQ(VecSimQueryResult_Len(res), k);
+    ASSERT_EQ(VecSimQueryResult_Len(res), expected_num_res);
     ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
@@ -58,7 +59,7 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
         double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
-    ASSERT_EQ(res_ind, k);
+    ASSERT_EQ(res_ind, expected_num_res);
     VecSimQueryResult_IteratorFree(iterator);
     VecSimQueryResult_Free(res);
 }
