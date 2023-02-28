@@ -11,6 +11,8 @@
 #include <cerrno>
 #include <climits>
 #include <float.h>
+#include <unordered_set>
+#include "arr_cpp.h"
 
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
@@ -167,4 +169,58 @@ size_t VecSimType_sizeof(VecSimType type) {
         return sizeof(int64_t);
     }
     return 0;
+}
+
+VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second, size_t limit) {
+
+    VecSimQueryResult *results = array_new<VecSimQueryResult>(limit);
+    VecSimQueryResult_List mergedResults{.results = results, .code = VecSim_QueryResult_OK};
+    VecSimQueryResult *cur_first = first.results;
+    VecSimQueryResult *cur_second = second.results;
+    size_t left_in_first = VecSimQueryResult_Len(first);
+    size_t left_in_second = VecSimQueryResult_Len(second);
+
+    std::unordered_set<size_t> seen_ids;
+    size_t i = 0;
+
+    while (i < limit && left_in_first && left_in_second) {
+        if (cmpVecSimQueryResultByScore(cur_first, cur_second) > 0) {
+            if (seen_ids.find(VecSimQueryResult_GetId(cur_second)) == seen_ids.end()) {
+                array_append(results, *cur_second);
+                seen_ids.insert(VecSimQueryResult_GetId(cur_second));
+                i++;
+            }
+            cur_second++;
+            left_in_second--;
+        } else { // if (score_first < score_second) {
+            if (seen_ids.find(VecSimQueryResult_GetId(cur_first)) == seen_ids.end()) {
+                array_append(results, *cur_first);
+                seen_ids.insert(VecSimQueryResult_GetId(cur_first));
+                i++;
+            }
+            cur_first++;
+            left_in_first--;
+        }
+    }
+
+    while (i < limit && left_in_first) {
+        if (seen_ids.find(VecSimQueryResult_GetId(cur_first)) == seen_ids.end()) {
+            array_append(results, *cur_first);
+            i++;
+        }
+        cur_first++;
+        left_in_first--;
+    }
+    while (i < limit && left_in_second) {
+        if (seen_ids.find(VecSimQueryResult_GetId(cur_second)) == seen_ids.end()) {
+            array_append(results, *cur_second);
+            i++;
+        }
+        cur_second++;
+        left_in_second--;
+    }
+
+    VecSimQueryResult_Free(first);
+    VecSimQueryResult_Free(second);
+    return mergedResults;
 }
