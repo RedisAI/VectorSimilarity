@@ -288,7 +288,7 @@ VecSimQueryResult_List TieredHNSWIndex<DataType, DistType>::topKQuery(const void
         return this->index->topKQuery(queryBlob, k, queryParams);
     } else {
         // No luck... first query the flat buffer and release the lock.
-        VecSimQueryResult_List flat_results = this->flatBuffer->topKQuery(queryBlob, k, queryParams);
+        auto flat_results = this->flatBuffer->topKQuery(queryBlob, k, queryParams);
         this->flatIndexGuard.unlock();
 
         // If the query failed (currently only on timeout), return the error code.
