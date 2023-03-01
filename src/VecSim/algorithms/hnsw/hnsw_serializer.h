@@ -50,7 +50,8 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                              .double_connections = HNSW_INVALID_META_DATA,
                              .unidirectional_connections = HNSW_INVALID_META_DATA,
                              .min_in_degree = HNSW_INVALID_META_DATA,
-                             .max_in_degree = HNSW_INVALID_META_DATA};
+                             .max_in_degree = HNSW_INVALID_META_DATA,
+                             .connection_to_repair = 0};
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->getAllocationSize();
@@ -62,21 +63,26 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             num_deleted++;
         }
         for (size_t l = 0; l <= this->element_levels_[i]; l++) {
-            idType *cur_links = this->get_linklist_at_level(i, l);
-            linkListSize size = this->getListCount(cur_links);
+            idType *cur_links = this->getNodeNeighborsAtLevel(i, l);
+            linkListSize size = this->getNodeNeighborsCount(cur_links);
             std::set<idType> s;
             for (unsigned int j = 0; j < size; j++) {
                 // Check if we found an invalid neighbor.
                 if (cur_links[j] >= this->cur_element_count || cur_links[j] == i) {
                     return res;
                 }
+                // If the current element has not been marked deleted, but it has a deleted neighbor
+                // then this connection should be repaired.
+                if (!isMarkedDeleted(i) && isMarkedDeleted(cur_links[j])) {
+                    res.connection_to_repair++;
+                }
                 inbound_connections_num[cur_links[j]]++;
                 s.insert(cur_links[j]);
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                idType *other_links = this->get_linklist_at_level(cur_links[j], l);
-                linkListSize size_other = this->getListCount(other_links);
+                idType *other_links = this->getNodeNeighborsAtLevel(cur_links[j], l);
+                linkListSize size_other = this->getNodeNeighborsCount(other_links);
                 for (int r = 0; r < size_other; r++) {
                     if (other_links[r] == (idType)i) {
                         double_connections++;

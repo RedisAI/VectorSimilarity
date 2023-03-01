@@ -532,8 +532,9 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         // Delete the last inserted vector, which is in level 1.
         tiered_index->deleteVectorFromHNSW(--vec_id);
         ASSERT_EQ(tiered_index->getHNSWIndex()->element_levels_[vec_id], 1);
-        auto *level_one_neighbors = tiered_index->getHNSWIndex()->get_linklist_at_level(vec_id, 1);
-        ASSERT_EQ(tiered_index->getHNSWIndex()->getListCount(level_one_neighbors), 1);
+        auto *level_one_neighbors =
+            tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(vec_id, 1);
+        ASSERT_EQ(tiered_index->getHNSWIndex()->getNodeNeighborsCount(level_one_neighbors), 1);
 
         size_t num_repair_jobs = jobQ.size();
         // There should be at least two nodes to repair, the neighbors of next_id in levels 0 and 1
@@ -548,3 +549,4 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, *level_one_neighbors);
     }
 }
+
