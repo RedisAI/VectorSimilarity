@@ -45,6 +45,8 @@ using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 
+using graphNodeType = pair<idType, ushort>;
+
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x01, // vector is logically deleted, but still exists in the graph
@@ -234,6 +236,10 @@ public:
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
+    virtual inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const = 0;
+    inline size_t getElementTopLevel(idType internalId);
+    vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
+                                                                          size_t node_top_level);
 
 #ifdef BUILD_TESTS
     /**
@@ -425,6 +431,10 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
     assert(internalId < this->cur_element_count);
     if (!isMarkedDeleted(internalId)) {
+        if (internalId == entrypoint_node_) {
+            std::unique_lock<std::mutex> lock(entry_point_guard_);
+            replaceEntryPoint();
+        }
         elementFlags *flags = get_flags(internalId);
         *flags |= DELETE_MARK;
         this->num_marked_deleted++;
@@ -478,6 +488,11 @@ void HNSWIndex<DataType, DistType>::lockNodeLinks(idType node_id) const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
     element_neighbors_locks_[node_id].unlock();
+}
+
+template <typename DataType, typename DistType>
+inline size_t HNSWIndex<DataType, DistType>::getElementTopLevel(idType internalId) {
+    return element_levels_[internalId];
 }
 
 /**
@@ -1019,27 +1034,31 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
         idType *top_level_list = get_linklist_at_level(old_entry, maxlevel_);
-        if (getListCount(top_level_list) > 0) {
-            // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
-            entrypoint_node_ = *top_level_list;
-        } else {
-            // If there is no neighbors in the current level, check for any vector at
-            // this level to be the new entry point.
-            for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
-                if (element_levels_[cur_id] == maxlevel_ && cur_id != old_entry) {
-                    entrypoint_node_ = cur_id;
-                    break;
-                }
+        auto neighbors_count = getListCount(top_level_list);
+        // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
+        // if exists.
+        for (size_t i = 0; i < neighbors_count; i++) {
+            if (!isMarkedDeleted(top_level_list[i])) {
+                entrypoint_node_ = top_level_list[i];
+                return;
+            }
+        }
+        // If there is no neighbors in the current level, check for any vector at
+        // this level to be the new entry point.
+        for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
+            if (element_levels_[cur_id] == maxlevel_ && cur_id != old_entry &&
+                !isMarkedDeleted(cur_id)) {
+                entrypoint_node_ = cur_id;
+                return;
             }
         }
         // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
         // until we find a new entry point, or the index is empty.
-        if (old_entry == entrypoint_node_) {
-            maxlevel_--;
-            if ((int)maxlevel_ < 0) {
-                maxlevel_ = HNSW_INVALID_LEVEL;
-                entrypoint_node_ = INVALID_ID;
-            }
+        assert(old_entry == entrypoint_node_);
+        maxlevel_--;
+        if ((int)maxlevel_ < 0) {
+            maxlevel_ = HNSW_INVALID_LEVEL;
+            entrypoint_node_ = INVALID_ID;
         }
     }
 }
@@ -1124,7 +1143,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 // given level, starting at the given node. It sets `curObj` to the closest node found, and
 // `curDist` to the distance to this node. If `with_timeout` is true, the search will check for
 // timeout and return if it has occurred. `timeoutCtx` and `rc` must be valid if `with_timeout` is
-// true.
+// true. *Note that we assume that level is higher than 0*
 template <typename DataType, typename DistType>
 template <bool with_timeout>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
@@ -1157,6 +1176,50 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             }
         }
     } while (changed);
+}
+
+template <typename DataType, typename DistType>
+vecsim_stl::vector<graphNodeType>
+HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_id,
+                                                                   size_t node_top_level) {
+    vecsim_stl::vector<graphNodeType> incoming_neighbors(this->allocator);
+
+    for (size_t level = 0; level <= node_top_level; level++) {
+        // Save the node neighbor's in the current level while holding its neighbors lock.
+        std::vector<idType> neighbors_copy;
+        std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
+        auto *neighbours = get_linklist_at_level(node_id, level);
+        unsigned short neighbours_count = getListCount(neighbours);
+        // Store the deleted element's neighbours.
+        for (size_t j = 0; j < neighbours_count; j++) {
+            neighbors_copy.push_back(neighbours[j]);
+        }
+        element_lock.unlock();
+
+        // Go over the neighbours and collect tho ones that also points back to the removed node.
+        for (auto neighbour_id : neighbors_copy) {
+            // Hold the neighbor's lock while we are going over its neighbors.
+            std::unique_lock<std::mutex> neighbor_lock(element_neighbors_locks_[neighbour_id]);
+            auto *neighbour_neighbours = get_linklist_at_level(neighbour_id, level);
+            unsigned short neighbour_neighbours_count = getListCount(neighbour_neighbours);
+            for (size_t j = 0; j < neighbour_neighbours_count; j++) {
+                // A bidirectional edge was found - this connection should be repaired.
+                if (neighbour_neighbours[j] == node_id) {
+                    incoming_neighbors.emplace_back(neighbour_id, (ushort)level);
+                    break;
+                }
+            }
+        }
+
+        // Next, collect the rest of incoming edges (the ones that are not bidirectional) in the
+        // current level to repair them.
+        element_lock.lock();
+        auto *incoming_edges = getIncomingEdgesPtr(node_id, level);
+        for (auto incoming_edge : *incoming_edges) {
+            incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
+        }
+    }
+    return incoming_neighbors;
 }
 
 template <typename DataType, typename DistType>
@@ -1449,33 +1512,10 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         }
 
         auto max_common_level = std::min(element_max_level, max_level_copy);
-        if (this->num_marked_deleted) {
-            if (element_max_level >= max_level_copy) {
-                // `cur_dist` is not initialized yet.
-                cur_dist =
-                    this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
-            }
-            for (size_t level = max_common_level; (int)level >= 0; level--) {
-                candidatesMaxHeap<DistType> top_candidates =
-                    searchLayer<true>(curr_element, vector_data, level, ef_construction_);
-                if (top_candidates.empty()) {
-                    // This means that we haven't found any non-marked-deleted candidate in the
-                    // layer.
-                    // Get curr_element and cur_dist ready for the next iteration.
-                    greedySearchLevel<false>(vector_data, level, curr_element, cur_dist);
-                    // Set incoming edges list to empty.
-                    auto ptr = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-                    setIncomingEdgesPtr(new_element_id, level, ptr);
-                } else {
-                    curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
-                }
-            }
-        } else {
-            for (int level = max_common_level; (int)level >= 0; level--) {
-                candidatesMaxHeap<DistType> top_candidates =
-                    searchLayer<false>(curr_element, vector_data, level, ef_construction_);
-                curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
-            }
+        for (int level = max_common_level; (int)level >= 0; level--) {
+            candidatesMaxHeap<DistType> top_candidates =
+                searchLayer<false>(curr_element, vector_data, level, ef_construction_);
+            curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
         }
 
         // updating the maximum level (holding a global lock)

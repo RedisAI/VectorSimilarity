@@ -436,3 +436,65 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     // Cleanup.
     thread_pool.clear();
 }
+
+TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    size_t dim = 4;
+    size_t n = 5000;
+
+    for (auto is_multi : {false, true}) {
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        auto jobQ = JobQueue();
+        size_t memory_ctx = 0;
+        auto index_ctx = IndexExtCtx();
+        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                           .jobQueueCtx = &index_ctx,
+                                           .submitCb = submit_callback,
+                                           .memoryCtx = &memory_ctx,
+                                           .UpdateMemCb = update_mem_callback};
+        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+
+        labelType label = 0;
+        // Delete a non existing label.
+        tiered_index->deleteVectorFromHNSW(label);
+        ASSERT_EQ(jobQ.size(), 0);
+
+        // Insert one vector to HNSW and then delete it (it should have no neighbors to repair).
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label);
+        tiered_index->deleteVectorFromHNSW(label);
+        ASSERT_EQ(jobQ.size(), 0);
+
+        // Add another vector and remove it. Since the other vector in the index has marked deleted,
+        // this vector should have no neighbors, and again, no neighbors to repair.
+        label++;
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label, label);
+        tiered_index->deleteVectorFromHNSW(label);
+        ASSERT_EQ(jobQ.size(), 0);
+
+        // Add two vectors and delete one, expect that at least one repair job will be created.
+        label++;
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label, label);
+        labelType idToRepair = label++;
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label, label);
+        tiered_index->deleteVectorFromHNSW(label);
+        label++;
+
+        // The first job should be a repair job of the first inserted non-deleted node id (2)
+        // in level 0.
+        ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, idToRepair);
+        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+        ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+        ASSERT_GE(tiered_index->idToRepairJobs.at(idToRepair).size(), 1);
+
+        ASSERT_EQ(tiered_index->indexSize(), label);
+        ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), label - 1);
+        ASSERT_EQ(tiered_index->idToSwapJob.size(), label - 1);
+    }
+}

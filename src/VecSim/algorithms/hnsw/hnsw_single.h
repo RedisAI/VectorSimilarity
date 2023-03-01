@@ -21,6 +21,14 @@ private:
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override { label_lookup_[label] = id; }
     inline void resizeLabelLookup(size_t new_max_elements) override;
+    inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const override {
+        vecsim_stl::vector<idType> ids(this->allocator);
+        auto it = label_lookup_.find(label);
+        if (it != label_lookup_.end()) {
+            ids.push_back(it->second); // put the id that was found in the result
+        }
+        return ids;
+    }
 
 public:
     HNSWIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,

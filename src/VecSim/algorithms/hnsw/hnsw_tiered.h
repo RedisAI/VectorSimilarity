@@ -20,11 +20,15 @@ struct HNSWInsertJob : public AsyncJob {
 /**
  * Definition of a job that swaps last id with a deleted id in HNSW Index after delete operation.
  */
-struct HNSWSwapJob : public AsyncJob {
+struct HNSWSwapJob : public VecsimBaseObject {
     idType deleted_id;
-    long pending_repair_jobs_counter; // number of repair jobs left to complete before this job
-                                      // is ready to be executed (atomic counter).
-    // TODO: implement contractor
+    std::atomic_uint
+        pending_repair_jobs_counter; // number of repair jobs left to complete before this job
+                                     // is ready to be executed (atomic counter).
+    HNSWSwapJob(std::shared_ptr<VecSimAllocator> allocator, idType deletedId)
+        : VecsimBaseObject(allocator), deleted_id(deletedId), pending_repair_jobs_counter(0) {}
+    void setRepairJobsNum(long num_repair_jobs) { pending_repair_jobs_counter = num_repair_jobs; }
+    void atomicDecreasePendingJobsNum() { pending_repair_jobs_counter--; }
 };
 
 /**
@@ -36,12 +40,17 @@ struct HNSWRepairJob : public AsyncJob {
     unsigned short level;
     HNSWSwapJob *associated_swap_job;
 
-    // TODO: implement contractor
+    HNSWRepairJob(std::shared_ptr<VecSimAllocator> allocator, idType id_, unsigned short level_,
+                  JobCallback insertCb, VecSimIndex *index_, HNSWSwapJob *swapJob)
+        : AsyncJob(allocator, HNSW_REPAIR_NODE_CONNECTIONS_JOB, insertCb, index_), node_id(id_),
+          level(level_), associated_swap_job(swapJob) {}
 };
 
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
+    vecsim_stl::vector<HNSWSwapJob *> swapJobs;
+
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
     // In MULTI, we can have more than one insert job pending per label
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>> labelToInsertJobs;
@@ -61,6 +70,11 @@ private:
     static void executeRepairJobWrapper(AsyncJob *job) {}
 
     inline HNSWIndex<DataType, DistType> *getHNSWIndex();
+
+    // Helper function for performing in place mark delete of vector(s) associated with a label
+    // and creating the appropriate repair jobs for the effected connections. This should be called
+    // while *HNSW shared lock is held* (shared locked).
+    void deleteVectorFromHNSW(labelType label);
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -122,6 +136,56 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() {
     return reinterpret_cast<HNSWIndex<DataType, DistType> *>(this->index);
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::deleteVectorFromHNSW(labelType label) {
+    auto *hnsw_index = getHNSWIndex();
+
+    // Get the required data about the relevant ids while holding the index data lock.
+    hnsw_index->lockIndexDataGuard();
+    auto internal_ids = hnsw_index->getIdsOfLabel(label);
+    vecsim_stl::vector<size_t> ids_top_level(this->allocator);
+    for (idType id : internal_ids) {
+        ids_top_level.push_back(hnsw_index->getElementTopLevel(id));
+    }
+    hnsw_index->unlockIndexDataGuard();
+
+    for (size_t i = 0; i < internal_ids.size(); i++) {
+        idType id = internal_ids[i];
+        if (hnsw_index->isMarkedDeleted(id)) {
+            // The id was already set as deleted in HNSW, no need to create a job for it.
+            continue;
+        }
+        hnsw_index->markDeletedInternal(id);
+        vecsim_stl::vector<HNSWRepairJob *> repair_jobs(this->allocator);
+        auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
+
+        // Go over all the deleted element links in every level and create repair jobs.
+        auto incoming_edges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id, ids_top_level[i]);
+        for (pair<idType, ushort> &node : incoming_edges) {
+            auto *repair_job = new (this->allocator) HNSWRepairJob(
+                this->allocator, node.first, node.second, executeRepairJobWrapper, this, swap_job);
+            repair_jobs.emplace_back(repair_job);
+            // Insert the repair job into the repair jobs lookup (for fast update in case that the
+            // node id is changed due to swap job).
+            if (idToRepairJobs.find(node.first) == idToRepairJobs.end()) {
+                idToRepairJobs.insert(
+                    {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
+            }
+            idToRepairJobs.at(node.first).push_back(repair_job);
+        }
+        swap_job->setRepairJobsNum(incoming_edges.size());
+        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(),
+                                incoming_edges.size(), this->jobQueueCtx);
+        swapJobs.push_back(swap_job);
+        // Insert the swap job into the swap jobs lookup (for fast update in case that the
+        // node id is changed due to swap job).
+        idToSwapJob[id] = swap_job;
+    }
+
+    // Todo: if swapJobs size is larger than a threshold, go over the swap jobs and execute it,
+    //  if all its pending repair jobs are executed (to be implemented later on).
 }
 
 /******************** Job's callbacks **********************************/
@@ -219,7 +283,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                                                      TieredIndexParams tieredParams)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams),
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams), swapJobs(this->allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
