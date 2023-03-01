@@ -441,7 +441,6 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t dim = 4;
-    size_t n = 5000;
 
     for (auto is_multi : {false, true}) {
         HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -460,41 +459,92 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
             HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
 
-        labelType label = 0;
         // Delete a non existing label.
-        tiered_index->deleteVectorFromHNSW(label);
+        tiered_index->deleteVectorFromHNSW(0);
         ASSERT_EQ(jobQ.size(), 0);
 
         // Insert one vector to HNSW and then delete it (it should have no neighbors to repair).
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label);
-        tiered_index->deleteVectorFromHNSW(label);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0);
+        tiered_index->deleteVectorFromHNSW(0);
         ASSERT_EQ(jobQ.size(), 0);
 
         // Add another vector and remove it. Since the other vector in the index has marked deleted,
         // this vector should have no neighbors, and again, no neighbors to repair.
-        label++;
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label, label);
-        tiered_index->deleteVectorFromHNSW(label);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
+        tiered_index->deleteVectorFromHNSW(1);
         ASSERT_EQ(jobQ.size(), 0);
 
         // Add two vectors and delete one, expect that at least one repair job will be created.
-        label++;
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label, label);
-        labelType idToRepair = label++;
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, label, label);
-        tiered_index->deleteVectorFromHNSW(label);
-        label++;
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 3, 3);
+        tiered_index->deleteVectorFromHNSW(3);
 
         // The first job should be a repair job of the first inserted non-deleted node id (2)
         // in level 0.
+        ASSERT_EQ(jobQ.size(), 1);
         ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, idToRepair);
+        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2);
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
         ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
-        ASSERT_GE(tiered_index->idToRepairJobs.at(idToRepair).size(), 1);
+        ASSERT_GE(tiered_index->idToRepairJobs.at(2).size(), 1);
 
-        ASSERT_EQ(tiered_index->indexSize(), label);
-        ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), label - 1);
-        ASSERT_EQ(tiered_index->idToSwapJob.size(), label - 1);
+        ASSERT_EQ(tiered_index->indexSize(), 4);
+        ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
+        ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
+        jobQ.pop();
+
+        if (is_multi) {
+            // Insert another vector under the label (2) that has not been deleted.
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 4);
+            // Expect to see both ids stored under this label being deleted (2 and 4), and have both
+            // ids need repair (as the connection between the two vectors is mutual). Also, 2 has an
+            // incoming edge from his other (deleted) neighbor (3)
+            tiered_index->deleteVectorFromHNSW(2);
+            ASSERT_EQ(jobQ.size(), 3);
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 3);
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+            jobQ.pop();
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 4);
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+            jobQ.pop();
+            // Repair for node id 4.
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2);
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+            jobQ.pop();
+            ASSERT_EQ(tiered_index->idToSwapJob.size(), 5);
+            ASSERT_EQ(tiered_index->idToRepairJobs.size(), 3);
+            ASSERT_EQ(tiered_index->idToRepairJobs.at(2).size(), 2);
+            ASSERT_EQ(tiered_index->idToRepairJobs.at(3).size(), 1);
+            ASSERT_EQ(tiered_index->idToRepairJobs.at(4).size(), 1);
+        }
+
+        // Test that repair jobs are created for multiple levels.
+        size_t num_elements_with_multiple_levels = 0;
+        size_t vec_id = tiered_index->index->indexSize();
+        while (num_elements_with_multiple_levels < 2) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, vec_id, vec_id);
+            if (tiered_index->getHNSWIndex()->element_levels_[vec_id] > 0) {
+                num_elements_with_multiple_levels++;
+            }
+            vec_id++;
+        }
+
+        // Delete the last inserted vector, which is in level 1.
+        tiered_index->deleteVectorFromHNSW(--vec_id);
+        ASSERT_EQ(tiered_index->getHNSWIndex()->element_levels_[vec_id], 1);
+        auto *level_one_neighbors = tiered_index->getHNSWIndex()->get_linklist_at_level(vec_id, 1);
+        ASSERT_EQ(tiered_index->getHNSWIndex()->getListCount(level_one_neighbors), 1);
+
+        size_t num_repair_jobs = jobQ.size();
+        // There should be at least two nodes to repair, the neighbors of next_id in levels 0 and 1
+        ASSERT_GE(num_repair_jobs, 2);
+        while (jobQ.size() > 1) {
+            // First we should have jobs for repairing nodes in level 0.
+            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+            jobQ.pop();
+        }
+        // The last job should be repairing the single neighbor in level 1.
+        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 1);
+        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, *level_one_neighbors);
     }
 }
