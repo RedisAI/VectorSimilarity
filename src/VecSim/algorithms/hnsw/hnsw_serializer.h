@@ -73,7 +73,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                 }
                 // If the current element has not been marked deleted, but it has a deleted neighbor
                 // then this connection should be repaired.
-                if (!isMarkedDeleted(i) && isMarkedDeleted(cur_links[j])) {
+                if (isMarkedDeleted(cur_links[j])) {
                     res.connection_to_repair++;
                 }
                 inbound_connections_num[cur_links[j]]++;

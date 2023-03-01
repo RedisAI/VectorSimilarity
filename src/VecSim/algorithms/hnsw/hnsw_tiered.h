@@ -297,6 +297,16 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
             delete job;
         }
     }
+    // Delete all the pending repair jobs.
+    for (auto &jobs : this->idToRepairJobs) {
+        for (auto *job : jobs.second) {
+            delete job;
+        }
+    }
+    // Delete all the pending swap jobs.
+    for (auto *job : this->swapJobs) {
+        delete job;
+    }
 }
 
 template <typename DataType, typename DistType>

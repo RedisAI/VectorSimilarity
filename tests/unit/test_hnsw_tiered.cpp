@@ -550,3 +550,67 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     }
 }
 
+TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    size_t n = 100;
+    size_t dim = 4;
+
+    for (auto is_multi : {false, true}) {
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi,
+                             .M = 4};
+        auto jobQ = JobQueue();
+        size_t memory_ctx = 0;
+        auto index_ctx = IndexExtCtx();
+        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                           .jobQueueCtx = &index_ctx,
+                                           .submitCb = submit_callback,
+                                           .memoryCtx = &memory_ctx,
+                                           .UpdateMemCb = update_mem_callback};
+        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector(tiered_index->index, dim, i, i);
+        }
+
+        // Delete vectors one by one and run the resulted repair jobs.
+        while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
+            // Choose the current entry point each time (it should be modified after the deletion).
+            idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointCopy();
+            auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
+            auto incoming_neighbors =
+                tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
+            tiered_index->deleteVectorFromHNSW(ep);
+            ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
+            // ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connection_to_repair,
+            // jobQ.size());
+
+            // Execute synchronously all the repair jobs for the current deletion.
+            while (!jobQ.empty()) {
+                idType repair_node_id = ((HNSWRepairJob *)(jobQ.front().job))->node_id;
+                auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
+                auto orig_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
+                    repair_node_id, repair_node_level);
+
+                tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id,
+                                                                    repair_node_level);
+                auto new_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
+                    repair_node_id, repair_node_level);
+                size_t new_neighbors_count =
+                    tiered_index->getHNSWIndex()->getNodeNeighborsCount(new_neighbors);
+                // This makes sure that the deleted node is no longer in the neighbors set of the
+                // repaired node.
+                ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
+                            new_neighbors + new_neighbors_count);
+                jobQ.pop();
+            }
+            // ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connection_to_repair, 0);
+        }
+        delete tiered_index;
+    }
+}
