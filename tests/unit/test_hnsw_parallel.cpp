@@ -619,7 +619,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
 
     bool run_queries = true;
     auto parallel_knn_search = [&](int myID) {
-        TEST_DATA_T query_val = (TEST_DATA_T)n / 4 + 2*myID;
+        TEST_DATA_T query_val = (TEST_DATA_T)n / 4 + 2 * myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
