@@ -824,7 +824,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         if (it != removed_node_incoming_edges->end()) {
             // Swap the last element with the current one (equivalent to removing the neighbor from
             // the list).
-            *it = *(removed_node_incoming_edges->end() - 1);
+            *it = removed_node_incoming_edges->back();
             removed_node_incoming_edges->pop_back();
         } else {
             neighbour_incoming_edges->push_back(removed_node);
@@ -992,7 +992,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         if (it != node_incoming_edges->end()) {
             // Swap the last element with the current one (equivalent to removing the neighbor from
             // the list).
-            *it = *(node_incoming_edges->end() - 1);
+            *it = node_incoming_edges->back();
             node_incoming_edges->pop_back();
         } else {
             neighbour_incoming_edges->push_back(node_id);
@@ -1018,7 +1018,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                     // neighbor from the list).
                     auto it = std::find(neighbour_incoming_edges->begin(),
                                         neighbour_incoming_edges->end(), node_id);
-                    *it = *(neighbour_incoming_edges->end() - 1);
+                    *it = neighbour_incoming_edges->back();
                     neighbour_incoming_edges->pop_back();
                     bidirectional_edge = true;
                     break;
@@ -1097,7 +1097,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
                 auto it = std::find(neighbour_incoming_edges->begin(),
                                     neighbour_incoming_edges->end(), cur_element_count);
                 assert(it != neighbour_incoming_edges->end());
-                *it = *(neighbour_incoming_edges->end() - 1);
+                *it = neighbour_incoming_edges->back();
                 neighbour_incoming_edges->pop_back();
                 neighbour_incoming_edges->push_back(element_internal_id);
             }
@@ -1261,7 +1261,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         if (incoming_edges_it != removed_node_incoming_edges->end()) {
             // Swap the last element with the current one (equivalent to removing the neighbor from
             // the list).
-            *incoming_edges_it = *(removed_node_incoming_edges->end() - 1);
+            *incoming_edges_it = removed_node_incoming_edges->back();
             removed_node_incoming_edges->pop_back();
         } else {
             node_incoming_edges->push_back(removed_node);
@@ -1296,7 +1296,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         if (it != node_incoming_edges->end()) {
             // Swap the last element with the current one (equivalent to removing the neighbor from
             // the list).
-            *it = *(node_incoming_edges->end() - 1);
+            *it = node_incoming_edges->back();
             node_incoming_edges->pop_back();
         } else {
             new_neighbor_incoming_edges->push_back(node_id);
@@ -1311,8 +1311,8 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
     candidatesMaxHeap<DistType> neighbors_candidates(this->allocator);
     // Use bitmaps for fast accesses.
-    vecsim_stl::vector<bool> node_orig_neighbours_set(cur_element_count, false, this->allocator);
-    vecsim_stl::vector<bool> neighbors_candidates_set(cur_element_count, false, this->allocator);
+    vecsim_stl::vector<bool> node_orig_neighbours_set(max_elements_, false, this->allocator);
+    vecsim_stl::vector<bool> neighbors_candidates_set(max_elements_, false, this->allocator);
     vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
@@ -1548,7 +1548,7 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
                 auto it = std::find(neighbour_incoming_edges->begin(),
                                     neighbour_incoming_edges->end(), element_internal_id);
-                *it = *(neighbour_incoming_edges->end() - 1);
+                *it = neighbour_incoming_edges->back();
                 neighbour_incoming_edges->pop_back();
             }
         }
