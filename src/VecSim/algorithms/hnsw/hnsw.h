@@ -822,7 +822,10 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         auto it = std::find(removed_node_incoming_edges->begin(),
                             removed_node_incoming_edges->end(), selected_neighbor);
         if (it != removed_node_incoming_edges->end()) {
-            removed_node_incoming_edges->erase(it);
+            // Swap the last element with the current one (equivalent to removing the neighbor from
+            // the list).
+            *it = *(removed_node_incoming_edges->end() - 1);
+            removed_node_incoming_edges->pop_back();
         } else {
             neighbour_incoming_edges->push_back(removed_node);
         }
@@ -987,7 +990,10 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         // and it should be saved in the neighbor's incoming edges.
         auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), neighbour_id);
         if (it != node_incoming_edges->end()) {
-            node_incoming_edges->erase(it);
+            // Swap the last element with the current one (equivalent to removing the neighbor from
+            // the list).
+            *it = *(node_incoming_edges->end() - 1);
+            node_incoming_edges->pop_back();
         } else {
             neighbour_incoming_edges->push_back(node_id);
         }
@@ -1008,9 +1014,12 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                              neighbour_incoming_edges->end(),
-                                                              node_id));
+                    // Swap the last element with the current one (equivalent to removing the
+                    // neighbor from the list).
+                    auto it = std::find(neighbour_incoming_edges->begin(),
+                                        neighbour_incoming_edges->end(), node_id);
+                    *it = *(neighbour_incoming_edges->end() - 1);
+                    neighbour_incoming_edges->pop_back();
                     bidirectional_edge = true;
                     break;
                 }
@@ -1088,7 +1097,8 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
                 auto it = std::find(neighbour_incoming_edges->begin(),
                                     neighbour_incoming_edges->end(), cur_element_count);
                 assert(it != neighbour_incoming_edges->end());
-                neighbour_incoming_edges->erase(it);
+                *it = *(neighbour_incoming_edges->end() - 1);
+                neighbour_incoming_edges->pop_back();
                 neighbour_incoming_edges->push_back(element_internal_id);
             }
         }
@@ -1229,7 +1239,10 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         if (it != chosen_neighbors.end()) {
             // A chosen neighbor is already connected to the node - leave it as is.
             node_neighbors[node_neighbors_idx++] = node_neighbors[i];
-            chosen_neighbors.erase(it);
+            // Swap the last element with the current one (equivalent to removing the neighbor from
+            // the list).
+            *it = *(chosen_neighbors.end() - 1);
+            chosen_neighbors.pop_back();
             continue;
         }
         // Now we know that we are looking at a neighbor that needs to be removed.
@@ -1243,10 +1256,13 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // neighbour's incoming edges set. Note: we assume that every update is performed atomically
         // mutually, so it should be sufficient to look at the removed node's incoming edges set
         // alone.
-        auto it2 = std::find(removed_node_incoming_edges->begin(),
-                             removed_node_incoming_edges->end(), node_id);
-        if (it2 != removed_node_incoming_edges->end()) {
-            removed_node_incoming_edges->erase(it2);
+        auto incoming_edges_it = std::find(removed_node_incoming_edges->begin(),
+                                           removed_node_incoming_edges->end(), node_id);
+        if (incoming_edges_it != removed_node_incoming_edges->end()) {
+            // Swap the last element with the current one (equivalent to removing the neighbor from
+            // the list).
+            *incoming_edges_it = *(removed_node_incoming_edges->end() - 1);
+            removed_node_incoming_edges->pop_back();
         } else {
             node_incoming_edges->push_back(removed_node);
         }
@@ -1261,8 +1277,12 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
                       << std::endl;
             break;
         }
-        // We don't make update for deleted nodes.
-        if (isMarkedDeleted(chosen_id) || isMarkedDeleted(node_id)) {
+        // We don't add new neighbors for deleted nodes - if node_id is deleted we can finish.
+        if (isMarkedDeleted(node_id)) {
+            break;
+        }
+        // If this specific new neighbor is deleted, we don't add this connection and continue.
+        if (isMarkedDeleted(chosen_id)) {
             continue;
         }
         auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(chosen_id, level);
@@ -1274,7 +1294,10 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // mutually and atomically, then can rely on this assumption.
         auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), chosen_id);
         if (it != node_incoming_edges->end()) {
-            node_incoming_edges->erase(it);
+            // Swap the last element with the current one (equivalent to removing the neighbor from
+            // the list).
+            *it = *(node_incoming_edges->end() - 1);
+            node_incoming_edges->pop_back();
         } else {
             new_neighbor_incoming_edges->push_back(node_id);
         }
@@ -1292,7 +1315,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     vecsim_stl::vector<bool> neighbors_candidates_set(cur_element_count, false, this->allocator);
     vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
 
-    // Go over the repaired node neighbors, collect the non-deleted ines to be neighbors candidates
+    // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
     {
         std::unique_lock<std::mutex> node_lock(element_neighbors_locks_[node_id]);
@@ -1523,9 +1546,10 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                          neighbour_incoming_edges->end(),
-                                                          element_internal_id));
+                auto it = std::find(neighbour_incoming_edges->begin(),
+                                    neighbour_incoming_edges->end(), element_internal_id);
+                *it = *(neighbour_incoming_edges->end() - 1);
+                neighbour_incoming_edges->pop_back();
             }
         }
 
