@@ -168,7 +168,7 @@ protected:
                                        std::vector<idType> &nodes_to_update,
                                        std::vector<idType> &chosen_neighbors, size_t max_M_cur);
 
-    template <bool with_timeout>
+    template <bool running_query>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
                            void *timeoutCtx = nullptr, VecSimQueryResult_Code *rc = nullptr) const;
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
@@ -1149,18 +1149,18 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 
 // This function is greedily searching for the closest candidate to the given data point at the
 // given level, starting at the given node. It sets `curObj` to the closest node found, and
-// `curDist` to the distance to this node. If `with_timeout` is true, the search will check for
-// timeout and return if it has occurred. `timeoutCtx` and `rc` must be valid if `with_timeout` is
+// `curDist` to the distance to this node. If `running_query` is true, the search will check for
+// timeout and return if it has occurred. `timeoutCtx` and `rc` must be valid if `running_query` is
 // true. *Note that we assume that level is higher than 0*
 template <typename DataType, typename DistType>
-template <bool with_timeout>
+template <bool running_query>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
                                                       idType &curObj, DistType &curDist,
                                                       void *timeoutCtx,
                                                       VecSimQueryResult_Code *rc) const {
     bool changed;
     do {
-        if (with_timeout && VECSIM_TIMEOUT(timeoutCtx)) {
+        if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
             curObj = INVALID_ID;
             return;
@@ -1173,7 +1173,9 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
         for (int i = 0; i < links_count; i++) {
             idType candidate = node_links[i];
             assert(candidate < this->cur_element_count && "candidate error: out of index range");
-            if (isInProcess(candidate)) {
+            // Don't allow choosing a deleted node as an entry point upon searching for neighbors
+            // candidates (that is, we're NOT running a query, but inserting a new vector).
+            if (isInProcess(candidate) || (!running_query && isMarkedDeleted(candidate))) {
                 continue;
             }
             DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
