@@ -439,8 +439,9 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
 
 TYPED_TEST(HNSWTieredIndexTest, knn_search) {
     size_t dim = 4;
-    size_t num_of_vectors = 100;
     size_t k = 10;
+
+    size_t n = k * 3;
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -471,30 +472,80 @@ TYPED_TEST(HNSWTieredIndexTest, knn_search) {
 
     TEST_DATA_T query_0[dim];
     GenerateVector<TEST_DATA_T>(query_0, dim, 0);
+    TEST_DATA_T query_1mid[dim];
+    GenerateVector<TEST_DATA_T>(query_1mid, dim, n / 3);
+    TEST_DATA_T query_2mid[dim];
+    GenerateVector<TEST_DATA_T>(query_2mid, dim, n * 2 / 3);
+    TEST_DATA_T query_n[dim];
+    GenerateVector<TEST_DATA_T>(query_n, dim, n - 1);
 
     // Search for vectors when the index is empty.
     runTopKSearchTest(tiered_index, query_0, k, nullptr);
 
-    // Insert 100 vectors to the main index.
-    for (size_t i = 0; i < 100; i++) {
+    // Define the verification functions.
+    auto ver_res_0 = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, index);
+        ASSERT_DOUBLE_EQ(score, dim * id * id);
+    };
+
+    auto ver_res_1mid = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - query_1mid[0])), (index + 1) / 2);
+        ASSERT_DOUBLE_EQ(score, dim * pow((index + 1) / 2, 2));
+    };
+
+    auto ver_res_2mid = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - query_2mid[0])), (index + 1) / 2);
+        ASSERT_DOUBLE_EQ(score, dim * pow((index + 1) / 2, 2));
+    };
+
+    auto ver_res_n = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, n - 1 - index);
+        ASSERT_DOUBLE_EQ(score, dim * index * index);
+    };
+
+    // Insert n/2 vectors to the main index.
+    for (size_t i = 0; i < n / 2; i++) {
         GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
     }
+    ASSERT_EQ(tiered_index->indexSize(), n / 2);
+    ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize());
 
-    // TEST 1: Search for 10 vectors with the flat index empty.
+    // Search for k vectors with the flat index empty.
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
 
-    // ADD some non-existing vectors to the flat index.
+    // Insert n/2 vectors to the flat index.
+    for (size_t i = n / 2; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
 
-    // TEST 2: Search for 10 vectors so all the vectors will be from the flat index.
-    // TEST 3: Search for 10 vectors so all the vectors will be from the main index.
-    // TEST 4: Search for 10 vectors so some of the vectors will be from the main index and some
-    // from the flat index.
+    // Search for k vectors so all the vectors will be from the flat index.
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    // Search for k vectors so all the vectors will be from the main index.
+    runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
+    // Search for k so some of the results will be from the main and some from the flat index.
+    runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
 
-    // ADD some overlapping vectors to the flat index (or add some vectors to the main index).
+    // Add some overlapping vectors to the main and flat index.
+    // adding directly to the underlying indexes to avoid jobs logic.
+    for (size_t i = n / 3; i < n / 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+    }
+    for (size_t i = n / 2; i < n * 2 / 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+    }
+    // ASSERT_EQ(tiered_index->indexSize(), n);
 
-    // TEST 5: Search for 10 vectors so all the vectors will be from the flat index.
-    // TEST 6: Search for 10 vectors so all the vectors will be from the main index.
-    // TEST 7: Search for 10 vectors so some of the vectors will be from the main index and some
-    // from the flat index.
+    // Search for k vectors so all the vectors will be from the flat index.
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    // Search for k vectors so all the vectors will be from the main index.
+    runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
+    // Search for k so some of the results will be from the main and some from the flat index.
+    runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
 
     // MORE TESTS:
     // 2. Search for vectors when the flat index is not empty but the main index is empty.

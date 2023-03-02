@@ -11,7 +11,6 @@
 #include <cerrno>
 #include <climits>
 #include <float.h>
-#include <unordered_set>
 #include "arr_cpp.h"
 
 #ifndef __COMPAR_FN_T
@@ -180,7 +179,7 @@ static bool contains(const VecSimQueryResult *results, VecSimQueryResult *res) {
     const auto res_id = VecSimQueryResult_GetId(res);
     for (size_t idx = array_len(results);
          idx > 0 && VecSimQueryResult_GetScore(&results[idx - 1]) == res_score; idx--) {
-        if (VecSimQueryResult_GetId(&results[idx]) == res_id) {
+        if (VecSimQueryResult_GetId(&results[idx - 1]) == res_id) {
             return true;
         }
     }

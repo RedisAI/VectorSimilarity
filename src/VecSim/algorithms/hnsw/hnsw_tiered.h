@@ -277,16 +277,19 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List
 TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) {
-    this->flatIndexGuard.lock();
+    this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the HNSW index.
     if (this->flatBuffer->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
         this->flatIndexGuard.unlock();
-        this->mainIndexGuard.lock();
 
-        // Simply query the HNSW index and return the results.
-        return this->index->topKQuery(queryBlob, k, queryParams);
+        // Simply query the HNSW index and return the results while holding the lock.
+        this->mainIndexGuard.lock_shared();
+        auto res = this->index->topKQuery(queryBlob, k, queryParams);
+        this->mainIndexGuard.unlock();
+
+        return res;
     } else {
         // No luck... first query the flat buffer and release the lock.
         auto flat_results = this->flatBuffer->topKQuery(queryBlob, k, queryParams);
@@ -299,7 +302,7 @@ TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         }
 
         // Lock the main index and query it.
-        this->mainIndexGuard.lock();
+        this->mainIndexGuard.lock_shared();
         auto hnsw_results = this->index->topKQuery(queryBlob, k, queryParams);
         this->mainIndexGuard.unlock();
 
