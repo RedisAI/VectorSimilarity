@@ -83,6 +83,10 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams);
 inline void ASSERT_TYPE_EQ(double arg1, double arg2) { ASSERT_DOUBLE_EQ(arg1, arg2); }
 
 inline void ASSERT_TYPE_EQ(float arg1, float arg2) { ASSERT_FLOAT_EQ(arg1, arg2); }
+void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_res_num,
+                       std::function<void(size_t, double, size_t)> ResCB,
+                       VecSimQueryParams *params = nullptr,
+                       VecSimQueryResult_Order order = BY_SCORE);
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB,
                        VecSimQueryParams *params = nullptr,

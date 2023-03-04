@@ -531,13 +531,13 @@ TYPED_TEST(HNSWTieredIndexTest, knn_search) {
 
     // Add some overlapping vectors to the main and flat index.
     // adding directly to the underlying indexes to avoid jobs logic.
+    // The main index will have vectors 0 - 2n/3 and the flat index will have vectors n/3 - n
     for (size_t i = n / 3; i < n / 2; i++) {
         GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
     }
     for (size_t i = n / 2; i < n * 2 / 3; i++) {
         GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
     }
-    // ASSERT_EQ(tiered_index->indexSize(), n);
 
     // Search for k vectors so all the vectors will be from the flat index.
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
@@ -547,12 +547,50 @@ TYPED_TEST(HNSWTieredIndexTest, knn_search) {
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
 
-    // MORE TESTS:
-    // 2. Search for vectors when the flat index is not empty but the main index is empty.
-    // 3. Search for more vectors than the index size.
-    // 4. Search for less vectors than the index size, but more than the flat and main index sizes.
-    // 5. Search for more vectors than the flat index size, but less than the main index size.
-    // 6. Search for more vectors than the main index size, but less than the flat index size.
+    // More edge cases:
+
+    // Search for more vectors than the index size.
+    k = n + 1;
+    runTopKSearchTest(tiered_index, query_0, k, n, ver_res_0);
+    runTopKSearchTest(tiered_index, query_n, k, n, ver_res_n);
+
+    // Search for less vectors than the index size, but more than the flat and main index sizes.
+    k = n * 5 / 6;
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
+
+    // Search for more vectors than the main index size, but less than the flat index size.
+    for (size_t i = n / 2; i < n * 2 / 3; i++) {
+        VecSimIndex_DeleteVector(hnsw_index, i);
+    }
+    ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
+    ASSERT_EQ(hnsw_index->indexSize(), n / 2);
+    k = n * 2 / 3;
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
+    runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+
+    // Search for more vectors than the flat index size, but less than the main index size.
+    for (size_t i = n / 2; i < n; i++) {
+        VecSimIndex_DeleteVector(flat_index, i);
+    }
+    ASSERT_EQ(flat_index->indexSize(), n / 6);
+    ASSERT_EQ(hnsw_index->indexSize(), n / 2);
+    k = n / 4;
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+
+    // Search for vectors when the flat index is not empty but the main index is empty.
+    for (size_t i = 0; i < n * 2 / 3; i++) {
+        VecSimIndex_DeleteVector(hnsw_index, i);
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+    }
+    ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
+    ASSERT_EQ(hnsw_index->indexSize(), 0);
+    k = n / 3;
+    runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
+    runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
 
     // Cleanup.
     delete jobQ;
