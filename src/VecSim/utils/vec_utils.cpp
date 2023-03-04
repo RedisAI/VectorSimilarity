@@ -62,6 +62,12 @@ int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQuery
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
 }
 
+int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
+    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2)) ?
+               cmpVecSimQueryResultByScore(res1, res2) :
+               cmpVecSimQueryResultById(res1, res2);
+}
+
 void sort_results_by_id(VecSimQueryResult_List rl) {
     qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultById);
@@ -185,6 +191,11 @@ static bool contains(const VecSimQueryResult *results, VecSimQueryResult *res) {
     }
     return false;
 }
+// static bool contains(const VecSimQueryResult *results, VecSimQueryResult *res) {
+//     return array_len(results) > 0 &&
+//            VecSimQueryResult_GetScore(&results[array_len(results) - 1]) == VecSimQueryResult_GetScore(res) &&
+//            VecSimQueryResult_GetId(&results[array_len(results) - 1]) == VecSimQueryResult_GetId(res);
+// }
 
 static void maybe_append_result(VecSimQueryResult *results, VecSimQueryResult *res,
                                 size_t &counter) {
@@ -220,7 +231,7 @@ VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryRe
 
     while (limit && cur_first != first_end && cur_second != second_end) {
         auto &which =
-            cmpVecSimQueryResultByScore(cur_first, cur_second) > 0 ? cur_second : cur_first;
+            cmpVecSimQueryResultByScoreThenId(cur_first, cur_second) > 0 ? cur_second : cur_first;
         maybe_append_result(results, which++, limit);
     }
 
