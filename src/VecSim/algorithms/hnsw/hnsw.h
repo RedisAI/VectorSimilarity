@@ -85,15 +85,19 @@ protected:
     // Index level generator of the top level for a new element
     std::default_random_engine level_generator_;
 
-    // Index state
+    // Index global state - these should be guarded by the index_data_guard_ lock in
+    // multithreaded scenario.
     size_t cur_element_count;
-    size_t maxlevel_;
-
-    // Index data structures
-    idType entrypoint_node_;
-    char *data_level0_memory_;
-    char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
+
+    // Index data
+    char *data_level0_memory_; // neighbors in level 0, element label, flags and data (vector)
+    char **linkLists_;         // neighbors in level higher than 0
+
+    // Index global state - these should be guarded by the entry_point_guard_ lock in
+    // multithreaded scenario.
+    idType entrypoint_node_;
+    size_t max_level_; // this is the top level of the entry point's element
 
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
@@ -309,7 +313,7 @@ size_t HNSWIndex<DataType, DistType>::getM() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
-    return maxlevel_;
+    return max_level_;
 }
 
 template <typename DataType, typename DistType>
@@ -1036,7 +1040,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
-        idType *top_level_list = getNodeNeighborsAtLevel(old_entry, maxlevel_);
+        idType *top_level_list = getNodeNeighborsAtLevel(old_entry, max_level_);
         if (getNodeNeighborsCount(top_level_list) > 0) {
             // Tries to set the (arbitrary) first neighbor as the entry point, if exists.
             entrypoint_node_ = *top_level_list;
@@ -1044,18 +1048,18 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             // If there is no neighbors in the current level, check for any vector at
             // this level to be the new entry point.
             for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
-                if (element_levels_[cur_id] == maxlevel_ && cur_id != old_entry) {
+                if (element_levels_[cur_id] == max_level_ && cur_id != old_entry) {
                     entrypoint_node_ = cur_id;
                     break;
                 }
             }
         }
-        // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
+        // If we didn't find any vector at the top level, decrease the max_level_ and try again,
         // until we find a new entry point, or the index is empty.
         if (old_entry == entrypoint_node_) {
-            maxlevel_--;
-            if ((int)maxlevel_ < 0) {
-                maxlevel_ = HNSW_INVALID_LEVEL;
+            max_level_--;
+            if ((int)max_level_ < 0) {
+                max_level_ = HNSW_INVALID_LEVEL;
                 entrypoint_node_ = INVALID_ID;
             }
         }
@@ -1444,7 +1448,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     // initializations for special treatment of the first node
     entrypoint_node_ = INVALID_ID;
-    maxlevel_ = HNSW_INVALID_LEVEL;
+    max_level_ = HNSW_INVALID_LEVEL;
 
     if (M <= 1)
         throw std::runtime_error("HNSW index parameter M cannot be 1");
@@ -1566,7 +1570,7 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 
     // replace the entry point with another one, if we are deleting the current entry point.
     if (element_internal_id == entrypoint_node_) {
-        assert(element_top_level == maxlevel_);
+        assert(element_top_level == max_level_);
         replaceEntryPoint();
     }
 
@@ -1635,7 +1639,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // the current one, hold the lock through the entire insertion to maintain consistency of the
     // EP.
     std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
-    int max_level_copy = (int)maxlevel_;
+    int max_level_copy = (int)max_level_;
     idType curr_element = entrypoint_node_;
     if (element_max_level <= max_level_copy)
         entry_point_lock.unlock();
@@ -1700,7 +1704,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         // updating the maximum level (holding a global lock)
         if (element_max_level > max_level_copy) {
             entrypoint_node_ = new_element_id;
-            maxlevel_ = element_max_level;
+            max_level_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (int level_idx = max_level_copy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
@@ -1711,17 +1715,17 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     } else {
         // Do nothing for the first element
         entrypoint_node_ = new_element_id;
-        if (maxlevel_ != HNSW_INVALID_LEVEL) {
+        if (max_level_ != HNSW_INVALID_LEVEL) {
             throw std::runtime_error(
                 "we should get here only when we insert the first element to the graph, but"
                 "max level is not INVALID");
         }
-        for (int level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
+        for (int level_idx = max_level_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
             setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
         }
-        maxlevel_ = element_max_level;
+        max_level_ = element_max_level;
     }
     unmarkInProcess(new_element_id);
 }
@@ -1742,7 +1746,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
         return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = maxlevel_; level > 0 && curr_element != INVALID_ID; level--) {
+    for (size_t level = max_level_; level > 0 && curr_element != INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;

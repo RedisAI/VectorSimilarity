@@ -14,6 +14,9 @@
 #include <thread>
 #include <atomic>
 
+// Helper macro to get the closest even number which is equal or lower than x.
+#define FLOOR_EVEN(x) (x) - ((x)&1)
+
 template <typename index_type_t>
 class HNSWTestParallel : public ::testing::Test {
 public:
@@ -434,7 +437,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
 
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
-        size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+        size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
         // Save the number fo tasks done by thread i in the i-th entry.
         std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -577,8 +580,8 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(10, std::thread::hardware_concurrency());
-    // Save the number fo tasks done by thread i in the i-th entry.
+    size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    // Save the number of tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
     for (size_t i = 0; i < n; i++) {
@@ -672,7 +675,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(2, std::thread::hardware_concurrency());
+    size_t n_threads = MIN(8, FLOOR_EVEN(std::thread::hardware_concurrency()));
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 

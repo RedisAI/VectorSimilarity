@@ -13,6 +13,8 @@
 template <typename DataType, typename DistType>
 class HNSWIndex_Multi : public HNSWIndex<DataType, DistType> {
 private:
+    // Index global state - this should be guarded by the index_data_guard_ lock in
+    // multithreaded scenario.
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> label_lookup_;
 
 #ifdef BUILD_TESTS

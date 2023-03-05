@@ -154,7 +154,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     } else {
         readBinaryPOD(input, this->num_marked_deleted);
     }
-    readBinaryPOD(input, this->maxlevel_);
+    readBinaryPOD(input, this->max_level_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
 
@@ -315,7 +315,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     // Save index state
     writeBinaryPOD(output, this->cur_element_count);
     writeBinaryPOD(output, this->num_marked_deleted);
-    writeBinaryPOD(output, this->maxlevel_);
+    writeBinaryPOD(output, this->max_level_);
     writeBinaryPOD(output, this->entrypoint_node_);
 }
 
