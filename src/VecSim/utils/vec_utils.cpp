@@ -62,10 +62,11 @@ int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQuery
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
 }
 
-int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2)) ?
-               cmpVecSimQueryResultByScore(res1, res2) :
-               cmpVecSimQueryResultById(res1, res2);
+int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
+                                      const VecSimQueryResult *res2) {
+    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2))
+               ? cmpVecSimQueryResultByScore(res1, res2)
+               : cmpVecSimQueryResultById(res1, res2);
 }
 
 void sort_results_by_id(VecSimQueryResult_List rl) {
@@ -176,42 +177,8 @@ size_t VecSimType_sizeof(VecSimType type) {
     return 0;
 }
 
-// Assumes that the results array is sorted by score and that the res score >= the last result
-// score.
-// TODO: if we can guarantee that the results array is secondarily sorted by id, we can check only
-// the last result.
-static bool contains(const VecSimQueryResult *results, VecSimQueryResult *res) {
-    const auto res_score = VecSimQueryResult_GetScore(res);
-    const auto res_id = VecSimQueryResult_GetId(res);
-    for (size_t idx = array_len(results);
-         idx > 0 && VecSimQueryResult_GetScore(&results[idx - 1]) == res_score; idx--) {
-        if (VecSimQueryResult_GetId(&results[idx - 1]) == res_id) {
-            return true;
-        }
-    }
-    return false;
-}
-// static bool contains(const VecSimQueryResult *results, VecSimQueryResult *res) {
-//     return array_len(results) > 0 &&
-//            VecSimQueryResult_GetScore(&results[array_len(results) - 1]) == VecSimQueryResult_GetScore(res) &&
-//            VecSimQueryResult_GetId(&results[array_len(results) - 1]) == VecSimQueryResult_GetId(res);
-// }
-
-static void maybe_append_result(VecSimQueryResult *results, VecSimQueryResult *res,
-                                size_t &counter) {
-    if (!contains(results, res)) {
-        array_append(results, *res);
-        counter--;
-    }
-}
-
 static void concat_results(VecSimQueryResult *dst, VecSimQueryResult *src,
                            const VecSimQueryResult *src_end, size_t limit) {
-    // First result might be a duplicate, so we check and maybe skip it.
-    if (contains(dst, src)) {
-        src++;
-    }
-    // Now we append the rest of the results.
     while (limit && src != src_end) {
         array_append(dst, *src);
         src++;
@@ -219,6 +186,7 @@ static void concat_results(VecSimQueryResult *dst, VecSimQueryResult *src,
     }
 }
 
+// Assumes that the arrays are sorted by score firstly and by id secondarily.
 VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second,
                                      size_t limit) {
 
@@ -230,15 +198,27 @@ VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryRe
     const auto second_end = cur_second + VecSimQueryResult_Len(second);
 
     while (limit && cur_first != first_end && cur_second != second_end) {
-        auto &which =
-            cmpVecSimQueryResultByScoreThenId(cur_first, cur_second) > 0 ? cur_second : cur_first;
-        maybe_append_result(results, which++, limit);
+        int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
+        if (cmp > 0) {
+            array_append(results, *cur_second);
+            cur_second++;
+        } else if (cmp < 0) {
+            array_append(results, *cur_first);
+            cur_first++;
+        } else {
+            array_append(results, *cur_first);
+            cur_first++;
+            cur_second++;
+        }
+        limit--;
     }
 
+    // If we didn't exit the loop because of he limit, at least one of the arrays is empty.
+    // We can try appending the rest of the other array.
     if (limit != 0) {
         if (cur_first != first_end) {
             concat_results(results, cur_first, first_end, limit);
-        } else /* if cur_second != second_end */ {
+        } else {
             concat_results(results, cur_second, second_end, limit);
         }
     }
