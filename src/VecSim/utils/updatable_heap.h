@@ -42,6 +42,9 @@ public:
     inline void pop() override;
     inline const std::pair<Priority, Value> top() const override;
     inline size_t size() const override;
+
+private:
+    inline auto top_ptr() const;
 };
 
 template <typename Priority, typename Value>
@@ -64,15 +67,26 @@ bool updatable_max_heap<Priority, Value>::empty() const {
 }
 
 template <typename Priority, typename Value>
-const std::pair<Priority, Value> updatable_max_heap<Priority, Value>::top() const {
+auto updatable_max_heap<Priority, Value>::top_ptr() const {
     // The `.begin()` of "priorityToValue" is the max priority element.
     auto x = priorityToValue.begin();
+    // x has the max priority, but there might be multiple values with the same priority. We need to
+    // find the value with the highest value as well.
+    auto [begin, end] = priorityToValue.equal_range(x->first);
+    auto y = std::max_element(begin, end,
+                              [](const auto &a, const auto &b) { return a.second < b.second; });
+    return y;
+}
+
+template <typename Priority, typename Value>
+const std::pair<Priority, Value> updatable_max_heap<Priority, Value>::top() const {
+    auto x = top_ptr();
     return *x;
 }
 
 template <typename Priority, typename Value>
 void updatable_max_heap<Priority, Value>::pop() {
-    auto to_remove = priorityToValue.begin();
+    auto to_remove = top_ptr();
     valueToPriority.erase(to_remove->second);
     priorityToValue.erase(to_remove);
 }
