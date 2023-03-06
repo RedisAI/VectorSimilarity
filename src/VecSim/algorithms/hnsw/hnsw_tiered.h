@@ -60,7 +60,7 @@ private:
     std::mutex idToRepairJobsGuard;
 
     void executeInsertJob(HNSWInsertJob *job);
-    void executeRepairJob(HNSWRepairJob *job) {}
+    void executeRepairJob(HNSWRepairJob *job);
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper.
     void executeSwapJob(HNSWSwapJob *job) {}
@@ -68,7 +68,7 @@ private:
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
     static void executeInsertJobWrapper(AsyncJob *job);
-    static void executeRepairJobWrapper(AsyncJob *job) {}
+    static void executeRepairJobWrapper(AsyncJob *job);
 
     inline HNSWIndex<DataType, DistType> *getHNSWIndex();
 
@@ -86,6 +86,7 @@ public:
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) override;
+    int deleteVector(labelType id) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
@@ -94,7 +95,6 @@ public:
     void increaseCapacity() override {}
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    int deleteVector(labelType id) override { return this->index->deleteVector(id); }
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
     }
@@ -132,6 +132,15 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     job_index->executeInsertJob(insert_job);
     job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
     delete insert_job;
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job) {
+    auto *repair_job = reinterpret_cast<HNSWRepairJob *>(job);
+    auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
+    job_index->executeRepairJob(repair_job);
+    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
+    delete repair_job;
 }
 
 template <typename DataType, typename DistType>
@@ -278,6 +287,38 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     }
 }
 
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
+    // Lock the HNSW shared lock before accessing its internals.
+    this->mainIndexGuard.lock_shared();
+    if (job->node_id == INVALID_JOB_ID) {
+        this->mainIndexGuard.unlock_shared();
+        return;
+    }
+    HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
+    hnsw_index->repairNodeConnections(job->node_id, job->level);
+    job->associated_swap_job->atomicDecreasePendingJobsNum();
+
+    // Remove this job pointer from the repair jobs lookup after it has been executed.
+    std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
+    auto repair_jobs = this->idToRepairJobs.at(job->node_id);
+    assert(repair_jobs.size() >= 0);
+    if (repair_jobs.size() == 1) {
+        // This was the only pending repair job for this id.
+        this->idToRepairJobs.erase(job->node_id);
+    } else {
+        // There are more pending jobs for the current id, remove just this job from the pending
+        // repair jobs list for this element id by replacing it with the last one (and trim the last
+        // job in the list).
+        auto it = std::find(repair_jobs.begin(), repair_jobs.end(), job);
+        assert(it != repair_jobs.end());
+        *it = repair_jobs.back();
+        repair_jobs.pop_back();
+    }
+    this->mainIndexGuard.unlock_shared();
+}
+
+
 /******************** Index API ****************************************/
 
 template <typename DataType, typename DistType>
@@ -353,4 +394,17 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     this->submitSingleJob(new_insert_job);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return 1;
+}
+
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
+    this->flatIndexGuard.lock_shared();
+    if (this->flatBuffer->isLabelExists(label)) {
+        this->flatIndexGuard.unlock_shared();
+        this->flatIndexGuard.lock();
+        if (this->flatBuffer->isLabelExists(label)) {
+            this->flatBuffer->deleteVector(label); // requires updating ids of jobs!
+            // todo: cont
+        }
+    }
 }

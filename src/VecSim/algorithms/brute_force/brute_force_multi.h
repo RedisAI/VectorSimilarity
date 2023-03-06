@@ -54,6 +54,10 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
+    inline bool isLabelExists(labelType label) override {
+        return labelToIdsLookup.find(label) != labelToIdsLookup.end();
+    }
+
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() override {
         return new (this->allocator)

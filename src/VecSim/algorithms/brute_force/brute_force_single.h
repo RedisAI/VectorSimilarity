@@ -65,6 +65,10 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
+    inline bool isLabelExists(labelType label) override {
+        return labelToIdLookup.find(label) != labelToIdLookup.end();
+    }
+
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() override {
         return new (this->allocator)
