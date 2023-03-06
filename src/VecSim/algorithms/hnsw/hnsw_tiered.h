@@ -145,9 +145,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         hnsw_index->unlockIndexDataGuard();
 
-        // Release before we acquire the HNSW write lock.
-        this->flatIndexGuard.unlock_shared();
-
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
         // Check if resizing is still required (another thread might have done it in the meantime
@@ -156,9 +153,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             hnsw_index->increaseCapacity();
         }
         this->mainIndexGuard.unlock();
-
-        // Reacquire the read lock
-        this->flatIndexGuard.lock_shared();
     }
 
     if (job->id == INVALID_JOB_ID) {
