@@ -15,7 +15,7 @@
 #include <atomic>
 
 // Helper macro to get the closest even number which is equal or lower than x.
-#define FLOOR_EVEN(x) (x) - ((x)&1)
+#define FLOOR_EVEN(x) ((x) - ((x)&1))
 
 template <typename index_type_t>
 class HNSWTestParallel : public ::testing::Test {
@@ -35,7 +35,7 @@ protected:
     }
 
     /* Helper methods for testing repair jobs:
-     * Collect all the nodes that require repairment due to the deletions, from top level down, and
+     * Collect all the nodes that require repair due to the deletions, from top level down, and
      * insert them into a queue.
      */
     void CollectRepairJobs(HNSWIndex<data_t, dist_t> *hnsw_index,
@@ -538,10 +538,12 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
     // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
     // 0 and n-1 that has at least one connection to repair.
-    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n - 2);
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_GE(report.connections_to_repair, n - 2);
 
     this->CollectRepairJobs(hnsw_index, jobQ);
     size_t n_jobs = jobQ.size();
+    ASSERT_EQ(report.connections_to_repair, n_jobs);
 
     auto executeRepairJobs = [&](int myID) {
         for (size_t i = myID; i < n_jobs; i += n_threads) {
@@ -559,9 +561,9 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
         thread_objs[i].join();
     }
     // Check index integrity, also make sure that no node is pointing to a deleted node.
-    auto report = hnsw_index->checkIntegrity();
+    report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
-    ASSERT_EQ(report.connection_to_repair, 0);
+    ASSERT_EQ(report.connections_to_repair, 0);
 
     // Validate that the tasks are spread among the threads uniformly.
     ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()),
@@ -598,7 +600,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
     // Every deleted node i should have at least 2 connection to repair (to i-1 and i+1), except for
     // 0 and n-1 that has at least one connection to repair.
-    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n - 2);
+    ASSERT_GE(hnsw_index->checkIntegrity().connections_to_repair, n - 2);
 
     // Collect all the nodes that require repairment due to the deletions, from top level down.
     this->CollectRepairJobs(hnsw_index, jobQ);
@@ -654,7 +656,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
     // Check index integrity, also make sure that no node is pointing to a deleted node.
     auto report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
-    ASSERT_EQ(report.connection_to_repair, 0);
+    ASSERT_EQ(report.connections_to_repair, 0);
 
     // Validate that every search thread ran at least one job.
     ASSERT_GE(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
@@ -693,7 +695,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 4);
     // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
     // 0 that has at least one connection to repair.
-    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n / 2 - 1);
+    ASSERT_GE(hnsw_index->checkIntegrity().connections_to_repair, n / 2 - 1);
 
     // Collect all the nodes that require repairment due to the deletions, from top level down.
     this->CollectRepairJobs(hnsw_index, jobQ);
@@ -731,7 +733,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
     ASSERT_EQ(hnsw_index->indexSize(), n);
     auto report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
-    ASSERT_EQ(report.connection_to_repair, 0);
+    ASSERT_EQ(report.connections_to_repair, 0);
 
     // Validate that the repair tasks are spread among the threads uniformly.
     ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
