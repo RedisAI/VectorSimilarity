@@ -140,6 +140,20 @@ typedef struct RefManagedJob {
     std::weak_ptr<VecSimIndex> index_weak_ref;
 } RefManagedJob;
 
+struct SearchJobMock : public AsyncJob {
+    void *query;
+    size_t k;
+    size_t n;
+    size_t dim;
+    std::atomic_int &successful_searches;
+    SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCb,
+                  VecSimIndex *index_, void *query_, size_t k_, size_t n_, size_t dim_,
+                  std::atomic_int &successful_searches_)
+        : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCb, index_), query(query_), k(k_), n(n_),
+          dim(dim_), successful_searches(successful_searches_) {}
+    ~SearchJobMock() { this->allocator->free_allocation(query); }
+};
+
 using JobQueue = std::queue<RefManagedJob>;
 int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx);
 int update_mem_callback(void *mem_ctx, size_t mem);
