@@ -44,11 +44,26 @@ VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
     return QueryParams;
 }
 
+static bool is_async_index(VecSimIndex *index) {
+    return dynamic_cast<VecSimTieredIndex<float, float> *>(index) != nullptr ||
+           dynamic_cast<VecSimTieredIndex<double, double> *>(index) != nullptr;
+}
+
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_num_res,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
-    ASSERT_EQ(VecSimQueryResult_Len(res), expected_num_res);
+    if (is_async_index(index)) {
+        // Async index may return more or less than the expected number of results,
+        // depending on the number of results that were available at the time of the query.
+        // We can estimate the number of results that should be returned to be roughly
+        // `expected_num_res` +- number of threads in the pool of the job queue.
+
+        // for now, lets only check that the number of results is not greater than k.
+        ASSERT_LE(VecSimQueryResult_Len(res), k);
+    } else {
+        ASSERT_EQ(VecSimQueryResult_Len(res), expected_num_res);
+    }
     ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
     int res_ind = 0;
@@ -58,7 +73,6 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t e
         double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
-    ASSERT_EQ(res_ind, expected_num_res);
     VecSimQueryResult_IteratorFree(iterator);
     VecSimQueryResult_Free(res);
 }

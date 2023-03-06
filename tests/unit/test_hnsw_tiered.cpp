@@ -662,10 +662,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
     };
 
     // Insert vectors in parallel to search.
-    for (size_t i = 0; i < 2 * k; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
-    }
-    for (size_t i = 2 * k; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
         auto search_job = new (allocator) SearchJobMock(
             allocator, parallel_knn_search, tiered_index, i, k, n, dim, successful_searches);

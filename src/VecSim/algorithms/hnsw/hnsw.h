@@ -1829,6 +1829,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
         return rl;
+    } else if (bottom_layer_ep == INVALID_ID) {
+        rl.results = array_new<VecSimQueryResult>(0);
+        return rl;
     }
 
     // We now oun the results heap, we need to free (delete) it when we done
