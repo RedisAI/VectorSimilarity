@@ -606,6 +606,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             .dim = dim,
             .metric = VecSimMetric_L2,
             .multi = isMulti,
+            .efRuntime = 100,
         };
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
@@ -634,7 +635,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             auto verify_res = [&](size_t id, double score, size_t res_index) {
                 TEST_DATA_T el = *(TEST_DATA_T *)query;
                 ASSERT_EQ(std::abs(id - el), (res_index + 1) / 2)
-                    << "id: " << id << " res_index: " << res_index << " element: " << el;
                 ASSERT_EQ(score, dim * (id - el) * (id - el));
             };
             runTopKSearchTest(job->index, query, k, verify_res);
