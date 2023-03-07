@@ -69,6 +69,15 @@ protected:
         return labelToIdLookup.find(label) != labelToIdLookup.end();
     }
 
+    inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const override {
+        vecsim_stl::vector<idType> ids(this->allocator);
+        auto it = labelToIdLookup.find(label);
+        if (it != labelToIdLookup.end()) {
+            ids.push_back(it->second); // put the id that was found in the result
+        }
+        return ids;
+    }
+
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() override {
         return new (this->allocator)

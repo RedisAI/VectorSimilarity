@@ -58,6 +58,16 @@ private:
         return labelToIdsLookup.find(label) != labelToIdsLookup.end();
     }
 
+    inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const override {
+        auto it = labelToIdsLookup.find(label);
+        if (it == labelToIdsLookup.end()) {
+            // Return an empty vector if the label doesn't exist
+            return vecsim_stl::vector<idType>(this->allocator);
+        }
+        // Otherwise return a copy of the ids that correspond to the given label.
+        return it->second;
+    }
+
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() override {
         return new (this->allocator)

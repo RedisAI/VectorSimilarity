@@ -60,7 +60,8 @@ public:
         return idToLabelMapping[internal_id];
     }
     virtual int deleteVectorById(labelType label, idType id) = 0;
-    virtual bool isLabelExists(labelType label) = 0;
+    virtual inline bool isLabelExists(labelType label) = 0;
+    virtual inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const = 0;
 
     virtual ~BruteForceIndex();
 #ifdef BUILD_TESTS
