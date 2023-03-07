@@ -71,6 +71,8 @@ public:
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) override;
+    VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
+                                     VecSimQueryParams *queryParams) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
     size_t indexCapacity() const override;
@@ -83,8 +85,6 @@ public:
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
     }
-    VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                     VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override {
         return this->index->rangeQuery(queryBlob, radius, queryParams);

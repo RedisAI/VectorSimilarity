@@ -1830,6 +1830,9 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
     if (VecSim_OK != rl.code) {
         return rl;
     } else if (bottom_layer_ep == INVALID_ID) {
+        // Although we checked that the index is not empty (cur_element_count == 0), it might be
+        // that another thread deleted all the elements or didn't finish inserting the first element
+        // yet. Anyway, we observed that the index is empty, so we return an empty result list.
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }
