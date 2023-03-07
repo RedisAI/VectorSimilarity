@@ -523,8 +523,14 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
+    // Create some random vectors and insert them to the index.
+    std::srand(10); // create pseudo random generator with ana arbitrary seed.
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(hnsw_index, vector, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n);
 
@@ -536,10 +542,9 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
         hnsw_index->markDelete(element_id);
     }
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
-    // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
-    // 0 and n-1 that has at least one connection to repair.
+    // Every that every deleted node should have at least 2 connections to repair.
     auto report = hnsw_index->checkIntegrity();
-    ASSERT_GE(report.connections_to_repair, n - 2);
+    ASSERT_GE(report.connections_to_repair, n);
 
     this->CollectRepairJobs(hnsw_index, jobQ);
     size_t n_jobs = jobQ.size();

@@ -1363,7 +1363,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     while (!orig_candidates.empty()) {
         idType orig_candidate = orig_candidates.top().second;
         if (neighbors_candidates.empty() || orig_candidate != neighbors_candidates.top().second) {
-            if (node_orig_neighbours_set[orig_candidates.top().second]) {
+            if (node_orig_neighbours_set[orig_candidate]) {
                 neighbors_to_remove.push_back(orig_candidate);
                 nodes_to_update.push_back(orig_candidate);
             }
