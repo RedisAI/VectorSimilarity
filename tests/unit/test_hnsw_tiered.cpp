@@ -634,7 +634,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
 
             auto verify_res = [&](size_t id, double score, size_t res_index) {
                 TEST_DATA_T el = *(TEST_DATA_T *)query;
-                ASSERT_EQ(std::abs(id - el), (res_index + 1) / 2)
+                ASSERT_EQ(std::abs(id - el), (res_index + 1) / 2);
                 ASSERT_EQ(score, dim * (id - el) * (id - el));
             };
             runTopKSearchTest(job->index, query, k, verify_res);
@@ -802,4 +802,55 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         // Cleanup.
         thread_pool.clear();
     }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, MergeMulti) {
+    size_t dim = 4;
+
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = true,
+    };
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &jobQ,
+        .jobQueueCtx = &index_ctx,
+        .submitCb = submit_callback,
+        .memoryCtx = &memory_ctx,
+        .UpdateMemCb = update_mem_callback,
+    };
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+
+    auto hnsw_index = tiered_index->index;
+    auto flat_index = tiered_index->flatBuffer;
+
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 0, 1);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 0, 2);
+
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 1, 0);
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 1, 2);
+
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 2, 0);
+    GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 2, 1);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
+    // Search in the tiered index for more vectors than it has. Merging the results from the two
+    // indexes should result in a list of unique vectors, even if the scores of the duplicates are
+    // different.
+    runTopKSearchTest(tiered_index, query, 5, [](size_t _, double __, size_t ___) {});
 }
