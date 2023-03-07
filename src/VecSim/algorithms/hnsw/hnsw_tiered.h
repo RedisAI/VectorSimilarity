@@ -3,6 +3,7 @@
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
 #include "hnsw_factory.h"
+#include "VecSim/utils/merge_results.h"
 
 #include <unordered_map>
 /**
@@ -316,6 +317,10 @@ TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         }
 
         // Merge the results and return, avoiding duplicates.
-        return merge_results(hnsw_results, flat_results, k);
+        if (this->index->isMultiValue()) {
+            return merge_results<true>(hnsw_results, flat_results, k);
+        } else {
+            return merge_results<false>(hnsw_results, flat_results, k);
+        }
     }
 }

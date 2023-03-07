@@ -11,7 +11,6 @@
 #include <cerrno>
 #include <climits>
 #include <float.h>
-#include "arr_cpp.h"
 
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
@@ -60,13 +59,6 @@ int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQuery
            !std::isnan(VecSimQueryResult_GetScore(res2)));
     // Compare doubles
     return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
-
-int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
-                                      const VecSimQueryResult *res2) {
-    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2))
-               ? cmpVecSimQueryResultByScore(res1, res2)
-               : cmpVecSimQueryResultById(res1, res2);
 }
 
 void sort_results_by_id(VecSimQueryResult_List rl) {
@@ -175,55 +167,4 @@ size_t VecSimType_sizeof(VecSimType type) {
         return sizeof(int64_t);
     }
     return 0;
-}
-
-static void concat_results(VecSimQueryResult *dst, VecSimQueryResult *src,
-                           const VecSimQueryResult *src_end, size_t limit) {
-    while (limit && src != src_end) {
-        array_append(dst, *src);
-        src++;
-        limit--;
-    }
-}
-
-// Assumes that the arrays are sorted by score firstly and by id secondarily.
-VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second,
-                                     size_t limit) {
-
-    VecSimQueryResult *results = array_new<VecSimQueryResult>(limit);
-    VecSimQueryResult_List mergedResults{.results = results, .code = VecSim_QueryResult_OK};
-    VecSimQueryResult *cur_first = first.results;
-    VecSimQueryResult *cur_second = second.results;
-    const auto first_end = cur_first + VecSimQueryResult_Len(first);
-    const auto second_end = cur_second + VecSimQueryResult_Len(second);
-
-    while (limit && cur_first != first_end && cur_second != second_end) {
-        int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
-        if (cmp > 0) {
-            array_append(results, *cur_second);
-            cur_second++;
-        } else if (cmp < 0) {
-            array_append(results, *cur_first);
-            cur_first++;
-        } else {
-            array_append(results, *cur_first);
-            cur_first++;
-            cur_second++;
-        }
-        limit--;
-    }
-
-    // If we didn't exit the loop because of he limit, at least one of the arrays is empty.
-    // We can try appending the rest of the other array.
-    if (limit != 0) {
-        if (cur_first != first_end) {
-            concat_results(results, cur_first, first_end, limit);
-        } else {
-            concat_results(results, cur_second, second_end, limit);
-        }
-    }
-
-    VecSimQueryResult_Free(first);
-    VecSimQueryResult_Free(second);
-    return mergedResults;
 }
