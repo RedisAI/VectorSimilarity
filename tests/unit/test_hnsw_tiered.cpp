@@ -591,6 +591,38 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     k = n / 3;
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+
+
+    // Check behavior upon timeout.
+
+    VecSimQueryResult_List res;
+    // Add a vector to the HNSW index so there will be a reason to query it.
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
+
+    // Set timeout callback to always return 1 (will fail while querying the flat buffer).
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
+    ASSERT_EQ(res.results, nullptr);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+
+    // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
+    // Brute-force index checks for timeout after each vector.
+    static const size_t checks_in_flat = flat_index->indexSize();
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) {
+        static size_t count = checks_in_flat;
+        if (count == 0) {
+            return 1;
+        }
+        count--;
+        return 0;
+    });
+    res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
+    ASSERT_EQ(res.results, nullptr);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+
+    // Clean up.
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
@@ -663,8 +695,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         EXPECT_EQ(tiered_index->indexSize(), n * per_label) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->indexLabelCount(), n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n) << (isMulti ? "multi" : "single");
-        for (auto it : tiered_index->labelToInsertJobs) {
-            EXPECT_EQ(it->second.size(), per_label) << (isMulti ? "multi" : "single");
+        for (auto &it : tiered_index->labelToInsertJobs) {
+            EXPECT_EQ(it.second.size(), per_label) << (isMulti ? "multi" : "single");
         }
         EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n * per_label)
             << (isMulti ? "multi" : "single");
