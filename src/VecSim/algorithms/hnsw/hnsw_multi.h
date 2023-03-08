@@ -30,15 +30,6 @@ private:
         }
         label_lookup_.at(label).push_back(id);
     }
-    inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const override {
-        auto it = label_lookup_.find(label);
-        if (it == label_lookup_.end()) {
-            // Return an empty vector if the label doesn't exist
-            return vecsim_stl::vector<idType>(this->allocator);
-        }
-        // Otherwise return a copy of the ids that correspond to the given label.
-        return it->second;
-    }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
 public:

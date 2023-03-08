@@ -250,7 +250,6 @@ public:
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     void repairNodeConnections(idType node_id, size_t level);
-    virtual inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const = 0;
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
                                                                           size_t node_top_level);
