@@ -213,17 +213,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::deleteVectorFromFlatBuffer(labelType label,
                                                                      idType internal_id) {
-    // Remove the job pointer from the labelToInsertJobs mapping.
-    auto &jobs = labelToInsertJobs.at(label);
-    for (size_t i = 0; i < jobs.size(); i++) {
-        if (jobs[i]->id == internal_id) {
-            jobs.erase(jobs.begin() + (long)i);
-            break;
-        }
-    }
-    if (labelToInsertJobs.at(label).empty()) {
-        labelToInsertJobs.erase(label);
-    }
     // Remove the vector from the flat buffer.
     int deleted = this->flatBuffer->deleteVectorById(label, internal_id);
     // This will cause the last id to swap with the deleted id - update the job with the
@@ -295,6 +284,17 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // The job might have been invalidated due to overwrite in the meantime. In this case,
         // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
         if (job->id != INVALID_JOB_ID) {
+            // Remove the job pointer from the labelToInsertJobs mapping.
+            auto &jobs = labelToInsertJobs.at(job->label);
+            for (size_t i = 0; i < jobs.size(); i++) {
+                if (jobs[i]->id == job->id) {
+                    jobs.erase(jobs.begin() + (long)i);
+                    break;
+                }
+            }
+            if (labelToInsertJobs.at(job->label).empty()) {
+                labelToInsertJobs.erase(job->label);
+            }
             this->deleteVectorFromFlatBuffer(job->label, job->id);
         }
     }
@@ -414,6 +414,12 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     if (this->flatBuffer->isLabelExists(label)) {
         this->flatIndexGuard.unlock_shared();
         this->flatIndexGuard.lock();
+        // Invalidate the pending insert job(s) into HNSW associated with this label
+        for (auto *job : this->labelToInsertJobs.at(label)) {
+            reinterpret_cast<HNSWInsertJob *>(job)->id = INVALID_JOB_ID;
+        }
+        // Remove the pending insert job(s) from the labelToInsertJobs mapping.
+        this->labelToInsertJobs.erase(label);
         auto ids = this->flatBuffer->getIdsOfLabel(label);
         // Go over the every id that corresponds the label and remove it from the flat buffer.
         for (auto id : ids) {

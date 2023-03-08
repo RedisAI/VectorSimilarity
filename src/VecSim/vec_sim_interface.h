@@ -69,7 +69,7 @@ public:
     virtual double getDistanceFrom(labelType id, const void *blob) const = 0;
 
     /**
-     * @brief Return the number of vectors in the index using its SizeFn.
+     * @brief Return the number of vectors in the index (including ones that are marked as deleted).
      *
      * @return index size.
      */
@@ -88,7 +88,7 @@ public:
     virtual void increaseCapacity() = 0;
 
     /**
-     * @brief Return the number of unique labels in the index using its SizeFn.
+     * @brief Return the number of unique labels in the index (which are not deleted).
      *
      * @return index label count.
      */
