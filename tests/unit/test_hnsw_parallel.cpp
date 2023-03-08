@@ -14,6 +14,9 @@
 #include <thread>
 #include <atomic>
 
+// Helper macro to get the closest even number which is equal or lower than x.
+#define FLOOR_EVEN(x) ((x) - ((x)&1))
+
 template <typename index_type_t>
 class HNSWTestParallel : public ::testing::Test {
 public:
@@ -29,6 +32,48 @@ protected:
     }
     HNSWIndex_Single<data_t, dist_t> *CastToHNSW_Single(VecSimIndex *index) {
         return reinterpret_cast<HNSWIndex_Single<data_t, dist_t> *>(index);
+    }
+
+    /* Helper methods for testing repair jobs:
+     * Collect all the nodes that require repair due to the deletions, from top level down, and
+     * insert them into a queue.
+     */
+    void CollectRepairJobs(HNSWIndex<data_t, dist_t> *hnsw_index,
+                           std::vector<pair<idType, size_t>> &jobQ) {
+        size_t n = hnsw_index->indexSize();
+        for (labelType element_id = 0; element_id < n; element_id++) {
+            if (!hnsw_index->isMarkedDeleted(element_id)) {
+                continue;
+            }
+            size_t element_top_level = hnsw_index->element_levels_[element_id];
+
+            for (size_t level = 0; level <= element_top_level; level++) {
+                idType *node_neighbours = hnsw_index->getNodeNeighborsAtLevel(element_id, level);
+                auto neighbours_count = hnsw_index->getNodeNeighborsCount(node_neighbours);
+
+                // Go over the neighbours of the element in a specific level.
+                for (size_t i = 0; i < neighbours_count; i++) {
+                    idType cur_neighbor = node_neighbours[i];
+                    auto *neighbour_neighbours =
+                        hnsw_index->getNodeNeighborsAtLevel(cur_neighbor, level);
+                    auto neighbor_neighbours_count =
+                        hnsw_index->getNodeNeighborsCount(neighbour_neighbours);
+                    for (size_t j = 0; j < neighbor_neighbours_count; j++) {
+                        // If the edge is bidirectional, do repair for this neighbor
+                        if (neighbour_neighbours[j] == element_id) {
+                            jobQ.emplace_back(cur_neighbor, level);
+                            break;
+                        }
+                    }
+                }
+                // Next, go over the rest of incoming edges (the ones that are not bidirectional)
+                // and make repairs.
+                auto *incoming_edges = hnsw_index->getIncomingEdgesPtr(element_id, level);
+                for (auto incoming_edge : *incoming_edges) {
+                    jobQ.emplace_back(incoming_edge, level);
+                }
+            }
+        }
     }
 };
 
@@ -392,7 +437,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
 
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
-        size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+        size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
         // Save the number fo tasks done by thread i in the i-th entry.
         std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -465,4 +510,268 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
                   1);
         VecSimIndex_Free(parallel_index);
     }
+}
+
+TYPED_TEST(HNSWTestParallel, parallelRepairs) {
+    size_t n = 10000;
+    size_t dim = 32;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 64};
+
+    auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
+    size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
+    // Create some random vectors and insert them to the index.
+    std::srand(10); // create pseudo random generator with ana arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(hnsw_index, vector, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n);
+
+    // Queue of repair jobs, each job is represented as {id, level}
+    auto jobQ = std::vector<pair<idType, size_t>>();
+
+    // Collect all the nodes that require repairment due to the deletions, from top level down.
+    for (size_t element_id = 0; element_id < n; element_id += 2) {
+        hnsw_index->markDelete(element_id);
+    }
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
+    // Every that every deleted node should have at least 2 connections to repair.
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_GE(report.connections_to_repair, n);
+
+    this->CollectRepairJobs(hnsw_index, jobQ);
+    size_t n_jobs = jobQ.size();
+    ASSERT_EQ(report.connections_to_repair, n_jobs);
+
+    auto executeRepairJobs = [&](int myID) {
+        for (size_t i = myID; i < n_jobs; i += n_threads) {
+            auto job = jobQ[i];
+            hnsw_index->repairNodeConnections(job.first, job.second); // {element_id, level}
+            completed_tasks[myID]++;
+        }
+    };
+
+    std::thread thread_objs[n_threads];
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i] = std::thread(executeRepairJobs, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    // Check index integrity, also make sure that no node is pointing to a deleted node.
+    report = hnsw_index->checkIntegrity();
+    ASSERT_TRUE(report.valid_state);
+    ASSERT_EQ(report.connections_to_repair, 0);
+
+    // Validate that the tasks are spread among the threads uniformly.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()),
+              floorf((float)n_jobs / n_threads));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
+              ceilf((float)n_jobs / n_threads));
+    VecSimIndex_Free(hnsw_index);
+}
+
+TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
+    size_t n = 10000;
+    size_t k = 10;
+    size_t dim = 32;
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
+
+    auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
+    size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    // Save the number of tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n);
+
+    // Queue of repair jobs, each job is represented as {id, level}
+    auto jobQ = std::vector<pair<idType, size_t>>();
+
+    for (size_t element_id = 0; element_id < n; element_id += 2) {
+        hnsw_index->markDelete(element_id);
+    }
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
+    // Every deleted node i should have at least 2 connection to repair (to i-1 and i+1), except for
+    // 0 and n-1 that has at least one connection to repair.
+    ASSERT_GE(hnsw_index->checkIntegrity().connections_to_repair, n - 2);
+
+    // Collect all the nodes that require repairment due to the deletions, from top level down.
+    this->CollectRepairJobs(hnsw_index, jobQ);
+    size_t n_jobs = jobQ.size();
+
+    auto executeRepairJobs = [&](int myID) {
+        for (size_t i = myID; i < n_jobs; i += n_threads / 2) {
+            auto job = jobQ[i];
+            hnsw_index->repairNodeConnections(job.first, job.second); // {element_id, level}
+            completed_tasks[myID]++;
+        }
+    };
+
+    bool run_queries = true;
+    auto parallel_knn_search = [&](int myID) {
+        TEST_DATA_T query_val = (TEST_DATA_T)n / 4 + 2 * myID;
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, query_val);
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            // We expect to get the results with increasing order of the distance between the
+            // res label and the query val and only odd labels (query_val-1, query_val+1,
+            // query_val-3, query_val+3, ...) The score is the L2 distance between the vectors that
+            // correspond the ids.
+            size_t diff_id = std::abs(int(id - query_val));
+            ASSERT_EQ(diff_id, res_index + (1 - res_index % 2));
+            ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+        };
+        while (run_queries) {
+            runTopKSearchTest(hnsw_index, query, k, verify_res);
+            completed_tasks[myID]++;
+        }
+    };
+
+    std::thread thread_objs[n_threads];
+    // Run queries, expect to get only non-deleted vector as results.
+    for (size_t i = n_threads / 2; i < n_threads; i++) {
+        thread_objs[i] = std::thread(parallel_knn_search, i);
+    }
+
+    // Run the repair jobs.
+    for (size_t i = 0; i < n_threads / 2; i++) {
+        thread_objs[i] = std::thread(executeRepairJobs, i);
+    }
+    for (size_t i = 0; i < n_threads / 2; i++) {
+        thread_objs[i].join();
+    }
+    // Once all the repair jobs are done, signal the query threads to finish.
+    run_queries = false;
+    for (size_t i = n_threads / 2; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+
+    // Check index integrity, also make sure that no node is pointing to a deleted node.
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_TRUE(report.valid_state);
+    ASSERT_EQ(report.connections_to_repair, 0);
+
+    // Validate that every search thread ran at least one job.
+    ASSERT_GE(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
+    // Validate that the repair tasks are spread among the threads uniformly.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+              floorf((float)n_jobs / (n_threads / 2.0)));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+              ceilf((float)n_jobs / (n_threads / 2.0)));
+    VecSimIndex_Free(hnsw_index);
+}
+
+TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
+    size_t n = 1000;
+    size_t k = 11;
+    size_t dim = 32;
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
+
+    auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
+    size_t n_threads = MIN(8, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(n_threads, 0);
+
+    // Insert n/2 vectors to the index.
+    for (size_t i = 0; i < n / 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n / 2);
+
+    // Queue of repair jobs, each job is represented as {id, level}
+    auto jobQ = std::vector<pair<idType, size_t>>();
+    for (size_t element_id = 0; element_id < n / 2; element_id += 2) {
+        hnsw_index->markDelete(element_id);
+    }
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 4);
+    // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
+    // 0 that has at least one connection to repair.
+    ASSERT_GE(hnsw_index->checkIntegrity().connections_to_repair, n / 2 - 1);
+
+    // Collect all the nodes that require repairment due to the deletions, from top level down.
+    this->CollectRepairJobs(hnsw_index, jobQ);
+    size_t n_jobs = jobQ.size();
+
+    auto executeRepairJobs = [&](int myID) {
+        for (size_t i = myID - n_threads / 2; i < n_jobs; i += n_threads / 2) {
+            auto job = jobQ[i];
+            hnsw_index->repairNodeConnections(job.first, job.second); // {element_id, level}
+            completed_tasks[myID]++;
+        }
+    };
+
+    auto parallel_insert = [&](int myID) {
+        // Reinsert the even ids that were deleted, and n/4 more even ids.
+        for (labelType label = 2 * myID; label < n; label += n_threads) {
+            completed_tasks[myID]++;
+            GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, label, label);
+        }
+    };
+
+    std::thread thread_objs[n_threads];
+
+    // Insert n/2 new vectors while we repair connections.
+    for (size_t i = 0; i < n_threads / 2; i++) {
+        thread_objs[i] = std::thread(parallel_insert, i);
+    }
+    for (size_t i = n_threads / 2; i < n_threads; i++) {
+        thread_objs[i] = std::thread(executeRepairJobs, i);
+    }
+    for (size_t i = 0; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+    // Check index integrity, also make sure that no node is pointing to a deleted node.
+    ASSERT_EQ(hnsw_index->indexSize(), n);
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_TRUE(report.valid_state);
+    ASSERT_EQ(report.connections_to_repair, 0);
+
+    // Validate that the repair tasks are spread among the threads uniformly.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
+              floorf((float)n_jobs / (n_threads / 2.0)));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
+              ceilf((float)n_jobs / (n_threads / 2.0)));
+
+    // Run queries to validate the index new state.
+    TEST_DATA_T query[dim];
+    // Around 3n/4 we only have even numbers vectors.
+    size_t query_val = 3 * n / 4;
+    GenerateVector<TEST_DATA_T>(query, dim, query_val);
+    auto verify_res_even = [&](size_t id, double score, size_t res_index) {
+        // We expect to get the results with increasing order of the distance between the
+        // res label and the query val (3n/4, 3n/4 - 2, 3n/4 + 2, 3n/4 - 4 3n/4 + 4, ...) The score
+        // is the L2 distance between the vectors that correspond the ids.
+        size_t diff_id = std::abs(int(id - query_val));
+        ASSERT_EQ(diff_id, res_index % 2 ? res_index + 1 : res_index);
+        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+    };
+    runTopKSearchTest(hnsw_index, query, k, verify_res_even);
+
+    // Around n/4 we should have all vectors (even and odd).
+    query_val = n / 4;
+    GenerateVector<TEST_DATA_T>(query, dim, query_val);
+    auto verify_res = [&](size_t id, double score, size_t res_index) {
+        // We expect to get the results with increasing order of the distance between the
+        // res label and the query val (n/4, n/4 - 1, n/4 + 1, n/4 - 2 n/4 + 2, ...) The score
+        // is the L2 distance between the vectors that correspond the ids.
+        size_t diff_id = std::abs(int(id - query_val));
+        ASSERT_EQ(diff_id, (res_index + 1) / 2);
+        ASSERT_EQ(score, (dim * (diff_id * diff_id)));
+    };
+    runTopKSearchTest(hnsw_index, query, k, verify_res);
+    VecSimIndex_Free(hnsw_index);
 }

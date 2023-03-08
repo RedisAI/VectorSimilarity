@@ -1702,8 +1702,8 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     // This value is very close to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
     for (size_t level = 0; level <= this->CastToHNSW_Multi(index)->element_levels_[n]; level++) {
-        idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
-        linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
+        idType *neighbors = this->CastToHNSW(index)->getNodeNeighborsAtLevel(n, level);
+        linkListSize size = this->CastToHNSW(index)->getNodeNeighborsCount(neighbors);
         for (size_t idx = 0; idx < size; idx++) {
             ASSERT_TRUE((neighbors[idx] / per_label) % 2 != ep_reminder)
                 << "Got a link to " << neighbors[idx] << " on level " << level;
