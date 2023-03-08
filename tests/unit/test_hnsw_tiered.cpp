@@ -646,7 +646,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             .dim = dim,
             .metric = VecSimMetric_L2,
             .multi = isMulti,
-            .efRuntime = 100,
+            .efRuntime = 20,
         };
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
@@ -1361,4 +1361,95 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_3), 0);
     // Distance from a non-existing label should be NaN.
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 5, vec5)));
+}
+
+TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
+    size_t dim = 4;
+    size_t n = 1000;
+
+    size_t block_size = n / 100;
+
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    for (auto isMulti : {false, true}) {
+        size_t n_labels = isMulti ? n / 50 : n;
+        HNSWParams params = {
+            .type = TypeParam::get_index_type(),
+            .dim = dim,
+            .metric = VecSimMetric_L2,
+            .multi = isMulti,
+            .blockSize = block_size,
+        };
+        auto jobQ = JobQueue();
+        auto index_ctx = IndexExtCtx();
+        size_t memory_ctx = 0;
+        TieredIndexParams tiered_params = {
+            .jobQueue = &jobQ,
+            .jobQueueCtx = &index_ctx,
+            .submitCb = submit_callback,
+            .memoryCtx = &memory_ctx,
+            .UpdateMemCb = update_mem_callback,
+        };
+        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        // Set the created tiered index in the index external context.
+        index_ctx.index_strong_ref.reset(tiered_index);
+        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << IS_MULTI;
+
+        // Launch the BG threads loop that takes jobs from the queue and executes them.
+        size_t THREAD_POOL_SIZE = 1;
+        bool run_thread = true;
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        }
+        std::atomic_int successful_searches(0);
+
+        auto parallel_adhoc_search = [](AsyncJob *job) {
+            auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+            auto query = search_job->query;
+            size_t element = *(TEST_DATA_T *)query;
+            size_t label = element % search_job->n;
+
+            ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
+
+            search_job->successful_searches++;
+            delete search_job;
+        };
+
+        // Insert vectors in parallel to search.
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+            GenerateVector<TEST_DATA_T>(query, dim, i);
+            auto search_job =
+                new (allocator) SearchJobMock(allocator, parallel_adhoc_search, tiered_index, query,
+                                              1, n_labels, dim, successful_searches);
+            tiered_index->submitSingleJob(search_job);
+        }
+        ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0) << IS_MULTI;
+
+        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::unique_lock<std::mutex> lock(queue_guard);
+            if (jobQ.empty()) {
+                run_thread = false;
+                queue_cond.notify_all();
+                break;
+            }
+        }
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool[i].join();
+        }
+        EXPECT_EQ(successful_searches, n) << IS_MULTI;
+        EXPECT_EQ(tiered_index->index->indexSize(), n) << IS_MULTI;
+        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels) << IS_MULTI;
+        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << IS_MULTI;
+        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << IS_MULTI;
+        EXPECT_EQ(jobQ.size(), 0);
+
+        // Cleanup.
+        thread_pool.clear();
+    }
 }
