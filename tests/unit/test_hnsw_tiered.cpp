@@ -663,6 +663,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         EXPECT_EQ(tiered_index->indexSize(), n * per_label) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->indexLabelCount(), n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n) << (isMulti ? "multi" : "single");
+        for (auto it : tiered_index->labelToInsertJobs) {
+            EXPECT_EQ(it->second.size(), per_label) << (isMulti ? "multi" : "single");
+        }
         EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n * per_label)
             << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->index->indexSize(), 0) << (isMulti ? "multi" : "single");
@@ -835,14 +838,15 @@ TYPED_TEST(HNSWTieredIndexTest, MergeMulti) {
     auto hnsw_index = tiered_index->index;
     auto flat_index = tiered_index->flatBuffer;
 
+    // Insert vectors with label 0 to HNSW only.
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 0, 1);
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 0, 2);
-
+    // Insert vectors with label 1 to flat buffer only.
     GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 1, 0);
     GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 1, 1);
     GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 1, 2);
-
+    // Insert DIFFERENT vectors with label 2 to both HNSW and flat buffer.
     GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, 2, 0);
     GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, 2, 1);
 
@@ -852,5 +856,5 @@ TYPED_TEST(HNSWTieredIndexTest, MergeMulti) {
     // Search in the tiered index for more vectors than it has. Merging the results from the two
     // indexes should result in a list of unique vectors, even if the scores of the duplicates are
     // different.
-    runTopKSearchTest(tiered_index, query, 5, [](size_t _, double __, size_t ___) {});
+    runTopKSearchTest(tiered_index, query, 5, 3, [](size_t _, double __, size_t ___) {});
 }
