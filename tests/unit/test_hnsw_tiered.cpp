@@ -592,8 +592,9 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
 
-
-    // Check behavior upon timeout.
+    // // // // // // // // // // // //
+    // Check behavior upon timeout.  //
+    // // // // // // // // // // // //
 
     VecSimQueryResult_List res;
     // Add a vector to the HNSW index so there will be a reason to query it.
