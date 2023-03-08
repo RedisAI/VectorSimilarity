@@ -37,6 +37,9 @@ VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryRe
     while (limit && cur_first != first_end && cur_second != second_end) {
         int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
         if (cmp > 0) {
+            // In a single line, checks (only if a check is needed) if we already inserted the
+            // current id to the merged results, append it to the merged results if we didn't, and
+            // add it to the set.
             if (!withSet || ids.insert(cur_second->id).second) {
                 array_append(results, *cur_second);
                 limit--;
@@ -65,7 +68,7 @@ VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryRe
         auto [cur, end] = cur_first == first_end ? std::make_pair(cur_second, second_end)
                                                  : std::make_pair(cur_first, first_end);
         while (limit && cur != end) {
-            if (!withSet || ids.find(VecSimQueryResult_GetId(cur)) == ids.end()) {
+            if (!withSet || ids.find(cur->id) == ids.end()) {
                 array_append(results, *cur);
                 limit--;
             }
