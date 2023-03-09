@@ -553,7 +553,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    size_t n = 100;
+    size_t n = 1000;
     size_t dim = 4;
 
     for (auto is_multi : {false, true}) {
@@ -587,8 +587,9 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                 tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
             ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1);
             ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
-            // ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connection_to_repair,
-            // jobQ.size());
+            ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
+                      jobQ.size());
+            ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), ep);
 
             // Execute synchronously all the repair jobs for the current deletion.
             while (!jobQ.empty()) {
@@ -609,7 +610,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                             new_neighbors + new_neighbors_count);
                 jobQ.pop();
             }
-            // ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connection_to_repair, 0);
+            ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
         }
         delete tiered_index;
     }
