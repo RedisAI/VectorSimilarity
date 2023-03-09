@@ -57,7 +57,8 @@ private:
     vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
 
-    // Todo: implement these methods later on
+    std::mutex idToRepairJobsGuard;
+
     void executeInsertJob(HNSWInsertJob *job);
     void executeRepairJob(HNSWRepairJob *job) {}
 
@@ -74,7 +75,7 @@ private:
     // Helper function for performing in place mark delete of vector(s) associated with a label
     // and creating the appropriate repair jobs for the effected connections. This should be called
     // while *HNSW shared lock is held* (shared locked).
-    void deleteVectorFromHNSW(labelType label);
+    int deleteLabelFromHNSW(labelType label);
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -139,41 +140,45 @@ HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::deleteVectorFromHNSW(labelType label) {
+int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
     auto *hnsw_index = getHNSWIndex();
 
-    // Get the required data about the relevant ids while holding the index data lock.
-    hnsw_index->lockIndexDataGuard();
-    auto internal_ids = hnsw_index->getIdsOfLabel(label);
+    // Get the required data about the relevant ids to delete.
+    // Internally, this will hold the index data lock.
+    auto internal_ids = hnsw_index->markDelete(label);
+
+    if (internal_ids.empty()) {
+        // Label doesn't exist, or it has already marked as deleted - we can finish now.
+        return 0;
+    }
     vecsim_stl::vector<size_t> ids_top_level(this->allocator);
     for (idType id : internal_ids) {
         ids_top_level.push_back(hnsw_index->getElementTopLevel(id));
     }
-    hnsw_index->unlockIndexDataGuard();
 
     for (size_t i = 0; i < internal_ids.size(); i++) {
         idType id = internal_ids[i];
-        if (hnsw_index->isMarkedDeleted(id)) {
-            // The id was already set as deleted in HNSW, no need to create a job for it.
-            continue;
-        }
-        hnsw_index->markDeletedInternal(id);
         vecsim_stl::vector<HNSWRepairJob *> repair_jobs(this->allocator);
         auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
 
         // Go over all the deleted element links in every level and create repair jobs.
         auto incoming_edges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id, ids_top_level[i]);
-        for (pair<idType, ushort> &node : incoming_edges) {
-            auto *repair_job = new (this->allocator) HNSWRepairJob(
-                this->allocator, node.first, node.second, executeRepairJobWrapper, this, swap_job);
-            repair_jobs.emplace_back(repair_job);
-            // Insert the repair job into the repair jobs lookup (for fast update in case that the
-            // node id is changed due to swap job).
-            if (idToRepairJobs.find(node.first) == idToRepairJobs.end()) {
-                idToRepairJobs.insert(
-                    {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
+        {
+            // Protect the id->repair_jobs lookup while we update it with the new jobs.
+            std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
+            for (pair<idType, ushort> &node : incoming_edges) {
+                auto *repair_job =
+                    new (this->allocator) HNSWRepairJob(this->allocator, node.first, node.second,
+                                                        executeRepairJobWrapper, this, swap_job);
+                repair_jobs.emplace_back(repair_job);
+                // Insert the repair job into the repair jobs lookup (for fast update in case that
+                // the node id is changed due to swap job).
+                if (idToRepairJobs.find(node.first) == idToRepairJobs.end()) {
+                    idToRepairJobs.insert(
+                        {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
+                }
+                idToRepairJobs.at(node.first).push_back(repair_job);
             }
-            idToRepairJobs.at(node.first).push_back(repair_job);
         }
         swap_job->setRepairJobsNum(incoming_edges.size());
         this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(),
@@ -186,6 +191,7 @@ void TieredHNSWIndex<DataType, DistType>::deleteVectorFromHNSW(labelType label) 
 
     // Todo: if swapJobs size is larger than a threshold, go over the swap jobs and execute it,
     //  if all its pending repair jobs are executed (to be implemented later on).
+    return internal_ids.size();
 }
 
 /******************** Job's callbacks **********************************/
