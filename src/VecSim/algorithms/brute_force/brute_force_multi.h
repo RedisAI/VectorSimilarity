@@ -68,6 +68,14 @@ private:
         return it->second;
     }
 
+    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        vecsim_stl::set<labelType> keys(this->allocator);
+        for (auto &it : labelToIdsLookup) {
+            keys.insert(it.first);
+        }
+        return keys;
+    };
+
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() override {
         return new (this->allocator)

@@ -23,6 +23,7 @@ private:
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override { label_lookup_[label] = id; }
     inline void resizeLabelLookup(size_t new_max_elements) override;
+    inline vecsim_stl::set<labelType> getLabelsSet() const override;
 
 public:
     HNSWIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -90,6 +91,15 @@ double HNSWIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
     }
     return this->dist_func(vector_data, this->getDataByInternalId(id->second), this->dim);
 }
+
+template <typename DataType, typename DistType>
+inline vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
+    vecsim_stl::set<labelType> keys(this->allocator);
+    for (auto &it : label_lookup_) {
+        keys.insert(it.first);
+    }
+    return keys;
+};
 
 /**
  * helper functions

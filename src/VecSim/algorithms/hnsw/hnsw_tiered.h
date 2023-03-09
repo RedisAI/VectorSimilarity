@@ -70,7 +70,7 @@ private:
     static void executeInsertJobWrapper(AsyncJob *job);
     static void executeRepairJobWrapper(AsyncJob *job);
 
-    inline HNSWIndex<DataType, DistType> *getHNSWIndex();
+    inline HNSWIndex<DataType, DistType> *getHNSWIndex() const;
 
     // Helper function for performing in place mark delete of vector(s) associated with a label
     // and creating the appropriate repair jobs for the effected connections. This should be called
@@ -150,7 +150,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 }
 
 template <typename DataType, typename DistType>
-HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() {
+HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
     return reinterpret_cast<HNSWIndex<DataType, DistType> *>(this->index);
 }
 
@@ -374,7 +374,20 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
-    return this->flatBuffer->indexLabelCount() + this->index->indexLabelCount();
+    // Compute the union of both labels set in both tiers of the index.
+    this->flatIndexGuard.lock_shared();
+    this->mainIndexGuard.lock_shared();
+
+    auto flat_labels = this->flatBuffer->getLabelsSet();
+    auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
+    std::vector<labelType> output;
+    std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
+                   std::back_inserter(output));
+
+    this->flatIndexGuard.unlock_shared();
+    this->mainIndexGuard.unlock_shared();
+
+    return output.size();
 }
 
 template <typename DataType, typename DistType>
@@ -410,34 +423,42 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
+    int num_deleted_vectors = 0;
     this->flatIndexGuard.lock_shared();
     if (this->flatBuffer->isLabelExists(label)) {
         this->flatIndexGuard.unlock_shared();
         this->flatIndexGuard.lock();
-        // Invalidate the pending insert job(s) into HNSW associated with this label
-        for (auto *job : this->labelToInsertJobs.at(label)) {
-            reinterpret_cast<HNSWInsertJob *>(job)->id = INVALID_JOB_ID;
-        }
-        // Remove the pending insert job(s) from the labelToInsertJobs mapping.
-        this->labelToInsertJobs.erase(label);
-        auto ids = this->flatBuffer->getIdsOfLabel(label);
-        // Go over the every id that corresponds the label and remove it from the flat buffer.
-        for (auto id : ids) {
-            this->deleteVectorFromFlatBuffer(label, id);
+        // Check again if the label exists, as it may have been removed while we released the lock.
+        if (this->flatBuffer->isLabelExists(label)) {
+            // Invalidate the pending insert job(s) into HNSW associated with this label
+            for (auto *job : this->labelToInsertJobs.at(label)) {
+                reinterpret_cast<HNSWInsertJob *>(job)->id = INVALID_JOB_ID;
+            }
+            // Remove the pending insert job(s) from the labelToInsertJobs mapping.
+            this->labelToInsertJobs.erase(label);
+            auto ids = this->flatBuffer->getIdsOfLabel(label);
+            // Go over the every id that corresponds the label and remove it from the flat buffer.
+            // We fetch the ids every time since in case of multi value, we delete ids from the
+            // flat, and it triggers swap between the last id and the deleted one.
+            while (!ids.empty()) {
+                this->deleteVectorFromFlatBuffer(label, ids[0]);
+                num_deleted_vectors++;
+                ids = this->flatBuffer->getIdsOfLabel(label);
+            }
         }
         this->flatIndexGuard.unlock();
-        // Had we deleted vector(s) from the flat buffer, we finish and return the number of deleted
-        // vectors.
-        if (ids.size() > 0) {
-            return ids.size();
+        if (num_deleted_vectors > 0 && !this->index->isMultiValue()) {
+            // For single value index, if we found the vector in the flat buffer and removed it,
+            // we can avoid searching in HNSW index for this label.
+            return num_deleted_vectors;
         }
     } else {
         this->flatIndexGuard.unlock_shared();
     }
 
-    // If we hadn't deleted the label from the flat index, check if the vector exists in HNSW.
+    // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
     this->mainIndexGuard.lock_shared();
-    int num_deleted_vectors = this->deleteLabelFromHNSW(label);
+    num_deleted_vectors += this->deleteLabelFromHNSW(label);
     this->mainIndexGuard.unlock_shared();
     return num_deleted_vectors;
 }

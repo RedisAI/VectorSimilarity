@@ -253,6 +253,7 @@ public:
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
                                                                           size_t node_top_level);
+    virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
 #ifdef BUILD_TESTS
     /**

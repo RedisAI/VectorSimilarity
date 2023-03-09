@@ -31,6 +31,13 @@ private:
         label_lookup_.at(label).push_back(id);
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
+    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        vecsim_stl::set<labelType> keys(this->allocator);
+        for (auto &it : label_lookup_) {
+            keys.insert(it.first);
+        }
+        return keys;
+    };
 
 public:
     HNSWIndex_Multi(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
