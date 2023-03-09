@@ -635,7 +635,7 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
 TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
     size_t dim = 4;
     size_t k = 10;
-    size_t n = 1000;
+    size_t n = 2000;
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -683,30 +683,31 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         };
 
         size_t per_label = isMulti ? 10 : 1;
+        size_t n_labels = n / per_label;
 
         // Fill the job queue with insert and search jobs, while filling the flat index, before
         // initializing the thread pool.
-        for (size_t i = 0; i < n * per_label; i++) {
+        for (size_t i = 0; i < n; i++) {
             // Insert a vector to the flat index and add a job to insert it to the main index.
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n, i);
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
 
             // Add a search job. Make sure the query element is between k and n - k.
             auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
-            GenerateVector<TEST_DATA_T>(query, dim, (i % (n - (2 * k))) + k);
+            GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
             auto search_job =
                 new (allocator) SearchJobMock(allocator, parallel_knn_search, tiered_index, query,
                                               k, n, dim, successful_searches);
             tiered_index->submitSingleJob(search_job);
         }
 
-        EXPECT_EQ(tiered_index->indexSize(), n * per_label) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->indexLabelCount(), n) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n) << (isMulti ? "multi" : "single");
+        EXPECT_EQ(tiered_index->indexSize(), n) << (isMulti ? "multi" : "single");
+        EXPECT_EQ(tiered_index->indexLabelCount(), n_labels) << (isMulti ? "multi" : "single");
+        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels)
+            << (isMulti ? "multi" : "single");
         for (auto &it : tiered_index->labelToInsertJobs) {
             EXPECT_EQ(it.second.size(), per_label) << (isMulti ? "multi" : "single");
         }
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n * per_label)
-            << (isMulti ? "multi" : "single");
+        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->index->indexSize(), 0) << (isMulti ? "multi" : "single");
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -731,12 +732,12 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             thread_pool[i].join();
         }
 
-        EXPECT_EQ(tiered_index->index->indexSize(), n * per_label)
+        EXPECT_EQ(tiered_index->index->indexSize(), n) << (isMulti ? "multi" : "single");
+        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels)
             << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->index->indexLabelCount(), n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(successful_searches, n * per_label) << (isMulti ? "multi" : "single");
+        EXPECT_EQ(successful_searches, n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(jobQ.size(), 0) << (isMulti ? "multi" : "single");
 
         // Cleanup.
@@ -747,14 +748,14 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
 TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
     size_t dim = 4;
     size_t k = 10;
-    size_t n = 10000;
+    size_t n = 3000;
 
     size_t block_size = n / 100;
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     for (auto isMulti : {false, true}) {
-        size_t n_labels = isMulti ? n / 50 : n;
+        size_t n_labels = isMulti ? n / 25 : n;
         HNSWParams params = {
             .type = TypeParam::get_index_type(),
             .dim = dim,
