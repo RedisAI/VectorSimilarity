@@ -392,7 +392,7 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType id, const 
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
     this->flatIndexGuard.lock_shared();
-    double flat_dist = this->flatBuffer->getDistanceFrom(id, blob);
+    auto flat_dist = this->flatBuffer->getDistanceFrom(id, blob);
     this->flatIndexGuard.unlock();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
@@ -405,9 +405,9 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType id, const 
 
     // Try to get the distance from the HNSW index.
     this->mainIndexGuard.lock_shared();
-    double hnsw_dist = this->index->getDistanceFrom(id, blob);
+    auto hnsw_dist = this->index->getDistanceFrom(id, blob);
     this->mainIndexGuard.unlock();
 
     // Return the minimum distance that is not NaN.
-    return std::isnan(flat_dist) ? hnsw_dist : std::min(flat_dist, hnsw_dist);
+    return std::fmin(flat_dist, hnsw_dist);
 }
