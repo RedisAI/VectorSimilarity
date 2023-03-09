@@ -2179,7 +2179,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
 
     // Mark element 0 as deleted, and repair all of its neighbors.
     hnsw_index->markDelete(0);
-    ASSERT_EQ(this->CastToHNSW(index)->checkIntegrity().connection_to_repair, n - 1);
+    ASSERT_EQ(this->CastToHNSW(index)->checkIntegrity().connections_to_repair, n - 1);
     for (size_t i = 1; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for element 0 as neighbors.

@@ -51,7 +51,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                              .unidirectional_connections = HNSW_INVALID_META_DATA,
                              .min_in_degree = HNSW_INVALID_META_DATA,
                              .max_in_degree = HNSW_INVALID_META_DATA,
-                             .connection_to_repair = 0};
+                             .connections_to_repair = 0};
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->getAllocationSize();
@@ -71,10 +71,9 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                 if (cur_links[j] >= this->cur_element_count || cur_links[j] == i) {
                     return res;
                 }
-                // If the current element has not been marked deleted, but it has a deleted neighbor
-                // then this connection should be repaired.
+                // If the neighbor has deleted, then this connection should be repaired.
                 if (isMarkedDeleted(cur_links[j])) {
-                    res.connection_to_repair++;
+                    res.connections_to_repair++;
                 }
                 inbound_connections_num[cur_links[j]]++;
                 s.insert(cur_links[j]);
@@ -154,7 +153,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     } else {
         readBinaryPOD(input, this->num_marked_deleted);
     }
-    readBinaryPOD(input, this->maxlevel_);
+    readBinaryPOD(input, this->max_level_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
 
@@ -315,7 +314,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     // Save index state
     writeBinaryPOD(output, this->cur_element_count);
     writeBinaryPOD(output, this->num_marked_deleted);
-    writeBinaryPOD(output, this->maxlevel_);
+    writeBinaryPOD(output, this->max_level_);
     writeBinaryPOD(output, this->entrypoint_node_);
 }
 

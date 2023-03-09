@@ -11,5 +11,5 @@ typedef struct {
     size_t unidirectional_connections;
     size_t min_in_degree;
     size_t max_in_degree;
-    size_t connection_to_repair;
+    size_t connections_to_repair;
 } HNSWIndexMetaData;

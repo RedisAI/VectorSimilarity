@@ -87,15 +87,19 @@ protected:
     // Index level generator of the top level for a new element
     std::default_random_engine level_generator_;
 
-    // Index state
+    // Index global state - these should be guarded by the index_data_guard_ lock in
+    // multithreaded scenario.
     size_t cur_element_count;
-    size_t maxlevel_;
-
-    // Index data structures
-    idType entrypoint_node_;
-    char *data_level0_memory_;
-    char **linkLists_;
     vecsim_stl::vector<size_t> element_levels_;
+
+    // Index data
+    char *data_level0_memory_; // neighbors in level 0, element label, flags and data (vector)
+    char **linkLists_;         // neighbors in level higher than 0
+
+    // Index global state - these should be guarded by the entry_point_guard_ lock in
+    // multithreaded scenario.
+    idType entrypoint_node_;
+    size_t max_level_; // this is the top level of the entry point's element
 
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
@@ -164,9 +168,10 @@ protected:
                                             candidatesMaxHeap<DistType> &top_candidates,
                                             size_t level);
     void mutuallyUpdateForRepairedNode(idType node_id, size_t level,
-                                       std::vector<idType> &neighbors_to_remove,
-                                       std::vector<idType> &nodes_to_update,
-                                       std::vector<idType> &chosen_neighbors, size_t max_M_cur);
+                                       vecsim_stl::vector<idType> &neighbors_to_remove,
+                                       vecsim_stl::vector<idType> &nodes_to_update,
+                                       vecsim_stl::vector<idType> &chosen_neighbors,
+                                       size_t max_M_cur);
 
     template <bool running_query>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
@@ -188,6 +193,9 @@ protected:
                               DistType dist, idType id) const;
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
                               DistType dist, idType id) const;
+    // Helper method that swaps the last element in the ids list with the given one (equivalent to
+    // removing the given element id from the list).
+    inline bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -315,7 +323,7 @@ size_t HNSWIndex<DataType, DistType>::getM() const {
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
-    return maxlevel_;
+    return max_level_;
 }
 
 template <typename DataType, typename DistType>
@@ -833,11 +841,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         // neighbour's incoming edges set. Note: we assume that every update is performed atomically
         // mutually, so it should be sufficient to look at the removed node's incoming edges set
         // alone.
-        auto it = std::find(removed_node_incoming_edges->begin(),
-                            removed_node_incoming_edges->end(), selected_neighbor);
-        if (it != removed_node_incoming_edges->end()) {
-            removed_node_incoming_edges->erase(it);
-        } else {
+        if (!removeIdFromList(*removed_node_incoming_edges, selected_neighbor)) {
             neighbour_incoming_edges->push_back(removed_node);
         }
     }
@@ -999,10 +1003,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         // we should remove it from the node's incoming edges.
         // otherwise, edge turned from bidirectional to one directional,
         // and it should be saved in the neighbor's incoming edges.
-        auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), neighbour_id);
-        if (it != node_incoming_edges->end()) {
-            node_incoming_edges->erase(it);
-        } else {
+        if (!removeIdFromList(*node_incoming_edges, neighbour_id)) {
             neighbour_incoming_edges->push_back(node_id);
         }
     }
@@ -1022,9 +1023,9 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             bool bidirectional_edge = false;
             for (size_t j = 0; j < node_links_size; j++) {
                 if (node_links[j] == neighbour_id) {
-                    neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                              neighbour_incoming_edges->end(),
-                                                              node_id));
+                    // Swap the last element with the current one (equivalent to removing the
+                    // neighbor from the list) - this should always succeed and return true.
+                    removeIdFromList(*neighbour_incoming_edges, node_id);
                     bidirectional_edge = true;
                     break;
                 }
@@ -1041,7 +1042,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
-        idType *top_level_list = getNodeNeighborsAtLevel(old_entry, maxlevel_);
+        idType *top_level_list = getNodeNeighborsAtLevel(old_entry, max_level_);
         auto neighbors_count = getNodeNeighborsCount(top_level_list);
         // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
         // if exists.
@@ -1054,18 +1055,18 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
         for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
-            if (element_levels_[cur_id] == maxlevel_ && cur_id != old_entry &&
+            if (element_levels_[cur_id] == max_level_ && cur_id != old_entry &&
                 !isMarkedDeleted(cur_id)) {
                 entrypoint_node_ = cur_id;
                 return;
             }
         }
-        // If we didn't find any vector at the top level, decrease the maxlevel_ and try again,
+        // If we didn't find any vector at the top level, decrease the max_level_ and try again,
         // until we find a new entry point, or the index is empty.
         assert(old_entry == entrypoint_node_);
-        maxlevel_--;
-        if ((int)maxlevel_ < 0) {
-            maxlevel_ = HNSW_INVALID_LEVEL;
+        max_level_--;
+        if ((int)max_level_ < 0) {
+            max_level_ = HNSW_INVALID_LEVEL;
             entrypoint_node_ = INVALID_ID;
         }
     }
@@ -1103,10 +1104,8 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                auto it = std::find(neighbour_incoming_edges->begin(),
-                                    neighbour_incoming_edges->end(), cur_element_count);
-                assert(it != neighbour_incoming_edges->end());
-                neighbour_incoming_edges->erase(it);
+                // This should always succeed and return true.
+                removeIdFromList(*neighbour_incoming_edges, cur_element_count);
                 neighbour_incoming_edges->push_back(element_internal_id);
             }
         }
@@ -1259,8 +1258,9 @@ void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements)
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
-    idType node_id, size_t level, std::vector<idType> &neighbors_to_remove,
-    std::vector<idType> &nodes_to_update, std::vector<idType> &chosen_neighbors, size_t max_M_cur) {
+    idType node_id, size_t level, vecsim_stl::vector<idType> &neighbors_to_remove,
+    vecsim_stl::vector<idType> &nodes_to_update, vecsim_stl::vector<idType> &chosen_neighbors,
+    size_t max_M_cur) {
     // Sort the nodes to remove set for fast lookup.
     std::sort(neighbors_to_remove.begin(), neighbors_to_remove.end());
 
@@ -1289,11 +1289,11 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
             node_neighbors[node_neighbors_idx++] = node_neighbors[i];
             continue;
         }
-        auto it = std::find(chosen_neighbors.begin(), chosen_neighbors.end(), node_neighbors[i]);
-        if (it != chosen_neighbors.end()) {
+        // Check if the current neighbor is in the chosen neighbors list, and remove it from there
+        // if so.
+        if (removeIdFromList(chosen_neighbors, node_neighbors[i])) {
             // A chosen neighbor is already connected to the node - leave it as is.
             node_neighbors[node_neighbors_idx++] = node_neighbors[i];
-            chosen_neighbors.erase(it);
             continue;
         }
         // Now we know that we are looking at a neighbor that needs to be removed.
@@ -1307,11 +1307,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // neighbour's incoming edges set. Note: we assume that every update is performed atomically
         // mutually, so it should be sufficient to look at the removed node's incoming edges set
         // alone.
-        auto it2 = std::find(removed_node_incoming_edges->begin(),
-                             removed_node_incoming_edges->end(), node_id);
-        if (it2 != removed_node_incoming_edges->end()) {
-            removed_node_incoming_edges->erase(it2);
-        } else {
+        if (!removeIdFromList(*removed_node_incoming_edges, node_id)) {
             node_incoming_edges->push_back(removed_node);
         }
     }
@@ -1325,8 +1321,12 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
                       << std::endl;
             break;
         }
-        // We don't make update for deleted nodes.
-        if (isMarkedDeleted(chosen_id) || isMarkedDeleted(node_id)) {
+        // We don't add new neighbors for deleted nodes - if node_id is deleted we can finish.
+        if (isMarkedDeleted(node_id)) {
+            break;
+        }
+        // If this specific new neighbor is deleted, we don't add this connection and continue.
+        if (isMarkedDeleted(chosen_id)) {
             continue;
         }
         auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(chosen_id, level);
@@ -1336,10 +1336,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // remove it from the incoming edges set. Otherwise, the edge is created unidirectional, so
         // we add it to the unidirectional edges set. Note: we assume that all updates occur
         // mutually and atomically, then can rely on this assumption.
-        auto it = std::find(node_incoming_edges->begin(), node_incoming_edges->end(), chosen_id);
-        if (it != node_incoming_edges->end()) {
-            node_incoming_edges->erase(it);
-        } else {
+        if (!removeIdFromList(*node_incoming_edges, chosen_id)) {
             new_neighbor_incoming_edges->push_back(node_id);
         }
     }
@@ -1351,12 +1348,17 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
     candidatesMaxHeap<DistType> neighbors_candidates(this->allocator);
-    // Use bitmaps for fast accesses.
-    vecsim_stl::vector<bool> node_orig_neighbours_set(cur_element_count, false, this->allocator);
-    vecsim_stl::vector<bool> neighbors_candidates_set(cur_element_count, false, this->allocator);
+    // Use bitmaps for fast accesses:
+    // node_orig_neighbours_set is used to diffrentiate between the neighboes that will *not* be
+    // selected by the heuritics - only the ones that were originally neighbors should be removed.
+    vecsim_stl::vector<bool> node_orig_neighbours_set(max_elements_, false, this->allocator);
+    // neighbors_candidates_set is used to store the nodes that were already collected as
+    // candidates, so we will not collect them again as candidates if we run into them from another
+    // path.
+    vecsim_stl::vector<bool> neighbors_candidates_set(max_elements_, false, this->allocator);
     vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
 
-    // Go over the repaired node neighbors, collect the non-deleted ines to be neighbors candidates
+    // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
     {
         std::unique_lock<std::mutex> node_lock(element_neighbors_locks_[node_id]);
@@ -1385,9 +1387,9 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // Hold 3 sets of nodes - all the original neighbors at that point to later (potentially)
     // update, subset of these which are the chosen neighbors nodes, and a subset of the original
     // neighbors that are going to be removed.
-    std::vector<idType> nodes_to_update;
-    std::vector<idType> chosen_neighbors;
-    std::vector<idType> neighbors_to_remove;
+    vecsim_stl::vector<idType> nodes_to_update(this->allocator);
+    vecsim_stl::vector<idType> chosen_neighbors(this->allocator);
+    vecsim_stl::vector<idType> neighbors_to_remove(this->allocator);
 
     // Go over the deleted nodes and collect their neighbors to the candidates set.
     for (idType deleted_neighbor_id : deleted_neighbors) {
@@ -1416,7 +1418,8 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     }
 
     // Copy the original candidates, and run the heuristics. Afterwards, neighbors_candidates will
-    // store the newly selected neighbours (for the node).
+    // store the newly selected neighbours (for the node), while candidates which were originally
+    // neighbors and are not going to be selected, are going to be removed.
     auto orig_candidates = neighbors_candidates;
     size_t max_M_cur = level ? maxM_ : maxM0_;
     getNeighborsByHeuristic2(neighbors_candidates, max_M_cur);
@@ -1424,7 +1427,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     while (!orig_candidates.empty()) {
         idType orig_candidate = orig_candidates.top().second;
         if (neighbors_candidates.empty() || orig_candidate != neighbors_candidates.top().second) {
-            if (node_orig_neighbours_set[orig_candidates.top().second]) {
+            if (node_orig_neighbours_set[orig_candidate]) {
                 neighbors_to_remove.push_back(orig_candidate);
                 nodes_to_update.push_back(orig_candidate);
             }
@@ -1441,6 +1444,21 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // locks.
     mutuallyUpdateForRepairedNode(node_id, level, neighbors_to_remove, nodes_to_update,
                                   chosen_neighbors, max_M_cur);
+}
+
+template <typename DataType, typename DistType>
+inline bool
+HNSWIndex<DataType, DistType>::removeIdFromList(vecsim_stl::vector<idType> &element_ids_list,
+                                                idType element_id) {
+    auto it = std::find(element_ids_list.begin(), element_ids_list.end(), element_id);
+    if (it != element_ids_list.end()) {
+        // Swap the last element with the current one (equivalent to removing the element id from
+        // the list).
+        *it = element_ids_list.back();
+        element_ids_list.pop_back();
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -1485,7 +1503,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     // initializations for special treatment of the first node
     entrypoint_node_ = INVALID_ID;
-    maxlevel_ = HNSW_INVALID_LEVEL;
+    max_level_ = HNSW_INVALID_LEVEL;
 
     if (M <= 1)
         throw std::runtime_error("HNSW index parameter M cannot be 1");
@@ -1587,9 +1605,8 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                neighbour_incoming_edges->erase(std::find(neighbour_incoming_edges->begin(),
-                                                          neighbour_incoming_edges->end(),
-                                                          element_internal_id));
+                // This should always return true (remove should succeed).
+                removeIdFromList(*neighbour_incoming_edges, element_internal_id);
             }
         }
 
@@ -1606,7 +1623,7 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 
     // replace the entry point with another one, if we are deleting the current entry point.
     if (element_internal_id == entrypoint_node_) {
-        assert(element_top_level == maxlevel_);
+        assert(element_top_level == max_level_);
         replaceEntryPoint();
     }
 
@@ -1675,7 +1692,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // the current one, hold the lock through the entire insertion to maintain consistency of the
     // EP.
     std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
-    int max_level_copy = (int)maxlevel_;
+    int max_level_copy = (int)max_level_;
     idType curr_element = entrypoint_node_;
     if (element_max_level <= max_level_copy)
         entry_point_lock.unlock();
@@ -1717,7 +1734,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         // updating the maximum level (holding a global lock)
         if (element_max_level > max_level_copy) {
             entrypoint_node_ = new_element_id;
-            maxlevel_ = element_max_level;
+            max_level_ = element_max_level;
             // create the incoming edges set for the new levels.
             for (int level_idx = max_level_copy + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
@@ -1728,17 +1745,17 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     } else {
         // Do nothing for the first element
         entrypoint_node_ = new_element_id;
-        if (maxlevel_ != HNSW_INVALID_LEVEL) {
+        if (max_level_ != HNSW_INVALID_LEVEL) {
             throw std::runtime_error(
                 "we should get here only when we insert the first element to the graph, but"
                 "max level is not INVALID");
         }
-        for (int level_idx = maxlevel_ + 1; level_idx <= element_max_level; level_idx++) {
+        for (int level_idx = max_level_ + 1; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
             setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
         }
-        maxlevel_ = element_max_level;
+        max_level_ = element_max_level;
     }
     unmarkInProcess(new_element_id);
 }
@@ -1759,7 +1776,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
         return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = maxlevel_; level > 0 && curr_element != INVALID_ID; level--) {
+    for (size_t level = max_level_; level > 0 && curr_element != INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;

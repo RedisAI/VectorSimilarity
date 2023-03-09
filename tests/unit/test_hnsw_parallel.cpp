@@ -14,6 +14,9 @@
 #include <thread>
 #include <atomic>
 
+// Helper macro to get the closest even number which is equal or lower than x.
+#define FLOOR_EVEN(x) ((x) - ((x)&1))
+
 template <typename index_type_t>
 class HNSWTestParallel : public ::testing::Test {
 public:
@@ -32,13 +35,13 @@ protected:
     }
 
     /* Helper methods for testing repair jobs:
-     * Collect all the nodes that require repairment due to the deletions, from top level down, and
+     * Collect all the nodes that require repair due to the deletions, from top level down, and
      * insert them into a queue.
      */
     void CollectRepairJobs(HNSWIndex<data_t, dist_t> *hnsw_index,
-                           std::queue<pair<idType, size_t>> &jobQ) {
+                           std::vector<pair<idType, size_t>> &jobQ) {
         size_t n = hnsw_index->indexSize();
-        for (size_t element_id = 0; element_id < n; element_id++) {
+        for (labelType element_id = 0; element_id < n; element_id++) {
             if (!hnsw_index->isMarkedDeleted(element_id)) {
                 continue;
             }
@@ -58,7 +61,7 @@ protected:
                     for (size_t j = 0; j < neighbor_neighbours_count; j++) {
                         // If the edge is bidirectional, do repair for this neighbor
                         if (neighbour_neighbours[j] == element_id) {
-                            jobQ.emplace(cur_neighbor, level);
+                            jobQ.emplace_back(cur_neighbor, level);
                             break;
                         }
                     }
@@ -67,7 +70,7 @@ protected:
                 // and make repairs.
                 auto *incoming_edges = hnsw_index->getIncomingEdgesPtr(element_id, level);
                 for (auto incoming_edge : *incoming_edges) {
-                    jobQ.emplace(incoming_edge, level);
+                    jobQ.emplace_back(incoming_edge, level);
                 }
             }
         }
@@ -434,7 +437,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
 
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
-        size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+        size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
         // Save the number fo tasks done by thread i in the i-th entry.
         std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -520,54 +523,58 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
+    // Create some random vectors and insert them to the index.
+    std::srand(10); // create pseudo random generator with ana arbitrary seed.
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(hnsw_index, vector, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n);
 
     // Queue of repair jobs, each job is represented as {id, level}
-    auto jobQ = std::queue<pair<idType, size_t>>();
-    std::mutex queue_guard;
+    auto jobQ = std::vector<pair<idType, size_t>>();
 
     // Collect all the nodes that require repairment due to the deletions, from top level down.
     for (size_t element_id = 0; element_id < n; element_id += 2) {
         hnsw_index->markDelete(element_id);
     }
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
-    // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
-    // 0 and n-1 that has at least one connection to repair.
-    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n - 2);
+    // Every that every deleted node should have at least 2 connections to repair.
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_GE(report.connections_to_repair, n);
 
     this->CollectRepairJobs(hnsw_index, jobQ);
+    size_t n_jobs = jobQ.size();
+    ASSERT_EQ(report.connections_to_repair, n_jobs);
 
-    auto executeRepairJob = [&](int myID) {
-        queue_guard.lock();
-        while (!jobQ.empty()) {
-            auto job = jobQ.front();
-            jobQ.pop();
-            queue_guard.unlock();
+    auto executeRepairJobs = [&](int myID) {
+        for (size_t i = myID; i < n_jobs; i += n_threads) {
+            auto job = jobQ[i];
             hnsw_index->repairNodeConnections(job.first, job.second); // {element_id, level}
             completed_tasks[myID]++;
-            queue_guard.lock();
         }
-        queue_guard.unlock();
     };
 
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
-        thread_objs[i] = std::thread(executeRepairJob, i);
+        thread_objs[i] = std::thread(executeRepairJobs, i);
     }
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
     }
     // Check index integrity, also make sure that no node is pointing to a deleted node.
-    auto report = hnsw_index->checkIntegrity();
+    report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
-    ASSERT_EQ(report.connection_to_repair, 0);
+    ASSERT_EQ(report.connections_to_repair, 0);
 
-    // Validate that the tasks are spread among the threads - every thread ran at least one job.
-    ASSERT_GE(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
-
+    // Validate that the tasks are spread among the threads uniformly.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.end()),
+              floorf((float)n_jobs / n_threads));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()),
+              ceilf((float)n_jobs / n_threads));
     VecSimIndex_Free(hnsw_index);
 }
 
@@ -580,8 +587,8 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(10, std::thread::hardware_concurrency());
-    // Save the number fo tasks done by thread i in the i-th entry.
+    size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    // Save the number of tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
     for (size_t i = 0; i < n; i++) {
@@ -590,95 +597,92 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
     ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n);
 
     // Queue of repair jobs, each job is represented as {id, level}
-    auto jobQ = std::queue<pair<idType, size_t>>();
-    std::mutex queue_guard;
+    auto jobQ = std::vector<pair<idType, size_t>>();
 
     for (size_t element_id = 0; element_id < n; element_id += 2) {
         hnsw_index->markDelete(element_id);
     }
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 2);
-    // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
+    // Every deleted node i should have at least 2 connection to repair (to i-1 and i+1), except for
     // 0 and n-1 that has at least one connection to repair.
-    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n - 2);
+    ASSERT_GE(hnsw_index->checkIntegrity().connections_to_repair, n - 2);
 
     // Collect all the nodes that require repairment due to the deletions, from top level down.
     this->CollectRepairJobs(hnsw_index, jobQ);
+    size_t n_jobs = jobQ.size();
 
-    auto executeRepairJob = [&](int myID) {
-        queue_guard.lock();
-        while (!jobQ.empty()) {
-            auto job = jobQ.front();
-            jobQ.pop();
-            queue_guard.unlock();
+    auto executeRepairJobs = [&](int myID) {
+        for (size_t i = myID; i < n_jobs; i += n_threads / 2) {
+            auto job = jobQ[i];
             hnsw_index->repairNodeConnections(job.first, job.second); // {element_id, level}
             completed_tasks[myID]++;
-            queue_guard.lock();
         }
-        queue_guard.unlock();
     };
 
-    TEST_DATA_T query_val = (TEST_DATA_T)n / 4;
-    std::atomic_int successful_searches(0);
+    bool run_queries = true;
     auto parallel_knn_search = [&](int myID) {
-        completed_tasks[myID]++;
+        TEST_DATA_T query_val = (TEST_DATA_T)n / 4 + 2 * myID;
         TEST_DATA_T query[dim];
         GenerateVector<TEST_DATA_T>(query, dim, query_val);
         auto verify_res = [&](size_t id, double score, size_t res_index) {
             // We expect to get the results with increasing order of the distance between the
-            // res label and the query val (n/4-1, n/4+1, n/4-3, n/4+3, ...) The score is
-            // the L2 distance between the vectors that correspond the ids.
+            // res label and the query val and only odd labels (query_val-1, query_val+1,
+            // query_val-3, query_val+3, ...) The score is the L2 distance between the vectors that
+            // correspond the ids.
             size_t diff_id = std::abs(int(id - query_val));
             ASSERT_EQ(diff_id, res_index + (1 - res_index % 2));
             ASSERT_EQ(score, (dim * (diff_id * diff_id)));
         };
-        runTopKSearchTest(hnsw_index, query, k, verify_res);
-        successful_searches++;
+        while (run_queries) {
+            runTopKSearchTest(hnsw_index, query, k, verify_res);
+            completed_tasks[myID]++;
+        }
     };
 
     std::thread thread_objs[n_threads];
-    for (size_t i = 0; i < n_threads / 2; i++) {
-        thread_objs[i] = std::thread(executeRepairJob, i);
-    }
-
-    // Start running queries after half of the job are executed.
-    size_t job_len = jobQ.size();
-    while (true) {
-        std::unique_lock<std::mutex> lock(queue_guard);
-        if (jobQ.size() < job_len / 2) {
-            break;
-        }
-    }
     // Run queries, expect to get only non-deleted vector as results.
     for (size_t i = n_threads / 2; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_knn_search, i);
     }
-    for (size_t i = 0; i < n_threads; i++) {
+
+    // Run the repair jobs.
+    for (size_t i = 0; i < n_threads / 2; i++) {
+        thread_objs[i] = std::thread(executeRepairJobs, i);
+    }
+    for (size_t i = 0; i < n_threads / 2; i++) {
         thread_objs[i].join();
     }
+    // Once all the repair jobs are done, signal the query threads to finish.
+    run_queries = false;
+    for (size_t i = n_threads / 2; i < n_threads; i++) {
+        thread_objs[i].join();
+    }
+
     // Check index integrity, also make sure that no node is pointing to a deleted node.
     auto report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
-    ASSERT_EQ(report.connection_to_repair, 0);
+    ASSERT_EQ(report.connections_to_repair, 0);
 
-    // Validate that the tasks are spread among the threads - every thread ran at least one job.
-    ASSERT_GE(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
-              1);
-    // Validate that every search thread executed a single job.
-    ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
-    ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
+    // Validate that every search thread ran at least one job.
+    ASSERT_GE(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()), 1);
+    // Validate that the repair tasks are spread among the threads uniformly.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+              floorf((float)n_jobs / (n_threads / 2.0)));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
+              ceilf((float)n_jobs / (n_threads / 2.0)));
     VecSimIndex_Free(hnsw_index);
 }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
-    size_t n = 10000;
+    size_t n = 1000;
     size_t k = 11;
     size_t dim = 32;
 
     HNSWParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 64, .efRuntime = n};
+        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+    size_t n_threads = MIN(8, FLOOR_EVEN(std::thread::hardware_concurrency()));
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -689,30 +693,25 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
     ASSERT_EQ(VecSimIndex_IndexSize(hnsw_index), n / 2);
 
     // Queue of repair jobs, each job is represented as {id, level}
-    auto jobQ = std::queue<pair<idType, size_t>>();
-    std::mutex queue_guard;
+    auto jobQ = std::vector<pair<idType, size_t>>();
     for (size_t element_id = 0; element_id < n / 2; element_id += 2) {
         hnsw_index->markDelete(element_id);
     }
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), n / 4);
     // Every deleted node i should have at least 2 connection to repair (to i-1 and i-1), except for
     // 0 that has at least one connection to repair.
-    ASSERT_GE(hnsw_index->checkIntegrity().connection_to_repair, n / 2 - 1);
+    ASSERT_GE(hnsw_index->checkIntegrity().connections_to_repair, n / 2 - 1);
 
     // Collect all the nodes that require repairment due to the deletions, from top level down.
     this->CollectRepairJobs(hnsw_index, jobQ);
+    size_t n_jobs = jobQ.size();
 
-    auto executeRepairJob = [&](int myID) {
-        queue_guard.lock();
-        while (!jobQ.empty()) {
-            auto job = jobQ.front();
-            jobQ.pop();
-            queue_guard.unlock();
+    auto executeRepairJobs = [&](int myID) {
+        for (size_t i = myID - n_threads / 2; i < n_jobs; i += n_threads / 2) {
+            auto job = jobQ[i];
             hnsw_index->repairNodeConnections(job.first, job.second); // {element_id, level}
             completed_tasks[myID]++;
-            queue_guard.lock();
         }
-        queue_guard.unlock();
     };
 
     auto parallel_insert = [&](int myID) {
@@ -730,7 +729,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         thread_objs[i] = std::thread(parallel_insert, i);
     }
     for (size_t i = n_threads / 2; i < n_threads; i++) {
-        thread_objs[i] = std::thread(executeRepairJob, i);
+        thread_objs[i] = std::thread(executeRepairJobs, i);
     }
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i].join();
@@ -739,10 +738,13 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
     ASSERT_EQ(hnsw_index->indexSize(), n);
     auto report = hnsw_index->checkIntegrity();
     ASSERT_TRUE(report.valid_state);
-    ASSERT_EQ(report.connection_to_repair, 0);
+    ASSERT_EQ(report.connections_to_repair, 0);
 
-    // Validate that the tasks are spread among the threads - every thread ran at least one job.
-    ASSERT_GE(*std::min_element(completed_tasks.begin(), completed_tasks.end()), 1);
+    // Validate that the repair tasks are spread among the threads uniformly.
+    ASSERT_EQ(*std::min_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
+              floorf((float)n_jobs / (n_threads / 2.0)));
+    ASSERT_EQ(*std::max_element(completed_tasks.begin() + n_threads / 2, completed_tasks.end()),
+              ceilf((float)n_jobs / (n_threads / 2.0)));
 
     // Run queries to validate the index new state.
     TEST_DATA_T query[dim];
