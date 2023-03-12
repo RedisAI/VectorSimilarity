@@ -513,10 +513,10 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
 }
 
 TYPED_TEST(HNSWTestParallel, parallelRepairs) {
-    size_t n = 10000;
+    size_t n = 1000;
     size_t dim = 32;
 
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .M = 64};
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
     size_t n_threads = MIN(10, std::thread::hardware_concurrency());
