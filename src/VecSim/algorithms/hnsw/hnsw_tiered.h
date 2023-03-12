@@ -364,7 +364,11 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
-    return this->index->indexSize() + this->flatBuffer->indexSize();
+    std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+    this->getHNSWIndex()->lockIndexDataGuard();
+    size_t res = this->index->indexSize() + this->flatBuffer->indexSize();
+    this->getHNSWIndex()->unlockIndexDataGuard();
+    return res;
 }
 
 template <typename DataType, typename DistType>
@@ -375,17 +379,14 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     // Compute the union of both labels set in both tiers of the index.
-    this->flatIndexGuard.lock_shared();
-    this->mainIndexGuard.lock_shared();
+    std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+    std::unique_lock<std::shared_mutex> hnsw_lock(this->mainIndexGuard);
 
     auto flat_labels = this->flatBuffer->getLabelsSet();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
     std::vector<labelType> output;
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
                    std::back_inserter(output));
-
-    this->flatIndexGuard.unlock_shared();
-    this->mainIndexGuard.unlock_shared();
 
     return output.size();
 }
