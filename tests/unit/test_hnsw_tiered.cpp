@@ -547,6 +547,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         // The last job should be repairing the single neighbor in level 1.
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 1);
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, *level_one_neighbors);
+
+        delete tiered_index;
     }
 }
 
