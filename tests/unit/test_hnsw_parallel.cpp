@@ -496,7 +496,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(parallel_index), n);
         ASSERT_EQ(successful_searches, ceil(double(n_threads) / 2));
-        // Validate that every insertion thread executed n/(n_threads/2_ jobs.
+        // Validate that every insertion thread executed n/(n_threads/2_ jobs).
         ASSERT_EQ(
             *std::min_element(completed_tasks.begin(), completed_tasks.begin() + n_threads / 2),
             n / (n_threads / 2));
@@ -633,10 +633,10 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
             ASSERT_EQ(diff_id, res_index + (1 - res_index % 2));
             ASSERT_EQ(score, (dim * (diff_id * diff_id)));
         };
-        while (run_queries) {
+        do {
             runTopKSearchTest(hnsw_index, query, k, verify_res);
             completed_tasks[myID]++;
-        }
+        } while (run_queries);
     };
 
     std::thread thread_objs[n_threads];
