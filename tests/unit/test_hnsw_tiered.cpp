@@ -201,7 +201,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         auto dummy_job = [](AsyncJob *job) {
             auto *my_index =
                 reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(job->index);
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             size_t dim = 4;
             TEST_DATA_T vector[dim];
             GenerateVector<TEST_DATA_T>(vector, dim);
