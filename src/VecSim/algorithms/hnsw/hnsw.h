@@ -44,8 +44,7 @@ template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
-
-using graphNodeType = pair<idType, ushort>;
+using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
 // Vectors flags (for marking a specific vector)
 typedef enum {
@@ -246,14 +245,13 @@ public:
     inline void unmarkInProcess(idType internalId);
     inline void incrementIndexSize();
     void increaseCapacity() override;
-
-    // inline priority queue getter that need to be implemented by derived class
-    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     void repairNodeConnections(idType node_id, size_t level);
-    virtual inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const = 0;
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
                                                                           size_t node_top_level);
+
+    // Inline priority queue getter that need to be implemented by derived class.
+    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -1154,37 +1152,47 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 template <typename DataType, typename DistType>
 template <bool running_query>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
-                                                      idType &curObj, DistType &curDist,
+                                                      idType &bestCand, DistType &curDist,
                                                       void *timeoutCtx,
                                                       VecSimQueryResult_Code *rc) const {
     bool changed;
+    // Don't allow choosing a deleted node as an entry point upon searching for neighbors
+    // candidates (that is, we're NOT running a query, but inserting a new vector).
+    idType bestNonDeletedCand = bestCand;
+
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
-            curObj = INVALID_ID;
+            bestCand = INVALID_ID;
             return;
         }
+
         changed = false;
-        std::unique_lock<std::mutex> lock(element_neighbors_locks_[curObj]);
-        idType *node_links = getNodeNeighborsAtNonBaseLevel(curObj, level);
+        std::unique_lock<std::mutex> lock(element_neighbors_locks_[bestCand]);
+        idType *node_links = getNodeNeighborsAtNonBaseLevel(bestCand, level);
         linkListSize links_count = getNodeNeighborsCount(node_links);
 
         for (int i = 0; i < links_count; i++) {
             idType candidate = node_links[i];
             assert(candidate < this->cur_element_count && "candidate error: out of index range");
-            // Don't allow choosing a deleted node as an entry point upon searching for neighbors
-            // candidates (that is, we're NOT running a query, but inserting a new vector).
-            if (isInProcess(candidate) || (!running_query && isMarkedDeleted(candidate))) {
+            if (isInProcess(candidate)) {
                 continue;
             }
             DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
             if (d < curDist) {
                 curDist = d;
-                curObj = candidate;
+                bestCand = candidate;
                 changed = true;
+                // Run this code only for non-query code - update the best non deleted cand as well.
+                if (!running_query && !isMarkedDeleted(candidate)) {
+                    bestNonDeletedCand = bestCand;
+                }
             }
         }
     } while (changed);
+    if (!running_query) {
+        bestCand = bestNonDeletedCand;
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1196,6 +1204,7 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
     for (size_t level = 0; level <= node_top_level; level++) {
         // Save the node neighbor's in the current level while holding its neighbors lock.
         std::vector<idType> neighbors_copy;
+        neighbors_copy.reserve(level > 0 ? maxM_ : maxM0_);
         std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
         auto *neighbours = getNodeNeighborsAtLevel(node_id, level);
         unsigned short neighbours_count = getNodeNeighborsCount(neighbours);

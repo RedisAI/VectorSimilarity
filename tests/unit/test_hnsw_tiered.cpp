@@ -442,11 +442,11 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t dim = 4;
 
-    for (auto is_multi : {false, true}) {
+    for (auto isMulti : {false, true}) {
         HNSWParams params = {.type = TypeParam::get_index_type(),
                              .dim = dim,
                              .metric = VecSimMetric_L2,
-                             .multi = is_multi};
+                             .multi = isMulti};
         auto jobQ = JobQueue();
         size_t memory_ctx = 0;
         auto index_ctx = IndexExtCtx();
@@ -493,7 +493,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
         jobQ.pop();
 
-        if (is_multi) {
+        if (isMulti) {
             // Insert another vector under the label (2) that has not been deleted.
             GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 4);
             // Expect to see both ids stored under this label being deleted (2 and 4), and have both
@@ -558,11 +558,11 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     size_t n = 1000;
     size_t dim = 4;
 
-    for (auto is_multi : {false, true}) {
+    for (auto isMulti : {false, true}) {
         HNSWParams params = {.type = TypeParam::get_index_type(),
                              .dim = dim,
                              .metric = VecSimMetric_L2,
-                             .multi = is_multi,
+                             .multi = isMulti,
                              .M = 4};
         auto jobQ = JobQueue();
         size_t memory_ctx = 0;
