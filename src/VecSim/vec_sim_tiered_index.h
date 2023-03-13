@@ -138,7 +138,7 @@ double VecSimTieredIndex<DataType, DistType>::getDistanceFrom(labelType id,
     // If the label doesn't exist, the distance will be NaN.
     this->flatIndexGuard.lock_shared();
     auto flat_dist = this->flatBuffer->getDistanceFrom(id, blob);
-    this->flatIndexGuard.unlock();
+    this->flatIndexGuard.unlock_shared();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
     // to avoid checking the index type on every query.
@@ -151,7 +151,7 @@ double VecSimTieredIndex<DataType, DistType>::getDistanceFrom(labelType id,
     // Try to get the distance from the Main index.
     this->mainIndexGuard.lock_shared();
     auto main_dist = this->index->getDistanceFrom(id, blob);
-    this->mainIndexGuard.unlock();
+    this->mainIndexGuard.unlock_shared();
 
     // Return the minimum distance that is not NaN.
     return std::fmin(flat_dist, main_dist);
