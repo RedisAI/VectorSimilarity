@@ -337,7 +337,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
-    ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
@@ -404,7 +403,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
             tiered_index->addVector(vectors + i * dim * per_label + j * dim, i);
         }
     }
-    ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
@@ -453,7 +451,7 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     };
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
-    size_t memory_ctx = 0;
+    size_t cur_memory_usage, memory_ctx = 0;
     TieredIndexParams tiered_params = {
         .jobQueue = &jobQ,
         .jobQueueCtx = &index_ctx,
@@ -512,8 +510,10 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize());
 
     // Search for k vectors with the flat index empty.
+    cur_memory_usage = memory_ctx;
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
 
     // Insert n/2 vectors to the flat index.
     for (size_t i = n / 2; i < n; i++) {
@@ -522,6 +522,7 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
 
+    cur_memory_usage = memory_ctx;
     // Search for k vectors so all the vectors will be from the flat index.
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     // Search for k vectors so all the vectors will be from the main index.
@@ -529,6 +530,8 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     // Search for k so some of the results will be from the main and some from the flat index.
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+    // Memory usage should not change.
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
 
     // Add some overlapping vectors to the main and flat index.
     // adding directly to the underlying indexes to avoid jobs logic.
@@ -540,6 +543,7 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
         GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
     }
 
+    cur_memory_usage = memory_ctx;
     // Search for k vectors so all the vectors will be from the main index.
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     // Search for k vectors so all the vectors will be from the flat index.
@@ -547,6 +551,8 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     // Search for k so some of the results will be from the main and some from the flat index.
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+    // Memory usage should not change.
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
 
     // More edge cases:
 
@@ -560,6 +566,9 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
 
+    // Memory usage should not change.
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
+
     // Search for more vectors than the main index size, but less than the flat index size.
     for (size_t i = n / 2; i < n * 2 / 3; i++) {
         VecSimIndex_DeleteVector(hnsw_index, i);
@@ -567,10 +576,13 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
     ASSERT_EQ(hnsw_index->indexSize(), n / 2);
     k = n * 2 / 3;
+    cur_memory_usage = memory_ctx;
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+    // Memory usage should not change.
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
 
     // Search for more vectors than the flat index size, but less than the main index size.
     for (size_t i = n / 2; i < n; i++) {
@@ -579,8 +591,11 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     ASSERT_EQ(flat_index->indexSize(), n / 6);
     ASSERT_EQ(hnsw_index->indexSize(), n / 2);
     k = n / 4;
+    cur_memory_usage = memory_ctx;
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    // Memory usage should not change.
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
 
     // Search for vectors when the flat index is not empty but the main index is empty.
     for (size_t i = 0; i < n * 2 / 3; i++) {
@@ -590,8 +605,11 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
     ASSERT_EQ(hnsw_index->indexSize(), 0);
     k = n / 3;
+    cur_memory_usage = memory_ctx;
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    // Memory usage should not change.
+    ASSERT_EQ(memory_ctx, cur_memory_usage);
 
     // // // // // // // // // // // //
     // Check behavior upon timeout.  //
@@ -1251,10 +1269,15 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocSingle) {
 
     // vec4 is not inserted to any index, simulating a non-existing vector.
 
+    // copy memory context before querying the index.
+    size_t cur_memory_usage = memory_ctx;
+
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1), 0);
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2), 0);
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3), 0);
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4)));
+
+    ASSERT_EQ(cur_memory_usage, memory_ctx);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
@@ -1346,6 +1369,9 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
 
     // vec4 is not inserted to any index, simulating a non-existing vector.
 
+    // copy memory context before querying the index.
+    size_t cur_memory_usage = memory_ctx;
+
     // Distance from any vector to its label should be 0.
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_1), 0);
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_2), 0);
@@ -1361,6 +1387,8 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
     ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_3), 0);
     // Distance from a non-existing label should be NaN.
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 5, vec5)));
+
+    ASSERT_EQ(cur_memory_usage, memory_ctx);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
@@ -1398,7 +1426,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << IS_MULTI;
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
-        size_t THREAD_POOL_SIZE = 1;
         bool run_thread = true;
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
             thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
@@ -1427,7 +1454,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
                                               1, n_labels, dim, successful_searches);
             tiered_index->submitSingleJob(search_job);
         }
-        ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0) << IS_MULTI;
 
         // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
         while (true) {

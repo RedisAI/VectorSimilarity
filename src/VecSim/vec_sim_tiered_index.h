@@ -61,7 +61,7 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
-    double getDistanceFrom(labelType id, const void *blob) const override;
+    double getDistanceFrom(labelType label, const void *blob) const override;
 };
 
 template <typename DataType, typename DistType>
@@ -117,7 +117,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 
 // `getDistanceFrom` returns the minimum distance between the given blob and the vector with the
 // given label. If the label doesn't exist, the distance will be NaN.
-// Therefor, it's better to just call `getDistanceFrom` on both indexes and return the minimum
+// Therefore, it's better to just call `getDistanceFrom` on both indexes and return the minimum
 // instead of checking if the label exists in each index. We first try to get the distance from the
 // flat buffer, as vectors in the buffer might move to the Main while we're "between" the locks.
 // Behavior for single (regular) index:
@@ -132,12 +132,12 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 //    buffer only and some in the Main index only (and maybe temporal duplications).
 //    So, we get the distance from both indexes and return the minimum.
 template <typename DataType, typename DistType>
-double VecSimTieredIndex<DataType, DistType>::getDistanceFrom(labelType id,
+double VecSimTieredIndex<DataType, DistType>::getDistanceFrom(labelType label,
                                                               const void *blob) const {
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
     this->flatIndexGuard.lock_shared();
-    auto flat_dist = this->flatBuffer->getDistanceFrom(id, blob);
+    auto flat_dist = this->flatBuffer->getDistanceFrom(label, blob);
     this->flatIndexGuard.unlock_shared();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
@@ -150,7 +150,7 @@ double VecSimTieredIndex<DataType, DistType>::getDistanceFrom(labelType id,
 
     // Try to get the distance from the Main index.
     this->mainIndexGuard.lock_shared();
-    auto main_dist = this->index->getDistanceFrom(id, blob);
+    auto main_dist = this->index->getDistanceFrom(label, blob);
     this->mainIndexGuard.unlock_shared();
 
     // Return the minimum distance that is not NaN.
