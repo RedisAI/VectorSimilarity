@@ -487,6 +487,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
         ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
         ASSERT_GE(tiered_index->idToRepairJobs.at(2).size(), 1);
+        ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
+        ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 3);
 
         ASSERT_EQ(tiered_index->indexSize(), 4);
         ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
@@ -497,23 +499,23 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
             // Insert another vector under the label (2) that has not been deleted.
             GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 4);
             // Expect to see both ids stored under this label being deleted (2 and 4), and have both
-            // ids need repair (as the connection between the two vectors is mutual). Also, 2 has an
-            // incoming edge from his other (deleted) neighbor (3)
+            // ids need repair (as the connection between the two vectors is mutual). However, 2 has
+            // also an outgoing edge to his other (deleted) neighbor (3), so there will be no new
+            // repair job created for 2.
             ASSERT_EQ(tiered_index->deleteLabelFromHNSW(2), 2);
-            ASSERT_EQ(jobQ.size(), 3);
+            ASSERT_EQ(jobQ.size(), 2);
             ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 3);
             ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
             jobQ.pop();
             ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 4);
             ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
             jobQ.pop();
-            // Repair for node id 4.
-            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2);
-            ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
-            jobQ.pop();
+            // Repair for node id 4 - no new job, just another associated swap job for 2.
+            ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 2);
+            ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[1]->deleted_id, 4);
             ASSERT_EQ(tiered_index->idToSwapJob.size(), 5);
             ASSERT_EQ(tiered_index->idToRepairJobs.size(), 3);
-            ASSERT_EQ(tiered_index->idToRepairJobs.at(2).size(), 2);
+            ASSERT_EQ(tiered_index->idToRepairJobs.at(2).size(), 1);
             ASSERT_EQ(tiered_index->idToRepairJobs.at(3).size(), 1);
             ASSERT_EQ(tiered_index->idToRepairJobs.at(4).size(), 1);
         }
@@ -610,6 +612,10 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                 // repaired node.
                 ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
                             new_neighbors + new_neighbors_count);
+                // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
+                // still pending and avoid creating new jobs for nodes that already been repaired
+                // as they were pointing to deleted elements.
+                tiered_index->idToRepairJobs.erase(repair_node_id);
                 jobQ.pop();
             }
             ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);

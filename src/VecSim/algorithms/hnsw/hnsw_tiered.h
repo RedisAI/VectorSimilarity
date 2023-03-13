@@ -38,12 +38,19 @@ struct HNSWSwapJob : public VecsimBaseObject {
 struct HNSWRepairJob : public AsyncJob {
     idType node_id;
     unsigned short level;
-    HNSWSwapJob *associated_swap_job;
+    vecsim_stl::vector<HNSWSwapJob *> associatedSwapJobs;
 
     HNSWRepairJob(std::shared_ptr<VecSimAllocator> allocator, idType id_, unsigned short level_,
                   JobCallback insertCb, VecSimIndex *index_, HNSWSwapJob *swapJob)
         : AsyncJob(allocator, HNSW_REPAIR_NODE_CONNECTIONS_JOB, insertCb, index_), node_id(id_),
-          level(level_), associated_swap_job(swapJob) {}
+          level(level_),
+          // Insert the first swap job from which this repair job was created.
+          associatedSwapJobs(1, swapJob, this->allocator) {}
+    // In case that a repair job is required for deleting another neighbor of the node, save a
+    // reference to additional swap job.
+    void appendAnotherAssociatedSwapJob(HNSWSwapJob *swapJob) {
+        associatedSwapJobs.push_back(swapJob);
+    }
 };
 
 template <typename DataType, typename DistType>
@@ -167,22 +174,37 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
             // Protect the id->repair_jobs lookup while we update it with the new jobs.
             std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
             for (pair<idType, ushort> &node : incoming_edges) {
-                auto *repair_job =
-                    new (this->allocator) HNSWRepairJob(this->allocator, node.first, node.second,
-                                                        executeRepairJobWrapper, this, swap_job);
-                repair_jobs.emplace_back(repair_job);
-                // Insert the repair job into the repair jobs lookup (for fast update in case that
-                // the node id is changed due to swap job).
-                if (idToRepairJobs.find(node.first) == idToRepairJobs.end()) {
+                bool repair_job_exists = false;
+                HNSWRepairJob *repair_job = nullptr;
+                if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
+                    for (auto it : idToRepairJobs.at(node.first)) {
+                        if (it->level == node.second) {
+                            // There is already an existing pending repair job for this node due to
+                            // the deletion of another node - avoid creating another job.
+                            repair_job_exists = true;
+                            repair_job = it;
+                            break;
+                        }
+                    }
+                } else {
+                    // There is no repair jobs at all for this element, create a new array for it.
                     idToRepairJobs.insert(
                         {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
                 }
-                idToRepairJobs.at(node.first).push_back(repair_job);
+                if (repair_job_exists) {
+                    repair_job->appendAnotherAssociatedSwapJob(swap_job);
+                } else {
+                    repair_job = new (this->allocator)
+                        HNSWRepairJob(this->allocator, node.first, node.second,
+                                      executeRepairJobWrapper, this, swap_job);
+                    repair_jobs.emplace_back(repair_job);
+                    idToRepairJobs.at(node.first).push_back(repair_job);
+                }
             }
         }
         swap_job->setRepairJobsNum(incoming_edges.size());
-        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(),
-                                incoming_edges.size(), this->jobQueueCtx);
+        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
+                                this->jobQueueCtx);
         swapJobs.push_back(swap_job);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
         // node id is changed due to swap job).
