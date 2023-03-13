@@ -11,13 +11,6 @@
 #include "arr_cpp.h"
 #include <unordered_set>
 
-static int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
-                                             const VecSimQueryResult *res2) {
-    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2))
-               ? cmpVecSimQueryResultByScore(res1, res2)
-               : cmpVecSimQueryResultById(res1, res2);
-}
-
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
 template <bool withSet>
 VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second,

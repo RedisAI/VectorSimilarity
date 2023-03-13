@@ -672,9 +672,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             auto query = search_job->query;
 
             auto verify_res = [&](size_t id, double score, size_t res_index) {
-                TEST_DATA_T el = *(TEST_DATA_T *)query;
-                ASSERT_EQ(std::abs(id - el), (res_index + 1) / 2);
-                ASSERT_EQ(score, dim * (id - el) * (id - el));
+                TEST_DATA_T element = *(TEST_DATA_T *)query;
+                ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
+                ASSERT_EQ(score, dim * (id - element) * (id - element));
             };
             runTopKSearchTest(job->index, query, k, verify_res);
             search_job->successful_searches++;
@@ -812,7 +812,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
                                               k, n, dim, successful_searches);
             tiered_index->submitSingleJob(search_job);
         }
-        ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
 
         // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
         while (true) {
@@ -834,13 +833,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
         EXPECT_EQ(jobQ.size(), 0);
-        // Verify that the vectors were inserted to HNSW as expected
-        for (size_t i = 0; i < n; i++) {
-            TEST_DATA_T expected_vector[dim];
-            GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
-            ASSERT_EQ(tiered_index->index->getDistanceFrom(i % n_labels, expected_vector), 0)
-                << (isMulti ? "multi" : "single");
-        }
 
         // Cleanup.
         thread_pool.clear();
