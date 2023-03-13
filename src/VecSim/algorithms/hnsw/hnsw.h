@@ -183,6 +183,10 @@ protected:
     inline void resizeIndexInternal(size_t new_max_elements);
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
+    void storeNewVector(const void *vector_data, labelType label,
+                                 idType &new_element_id, size_t &element_max_level,
+                                 idType &entry_point, int &cur_max_level);
+
     // Protected internal function that implements generic single vector insertion.
     void appendVector(const void *vector_data, labelType label, idType new_vector_id = INVALID_ID);
 
@@ -221,6 +225,8 @@ public:
     inline idType safeGetEntryPointCopy() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
+    inline void lockEntryPointGuard() const;
+    inline void unlockEntryPointGuard() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
@@ -494,6 +500,16 @@ void HNSWIndex<DataType, DistType>::lockIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
     index_data_guard_.unlock();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::lockEntryPointGuard() const {
+    entry_point_guard_.lock();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::unlockEntryPointGuard() const {
+    entry_point_guard_.unlock();
 }
 
 template <typename DataType, typename DistType>
@@ -1657,9 +1673,9 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
-                                                 idType new_element_id) {
-
+void HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_data, labelType label,
+                                                   idType &new_element_id, size_t &element_max_level,
+                                                   idType &entry_point, int &curr_max_level) {
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
@@ -1668,15 +1684,12 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     }
 
     // Choose randomly the maximum level in which the new element will be in the index.
-    int element_max_level = getRandomLevel(mult_);
+    element_max_level = getRandomLevel(mult_);
 
     // Access and update the index global data structures with the new vector.
     std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
-    if (new_element_id == INVALID_ID) {
-        // Unless there is main index (such as tiered index) that has already updated the index size
-        // and sent the element id from outside, we do it now and use a fresh id.
-        new_element_id = cur_element_count++;
-    }
+    lockEntryPointGuard();
+    new_element_id = cur_element_count++;
     assert(indexCapacity() >= indexSize());
     memset(data_level0_memory_ + new_element_id * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
@@ -1691,11 +1704,18 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // Hold the entry point lock and fetch a copy of it. If the new node's max level is higher than
     // the current one, hold the lock through the entire insertion to maintain consistency of the
     // EP.
-    std::unique_lock<std::mutex> entry_point_lock(entry_point_guard_);
-    int max_level_copy = (int)max_level_;
-    idType curr_element = entrypoint_node_;
-    if (element_max_level <= max_level_copy)
-        entry_point_lock.unlock();
+    curr_max_level = (int)max_level_;
+    entry_point = entrypoint_node_;
+    if (element_max_level <= curr_max_level) {
+        unlockEntryPointGuard();
+    } else {
+        if (entrypoint_node_ == INVALID_ID && max_level_ != HNSW_INVALID_LEVEL) {
+            throw std::runtime_error("Internal error - inserting the first element to the graph,"
+                                     " but the current max level is not INVALID");
+        }
+        entrypoint_node_ = new_element_id;
+        max_level_ = element_max_level;
+    }
 
     // Initialisation of the data and label
     setExternalLabel(new_element_id, label);
@@ -1708,13 +1728,27 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
         memset(linkLists_[new_element_id], 0, size_links_per_element_ * element_max_level);
     }
+}
 
-    // this condition only means that we are not inserting the first element.
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
+
+    int element_max_level = (int)HNSW_INVALID_LEVEL;
+    idType new_element_id = INVALID_ID;
+    idType curr_entry_point = INVALID_ID;
+    int curr_max_level = (int)HNSW_INVALID_LEVEL;
+
+    // Todo: the fields above are auxiliary fields that should be sent from outsude
+    storeNewVector(vector_data, label, new_element_id, element_max_level, curr_entry_point,
+                   curr_max_level);
+    idType curr_element = curr_entry_point;
+
+    // this condition only means that we are not inserting the first (non-deleted) element.
     if (curr_element != INVALID_ID) {
         DistType cur_dist = std::numeric_limits<DistType>::max();
-        if (element_max_level < max_level_copy) {
+        if (element_max_level < curr_max_level) {
             cur_dist = this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
-            for (int level = max_level_copy; level > element_max_level; level--) {
+            for (int level = curr_max_level; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
                 // a greedy search in the graph starting from the entry point
@@ -1724,38 +1758,33 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
             }
         }
 
-        auto max_common_level = std::min(element_max_level, max_level_copy);
+        auto max_common_level = std::min(element_max_level, curr_max_level);
         for (int level = max_common_level; (int)level >= 0; level--) {
             candidatesMaxHeap<DistType> top_candidates =
                 searchLayer<false>(curr_element, vector_data, level, ef_construction_);
             curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
         }
 
-        // updating the maximum level (holding a global lock)
-        if (element_max_level > max_level_copy) {
-            entrypoint_node_ = new_element_id;
-            max_level_ = element_max_level;
+        // Updating the maximum level (holding the entry point guard lock)
+        if (element_max_level > curr_max_level) {
             // create the incoming edges set for the new levels.
-            for (int level_idx = max_level_copy + 1; level_idx <= element_max_level; level_idx++) {
+            for (int level_idx = curr_max_level + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
                 setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
             }
         }
     } else {
-        // Do nothing for the first element
-        entrypoint_node_ = new_element_id;
-        if (max_level_ != HNSW_INVALID_LEVEL) {
-            throw std::runtime_error(
-                "we should get here only when we insert the first element to the graph, but"
-                "max level is not INVALID");
-        }
-        for (int level_idx = max_level_ + 1; level_idx <= element_max_level; level_idx++) {
+        // Inserting the first (non-deleted) element to the graph - only need to allocate incoming
+        // neighbors sets without creating any connections.
+        for (int level_idx = 0; level_idx <= element_max_level; level_idx++) {
             auto *incoming_edges =
                 new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
             setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
         }
-        max_level_ = element_max_level;
+    }
+    if (element_max_level > curr_max_level) {
+        unlockEntryPointGuard();
     }
     unmarkInProcess(new_element_id);
 }

@@ -798,10 +798,9 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         EXPECT_LE(tiered_index->indexSize(), n + THREAD_POOL_SIZE);
         EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
         for (size_t i = 0; i < n_labels; i++) {
-            VecSimIndex_DeleteVector(tiered_index, i);
+            EXPECT_EQ(tiered_index->deleteVector(i), per_label);
         }
-        EXPECT_GE(tiered_index->indexLabelCount(), 0);
-        EXPECT_LE(tiered_index->indexLabelCount(), THREAD_POOL_SIZE);
+        EXPECT_EQ(tiered_index->indexLabelCount(), 0);
 
         // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
         while (true) {

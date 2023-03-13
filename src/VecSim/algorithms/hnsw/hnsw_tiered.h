@@ -448,16 +448,13 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             }
         }
         this->flatIndexGuard.unlock();
-        if (num_deleted_vectors > 0 && !this->index->isMultiValue()) {
-            // For single value index, if we found the vector in the flat buffer and removed it,
-            // we can avoid searching in HNSW index for this label.
-            return num_deleted_vectors;
-        }
     } else {
         this->flatIndexGuard.unlock_shared();
     }
 
     // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
+    // Note that we may remove the same vector that has been removed from the flat index, if it was
+    // being ingested at that time.
     this->mainIndexGuard.lock_shared();
     num_deleted_vectors += this->deleteLabelFromHNSW(label);
     this->mainIndexGuard.unlock_shared();
