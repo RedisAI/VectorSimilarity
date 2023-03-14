@@ -784,8 +784,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         }
 
         // Create and insert vectors one by one, then delete them one by one.
-        std::srand(10); // create pseudo random generator with ana arbitrary seed.
-        for (size_t i = 0; i < n / per_label; i++) {
+        std::srand(10); // create pseudo random generator with any arbitrary seed.
+        for (size_t i = 0; i < n; i++) {
             TEST_DATA_T vector[dim];
             for (size_t j = 0; j < dim; j++) {
                 vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
@@ -798,7 +798,12 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         EXPECT_LE(tiered_index->indexSize(), n + THREAD_POOL_SIZE);
         EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
         for (size_t i = 0; i < n_labels; i++) {
-            EXPECT_EQ(tiered_index->deleteVector(i), per_label);
+            // Every vector associated with the label may appear in flat/HNSW index or in both if
+            // its just being ingested.
+            int num_deleted = tiered_index->deleteVector(i);
+            EXPECT_GE(num_deleted, per_label);
+            EXPECT_LE(num_deleted, MIN(2 * per_label, per_label + THREAD_POOL_SIZE));
+            EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), 0);
 
@@ -815,8 +820,11 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
             thread_pool[i].join();
         }
-        ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
-                  0);
-        ASSERT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+        // Verify that we have no pending jobs.
+        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+        EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
+        thread_pool.clear();
     }
 }

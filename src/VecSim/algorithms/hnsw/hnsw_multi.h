@@ -80,8 +80,7 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label,
-                  void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
@@ -164,7 +163,7 @@ template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label,
                                                    void *auxiliaryCtx) {
 
-    this->appendVector(vector_data, label, new_vec_id);
+    this->appendVector(vector_data, label, (AddVectorCtx *)auxiliaryCtx);
     return 1; // We always add the vector, no overrides in multi.
 }
 

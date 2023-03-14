@@ -194,14 +194,14 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                 }
                 idToRepairJobs.at(node.first).push_back(repair_job);
             }
+            swap_job->setRepairJobsNum(incoming_edges.size());
+            swapJobs.push_back(swap_job);
+            // Insert the swap job into the swap jobs lookup (for fast update in case that the
+            // node id is changed due to swap job).
+            idToSwapJob[id] = swap_job;
         }
-        swap_job->setRepairJobsNum(incoming_edges.size());
         this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(),
                                 incoming_edges.size(), this->jobQueueCtx);
-        swapJobs.push_back(swap_job);
-        // Insert the swap job into the swap jobs lookup (for fast update in case that the
-        // node id is changed due to swap job).
-        idToSwapJob[id] = swap_job;
     }
 
     // Todo: if swapJobs size is larger than a threshold, go over the swap jobs and execute it,
@@ -245,12 +245,10 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     }
     // Acquire the index data lock, so we know what is the exact index size at this time.
     hnsw_index->lockIndexDataGuard();
-
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         hnsw_index->unlockIndexDataGuard();
-
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
         // Check if resizing is still required (another thread might have done it in the meantime
@@ -265,16 +263,26 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // Job has been invalidated in the meantime (by overwriting this label) while we released
         // the flat index guard.
         this->flatIndexGuard.unlock_shared();
+        hnsw_index->unlockIndexDataGuard();
         return;
     }
 
-    idType new_vec_id = hnsw_index->indexSize();
-    hnsw_index->incrementIndexSize();
+    // Hold the entry point lock while we store the new element. If the new node's max level is
+    // higher than the current one, hold the lock through the entire insertion to maintain
+    // consistency of the entry point.
+    hnsw_index->lockEntryPointGuard();
+    AddVectorCtx state = hnsw_index->storeNewElement(job->label);
     hnsw_index->unlockIndexDataGuard();
+    if (state.elementMaxLevel <= state.currMaxLevel) {
+        hnsw_index->unlockEntryPointGuard();
+    }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
     this->mainIndexGuard.lock_shared();
-    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, auxiliaryCtx);
+    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, &state);
+    if (state.elementMaxLevel > state.currMaxLevel) {
+        hnsw_index->unlockEntryPointGuard();
+    }
     this->mainIndexGuard.unlock_shared();
 
     // Remove the vector and the insert job from the flat buffer.
@@ -314,8 +322,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
     // Remove this job pointer from the repair jobs lookup after it has been executed.
     std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
-    auto repair_jobs = this->idToRepairJobs.at(job->node_id);
-    assert(repair_jobs.size() >= 0);
+    auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
+    assert(repair_jobs.size() > 0);
     if (repair_jobs.size() == 1) {
         // This was the only pending repair job for this id.
         this->idToRepairJobs.erase(job->node_id);
@@ -329,6 +337,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
         repair_jobs.pop_back();
     }
     this->mainIndexGuard.unlock_shared();
+    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 /******************** Index API ****************************************/
@@ -458,5 +467,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     this->mainIndexGuard.lock_shared();
     num_deleted_vectors += this->deleteLabelFromHNSW(label);
     this->mainIndexGuard.unlock_shared();
+    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return num_deleted_vectors;
 }

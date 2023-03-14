@@ -53,11 +53,14 @@ typedef enum {
     IN_PROCESS = 0x02   // vector is being inserted into the graph
 } Flags;
 
+// The state of the index and the newly inserted vector to be passed into addVector API in case that
+// the index global data structures are updated atomically from an external scope (such as in
+// tiered index),
 struct AddVectorCtx {
-    int elementMaxLevel;
     idType newElementId;
+    int elementMaxLevel;
     idType currEntryPoint;
-    int currMaxlevel;
+    int currMaxLevel;
 };
 
 template <typename DataType, typename DistType>
@@ -116,6 +119,7 @@ protected:
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
+    bool enableParallelInsert;
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
 #include "hnsw_serializer_declarations.h"
@@ -190,10 +194,9 @@ protected:
     inline void resizeIndexInternal(size_t new_max_elements);
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
-    AddVectorCtx storeNewVector(const void *vector_data, labelType label);
-
     // Protected internal function that implements generic single vector insertion.
-    void appendVector(const void *vector_data, labelType label, idType new_vector_id = INVALID_ID);
+    void appendVector(const void *vector_data, labelType label,
+                      AddVectorCtx *auxiliaryCtx = nullptr);
 
     // Protected internal function that implements generic single vector deletion.
     void removeVector(idType id);
@@ -255,8 +258,8 @@ public:
     inline bool isInProcess(idType internalId) const;
     inline void markInProcess(idType internalId);
     inline void unmarkInProcess(idType internalId);
-    inline void incrementIndexSize();
     void increaseCapacity() override;
+    AddVectorCtx storeNewElement(labelType label);
 
     // inline priority queue getter that need to be implemented by derived class
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
@@ -490,11 +493,6 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
     elementFlags *flags = getElementFlags(internalId);
     *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::incrementIndexSize() {
-    cur_element_count++;
 }
 
 template <typename DataType, typename DistType>
@@ -1563,6 +1561,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // No need to test for overflow because we passed the test for incoming_links_offset0 and this
     // is less.
     incoming_links_offset = maxM_ * sizeof(idType) + sizeof(linkListSize);
+
+    enableParallelInsert = params->enableParallelism;
 }
 
 template <typename DataType, typename DistType>
@@ -1677,20 +1677,19 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
     }
 }
 
+// Store the new element in the global data structures and keep the new state. In multithreaded
+// scenario, the index data guard and the entry point guard should be held by the caller.
 template <typename DataType, typename DistType>
-AddVectorCtx HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_data, labelType label)
-{
+AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label) {
     AddVectorCtx state{};
-
 
     // Choose randomly the maximum level in which the new element will be in the index.
     state.elementMaxLevel = getRandomLevel(mult_);
 
-    // Access and update the index global data structures with the new vector.
-    std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
-    lockEntryPointGuard();
+    // Access and update the index global data structures with the new element meta-data.
     state.newElementId = cur_element_count++;
     assert(indexCapacity() >= indexSize());
+    // Reset the data (and meta-data) for id=state.newElementId in the index.
     memset(data_level0_memory_ + state.newElementId * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
     // We mark id as in process *before* we set it in the label lookup, otherwise we might check
@@ -1699,52 +1698,65 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_da
     markInProcess(state.newElementId);
     setVectorId(label, state.newElementId);
     element_levels_[state.newElementId] = state.elementMaxLevel;
-    index_data_lock.unlock();
 
-    // Hold the entry point lock and fetch a copy of it. If the new node's max level is higher than
-    // the current one, hold the lock through the entire insertion to maintain consistency of the
-    // EP.
-    // todo: cont here with state. Also, this should be wrapped with locks, not using locks inside
-    curr_max_level = (int)max_level_;
-    entry_point = entrypoint_node_;
-    if (element_max_level <= curr_max_level) {
-        unlockEntryPointGuard();
-    } else {
+    state.currMaxLevel = (int)max_level_;
+    state.currEntryPoint = entrypoint_node_;
+    if (state.elementMaxLevel > state.currMaxLevel) {
         if (entrypoint_node_ == INVALID_ID && max_level_ != HNSW_INVALID_LEVEL) {
             throw std::runtime_error("Internal error - inserting the first element to the graph,"
                                      " but the current max level is not INVALID");
         }
-        entrypoint_node_ = new_element_id;
-        max_level_ = element_max_level;
+        // If the new elements max level is higher than the maximum level the currently exists in
+        // the graph, update the max level and set the new element as entry point.
+        entrypoint_node_ = state.newElementId;
+        max_level_ = state.elementMaxLevel;
     }
+    return state;
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
                                                  AddVectorCtx *auxiliaryCtx) {
 
-    // Todo: the fields above are auxiliary fields that should be sent from outsude
-    state = storeNewVector(vector_data, label);
+    // If auxiliaryCtx is not NULL, the index state has already been updated from outside (such as
+    // in tiered index). Also, the synchronization responsibility in this case is on the caller,
+    // otherwise, this function should acquire and release the lock to ensure proper parallelism.
+    AddVectorCtx state{};
+    if (auxiliaryCtx == nullptr) {
+        this->lockIndexDataGuard();
+        this->lockEntryPointGuard();
+        state = storeNewElement(label);
+        this->unlockIndexDataGuard();
+        if (state.currMaxLevel >= state.elementMaxLevel) {
+            this->unlockEntryPointGuard();
+        }
+    } else {
+        state = *auxiliaryCtx;
+    }
+    // Deconstruct the state variables from the auxiliaryCtx.
+    auto [new_element_id, element_max_level, curr_entry_point, curr_max_level] = state;
 
-    // Initialisation of the data and label
+    // Initialisation of the vector data and its label.
     setExternalLabel(new_element_id, label);
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'
     if (this->metric == VecSimMetric_Cosine) {
         memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
         normalizeVector(normalized_blob, this->dim);
         vector_data = normalized_blob;
     }
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
-    idType curr_element = curr_entry_point;
-
     if (element_max_level > 0) {
         linkLists_[new_element_id] =
             (char *)this->allocator->allocate(size_links_per_element_ * element_max_level);
-        if (linkLists_[new_element_id] == nullptr)
+        if (linkLists_[new_element_id] == nullptr) {
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
+        }
         memset(linkLists_[new_element_id], 0, size_links_per_element_ * element_max_level);
     }
-    // this condition only means that we are not inserting the first (non-deleted) element.
+
+    // Start scanning the graph from the current entry point.
+    idType curr_element = curr_entry_point;
+    // This condition only means that we are not inserting the first (non-deleted) element.
     if (curr_element != INVALID_ID) {
         DistType cur_dist = std::numeric_limits<DistType>::max();
         if (element_max_level < curr_max_level) {
@@ -1784,10 +1796,11 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
             setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);
         }
     }
-    if (element_max_level > curr_max_level) {
-        unlockEntryPointGuard();
-    }
     unmarkInProcess(new_element_id);
+    if (auxiliaryCtx == nullptr && state.currMaxLevel < state.elementMaxLevel) {
+        // No external auxiliaryCtx, so it's this function responsibility to release the lock.
+        this->unlockEntryPointGuard();
+    }
 }
 
 template <typename DataType, typename DistType>
