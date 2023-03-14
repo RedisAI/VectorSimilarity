@@ -119,7 +119,6 @@ protected:
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
-    bool enableParallelInsert;
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
 #include "hnsw_serializer_declarations.h"
@@ -1561,8 +1560,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     // No need to test for overflow because we passed the test for incoming_links_offset0 and this
     // is less.
     incoming_links_offset = maxM_ * sizeof(idType) + sizeof(linkListSize);
-
-    enableParallelInsert = params->enableParallelism;
 }
 
 template <typename DataType, typename DistType>
