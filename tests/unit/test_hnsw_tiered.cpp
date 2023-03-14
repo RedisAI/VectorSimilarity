@@ -616,6 +616,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                 // still pending and avoid creating new jobs for nodes that already been repaired
                 // as they were pointing to deleted elements.
                 tiered_index->idToRepairJobs.erase(repair_node_id);
+                delete jobQ.front().job;
                 jobQ.pop();
             }
             ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
