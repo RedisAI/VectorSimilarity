@@ -81,7 +81,7 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label,
-                  idType new_vec_id = INVALID_ID) override;
+                  void *auxiliaryCtx = nullptr) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
@@ -162,7 +162,7 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                   idType new_vec_id) {
+                                                   void *auxiliaryCtx) {
 
     this->appendVector(vector_data, label, new_vec_id);
     return 1; // We always add the vector, no overrides in multi.

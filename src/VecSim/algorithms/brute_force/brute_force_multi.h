@@ -23,7 +23,7 @@ public:
     ~BruteForceIndex_Multi() {}
 
     int addVector(const void *vector_data, labelType label,
-                  idType new_vec_id = INVALID_ID) override;
+                  void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType labelType) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
@@ -97,7 +97,7 @@ private:
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Multi<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                         idType new_vec_id) {
+                                                         void *auxiliaryCtx) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
     if (this->metric == VecSimMetric_Cosine) {
