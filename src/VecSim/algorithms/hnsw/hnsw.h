@@ -53,6 +53,13 @@ typedef enum {
     IN_PROCESS = 0x02   // vector is being inserted into the graph
 } Flags;
 
+struct AddVectorCtx {
+    int elementMaxLevel;
+    idType newElementId;
+    idType currEntryPoint;
+    int currMaxlevel;
+};
+
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
                   public VecSimIndexTombstone
@@ -183,9 +190,7 @@ protected:
     inline void resizeIndexInternal(size_t new_max_elements);
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
-    void storeNewVector(const void *vector_data, labelType label,
-                                 idType &new_element_id, size_t &element_max_level,
-                                 idType &entry_point, int &cur_max_level);
+    AddVectorCtx storeNewVector(const void *vector_data, labelType label);
 
     // Protected internal function that implements generic single vector insertion.
     void appendVector(const void *vector_data, labelType label, idType new_vector_id = INVALID_ID);
@@ -1673,37 +1678,33 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_data, labelType label,
-                                                   idType &new_element_id, size_t &element_max_level,
-                                                   idType &entry_point, int &curr_max_level) {
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
+AddVectorCtx HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_data, labelType label)
+{
+    AddVectorCtx state{};
+
 
     // Choose randomly the maximum level in which the new element will be in the index.
-    element_max_level = getRandomLevel(mult_);
+    state.elementMaxLevel = getRandomLevel(mult_);
 
     // Access and update the index global data structures with the new vector.
     std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
     lockEntryPointGuard();
-    new_element_id = cur_element_count++;
+    state.newElementId = cur_element_count++;
     assert(indexCapacity() >= indexSize());
-    memset(data_level0_memory_ + new_element_id * size_data_per_element_ + offsetLevel0_, 0,
+    memset(data_level0_memory_ + state.newElementId * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
     // We mark id as in process *before* we set it in the label lookup, otherwise we might check
     // that the label exist with safeCheckIfLabelExistsInIndex and see that IN_PROCESS flag is
     // clear.
-    markInProcess(new_element_id);
-    setVectorId(label, new_element_id);
-    element_levels_[new_element_id] = element_max_level;
+    markInProcess(state.newElementId);
+    setVectorId(label, state.newElementId);
+    element_levels_[state.newElementId] = state.elementMaxLevel;
     index_data_lock.unlock();
 
     // Hold the entry point lock and fetch a copy of it. If the new node's max level is higher than
     // the current one, hold the lock through the entire insertion to maintain consistency of the
     // EP.
+    // todo: cont here with state. Also, this should be wrapped with locks, not using locks inside
     curr_max_level = (int)max_level_;
     entry_point = entrypoint_node_;
     if (element_max_level <= curr_max_level) {
@@ -1716,10 +1717,25 @@ void HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_data, labe
         entrypoint_node_ = new_element_id;
         max_level_ = element_max_level;
     }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label,
+                                                 AddVectorCtx *auxiliaryCtx) {
+
+    // Todo: the fields above are auxiliary fields that should be sent from outsude
+    state = storeNewVector(vector_data, label);
 
     // Initialisation of the data and label
     setExternalLabel(new_element_id, label);
+    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
+    if (this->metric == VecSimMetric_Cosine) {
+        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+        normalizeVector(normalized_blob, this->dim);
+        vector_data = normalized_blob;
+    }
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
+    idType curr_element = curr_entry_point;
 
     if (element_max_level > 0) {
         linkLists_[new_element_id] =
@@ -1728,21 +1744,6 @@ void HNSWIndex<DataType, DistType>::storeNewVector(const void *vector_data, labe
             throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
         memset(linkLists_[new_element_id], 0, size_links_per_element_ * element_max_level);
     }
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const labelType label) {
-
-    int element_max_level = (int)HNSW_INVALID_LEVEL;
-    idType new_element_id = INVALID_ID;
-    idType curr_entry_point = INVALID_ID;
-    int curr_max_level = (int)HNSW_INVALID_LEVEL;
-
-    // Todo: the fields above are auxiliary fields that should be sent from outsude
-    storeNewVector(vector_data, label, new_element_id, element_max_level, curr_entry_point,
-                   curr_max_level);
-    idType curr_element = curr_entry_point;
-
     // this condition only means that we are not inserting the first (non-deleted) element.
     if (curr_element != INVALID_ID) {
         DistType cur_dist = std::numeric_limits<DistType>::max();

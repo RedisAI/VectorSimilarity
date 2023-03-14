@@ -91,7 +91,7 @@ public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
     virtual ~TieredHNSWIndex();
 
-    int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) override;
+    int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType id) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
@@ -274,7 +274,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
     this->mainIndexGuard.lock_shared();
-    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, new_vec_id);
+    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, auxiliaryCtx);
     this->mainIndexGuard.unlock_shared();
 
     // Remove the vector and the insert job from the flat buffer.
@@ -393,14 +393,14 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
-                                                   idType new_vec_id) {
+                                                   void *auxiliaryCtx) {
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
     this->flatIndexGuard.lock();
     if (this->flatBuffer->indexCapacity() == this->flatBuffer->indexSize()) {
         this->flatBuffer->increaseCapacity();
     }
     idType new_flat_id = this->flatBuffer->indexSize();
-    this->flatBuffer->addVector(blob, label, false);
+    this->flatBuffer->addVector(blob, label);
     AsyncJob *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
