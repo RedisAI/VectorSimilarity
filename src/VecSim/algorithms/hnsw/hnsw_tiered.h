@@ -3,6 +3,7 @@
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
 #include "hnsw_factory.h"
+#include "VecSim/utils/merge_results.h"
 
 #include <unordered_map>
 /**
@@ -82,10 +83,6 @@ public:
     int deleteVector(labelType id) override { return this->index->deleteVector(id); }
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->index->getDistanceFrom(id, blob);
-    }
-    VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                     VecSimQueryParams *queryParams) override {
-        return this->index->topKQuery(queryBlob, k, queryParams);
     }
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override {
