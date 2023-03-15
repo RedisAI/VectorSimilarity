@@ -1367,7 +1367,7 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
     VecSimIndex_AddVector(flat_index, vec4_2, 4);
     VecSimIndex_AddVector(flat_index, vec4_3, 4);
 
-    // vec4 is not inserted to any index, simulating a non-existing vector.
+    // vec5 is not inserted to any index, simulating a non-existing vector.
 
     // copy memory context before querying the index.
     size_t cur_memory_usage = allocator->getAllocationSize();
