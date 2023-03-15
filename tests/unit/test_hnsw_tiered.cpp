@@ -948,6 +948,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
         ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
         jobQ.pop();
+
+        delete tiered_index;
     }
 }
 
