@@ -1148,7 +1148,8 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 // given level, starting at the given node. It sets `curObj` to the closest node found, and
 // `curDist` to the distance to this node. If `running_query` is true, the search will check for
 // timeout and return if it has occurred. `timeoutCtx` and `rc` must be valid if `running_query` is
-// true. *Note that we assume that level is higher than 0*
+// true. *Note that we assume that level is higher than 0*. Also, if we're not running a query (we
+// are searching neighbors for a new vector), then bestCand should be a non-deleted element!
 template <typename DataType, typename DistType>
 template <bool running_query>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
@@ -1184,6 +1185,8 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
                 bestCand = candidate;
                 changed = true;
                 // Run this code only for non-query code - update the best non deleted cand as well.
+                // Upon running a query, we don't mind having a deleted element as an entry point
+                // for the next level, as eventually we return non-deleted elements in level 0.
                 if (!running_query && !isMarkedDeleted(candidate)) {
                     bestNonDeletedCand = bestCand;
                 }
@@ -1204,14 +1207,11 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
     for (size_t level = 0; level <= node_top_level; level++) {
         // Save the node neighbor's in the current level while holding its neighbors lock.
         std::vector<idType> neighbors_copy;
-        neighbors_copy.reserve(level > 0 ? maxM_ : maxM0_);
         std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
         auto *neighbours = getNodeNeighborsAtLevel(node_id, level);
         unsigned short neighbours_count = getNodeNeighborsCount(neighbours);
         // Store the deleted element's neighbours.
-        for (size_t j = 0; j < neighbours_count; j++) {
-            neighbors_copy.push_back(neighbours[j]);
-        }
+        neighbors_copy.assign(neighbours, neighbours + neighbours_count);
         element_lock.unlock();
 
         // Go over the neighbours and collect tho ones that also points back to the removed node.

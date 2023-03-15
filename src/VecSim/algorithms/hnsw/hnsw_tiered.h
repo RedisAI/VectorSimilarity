@@ -41,8 +41,8 @@ struct HNSWRepairJob : public AsyncJob {
     vecsim_stl::vector<HNSWSwapJob *> associatedSwapJobs;
 
     HNSWRepairJob(std::shared_ptr<VecSimAllocator> allocator, idType id_, unsigned short level_,
-                  JobCallback insertCb, VecSimIndex *index_, HNSWSwapJob *swapJob)
-        : AsyncJob(allocator, HNSW_REPAIR_NODE_CONNECTIONS_JOB, insertCb, index_), node_id(id_),
+                  JobCallback repairCb, VecSimIndex *index_, HNSWSwapJob *swapJob)
+        : AsyncJob(allocator, HNSW_REPAIR_NODE_CONNECTIONS_JOB, repairCb, index_), node_id(id_),
           level(level_),
           // Insert the first swap job from which this repair job was created.
           associatedSwapJobs(1, swapJob, this->allocator) {}
