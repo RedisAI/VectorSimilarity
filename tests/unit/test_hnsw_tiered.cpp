@@ -1437,8 +1437,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
             auto query = search_job->query;
             size_t element = *(TEST_DATA_T *)query;
             size_t label = element % search_job->n;
+            bool isMulti = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)->index->isMultiValue();
 
-            ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
+            ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query)) << "Label: " << label << IS_MULTI;
 
             search_job->successful_searches++;
             delete search_job;
