@@ -96,17 +96,21 @@ size_t HNSWIndex_Single<DataType, DistType>::indexLabelCount() const {
 
 template <typename DataType, typename DistType>
 template <bool Safe>
-double HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
-                                                             const void *vector_data) const {
-    if (Safe) this->index_data_guard_.lock_shared();
+double
+HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
+                                                              const void *vector_data) const {
+    if (Safe)
+        this->index_data_guard_.lock_shared();
 
     auto it = label_lookup_.find(label);
     if (it == label_lookup_.end()) {
-        if (Safe) this->index_data_guard_.unlock_shared();
+        if (Safe)
+            this->index_data_guard_.unlock_shared();
         return INVALID_SCORE;
     }
     idType id = it->second;
-    if (Safe) this->index_data_guard_.unlock_shared();
+    if (Safe)
+        this->index_data_guard_.unlock_shared();
 
     return this->dist_func(vector_data, this->getDataByInternalId(id), this->dim);
 }

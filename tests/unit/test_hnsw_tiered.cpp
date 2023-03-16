@@ -958,7 +958,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
         ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1) << IS_MULTI;
         ASSERT_GE(tiered_index->idToRepairJobs.at(2).size(), 1) << IS_MULTI;
         ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1) << IS_MULTI;
-        ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 3) << IS_MULTI;
+        ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 3)
+            << IS_MULTI;
 
         ASSERT_EQ(tiered_index->indexSize(), 4) << IS_MULTI;
         ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3) << IS_MULTI;
@@ -1126,7 +1127,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
             ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1) << IS_MULTI;
             ASSERT_EQ(jobQ.size(), incoming_neighbors.size()) << IS_MULTI;
             ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
-                      jobQ.size()) << IS_MULTI;
+                      jobQ.size())
+                << IS_MULTI;
             ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), ep) << IS_MULTI;
 
             // Execute synchronously all the repair jobs for the current deletion.
@@ -1145,7 +1147,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                 // This makes sure that the deleted node is no longer in the neighbors set of the
                 // repaired node.
                 ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
-                            new_neighbors + new_neighbors_count) << IS_MULTI;
+                            new_neighbors + new_neighbors_count)
+                    << IS_MULTI;
                 // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
                 // still pending and avoid creating new jobs for nodes that already been repaired
                 // as they were pointing to deleted elements.
@@ -1153,7 +1156,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                 delete jobQ.front().job;
                 jobQ.pop();
             }
-            ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0) << IS_MULTI;
+            ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0)
+                << IS_MULTI;
         }
         delete tiered_index;
     }
@@ -1437,9 +1441,12 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
             auto query = search_job->query;
             size_t element = *(TEST_DATA_T *)query;
             size_t label = element % search_job->n;
-            bool isMulti = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)->index->isMultiValue();
+            bool isMulti =
+                reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
+                    ->index->isMultiValue();
 
-            ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query)) << "Label: " << label << IS_MULTI;
+            ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query))
+                << "Label: " << label << IS_MULTI;
 
             search_job->successful_searches++;
             delete search_job;

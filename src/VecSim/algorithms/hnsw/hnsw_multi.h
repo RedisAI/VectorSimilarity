@@ -105,7 +105,7 @@ size_t HNSWIndex_Multi<DataType, DistType>::indexLabelCount() const {
 // Depending on the value of the Safe template parameter, this function will either return a copy
 // of the argument or a reference to it.
 template <bool Safe, typename Arg>
-constexpr decltype(auto) getCopyOrReference(Arg&& arg) {
+constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
     if constexpr (Safe) {
         return std::remove_reference_t<Arg>(arg);
     } else {
@@ -116,21 +116,24 @@ constexpr decltype(auto) getCopyOrReference(Arg&& arg) {
 template <typename DataType, typename DistType>
 template <bool Safe>
 double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType label,
-                                                            const void *vector_data) const {
+                                                                    const void *vector_data) const {
     DistType dist = INVALID_SCORE;
 
     // Check if the label exists in the index, return invalid score if not.
-    if (Safe) this->index_data_guard_.lock_shared();
+    if (Safe)
+        this->index_data_guard_.lock_shared();
     auto it = this->label_lookup_.find(label);
     if (it == this->label_lookup_.end()) {
-        if (Safe) this->index_data_guard_.unlock_shared();
+        if (Safe)
+            this->index_data_guard_.unlock_shared();
         return dist;
     }
 
     // Get the vector of ids associated with the label.
     // Get a copy if `Safe` is true, otherwise get a reference.
     decltype(auto) IDs = getCopyOrReference<Safe>(it->second);
-    if (Safe) this->index_data_guard_.unlock_shared();
+    if (Safe)
+        this->index_data_guard_.unlock_shared();
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {

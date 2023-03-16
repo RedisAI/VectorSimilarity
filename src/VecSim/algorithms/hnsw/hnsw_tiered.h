@@ -390,7 +390,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 //    So, we get the distance from both indexes and return the minimum.
 template <typename DataType, typename DistType>
 double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
-                                                              const void *blob) const {
+                                                            const void *blob) const {
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
     this->flatIndexGuard.lock_shared();
