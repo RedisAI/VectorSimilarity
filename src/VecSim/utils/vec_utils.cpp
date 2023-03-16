@@ -7,7 +7,6 @@
 #include "vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include <cmath>
-#include <cassert>
 #include <cerrno>
 #include <climits>
 #include <float.h>
@@ -49,17 +48,6 @@ const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
 const char *VecSimCommonStrings::HYBRID_POLICY_STRING = "HYBRID_POLICY";
 const char *VecSimCommonStrings::BATCH_SIZE_STRING = "BATCH_SIZE";
-
-int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
-}
-
-int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
-           !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare doubles
-    return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
 
 void sort_results_by_id(VecSimQueryResult_List rl) {
     qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),

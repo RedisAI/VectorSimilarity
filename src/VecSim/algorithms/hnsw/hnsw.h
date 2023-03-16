@@ -44,8 +44,7 @@ template <typename DistType>
 using candidatesMaxHeap = vecsim_stl::max_priority_queue<DistType, idType>;
 template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
-
-using graphNodeType = pair<idType, ushort>;
+using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
 // Vectors flags (for marking a specific vector)
 typedef enum {
@@ -260,13 +259,14 @@ public:
     void increaseCapacity() override;
     AddVectorCtx storeNewElement(labelType label);
 
-    // inline priority queue getter that need to be implemented by derived class
-    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     void repairNodeConnections(idType node_id, size_t level);
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
                                                                           size_t node_top_level);
     virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
+
+    // inline priority queue getter that need to be implemented by derived class
+    virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -1168,41 +1168,54 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 // given level, starting at the given node. It sets `curObj` to the closest node found, and
 // `curDist` to the distance to this node. If `running_query` is true, the search will check for
 // timeout and return if it has occurred. `timeoutCtx` and `rc` must be valid if `running_query` is
-// true. *Note that we assume that level is higher than 0*
+// true. *Note that we assume that level is higher than 0*. Also, if we're not running a query (we
+// are searching neighbors for a new vector), then bestCand should be a non-deleted element!
 template <typename DataType, typename DistType>
 template <bool running_query>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
-                                                      idType &curObj, DistType &curDist,
+                                                      idType &bestCand, DistType &curDist,
                                                       void *timeoutCtx,
                                                       VecSimQueryResult_Code *rc) const {
     bool changed;
+    // Don't allow choosing a deleted node as an entry point upon searching for neighbors
+    // candidates (that is, we're NOT running a query, but inserting a new vector).
+    idType bestNonDeletedCand = bestCand;
+
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
             *rc = VecSim_QueryResult_TimedOut;
-            curObj = INVALID_ID;
+            bestCand = INVALID_ID;
             return;
         }
+
         changed = false;
-        std::unique_lock<std::mutex> lock(element_neighbors_locks_[curObj]);
-        idType *node_links = getNodeNeighborsAtNonBaseLevel(curObj, level);
+        std::unique_lock<std::mutex> lock(element_neighbors_locks_[bestCand]);
+        idType *node_links = getNodeNeighborsAtNonBaseLevel(bestCand, level);
         linkListSize links_count = getNodeNeighborsCount(node_links);
 
         for (int i = 0; i < links_count; i++) {
             idType candidate = node_links[i];
             assert(candidate < this->cur_element_count && "candidate error: out of index range");
-            // Don't allow choosing a deleted node as an entry point upon searching for neighbors
-            // candidates (that is, we're NOT running a query, but inserting a new vector).
-            if (isInProcess(candidate) || (!running_query && isMarkedDeleted(candidate))) {
+            if (isInProcess(candidate)) {
                 continue;
             }
             DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
             if (d < curDist) {
                 curDist = d;
-                curObj = candidate;
+                bestCand = candidate;
                 changed = true;
+                // Run this code only for non-query code - update the best non deleted cand as well.
+                // Upon running a query, we don't mind having a deleted element as an entry point
+                // for the next level, as eventually we return non-deleted elements in level 0.
+                if (!running_query && !isMarkedDeleted(candidate)) {
+                    bestNonDeletedCand = bestCand;
+                }
             }
         }
     } while (changed);
+    if (!running_query) {
+        bestCand = bestNonDeletedCand;
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1218,9 +1231,7 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         auto *neighbours = getNodeNeighborsAtLevel(node_id, level);
         unsigned short neighbours_count = getNodeNeighborsCount(neighbours);
         // Store the deleted element's neighbours.
-        for (size_t j = 0; j < neighbours_count; j++) {
-            neighbors_copy.push_back(neighbours[j]);
-        }
+        neighbors_copy.assign(neighbours, neighbours + neighbours_count);
         element_lock.unlock();
 
         // Go over the neighbours and collect tho ones that also points back to the removed node.
@@ -1909,6 +1920,12 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
     if (VecSim_OK != rl.code) {
+        return rl;
+    } else if (bottom_layer_ep == INVALID_ID) {
+        // Although we checked that the index is not empty (cur_element_count == 0), it might be
+        // that another thread deleted all the elements or didn't finish inserting the first element
+        // yet. Anyway, we observed that the index is empty, so we return an empty result list.
+        rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }
 
