@@ -61,7 +61,6 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
-    double getDistanceFrom(labelType label, const void *blob) const override;
 };
 
 template <typename DataType, typename DistType>
@@ -113,46 +112,4 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
             return merge_results<false>(main_results, flat_results, k);
         }
     }
-}
-
-// `getDistanceFrom` returns the minimum distance between the given blob and the vector with the
-// given label. If the label doesn't exist, the distance will be NaN.
-// Therefore, it's better to just call `getDistanceFrom` on both indexes and return the minimum
-// instead of checking if the label exists in each index. We first try to get the distance from the
-// flat buffer, as vectors in the buffer might move to the Main while we're "between" the locks.
-// Behavior for single (regular) index:
-// 1. label doesn't exist in both indexes - return NaN
-// 2. label exists in one of the indexes only - return the distance from that index (which is valid)
-// 3. label exists in both indexes - return the value from the flat buffer (which is valid and equal
-//    to the value from the Main index), saving us from locking the Main index.
-// Behavior for multi index:
-// 1. label doesn't exist in both indexes - return NaN
-// 2. label exists in one of the indexes only - return the distance from that index (which is valid)
-// 3. label exists in both indexes - we may have some of the vectors with the same label in the flat
-//    buffer only and some in the Main index only (and maybe temporal duplications).
-//    So, we get the distance from both indexes and return the minimum.
-template <typename DataType, typename DistType>
-double VecSimTieredIndex<DataType, DistType>::getDistanceFrom(labelType label,
-                                                              const void *blob) const {
-    // Try to get the distance from the flat buffer.
-    // If the label doesn't exist, the distance will be NaN.
-    this->flatIndexGuard.lock_shared();
-    auto flat_dist = this->flatBuffer->getDistanceFrom(label, blob);
-    this->flatIndexGuard.unlock_shared();
-
-    // Optimization. TODO: consider having different implementations for single and multi indexes,
-    // to avoid checking the index type on every query.
-    if (!this->index->isMultiValue() && !std::isnan(flat_dist)) {
-        // If the index is single value, and we got a valid distance from the flat buffer,
-        // we can return the distance without querying the Main index.
-        return flat_dist;
-    }
-
-    // Try to get the distance from the Main index.
-    this->mainIndexGuard.lock_shared();
-    auto main_dist = this->index->getDistanceFrom(label, blob);
-    this->mainIndexGuard.unlock_shared();
-
-    // Return the minimum distance that is not NaN.
-    return std::fmin(flat_dist, main_dist);
 }

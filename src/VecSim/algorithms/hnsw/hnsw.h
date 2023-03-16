@@ -34,6 +34,7 @@
 #include <unordered_map>
 #include <sys/resource.h>
 #include <fstream>
+#include <shared_mutex>
 
 using std::pair;
 
@@ -104,7 +105,7 @@ protected:
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
     mutable std::mutex entry_point_guard_;
-    mutable std::mutex index_data_guard_;
+    mutable std::shared_mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
 #ifdef BUILD_TESTS
@@ -252,6 +253,7 @@ public:
 
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
+    virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
 #ifdef BUILD_TESTS
     /**
@@ -1680,7 +1682,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     int element_max_level = getRandomLevel(mult_);
 
     // Access and update the index global data structures with the new vector.
-    std::unique_lock<std::mutex> index_data_lock(index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(index_data_guard_);
     if (new_element_id == INVALID_ID) {
         // Unless there is main index (such as tiered index) that has already updated the index size
         // and sent the element id from outside, we do it now and use a fresh id.
