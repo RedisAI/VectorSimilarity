@@ -31,8 +31,8 @@ protected:
     void *memoryCtx;
     UpdateMemoryCB UpdateIndexMemory;
 
-    std::shared_mutex flatIndexGuard;
-    std::shared_mutex mainIndexGuard;
+    mutable std::shared_mutex flatIndexGuard;
+    mutable std::shared_mutex mainIndexGuard;
 
     void submitSingleJob(AsyncJob *job) {
         auto **jobs = array_new<AsyncJob *>(1);
