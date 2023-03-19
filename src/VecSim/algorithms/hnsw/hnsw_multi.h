@@ -109,7 +109,7 @@ constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
     if constexpr (Safe) {
         return std::decay_t<Arg>(arg);
     } else {
-        return arg;
+        return (arg);
     }
 }
 
