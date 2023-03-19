@@ -14,7 +14,7 @@
 #include "VecSim/utils/serializer.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
 
-const size_t vecsimAllocationOverhead = sizeof(size_t);
+const size_t vecsimAllocationOverhead = VecSimAllocator::getAllocationOverheadSize();
 
 const size_t hashTableNodeSize = getLabelsLookupNodeSize();
 

@@ -45,7 +45,9 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 size_t EstimateInitialSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
 
-    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
+    size_t est = sizeof(VecSimAllocator) + allocations_overhead;
     if (params->type == VecSimType_FLOAT32) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
@@ -53,27 +55,29 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     }
 
     // Account for the visited nodes pool (assume that it holds one pointer to a handler).
-    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
+    est += sizeof(VisitedNodesHandler) + allocations_overhead;
     // The visited nodes pool inner vector buffer (contains one pointer).
-    est += sizeof(void *) + sizeof(size_t);
-    est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes array
+    est += sizeof(void *) + allocations_overhead;
+    est += sizeof(tag_t) * params->initialCapacity + allocations_overhead; // visited nodes array
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (params->initialCapacity) {
-        est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
+        est += sizeof(size_t) * params->initialCapacity + allocations_overhead; // element level
         est += sizeof(size_t) * params->initialCapacity +
-               sizeof(size_t); // Labels lookup hash table buckets.
-        est += sizeof(std::mutex) * params->initialCapacity + sizeof(size_t); // lock per vector
+               allocations_overhead; // Labels lookup hash table buckets.
+        est +=
+            sizeof(std::mutex) * params->initialCapacity + allocations_overhead; // lock per vector
     }
 
     // Explicit allocation calls - always allocate a header.
-    est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
+    est += sizeof(void *) * params->initialCapacity +
+           allocations_overhead; // link lists (for levels > 0)
 
     size_t size_links_level0 =
         sizeof(elementFlags) + sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
         size_links_level0 + params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
-    est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
+    est += params->initialCapacity * size_total_data_per_element + allocations_overhead;
 
     return est;
 }
@@ -97,19 +101,22 @@ size_t EstimateElementSize(const HNSWParams *params) {
                                          sizeof(labelType);
 
     size_t size_label_lookup_node;
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
     if (params->multi) {
         // For each new insertion (of a new label), we add a new node to the label_lookup_ map,
         // and a new element to the vector in the map. These two allocations both results in a new
         // allocation and therefore another VecSimAllocator::allocation_header_size.
         size_label_lookup_node =
             sizeof(vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>::value_type) +
-            sizeof(size_t) + sizeof(vecsim_stl::vector<idType>::value_type) + sizeof(size_t);
+            allocations_overhead + sizeof(vecsim_stl::vector<idType>::value_type) +
+            allocations_overhead;
     } else {
         // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
         // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
         // plus an internal pointer
         size_label_lookup_node = sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
-                                 sizeof(size_t) + sizeof(size_t);
+                                 allocations_overhead + allocations_overhead;
     }
 
     // 1 entry in visited nodes + 1 entry in element levels + (approximately) 1 bucket in labels
