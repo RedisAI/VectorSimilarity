@@ -107,7 +107,7 @@ size_t HNSWIndex_Multi<DataType, DistType>::indexLabelCount() const {
 template <bool Safe, typename Arg>
 constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
     if constexpr (Safe) {
-        return std::remove_reference_t<Arg>(arg);
+        return std::decay_t<Arg>(arg);
     } else {
         return arg;
     }
