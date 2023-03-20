@@ -203,8 +203,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                     idToRepairJobs.insert(
                         {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
                 }
-                if (repair_job_exists) {
-                    repair_job->appendAnotherAssociatedSwapJob(swap_job);
+                if (repair_job_exists && !(hnsw_index->isInRepair(node.first))) {
+                   repair_job->appendAnotherAssociatedSwapJob(swap_job);
                 } else {
                     repair_job = new (this->allocator)
                         HNSWRepairJob(this->allocator, node.first, node.second,
@@ -288,18 +288,16 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // Hold the entry point lock while we store the new element. If the new node's max level is
     // higher than the current one, hold the lock through the entire insertion to maintain
     // consistency of the entry point.
-    hnsw_index->lockEntryPointGuard();
     AddVectorCtx state = hnsw_index->storeNewElement(job->label);
-    hnsw_index->unlockIndexDataGuard();
     if (state.elementMaxLevel <= state.currMaxLevel) {
-        hnsw_index->unlockEntryPointGuard();
+        hnsw_index->unlockIndexDataGuard();
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
     this->mainIndexGuard.lock_shared();
     hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, &state);
     if (state.elementMaxLevel > state.currMaxLevel) {
-        hnsw_index->unlockEntryPointGuard();
+        hnsw_index->unlockIndexDataGuard();
     }
     this->mainIndexGuard.unlock_shared();
 
@@ -335,27 +333,33 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
         return;
     }
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
-    hnsw_index->repairNodeConnections(job->node_id, job->level);
-    for (auto &it : job->associatedSwapJobs) {
-        it->atomicDecreasePendingJobsNum();
+
+    // Remove this job pointer from the repair jobs lookup BEFORE it has been executed. Had we done
+    // it after executing the repair job, we might have see that there is a pending repair job for
+    // this node id upon deleting another neighbor of this node, and we may avoid creating another
+    // repair job even though *it has already been executed*.
+    {
+        std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
+        auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
+        assert(repair_jobs.size() > 0);
+        if (repair_jobs.size() == 1) {
+            // This was the only pending repair job for this id.
+            this->idToRepairJobs.erase(job->node_id);
+        } else {
+            // There are more pending jobs for the current id, remove just this job from the pending
+            // repair jobs list for this element id by replacing it with the last one (and trim the last job in the list).
+            auto it = std::find(repair_jobs.begin(), repair_jobs.end(), job);
+            assert(it != repair_jobs.end());
+            *it = repair_jobs.back();
+            repair_jobs.pop_back();
+        }
+        for (auto &it : job->associatedSwapJobs) {
+            it->atomicDecreasePendingJobsNum();
+        }
     }
 
-    // Remove this job pointer from the repair jobs lookup after it has been executed.
-    std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
-    auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
-    assert(repair_jobs.size() > 0);
-    if (repair_jobs.size() == 1) {
-        // This was the only pending repair job for this id.
-        this->idToRepairJobs.erase(job->node_id);
-    } else {
-        // There are more pending jobs for the current id, remove just this job from the pending
-        // repair jobs list for this element id by replacing it with the last one (and trim the last
-        // job in the list).
-        auto it = std::find(repair_jobs.begin(), repair_jobs.end(), job);
-        assert(it != repair_jobs.end());
-        *it = repair_jobs.back();
-        repair_jobs.pop_back();
-    }
+    hnsw_index->repairNodeConnections(job->node_id, job->level);
+
     this->mainIndexGuard.unlock_shared();
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }

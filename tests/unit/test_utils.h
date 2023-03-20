@@ -170,4 +170,6 @@ extern std::condition_variable queue_cond;
 
 void thread_main_loop(JobQueue &jobQ, bool &run_thread);
 
+void thread_pool_wait(JobQueue &jobQ, bool &run_thread);
+
 } // namespace tiered_index_mock

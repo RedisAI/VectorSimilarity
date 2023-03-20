@@ -48,8 +48,9 @@ using graphNodeType = pair<idType, ushort>; // represented as: (element_id, leve
 
 // Vectors flags (for marking a specific vector)
 typedef enum {
-    DELETE_MARK = 0x01, // vector is logically deleted, but still exists in the graph
-    IN_PROCESS = 0x02   // vector is being inserted into the graph
+    DELETE_MARK = 0x01,  // vector is logically deleted, but still exists in the graph
+    IN_PROCESS = 0x02,   // vector is being inserted into the graph
+    IN_REPAIR = 0x04
 } Flags;
 
 // The state of the index and the newly inserted vector to be passed into addVector API in case that
@@ -100,20 +101,17 @@ protected:
     // multithreaded scenario.
     size_t cur_element_count;
     vecsim_stl::vector<size_t> element_levels_;
+    idType entrypoint_node_;
+    size_t max_level_; // this is the top level of the entry point's element
 
     // Index data
     char *data_level0_memory_; // neighbors in level 0, element label, flags and data (vector)
     char **linkLists_;         // neighbors in level higher than 0
 
-    // Index global state - these should be guarded by the entry_point_guard_ lock in
-    // multithreaded scenario.
-    idType entrypoint_node_;
-    size_t max_level_; // this is the top level of the entry point's element
-
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visited_nodes_handler_pool;
-    mutable std::mutex entry_point_guard_;
+
     mutable std::mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
 
@@ -231,8 +229,6 @@ public:
     inline idType safeGetEntryPointCopy() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
-    inline void lockEntryPointGuard() const;
-    inline void unlockEntryPointGuard() const;
     inline void lockNodeLinks(idType node_id) const;
     inline void unlockNodeLinks(idType node_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
@@ -254,6 +250,7 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
     inline bool isInProcess(idType internalId) const;
+    inline bool isInRepair(idType internalId) const;
     inline void markInProcess(idType internalId);
     inline void unmarkInProcess(idType internalId);
     void increaseCapacity() override;
@@ -461,7 +458,6 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
     assert(internalId < this->cur_element_count);
     if (!isMarkedDeleted(internalId)) {
         if (internalId == entrypoint_node_) {
-            std::unique_lock<std::mutex> lock(entry_point_guard_);
             replaceEntryPoint();
         }
         elementFlags *flags = getElementFlags(internalId);
@@ -480,6 +476,12 @@ template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     elementFlags *flags = getElementFlags(internalId);
     return *flags & IN_PROCESS;
+}
+
+template <typename DataType, typename DistType>
+bool HNSWIndex<DataType, DistType>::isInRepair(idType internalId) const {
+    elementFlags *flags = getElementFlags(internalId);
+    return *flags & IN_REPAIR;
 }
 
 template <typename DataType, typename DistType>
@@ -502,16 +504,6 @@ void HNSWIndex<DataType, DistType>::lockIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
     index_data_guard_.unlock();
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::lockEntryPointGuard() const {
-    entry_point_guard_.lock();
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unlockEntryPointGuard() const {
-    entry_point_guard_.unlock();
 }
 
 template <typename DataType, typename DistType>
@@ -1376,6 +1368,8 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
+    elementFlags *flags = getElementFlags(node_id);
+    *flags |= IN_REPAIR;
     candidatesMaxHeap<DistType> neighbors_candidates(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to diffrentiate between the neighboes that will *not* be
@@ -1410,6 +1404,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // If there are not deleted neighbors at that point the repair job has already been made by
     // another parallel job, and there is no need to repair the node anymore.
     if (deleted_neighbors.empty()) {
+        *flags &= ~IN_REPAIR;
         return;
     }
 
@@ -1473,6 +1468,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // locks.
     mutuallyUpdateForRepairedNode(node_id, level, neighbors_to_remove, nodes_to_update,
                                   chosen_neighbors, max_M_cur);
+    *flags &= ~IN_REPAIR;
 }
 
 template <typename DataType, typename DistType>
@@ -1732,11 +1728,9 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     AddVectorCtx state{};
     if (auxiliaryCtx == nullptr) {
         this->lockIndexDataGuard();
-        this->lockEntryPointGuard();
         state = storeNewElement(label);
-        this->unlockIndexDataGuard();
         if (state.currMaxLevel >= state.elementMaxLevel) {
-            this->unlockEntryPointGuard();
+            this->unlockIndexDataGuard();
         }
     } else {
         state = *auxiliaryCtx;
@@ -1807,13 +1801,13 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     unmarkInProcess(new_element_id);
     if (auxiliaryCtx == nullptr && state.currMaxLevel < state.elementMaxLevel) {
         // No external auxiliaryCtx, so it's this function responsibility to release the lock.
-        this->unlockEntryPointGuard();
+        this->unlockIndexDataGuard();
     }
 }
 
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::safeGetEntryPointCopy() const {
-    std::unique_lock<std::mutex> lock(entry_point_guard_);
+    std::unique_lock<std::mutex> lock(index_data_guard_);
     return entrypoint_node_;
 }
 

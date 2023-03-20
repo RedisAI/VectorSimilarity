@@ -338,19 +338,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     }
     ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
-    // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        std::unique_lock<std::mutex> lock(queue_guard);
-        if (jobQ.empty()) {
-            run_thread = false;
-            queue_cond.notify_all();
-            break;
-        }
-    }
-    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool[i].join();
-    }
+    thread_pool_wait(jobQ, run_thread);
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->index->indexSize(), n);
     ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
@@ -362,8 +350,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
         GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
         ASSERT_EQ(tiered_index->index->getDistanceFrom(i, expected_vector), 0);
     }
-
-    thread_pool.clear();
 }
 
 TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
@@ -405,19 +391,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     }
     ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
-    // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        std::unique_lock<std::mutex> lock(queue_guard);
-        if (jobQ.empty()) {
-            run_thread = false;
-            queue_cond.notify_all();
-            break;
-        }
-    }
-    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool[i].join();
-    }
+    thread_pool_wait(jobQ, run_thread);
     EXPECT_EQ(tiered_index->index->indexSize(), n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n / per_label);
     EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
@@ -432,9 +406,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
                 0);
         }
     }
-
-    // Cleanup.
-    thread_pool.clear();
 }
 
 TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
@@ -718,19 +689,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
         }
 
-        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            std::unique_lock<std::mutex> lock(queue_guard);
-            if (jobQ.empty()) {
-                run_thread = false;
-                queue_cond.notify_all();
-                break;
-            }
-        }
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool[i].join();
-        }
+        thread_pool_wait(jobQ, run_thread);
 
         EXPECT_EQ(tiered_index->index->indexSize(), n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels)
@@ -739,9 +698,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
         EXPECT_EQ(successful_searches, n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(jobQ.size(), 0) << (isMulti ? "multi" : "single");
-
-        // Cleanup.
-        thread_pool.clear();
     }
 }
 
@@ -813,19 +769,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
             tiered_index->submitSingleJob(search_job);
         }
 
-        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            std::unique_lock<std::mutex> lock(queue_guard);
-            if (jobQ.empty()) {
-                run_thread = false;
-                queue_cond.notify_all();
-                break;
-            }
-        }
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool[i].join();
-        }
+        thread_pool_wait(jobQ, run_thread);
+
         EXPECT_EQ(successful_searches, n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->index->indexSize(), n) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels)
@@ -833,9 +778,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << (isMulti ? "multi" : "single");
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
         EXPECT_EQ(jobQ.size(), 0);
-
-        // Cleanup.
-        thread_pool.clear();
     }
 }
 
@@ -1341,11 +1283,11 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 16;
     size_t n = 1000;
-    for (auto is_multi : {false, true}) {
+    for (auto isMulti : {false, true}) {
         HNSWParams params = {.type = TypeParam::get_index_type(),
                              .dim = dim,
                              .metric = VecSimMetric_L2,
-                             .multi = is_multi,
+                             .multi = isMulti,
                              .blockSize = 100};
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
@@ -1361,7 +1303,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         // Set the created tiered index in the index external context.
         index_ctx.index_strong_ref.reset(tiered_index);
 
-        size_t per_label = is_multi ? 10 : 1;
+        size_t per_label = isMulti ? 10 : 1;
         size_t n_labels = n / per_label;
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -1394,24 +1336,86 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), 0);
 
-        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            std::unique_lock<std::mutex> lock(queue_guard);
-            if (jobQ.empty()) {
-                run_thread = false;
-                queue_cond.notify_all();
-                break;
-            }
-        }
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool[i].join();
-        }
+        thread_pool_wait(jobQ, run_thread);
+
         EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
         EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
         // Verify that we have no pending jobs.
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
         EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
-        thread_pool.clear();
+        EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->swapJobs.size());
+        for (auto job : tiered_index->swapJobs) {
+            EXPECT_EQ(job->pending_repair_jobs_counter, 0);
+        }
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 16;
+    size_t n = 1000;
+    for (auto isMulti : {false, true}) {
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = isMulti,
+                             .blockSize = 100};
+        auto jobQ = JobQueue();
+        auto index_ctx = IndexExtCtx();
+        size_t memory_ctx = 0;
+        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                           .jobQueueCtx = &index_ctx,
+                                           .submitCb = submit_callback,
+                                           .memoryCtx = &memory_ctx,
+                                           .UpdateMemCb = update_mem_callback};
+        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        // Set the created tiered index in the index external context.
+        index_ctx.index_strong_ref.reset(tiered_index);
+
+        size_t per_label = isMulti ? 10 : 1;
+        size_t n_labels = n / per_label;
+
+        // Launch the BG threads loop that takes jobs from the queue and executes them.
+        bool run_thread = true;
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        }
+
+        // Create and insert 10 vectors, then delete them right after.
+        std::srand(10); // create pseudo random generator with any arbitrary seed.
+        for (size_t i = 0; i < n/10; i++) {
+            for (size_t l = 0; l < 10; l++) {
+                TEST_DATA_T vector[dim];
+                for (size_t j = 0; j < dim; j++) {
+                    vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+                }
+                VecSimIndex_AddVector(tiered_index, vector, (i+l) % n_labels);
+            }
+            for (size_t l = 0; l < 10; l++) {
+                // Every vector associated with the label may appear in flat/HNSW index or in both if
+                // its just being ingested.
+                int num_deleted = tiered_index->deleteVector((i+l) % n_labels);
+                EXPECT_EQ(num_deleted, 1);
+            }
+        }
+        // Vectors are deleted from flat buffer in place (in HNSW they are only marked as deleted).
+        EXPECT_GE(tiered_index->flatBuffer->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), 0);
+
+        thread_pool_wait(jobQ, run_thread);
+
+        EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+        // Verify that we have no pending jobs.
+        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+        EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
+        EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->swapJobs.size());
+        for (auto job : tiered_index->swapJobs) {
+            EXPECT_EQ(job->pending_repair_jobs_counter, 0);
+        }
     }
 }
