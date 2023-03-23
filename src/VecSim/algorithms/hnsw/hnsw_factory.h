@@ -21,15 +21,13 @@ VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
 size_t EstimateInitialSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params);
 namespace tiered {
-VecSimIndex *NewIndex(const TieredHNSWParams *params,
-                            std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewIndex(const TieredHNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
-// The size estimation is the sum of the buffer (brute force) and main index (hnsw) sizes estimations,
-// plus the tiered index class size. 
-// Note it does not include the size of internal containers such as the job queue, as those depend on
-// the user implementation.
+// The size estimation is the sum of the buffer (brute force) and main index (hnsw) sizes
+// estimations, plus the tiered index class size. Note it does not include the size of internal
+// containers such as the job queue, as those depend on the user implementation.
 size_t EstimateInitialSize(const TieredHNSWParams *params);
-}; //namespace tiered
+}; // namespace tiered
 #ifdef BUILD_TESTS
 // Factory function to be used before loading a serialized index.
 // @params is only used for backward compatibility with V1. It won't be used if V2 and up is loaded.

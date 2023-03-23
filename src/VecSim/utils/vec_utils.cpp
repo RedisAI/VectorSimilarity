@@ -109,7 +109,6 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::INT64_STRING;
     }
     return NULL;
-
 }
 
 const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
@@ -122,7 +121,6 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
         return "L2";
     }
     return NULL;
-
 }
 
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {

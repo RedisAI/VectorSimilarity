@@ -38,12 +38,11 @@ struct IndexTypeExtended {
     typedef DistType dist_t;
 };
 
-using DataTypeSetExtended =
-    ::testing::Types<IndexTypeExtended<VecSimType_FLOAT32, false, float>, 
-                     IndexTypeExtended<VecSimType_FLOAT32, true, float>,
-                     IndexTypeExtended<VecSimType_FLOAT64, false, double>, 
-                     IndexTypeExtended<VecSimType_FLOAT64, true, double>>;  
-    
+using DataTypeSetExtended = ::testing::Types<IndexTypeExtended<VecSimType_FLOAT32, false, float>,
+                                             IndexTypeExtended<VecSimType_FLOAT32, true, float>,
+                                             IndexTypeExtended<VecSimType_FLOAT64, false, double>,
+                                             IndexTypeExtended<VecSimType_FLOAT64, true, double>>;
+
 template <typename data_t>
 static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
     for (size_t i = 0; i < dim; i++) {
@@ -67,7 +66,6 @@ inline VecSimParams CreateParams(const BFParams &bf_params) {
     VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
     return params;
 }
-
 
 inline VecSimParams CreateParams(const TieredHNSWParams &tiered_hnsw_params) {
     VecSimParams params{.algo = VecSimAlgo_TIEREDHNSW, .tieredHNSWParams = tiered_hnsw_params};

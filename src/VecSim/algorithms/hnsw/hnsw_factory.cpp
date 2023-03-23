@@ -136,8 +136,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
 }
 
 namespace tiered {
-VecSimIndex *NewIndex(const TieredHNSWParams *params,
-                            std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const TieredHNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     if (params->hnswParams.type == VecSimType_FLOAT32) {
         auto *hnsw_index =
             NewIndex_ChooseMultiOrSingle<float, float>(&params->hnswParams, allocator);
@@ -158,9 +157,7 @@ size_t EstimateInitialSize(const TieredHNSWParams *params) {
     // Add size estimation of VecSimTieredIndex sub indexes.
     size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params);
 
-    BFParams bf_params = {.type = hnsw_params.type,
-                        .multi =  hnsw_params.multi
-                        };
+    BFParams bf_params = {.type = hnsw_params.type, .multi = hnsw_params.multi};
     est += BruteForceFactory::EstimateInitialSize(&bf_params);
 
     // Size of the TieredHNSWIndex struct.
@@ -173,7 +170,7 @@ size_t EstimateInitialSize(const TieredHNSWParams *params) {
     return est;
 }
 
-}; //namespace tiered
+}; // namespace tiered
 #ifdef BUILD_TESTS
 
 template <typename DataType, typename DistType = DataType>
