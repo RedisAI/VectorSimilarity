@@ -191,11 +191,11 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    bool is_multi = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::get_index_label_type();
     HNSWParams params = {.type = TypeParam::get_index_type(),
                             .dim = dim,
                             .metric = VecSimMetric_L2,
-                            .multi = is_multi};
+                            .multi = isMulti};
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
@@ -213,7 +213,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     BFParams bf_params = {.type = TypeParam::get_index_type(),
                             .dim = dim,
                             .metric = VecSimMetric_L2,
-                            .multi = is_multi};
+                            .multi = isMulti};
 
     // Validate that memory upon creating the tiered index is as expected (no more than 2%
     // above te expected, since in different platforms there are some minor additional
@@ -256,7 +256,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     ASSERT_GE(expected_mem * 1.02, memory_ctx);
     ASSERT_LE(expected_mem, memory_ctx);
 
-    if (is_multi) {
+    if (isMulti) {
         // Add another vector under the same label (create another insert job)
         VecSimIndex_AddVector(tiered_index, vector, vec_label);
         ASSERT_EQ(tiered_index->indexSize(), 2);
@@ -433,7 +433,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
-    ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
@@ -500,7 +499,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
             tiered_index->addVector(vectors + i * dim * per_label + j * dim, i);
         }
     }
-    ASSERT_GE(tiered_index->labelToInsertJobs.size(), 0);
 
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
@@ -549,7 +547,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     };
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
-    size_t memory_ctx = 0;
+    size_t cur_memory_usage, memory_ctx = 0;
     TieredIndexParams tiered_params = {
         .jobQueue = &jobQ,
         .jobQueueCtx = &index_ctx,
@@ -608,8 +606,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize());
 
     // Search for k vectors with the flat index empty.
+    cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
     // Insert n/2 vectors to the flat index.
     for (size_t i = n / 2; i < n; i++) {
@@ -618,6 +618,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
 
+    cur_memory_usage = allocator->getAllocationSize();
     // Search for k vectors so all the vectors will be from the flat index.
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     // Search for k vectors so all the vectors will be from the main index.
@@ -625,6 +626,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     // Search for k so some of the results will be from the main and some from the flat index.
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
     // Add some overlapping vectors to the main and flat index.
     // adding directly to the underlying indexes to avoid jobs logic.
@@ -636,6 +639,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
         GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
     }
 
+    cur_memory_usage = allocator->getAllocationSize();
     // Search for k vectors so all the vectors will be from the main index.
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     // Search for k vectors so all the vectors will be from the flat index.
@@ -643,6 +647,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     // Search for k so some of the results will be from the main and some from the flat index.
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
     // More edge cases:
 
@@ -656,6 +662,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
 
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
     // Search for more vectors than the main index size, but less than the flat index size.
     for (size_t i = n / 2; i < n * 2 / 3; i++) {
         VecSimIndex_DeleteVector(hnsw_index, i);
@@ -663,10 +672,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
     ASSERT_EQ(hnsw_index->indexSize(), n / 2);
     k = n * 2 / 3;
+    cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_n, k, ver_res_n);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
     runTopKSearchTest(tiered_index, query_2mid, k, ver_res_2mid);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
     // Search for more vectors than the flat index size, but less than the main index size.
     for (size_t i = n / 2; i < n; i++) {
@@ -675,8 +687,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     ASSERT_EQ(flat_index->indexSize(), n / 6);
     ASSERT_EQ(hnsw_index->indexSize(), n / 2);
     k = n / 4;
+    cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
     // Search for vectors when the flat index is not empty but the main index is empty.
     for (size_t i = 0; i < n * 2 / 3; i++) {
@@ -686,8 +701,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     ASSERT_EQ(flat_index->indexSize(), n * 2 / 3);
     ASSERT_EQ(hnsw_index->indexSize(), 0);
     k = n / 3;
+    cur_memory_usage = allocator->getAllocationSize();
     runTopKSearchTest(tiered_index, query_0, k, ver_res_0);
     runTopKSearchTest(tiered_index, query_1mid, k, ver_res_1mid);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
 
     // // // // // // // // // // // //
     // Check behavior upon timeout.  //
@@ -742,7 +760,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         .dim = dim,
         .metric = VecSimMetric_L2,
         .multi = isMulti,
-        .efRuntime = 100,
+        .efRuntime = 20,
     };
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
@@ -777,68 +795,66 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         search_job->successful_searches++;
 
         delete search_job;
-        };
+    };
 
-        size_t per_label = isMulti ? 10 : 1;
-        size_t n_labels = n / per_label;
+    size_t per_label = isMulti ? 10 : 1;
+    size_t n_labels = n / per_label;
 
-        // Fill the job queue with insert and search jobs, while filling the flat index, before
-        // initializing the thread pool.
-        for (size_t i = 0; i < n; i++) {
-            // Insert a vector to the flat index and add a job to insert it to the main index.
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+    // Fill the job queue with insert and search jobs, while filling the flat index, before
+    // initializing the thread pool.
+    for (size_t i = 0; i < n; i++) {
+        // Insert a vector to the flat index and add a job to insert it to the main index.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
 
-            // Add a search job. Make sure the query element is between k and n - k.
-            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
-            GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
-            auto search_job =
-                new (allocator) SearchJobMock(allocator, parallel_knn_search, tiered_index, query,
-                                              k, n, dim, successful_searches);
-            tiered_index->submitSingleJob(search_job);
+        // Add a search job. Make sure the query element is between k and n - k.
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
+        auto search_job =
+            new (allocator) SearchJobMock(allocator, parallel_knn_search, tiered_index, query,
+                                            k, n, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    EXPECT_EQ(tiered_index->indexSize(), n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
+    for (auto &it : tiered_index->labelToInsertJobs) {
+        EXPECT_EQ(it.second.size(), per_label);
+    }
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexSize(), 0);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // All the vectors are already in the tiered index, so we expect to find the expected
+    // results from the get-go.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::unique_lock<std::mutex> lock(queue_guard);
+        if (jobQ.empty()) {
+            run_thread = false;
+            queue_cond.notify_all();
+            break;
         }
+    }
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool[i].join();
+    }
 
-        EXPECT_EQ(tiered_index->indexSize(), n) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->indexLabelCount(), n_labels) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels)
-            << (isMulti ? "multi" : "single");
-        for (auto &it : tiered_index->labelToInsertJobs) {
-            EXPECT_EQ(it.second.size(), per_label) << (isMulti ? "multi" : "single");
-        }
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->index->indexSize(), 0) << (isMulti ? "multi" : "single");
+    EXPECT_EQ(tiered_index->index->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(jobQ.size(), 0);
 
-        // Launch the BG threads loop that takes jobs from the queue and executes them.
-        // All the vectors are already in the tiered index, so we expect to find the expected
-        // results from the get-go.
-        bool run_thread = true;
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
-        }
-
-        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            std::unique_lock<std::mutex> lock(queue_guard);
-            if (jobQ.empty()) {
-                run_thread = false;
-                queue_cond.notify_all();
-                break;
-            }
-        }
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool[i].join();
-        }
-
-        EXPECT_EQ(tiered_index->index->indexSize(), n) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels)
-            << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(successful_searches, n) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(jobQ.size(), 0) << (isMulti ? "multi" : "single");
-
-        // Cleanup.
-        thread_pool.clear();
+    // Cleanup.
+    thread_pool.clear();
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
@@ -910,26 +926,25 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         tiered_index->submitSingleJob(search_job);
     }
 
-    // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        std::unique_lock<std::mutex> lock(queue_guard);
-        if (jobQ.empty()) {
-            run_thread = false;
-            queue_cond.notify_all();
-            break;
+        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::unique_lock<std::mutex> lock(queue_guard);
+            if (jobQ.empty()) {
+                run_thread = false;
+                queue_cond.notify_all();
+                break;
+            }
         }
-    }
-    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool[i].join();
-    }
-    EXPECT_EQ(successful_searches, n) << (isMulti ? "multi" : "single");
-    EXPECT_EQ(tiered_index->index->indexSize(), n) << (isMulti ? "multi" : "single");
-    EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels)
-        << (isMulti ? "multi" : "single");
-    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << (isMulti ? "multi" : "single");
-    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
-    EXPECT_EQ(jobQ.size(), 0);
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool[i].join();
+        }
+        EXPECT_EQ(successful_searches, n);
+        EXPECT_EQ(tiered_index->index->indexSize(), n);
+        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels);
+        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+        EXPECT_EQ(jobQ.size(), 0);
 
     // Cleanup.
     thread_pool.clear();
@@ -1296,4 +1311,267 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
     delete index_ctx;
     EXPECT_EQ(jobQ.size(), 1);
     EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
+    size_t dim = 4;
+
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &jobQ,
+        .jobQueueCtx = &index_ctx,
+        .submitCb = submit_callback,
+        .memoryCtx = &memory_ctx,
+        .UpdateMemCb = update_mem_callback,
+    };
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+
+    auto hnsw_index = tiered_index->index;
+    auto flat_index = tiered_index->flatBuffer;
+
+    TEST_DATA_T vec1[dim];
+    GenerateVector<TEST_DATA_T>(vec1, dim, 1);
+    TEST_DATA_T vec2[dim];
+    GenerateVector<TEST_DATA_T>(vec2, dim, 2);
+    TEST_DATA_T vec3[dim];
+    GenerateVector<TEST_DATA_T>(vec3, dim, 3);
+    TEST_DATA_T vec4[dim];
+    GenerateVector<TEST_DATA_T>(vec4, dim, 4);
+
+    // Insert vectors to the tiered index.
+    VecSimIndex_AddVector(hnsw_index, vec1, 1); // vec1 is inserted to HNSW only.
+    VecSimIndex_AddVector(flat_index, vec2, 2); // vec2 is inserted to flat only.
+
+    // vec3 is inserted to both HNSW and flat, simulating a vector that was inserted
+    // to HNSW and not yet removed from flat.
+    VecSimIndex_AddVector(hnsw_index, vec3, 3);
+    VecSimIndex_AddVector(flat_index, vec3, 3);
+
+    // vec4 is not inserted to any index, simulating a non-existing vector.
+
+    // copy memory context before querying the index.
+    size_t cur_memory_usage = allocator->getAllocationSize();
+
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4)));
+
+    ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
+    size_t dim = 4;
+
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = true,
+    };
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &jobQ,
+        .jobQueueCtx = &index_ctx,
+        .submitCb = submit_callback,
+        .memoryCtx = &memory_ctx,
+        .UpdateMemCb = update_mem_callback,
+    };
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+
+    auto hnsw_index = tiered_index->index;
+    auto flat_index = tiered_index->flatBuffer;
+
+    TEST_DATA_T cur_element = 1;
+
+    // vec1_* are inserted to HNSW only.
+    TEST_DATA_T vec1_1[dim];
+    GenerateVector<TEST_DATA_T>(vec1_1, dim, cur_element++);
+    TEST_DATA_T vec1_2[dim];
+    GenerateVector<TEST_DATA_T>(vec1_2, dim, cur_element++);
+    TEST_DATA_T vec1_3[dim];
+    GenerateVector<TEST_DATA_T>(vec1_3, dim, cur_element++);
+
+    // vec2_* are inserted to flat only.
+    TEST_DATA_T vec2_1[dim];
+    GenerateVector<TEST_DATA_T>(vec2_1, dim, cur_element++);
+    TEST_DATA_T vec2_2[dim];
+    GenerateVector<TEST_DATA_T>(vec2_2, dim, cur_element++);
+    TEST_DATA_T vec2_3[dim];
+    GenerateVector<TEST_DATA_T>(vec2_3, dim, cur_element++);
+
+    // vec3_* are inserted to both HNSW and flat (some to HNSW only, some to flat only)
+    TEST_DATA_T vec3_1[dim];
+    GenerateVector<TEST_DATA_T>(vec3_1, dim, cur_element++);
+    TEST_DATA_T vec3_2[dim];
+    GenerateVector<TEST_DATA_T>(vec3_2, dim, cur_element++);
+    TEST_DATA_T vec3_3[dim];
+    GenerateVector<TEST_DATA_T>(vec3_3, dim, cur_element++);
+
+    // vec4_* are inserted to both HNSW and flat with some overlap.
+    TEST_DATA_T vec4_1[dim];
+    GenerateVector<TEST_DATA_T>(vec4_1, dim, cur_element++);
+    TEST_DATA_T vec4_2[dim];
+    GenerateVector<TEST_DATA_T>(vec4_2, dim, cur_element++);
+    TEST_DATA_T vec4_3[dim];
+    GenerateVector<TEST_DATA_T>(vec4_3, dim, cur_element++);
+
+    // vec5 is not inserted to any index, simulating a non-existing vector.
+    TEST_DATA_T vec5[dim];
+    GenerateVector<TEST_DATA_T>(vec5, dim, cur_element++);
+
+    // Insert vectors to the tiered index.
+    VecSimIndex_AddVector(hnsw_index, vec1_1, 1);
+    VecSimIndex_AddVector(hnsw_index, vec1_2, 1);
+    VecSimIndex_AddVector(hnsw_index, vec1_3, 1);
+
+    VecSimIndex_AddVector(flat_index, vec2_1, 2);
+    VecSimIndex_AddVector(flat_index, vec2_2, 2);
+    VecSimIndex_AddVector(flat_index, vec2_3, 2);
+
+    VecSimIndex_AddVector(hnsw_index, vec3_1, 3);
+    VecSimIndex_AddVector(flat_index, vec3_2, 3);
+    VecSimIndex_AddVector(hnsw_index, vec3_3, 3);
+
+    VecSimIndex_AddVector(hnsw_index, vec4_1, 4);
+    VecSimIndex_AddVector(hnsw_index, vec4_2, 4);
+    VecSimIndex_AddVector(flat_index, vec4_2, 4);
+    VecSimIndex_AddVector(flat_index, vec4_3, 4);
+
+    // vec5 is not inserted to any index, simulating a non-existing vector.
+
+    // copy memory context before querying the index.
+    size_t cur_memory_usage = allocator->getAllocationSize();
+
+    // Distance from any vector to its label should be 0.
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 1, vec1_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 2, vec2_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 3, vec3_3), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_1), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_2), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4_3), 0);
+    // Distance from a non-existing label should be NaN.
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 5, vec5)));
+
+    ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
+}
+
+TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
+    size_t dim = 4;
+    size_t n = 1000;
+
+    size_t block_size = n / 100;
+    bool isMulti = TypeParam::get_index_label_type();
+
+    // Create TieredHNSW index instance with a mock queue.
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    size_t n_labels = isMulti ? n / 50 : n;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .blockSize = block_size,
+    };
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &jobQ,
+        .jobQueueCtx = &index_ctx,
+        .submitCb = submit_callback,
+        .memoryCtx = &memory_ctx,
+        .UpdateMemCb = update_mem_callback,
+    };
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+    std::atomic_int successful_searches(0);
+
+    auto parallel_adhoc_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        auto query = search_job->query;
+        size_t element = *(TEST_DATA_T *)query;
+        size_t label = element % search_job->n;
+        bool isMulti =
+            reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
+                ->index->isMultiValue();
+
+        ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
+
+        search_job->successful_searches++;
+        delete search_job;
+    };
+
+    // Insert vectors in parallel to search.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, i);
+        auto search_job =
+            new (allocator) SearchJobMock(allocator, parallel_adhoc_search, tiered_index, query,
+                                            1, n_labels, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::unique_lock<std::mutex> lock(queue_guard);
+        if (jobQ.empty()) {
+            run_thread = false;
+            queue_cond.notify_all();
+            break;
+        }
+    }
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool[i].join();
+    }
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(tiered_index->index->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(jobQ.size(), 0);
+
+    // Cleanup.
+    thread_pool.clear();
 }
