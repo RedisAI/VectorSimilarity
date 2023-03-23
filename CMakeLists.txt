@@ -1,8 +1,9 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.23.1 FATAL_ERROR)
 cmake_policy(SET CMP0077 NEW)
 
 set(CMAKE_CXX_STANDARD 20)
 option(VECSIM_BUILD_TESTS "Build tests" ON)
+option(USE_CUDA "Build Cuda code" ON)
 
 # option(VECSIM_STATIC "Build as static library" OFF)
 get_filename_component(root ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
@@ -21,6 +22,16 @@ endif()
 
 include(cmake/san.cmake)
 
+if(USE_CUDA)
+  include(cmake/fetch_rapids.cmake)
+  include(rapids-cmake)
+  include(rapids-cpm)
+  include(rapids-cuda)
+  include(rapids-export)
+  include(rapids-find)
+  rapids_cuda_init_architectures(VectorSimilarity)
+endif()
+
 # ----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
@@ -28,6 +39,23 @@ set(CMAKE_CXX_STANDARD 20)
 
 # Only do these if this is the main project, and not if it is included through add_subdirectory
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+if(USE_CUDA)
+  add_definitions(-DUSE_CUDA)
+  set(CMAKE_CUDA_ARCHITECTURES 80;75;70;61)
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+endif()
+
+if(USE_CUDA)
+  rapids_cpm_init()
+  set(RAPIDS_VERSION 23.02)
+  include(cmake/libraft.cmake)
+
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 -std=c++17")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -std=c++17")
+endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -fPIC ${CLANG_SAN_FLAGS} ${LLVM_CXX_FLAGS} ${COV_CXX_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LLVM_LD_FLAGS}")

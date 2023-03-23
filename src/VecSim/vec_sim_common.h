@@ -28,7 +28,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RaftFlat, VecSimAlgo_RaftPQ } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -114,11 +114,34 @@ typedef struct {
 } TieredHNSWParams;
 
 typedef struct {
+    VecSimType type;                     // Datatype to index.
+    size_t dim;                          // Vector's dimension.
+    VecSimMetric metric;                 // Distance metric to use in the index.
+    size_t n_lists;                      // Number of inverted lists.
+    bool adaptive_centers;               // If the lists centers should be updated for new vectors
+    bool conservative_memory_allocation; // Use as little GPU memory as possible
+    
+} RaftFlatParams;
+
+typedef struct {
+    VecSimType type;                     // Datatype to index.
+    size_t dim;                          // Vector's dimension.
+    VecSimMetric metric;                 // Distance metric to use in the index.
+    size_t n_lists;                      // Number of inverted lists.
+    size_t pq_bits;                      // If the lists centers should be updated for new vectors
+    size_t pq_dims;                      // If the lists centers should be updated for new vectors
+    //std::string codebook_kind;           // "PER_SUBSPACE" or "PER_CLUSTER"
+    bool conservative_memory_allocation; // Use as little GPU memory as possible
+} RaftPQParams;
+
+typedef struct {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
         TieredHNSWParams tieredHNSWParams;
+        RaftFlatParams raftFlatParams;
+        RaftPQParams raftPQParams;
     };
 } VecSimParams;
 
