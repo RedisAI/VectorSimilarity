@@ -1,5 +1,8 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/algorithms/hnsw/hnsw_multi.h"
+
 #include "test_utils.h"
 
 #include <thread>
@@ -30,7 +33,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         jobQueueCtx.index_strong_ref.reset(tiered_index);
 
@@ -84,6 +87,101 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     }
 }
 
+template <typename index_type_t>
+class HNSWTieredIndexTest2 : public ::testing::Test {
+public:
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
+
+protected:
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
+        return tiered_index->getHNSWIndex();
+    }
+};
+
+TYPED_TEST_SUITE(HNSWTieredIndexTest2, DataTypeSetExtended);
+
+TYPED_TEST(HNSWTieredIndexTest2, testSizeEstimation) {
+    size_t dim = 128;
+    size_t n = 1000;
+    size_t M = 32;
+    size_t bs = DEFAULT_BLOCK_SIZE;
+    bool isMulti = TypeParam::get_index_label_type();
+
+    HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = isMulti,
+                            .initialCapacity = n, 
+                            .M = M
+                            };
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                        .jobQueueCtx = &index_ctx,
+                                        .submitCb = submit_callback,
+                                        .memoryCtx = &memory_ctx,
+                                        .UpdateMemCb = update_mem_callback};
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = hnsw_params, .tieredParams = tiered_params};
+    VecSimParams params = CreateParams(tiered_hnsw_params);
+    auto *index = VecSimIndex_New(&params);
+
+    size_t initial_size_estimation = VecSimIndex_EstimateInitialSize(&params);
+
+    // labels_lookup hash table has additional memory, since STL implementation chooses "an
+    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+    // buckets are created)
+    auto hnsw_index = this->CastToHNSW(index);
+    if(isMulti == false) {
+        auto hnsw = reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
+        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+    } else { // if its a multi value index cast to HNSW_Multi
+        auto hnsw = reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
+        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+    }
+
+    ASSERT_EQ(memory_ctx, index->getAllocationSize());
+    ASSERT_EQ(initial_size_estimation, memory_ctx);
+
+    // Add vectors up to initial capacity (initial capacity < block size).
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        jobQ.front().job->Execute(jobQ.front().job);
+        jobQ.pop();
+    }
+
+    // Estimate memory delta for filling up the first block and adding another block.
+    size_t estimation = EstimateElementSize(tiered_hnsw_params) * (bs % n + bs);
+    
+    size_t memory_before = memory_ctx;
+
+    // Note we are adding vectors with ascending values. This causes the numbers of
+    // double connections, which are not taking into account in EstimateElementSize,
+    // to be zero
+    for (size_t i = 0; i < bs % n + bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + n, i + n);
+        jobQ.front().job->Execute(jobQ.front().job);
+        jobQ.pop();
+    }
+
+    size_t delta = memory_ctx - memory_before;
+
+    // Flat index should be empty, hence the index size includes only hnsw size.
+    ASSERT_EQ(index->indexSize(), hnsw_index->indexSize());
+    // We added 2 * bs vectors
+    ASSERT_EQ(index->indexSize(), 2 * bs);
+    // Which is the current maximum capacity.
+    ASSERT_EQ(index->indexSize(), index->indexCapacity());
+    ASSERT_EQ(index->indexSize(), hnsw_index->indexCapacity());
+
+    ASSERT_GE(estimation * 1.02, delta);
+    ASSERT_LE(estimation * 0.99, delta);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, addVector) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
@@ -104,7 +202,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         index_ctx.index_strong_ref.reset(tiered_index);
 
@@ -113,14 +211,6 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                               .metric = VecSimMetric_L2,
                               .multi = is_multi};
 
-        // Validate that memory upon creating the tiered index is as expected (no more than 2%
-        // above te expected, since in different platforms there are some minor additional
-        // allocations).
-        size_t expected_mem = HNSWFactory::EstimateInitialSize(&params) +
-                              BruteForceFactory::EstimateInitialSize(&bf_params) +
-                              sizeof(*tiered_index);
-        ASSERT_LE(expected_mem, memory_ctx);
-        ASSERT_GE(expected_mem * 1.02, memory_ctx);
 
         // Create a vector and add it to the tiered index.
         labelType vec_label = 1;
@@ -191,7 +281,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         index_ctx->index_strong_ref.reset(tiered_index);
         EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
@@ -271,7 +361,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         index_ctx.index_strong_ref.reset(tiered_index);
 
         // Create a vector and add it to the tiered index.
@@ -323,7 +413,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
                                        .UpdateMemCb = update_mem_callback};
     TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
     index_ctx.index_strong_ref.reset(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -385,7 +475,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
                                        .UpdateMemCb = update_mem_callback};
     TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
     index_ctx.index_strong_ref.reset(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -462,7 +552,7 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
     };
     TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
     EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -659,7 +749,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         };
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         index_ctx.index_strong_ref.reset(tiered_index);
         EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -775,7 +865,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         };
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         index_ctx.index_strong_ref.reset(tiered_index);
         EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -862,7 +952,7 @@ TYPED_TEST(HNSWTieredIndexTest, MergeMulti) {
     };
     TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
     EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -911,7 +1001,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
 
         // Delete a non existing label.
         ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 0);
@@ -970,7 +1060,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWMulti) {
                                        .UpdateMemCb = update_mem_callback};
     TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
 
     // Add two vectors and delete one, expect that at least one repair job will be created.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
@@ -1036,7 +1126,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWMultiLevels) {
                                        .UpdateMemCb = update_mem_callback};
     TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
 
     // Test that repair jobs are created for multiple levels.
     size_t num_elements_with_multiple_levels = 0;
@@ -1094,7 +1184,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
 
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector(tiered_index->index, dim, i, i);
@@ -1163,7 +1253,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
                                            .UpdateMemCb = update_mem_callback};
         TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         index_ctx->index_strong_ref.reset(tiered_index);
         EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
@@ -1184,7 +1274,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
         tiered_params.jobQueueCtx = index_ctx = new IndexExtCtx();
         tiered_hnsw_params.tieredParams = tiered_params;
         tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+            HNSWFactory::tiered::NewIndex(&tiered_hnsw_params, allocator));
         index_ctx->index_strong_ref.reset(tiered_index);
         EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 

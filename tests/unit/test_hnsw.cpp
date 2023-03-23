@@ -1595,9 +1595,12 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // Estimate the memory delta of adding a full new block.
     estimation = EstimateElementSize(params) * (bs % n + bs);
 
+    // Note we are adding vectors with ascending values. This causes the numbers of
+    // double connections, which are not taking into account in EstimateElementSize,
+    // to be zero
     actual = 0;
-    for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
+    for (size_t i = 0; i < bs + bs % n; i++) {
+        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i + n);
     }
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);

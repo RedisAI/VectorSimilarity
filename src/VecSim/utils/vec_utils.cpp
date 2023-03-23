@@ -19,6 +19,7 @@ typedef int (*__compar_fn_t)(const void *, const void *);
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
 const char *VecSimCommonStrings::HNSW_STRING = "HNSW";
+const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
 const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
@@ -91,11 +92,11 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::FLAT_STRING;
     case VecSimAlgo_HNSWLIB:
         return VecSimCommonStrings::HNSW_STRING;
-    default:
-        return NULL;
+    case VecSimAlgo_TIEREDHNSW:
+        return VecSimCommonStrings::TIERED_STRING;
     }
+    return NULL;
 }
-
 const char *VecSimType_ToString(VecSimType vecsimType) {
     switch (vecsimType) {
     case VecSimType_FLOAT32:
@@ -106,9 +107,9 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::INT32_STRING;
     case VecSimType_INT64:
         return VecSimCommonStrings::INT64_STRING;
-    default:
-        return NULL;
     }
+    return NULL;
+
 }
 
 const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
@@ -119,9 +120,9 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
         return "IP";
     case VecSimMetric_L2:
         return "L2";
-    default:
-        return NULL;
     }
+    return NULL;
+
 }
 
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
@@ -138,9 +139,8 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
         return "HYBRID_BATCHES_TO_ADHOC_BF";
     case RANGE_QUERY:
         return "RANGE_QUERY";
-    default:
-        return NULL;
     }
+    return NULL;
 }
 
 size_t VecSimType_sizeof(VecSimType type) {

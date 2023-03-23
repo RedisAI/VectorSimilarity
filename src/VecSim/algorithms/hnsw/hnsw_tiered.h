@@ -134,8 +134,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
     delete insert_job;
+    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
