@@ -39,6 +39,9 @@ private:
         return keys;
     };
 
+    template <bool Safe>
+    inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
+
 public:
     HNSWIndex_Multi(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
                     size_t random_seed = 100, size_t initial_pool_size = 1)
@@ -81,10 +84,15 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing) const override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override {
+        return getDistanceFromInternal<false>(label, vector_data);
+    }
+    double safeGetDistanceFrom(labelType label, const void *vector_data) const override {
+        return getDistanceFromInternal<true>(label, vector_data);
+    }
 };
 
 /**
@@ -96,29 +104,51 @@ size_t HNSWIndex_Multi<DataType, DistType>::indexLabelCount() const {
     return label_lookup_.size();
 }
 
-template <typename DataType, typename DistType>
-double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
-                                                            const void *vector_data) const {
+/**
+ * helper functions
+ */
 
-    auto IDs = this->label_lookup_.find(label);
-    if (IDs == this->label_lookup_.end()) {
-        return INVALID_SCORE;
+// Depending on the value of the Safe template parameter, this function will either return a copy
+// of the argument or a reference to it.
+template <bool Safe, typename Arg>
+constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
+    if constexpr (Safe) {
+        return std::decay_t<Arg>(arg);
+    } else {
+        return (arg);
+    }
+}
+
+template <typename DataType, typename DistType>
+template <bool Safe>
+double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType label,
+                                                                    const void *vector_data) const {
+    DistType dist = INVALID_SCORE;
+
+    // Check if the label exists in the index, return invalid score if not.
+    if (Safe)
+        this->index_data_guard_.lock_shared();
+    auto it = this->label_lookup_.find(label);
+    if (it == this->label_lookup_.end()) {
+        if (Safe)
+            this->index_data_guard_.unlock_shared();
+        return dist;
     }
 
-    DistType dist = std::numeric_limits<DistType>::infinity();
-    for (auto id : IDs->second) {
-        if (!this->isMarkedDeleted(id)) {
-            DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
-            dist = (dist < d) ? dist : d;
-        }
+    // Get the vector of ids associated with the label.
+    // Get a copy if `Safe` is true, otherwise get a reference.
+    decltype(auto) IDs = getCopyOrReference<Safe>(it->second);
+    if (Safe)
+        this->index_data_guard_.unlock_shared();
+
+    // Iterate over the ids and find the minimum distance.
+    for (auto id : IDs) {
+        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+        dist = std::fmin(dist, d);
     }
 
     return dist;
 }
-
-/**
- * helper functions
- */
 
 template <typename DataType, typename DistType>
 void HNSWIndex_Multi<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
@@ -188,7 +218,7 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
-    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
+    std::shared_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
@@ -205,7 +235,7 @@ std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType la
 template <typename DataType, typename DistType>
 inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(
     labelType label, bool also_done_processing) const {
-    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto search_res = label_lookup_.find(label);
     bool exists = search_res != label_lookup_.end();
     // If we want to make sure that the vector(s) stored under the label were already indexed,

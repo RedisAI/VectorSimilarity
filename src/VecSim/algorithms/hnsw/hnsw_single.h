@@ -25,6 +25,9 @@ private:
     inline void resizeLabelLookup(size_t new_max_elements) override;
     inline vecsim_stl::set<labelType> getLabelsSet() const override;
 
+    template <bool Safe>
+    inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
+
 public:
     HNSWIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
                      size_t random_seed = 100, size_t initial_pool_size = 1)
@@ -66,10 +69,16 @@ public:
 
     int deleteVector(labelType label) override;
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing = false) const override;
+
+    double getDistanceFrom(labelType label, const void *vector_data) const override {
+        return getDistanceFromInternal<false>(label, vector_data);
+    }
+    double safeGetDistanceFrom(labelType label, const void *vector_data) const override {
+        return getDistanceFromInternal<true>(label, vector_data);
+    }
 };
 
 /**
@@ -81,15 +90,9 @@ size_t HNSWIndex_Single<DataType, DistType>::indexLabelCount() const {
     return label_lookup_.size();
 }
 
-template <typename DataType, typename DistType>
-double HNSWIndex_Single<DataType, DistType>::getDistanceFrom(labelType label,
-                                                             const void *vector_data) const {
-    auto id = label_lookup_.find(label);
-    if (id == label_lookup_.end() || this->isMarkedDeleted(id->second)) {
-        return INVALID_SCORE;
-    }
-    return this->dist_func(vector_data, this->getDataByInternalId(id->second), this->dim);
-}
+/**
+ * helper functions
+ */
 
 template <typename DataType, typename DistType>
 inline vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
@@ -100,9 +103,26 @@ inline vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabel
     return keys;
 };
 
-/**
- * helper functions
- */
+template <typename DataType, typename DistType>
+template <bool Safe>
+double
+HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
+                                                              const void *vector_data) const {
+    if (Safe)
+        this->index_data_guard_.lock_shared();
+
+    auto it = label_lookup_.find(label);
+    if (it == label_lookup_.end()) {
+        if (Safe)
+            this->index_data_guard_.unlock_shared();
+        return INVALID_SCORE;
+    }
+    idType id = it->second;
+    if (Safe)
+        this->index_data_guard_.unlock_shared();
+
+    return this->dist_func(vector_data, this->getDataByInternalId(id), this->dim);
+}
 
 template <typename DataType, typename DistType>
 void HNSWIndex_Single<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
@@ -172,7 +192,7 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
-    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
@@ -186,7 +206,7 @@ std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType l
 template <typename DataType, typename DistType>
 inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
     labelType label, bool also_done_processing) const {
-    std::unique_lock<std::mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto it = label_lookup_.find(label);
     bool exists = it != label_lookup_.end();
     // If we want to make sure that the vector stored under the label was already indexed,
