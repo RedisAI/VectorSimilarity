@@ -48,9 +48,8 @@ using graphNodeType = pair<idType, ushort>; // represented as: (element_id, leve
 
 // Vectors flags (for marking a specific vector)
 typedef enum {
-    DELETE_MARK = 0x01,  // vector is logically deleted, but still exists in the graph
-    IN_PROCESS = 0x02,   // vector is being inserted into the graph
-    IN_REPAIR = 0x04
+    DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
+    IN_PROCESS = 0x2,  // element is being inserted into the graph
 } Flags;
 
 // The state of the index and the newly inserted vector to be passed into addVector API in case that
@@ -250,7 +249,6 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
     inline bool isInProcess(idType internalId) const;
-    inline bool isInRepair(idType internalId) const;
     inline void markInProcess(idType internalId);
     inline void unmarkInProcess(idType internalId);
     void increaseCapacity() override;
@@ -476,12 +474,6 @@ template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     elementFlags *flags = getElementFlags(internalId);
     return *flags & IN_PROCESS;
-}
-
-template <typename DataType, typename DistType>
-bool HNSWIndex<DataType, DistType>::isInRepair(idType internalId) const {
-    elementFlags *flags = getElementFlags(internalId);
-    return *flags & IN_REPAIR;
 }
 
 template <typename DataType, typename DistType>
@@ -1052,14 +1044,25 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
-        idType *top_level_list = getNodeNeighborsAtLevel(old_entry, max_level_);
-        auto neighbors_count = getNodeNeighborsCount(top_level_list);
-        // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
-        // if exists.
-        for (size_t i = 0; i < neighbors_count; i++) {
-            if (!isMarkedDeleted(top_level_list[i])) {
-                entrypoint_node_ = top_level_list[i];
-                return;
+        idType candidate_in_process = INVALID_ID;
+        {
+            // Go over the entry point's neighbors at the top level.
+            std::unique_lock<std::mutex> lock(this->element_neighbors_locks_[entrypoint_node_]);
+            idType *top_level_list = getNodeNeighborsAtLevel(old_entry, max_level_);
+            auto neighbors_count = getNodeNeighborsCount(top_level_list);
+            // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
+            // if exists.
+            for (size_t i = 0; i < neighbors_count; i++) {
+                if (!isMarkedDeleted(top_level_list[i])) {
+                    if (!isInProcess(top_level_list[i])) {
+                        entrypoint_node_ = top_level_list[i];
+                        return;
+                    } else {
+                        // Store this candidate which is currently being inserted into the graph in
+                        // case we won't find other candidate at the top level.
+                        candidate_in_process = top_level_list[i];
+                    }
+                }
             }
         }
         // If there is no neighbors in the current level, check for any vector at
@@ -1067,9 +1070,24 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         for (idType cur_id = 0; cur_id < cur_element_count; cur_id++) {
             if (element_levels_[cur_id] == max_level_ && cur_id != old_entry &&
                 !isMarkedDeleted(cur_id)) {
-                entrypoint_node_ = cur_id;
-                return;
+                // Found a non element in the current max level.
+                if (!isInProcess(cur_id)) {
+                    entrypoint_node_ = cur_id;
+                    return;
+                } else if (candidate_in_process == INVALID_ID) {
+                    // This element is still in process, and there hasn't been another candidate in
+                    // process that has found in this level.
+                    candidate_in_process = cur_id;
+                }
             }
+        }
+        // If we only found candidates which are in process at this level, do busy wait until they
+        // are done being processed (this should happen in very rare cases...)
+        if (candidate_in_process != INVALID_ID) {
+            while (isInProcess(candidate_in_process))
+                ;
+            entrypoint_node_ = candidate_in_process;
+            return;
         }
         // If we didn't find any vector at the top level, decrease the max_level_ and try again,
         // until we find a new entry point, or the index is empty.
@@ -1368,8 +1386,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
-    elementFlags *flags = getElementFlags(node_id);
-    *flags |= IN_REPAIR;
     candidatesMaxHeap<DistType> neighbors_candidates(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to diffrentiate between the neighboes that will *not* be
@@ -1404,7 +1420,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // If there are not deleted neighbors at that point the repair job has already been made by
     // another parallel job, and there is no need to repair the node anymore.
     if (deleted_neighbors.empty()) {
-        *flags &= ~IN_REPAIR;
         return;
     }
 
@@ -1468,7 +1483,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // locks.
     mutuallyUpdateForRepairedNode(node_id, level, neighbors_to_remove, nodes_to_update,
                                   chosen_neighbors, max_M_cur);
-    *flags &= ~IN_REPAIR;
 }
 
 template <typename DataType, typename DistType>
@@ -1737,7 +1751,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     }
     // Deconstruct the state variables from the auxiliaryCtx.
     auto [new_element_id, element_max_level, curr_entry_point, curr_max_level] = state;
-
     // Initialisation of the vector data and its label.
     setExternalLabel(new_element_id, label);
     DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'

@@ -29,7 +29,10 @@ struct HNSWSwapJob : public VecsimBaseObject {
     HNSWSwapJob(std::shared_ptr<VecSimAllocator> allocator, idType deletedId)
         : VecsimBaseObject(allocator), deleted_id(deletedId), pending_repair_jobs_counter(0) {}
     void setRepairJobsNum(long num_repair_jobs) { pending_repair_jobs_counter = num_repair_jobs; }
-    void atomicDecreasePendingJobsNum() { pending_repair_jobs_counter--; }
+    void atomicDecreasePendingJobsNum() {
+        pending_repair_jobs_counter--;
+        assert(pending_repair_jobs_counter >= 0);
+    }
 };
 
 /**
@@ -65,6 +68,8 @@ private:
     vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
 
+    // Protect the both idToRepairJobs lookup and the pending_repair_jobs_counter for the
+    // associated swap jobs.
     std::mutex idToRepairJobsGuard;
 
     void executeInsertJob(HNSWInsertJob *job);
@@ -203,8 +208,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                     idToRepairJobs.insert(
                         {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
                 }
-                if (repair_job_exists && !(hnsw_index->isInRepair(node.first))) {
-                   repair_job->appendAnotherAssociatedSwapJob(swap_job);
+                if (repair_job_exists) {
+                    repair_job->appendAnotherAssociatedSwapJob(swap_job);
                 } else {
                     repair_job = new (this->allocator)
                         HNSWRepairJob(this->allocator, node.first, node.second,
@@ -213,8 +218,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                     idToRepairJobs.at(node.first).push_back(repair_job);
                 }
             }
+            swap_job->setRepairJobsNum(incoming_edges.size());
         }
-        swap_job->setRepairJobsNum(incoming_edges.size());
         this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
                                 this->jobQueueCtx);
         swapJobs.push_back(swap_job);
@@ -261,11 +266,15 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.unlock_shared();
         return;
     }
-    // Acquire the index data lock, so we know what is the exact index size at this time.
+    // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
+    // the main r/w lock before to avoid deadlocks.
+    AddVectorCtx state = {0};
+    this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
+        this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
@@ -274,27 +283,23 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
             hnsw_index->increaseCapacity();
         }
+        state = hnsw_index->storeNewElement(job->label);
+        if (state.elementMaxLevel <= state.currMaxLevel) {
+            hnsw_index->unlockIndexDataGuard();
+        }
         this->mainIndexGuard.unlock();
-    }
-
-    if (job->id == INVALID_JOB_ID) {
-        // Job has been invalidated in the meantime (by overwriting this label) while we released
-        // the flat index guard.
-        this->flatIndexGuard.unlock_shared();
-        hnsw_index->unlockIndexDataGuard();
-        return;
-    }
-
-    // Hold the entry point lock while we store the new element. If the new node's max level is
-    // higher than the current one, hold the lock through the entire insertion to maintain
-    // consistency of the entry point.
-    AddVectorCtx state = hnsw_index->storeNewElement(job->label);
-    if (state.elementMaxLevel <= state.currMaxLevel) {
-        hnsw_index->unlockIndexDataGuard();
+        this->mainIndexGuard.lock_shared();
+    } else {
+        // Hold the index data lock while we store the new element. If the new node's max level is
+        // higher than the current one, hold the lock through the entire insertion to ensure that
+        // graph scans will not occur, as they will try access the entry point's neighbors.
+        state = hnsw_index->storeNewElement(job->label);
+        if (state.elementMaxLevel <= state.currMaxLevel) {
+            hnsw_index->unlockIndexDataGuard();
+        }
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-    this->mainIndexGuard.lock_shared();
     hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, &state);
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
@@ -347,7 +352,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
             this->idToRepairJobs.erase(job->node_id);
         } else {
             // There are more pending jobs for the current id, remove just this job from the pending
-            // repair jobs list for this element id by replacing it with the last one (and trim the last job in the list).
+            // repair jobs list for this element id by replacing it with the last one (and trim the
+            // last job in the list).
             auto it = std::find(repair_jobs.begin(), repair_jobs.end(), job);
             assert(it != repair_jobs.end());
             *it = repair_jobs.back();

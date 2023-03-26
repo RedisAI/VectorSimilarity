@@ -1345,7 +1345,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
         EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->swapJobs.size());
         for (auto job : tiered_index->swapJobs) {
-            EXPECT_EQ(job->pending_repair_jobs_counter, 0);
+            EXPECT_EQ(job->pending_repair_jobs_counter.load(), 0);
         }
     }
 }
@@ -1386,20 +1386,22 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
         }
 
         // Create and insert 10 vectors, then delete them right after.
+        size_t batch_size = 10;
         std::srand(10); // create pseudo random generator with any arbitrary seed.
-        for (size_t i = 0; i < n/10; i++) {
-            for (size_t l = 0; l < 10; l++) {
+        for (size_t i = 0; i < n / batch_size; i++) {
+            for (size_t l = 0; l < batch_size; l++) {
                 TEST_DATA_T vector[dim];
                 for (size_t j = 0; j < dim; j++) {
                     vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
                 }
-                VecSimIndex_AddVector(tiered_index, vector, (i+l) % n_labels);
+                tiered_index->addVector(vector, (i * batch_size + l) % n_labels);
             }
-            for (size_t l = 0; l < 10; l++) {
-                // Every vector associated with the label may appear in flat/HNSW index or in both if
-                // its just being ingested.
-                int num_deleted = tiered_index->deleteVector((i+l) % n_labels);
-                EXPECT_EQ(num_deleted, 1);
+            for (size_t l = 0; l < batch_size; l++) {
+                // Every vector associated with the label may appear in flat/HNSW index or in both
+                // if its just being ingested.
+                int num_deleted = tiered_index->deleteVector((i * batch_size + l) % n_labels);
+                EXPECT_GE(num_deleted, 1);
+                EXPECT_LE(num_deleted, 2);
             }
         }
         // Vectors are deleted from flat buffer in place (in HNSW they are only marked as deleted).
@@ -1415,7 +1417,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
         EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
         EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->swapJobs.size());
         for (auto job : tiered_index->swapJobs) {
-            EXPECT_EQ(job->pending_repair_jobs_counter, 0);
+            EXPECT_EQ(job->pending_repair_jobs_counter.load(), 0);
         }
     }
 }
