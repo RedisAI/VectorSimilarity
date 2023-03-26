@@ -179,4 +179,17 @@ public:
     inline static void setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
         VecSimIndexInterface::timeoutCallback = callback;
     }
+
+    static logCallbackFunction logCallback;
+    static void *logCallbackCtx;
+    inline static void setLogCallbackFunction(void *ctx, logCallbackFunction callback) {
+        VecSimIndexInterface::logCallback = callback;
+        VecSimIndexInterface::logCallbackCtx = ctx;
+    }
+
+    void log(const char *fmt, ...) const {
+        if (logCallback) {
+            logCallback(logCallbackCtx, fmt);
+        }
+    }
 };

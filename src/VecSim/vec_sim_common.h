@@ -243,6 +243,14 @@ typedef struct {
  */
 typedef int (*timeoutCallbackFunction)(void *ctx);
 
+/**
+ * @brief A struct to pass 3rd party logging function to Vecsimlib.
+ * @param ctx some generic context to pass to the function
+ * @param fmt format string
+ * @param ... variadic arguments
+ */
+typedef void (*logCallbackFunction)(void *ctx, const char *fmt, ...);
+
 typedef enum {
     VecSim_QueryResult_OK = VecSim_OK,
     VecSim_QueryResult_TimedOut,

@@ -5,5 +5,15 @@
  */
 
 #include "VecSim/vec_sim_interface.h"
+#include <cstdarg>
+
+void Vecsim_Log(void *ctx, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+}
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
+logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
+void *VecSimIndexInterface::logCallbackCtx = nullptr;

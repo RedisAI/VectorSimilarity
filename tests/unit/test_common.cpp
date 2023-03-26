@@ -20,6 +20,7 @@
 #include <limits>
 #include <cmath>
 #include <random>
+#include <cstdarg>
 
 template <typename index_type_t>
 class CommonIndexTest : public ::testing::Test {};
@@ -414,4 +415,38 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
                              "Cannot load index: bad algorithm type");
+}
+
+void test_log_impl(void *ctx, const char *fmt, ...) {
+    std::vector<std::string> *log = (std::vector<std::string> *)ctx;
+    char *buf = NULL;
+    int len = 0;
+    va_list args;
+    va_start(args, fmt);
+    len = vsnprintf(buf, len, fmt, args);
+    va_end(args);
+    buf = new char[len + 1];
+    va_start(args, fmt);
+    vsnprintf(buf, len + 1, fmt, args);
+    va_end(args);
+    log->push_back(std::string(buf));
+    delete[] buf;
+}
+
+TEST(CommonAPITest, testlog) {
+    std::vector<std::string> log;
+
+    BFParams params = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
+
+    VecSimIndex::setLogCallbackFunction(&log, test_log_impl);
+
+    index->log("test log message c++ api");
+    VecSim_Log(index, "test log message c api");
+
+    ASSERT_EQ(log.size(), 2);
+    ASSERT_EQ(log[0], "test log message c++ api");
+    ASSERT_EQ(log[1], "test log message c api");
+
+    VecSimIndex_Free(index);
 }
