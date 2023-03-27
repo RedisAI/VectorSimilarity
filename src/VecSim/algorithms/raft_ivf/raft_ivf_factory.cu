@@ -13,27 +13,25 @@ VecSimIndex *NewIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAlloca
 }
 size_t EstimateInitialSize(const RaftFlatParams *params)
 {
-
+    return sizeof(RaftFlatIndex<float, float>);
 }
 size_t EstimateElementSize(const RaftFlatParams *params)
 {
-
+    return 0;
 }
 }
 
 namespace RaftPQFactory {
-
-    /*VecSimIndex *NewIndex(const RaftPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    {
-        std::cout << "Test Raft\n";
-        return new (allocator) RaftPQIndex(params, allocator);
-    }*/
-    size_t EstimateInitialSize(const RaftPQParams *params)
-    {
-    
-    }
-    size_t EstimateElementSize(const RaftPQParams *params)
-    {
-    
-    }
+VecSimIndex *NewIndex(const RaftPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
+{
+    return new (allocator) RaftPQIndex<float, float>(params, allocator);
+}
+size_t EstimateInitialSize(const RaftPQParams *params)
+{
+    return sizeof(RaftPQIndex<float, float>);
+}
+size_t EstimateElementSize(const RaftPQParams *params)
+{
+    return 0;
+}
 }

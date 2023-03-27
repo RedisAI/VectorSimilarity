@@ -9,7 +9,7 @@
 #include "raft/neighbors/ivf_flat.cuh"
 #include "raft/neighbors/ivf_flat_types.hpp"
 
-auto GetRaftDistanceType(VecSimMetric vsm){
+raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm){
     raft::distance::DistanceType result;
     switch (vsm) {
         case VecSimMetric::VecSimMetric_L2:
@@ -87,6 +87,7 @@ protected:
     raft::device_resources res_;
     std::unique_ptr<raft::neighbors::ivf_flat::index<DataType, std::int64_t>> flat_index_;
     idType counts_;
+    raft::neighbors::ivf_flat::index_params build_params_;
 };
 
 template <typename DataType, typename DistType>
@@ -95,32 +96,35 @@ RaftFlatIndex<DataType, DistType>::RaftFlatIndex(const RaftFlatParams *params,
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
       counts_(0)
 {
-    auto build_params = raft::neighbors::ivf_flat::index_params{};
-    build_params.metric = GetRaftDistanceType(params->metric);
-    build_params.n_lists = params->n_lists;
-    build_params.kmeans_n_iters = params->kmeans_n_iters;
-    build_params.kmeans_trainset_fraction = params->kmeans_trainset_fraction;
-    build_params.adaptive_centers = params->adaptive_centers;
-    build_params.add_data_on_build = false;
-    flat_index_ = std::make_unique<raft::neighbors::ivf_flat::index<DataType, int64_t>>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(res_, build_params,
-                                                                           nullptr, 0, this->dim));
+    //auto build_params = raft::neighbors::ivf_flat::index_params{};
+    build_params_.metric = GetRaftDistanceType(params->metric);
+    build_params_.n_lists = params->n_lists;
+    build_params_.kmeans_n_iters = params->kmeans_n_iters;
+    build_params_.kmeans_trainset_fraction = params->kmeans_trainset_fraction;
+    build_params_.adaptive_centers = params->adaptive_centers;
+    build_params_.add_data_on_build = true;
+    // TODO: Can't build flat_index here because there is no initial data;
+    //flat_index_ = std::make_unique<raft::neighbors::ivf_flat::index<DataType, std::int64_t>>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(res_, build_params,
+    //                                                                       nullptr, 0, this->dim));
 }
 
 template <typename DataType, typename DistType>
 int RaftFlatIndex<DataType, DistType>::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
 {
     assert(label < static_cast<labelType>(std::numeric_limits<std::int64_t>::max()));
-    if (!flat_index_) {
-        return -1;
-    }
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
     auto label_converted = static_cast<std::int64_t>(label);
     auto label_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(res_, 1);
     raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
     raft::copy(label_gpu.data_handle(), &label_converted, 1, res_.get_stream());
 
-    raft::neighbors::ivf_flat::extend(res_, flat_index_.get(), raft::make_const_mdspan(vector_data_gpu.view()),
-        std::make_optional(raft::make_const_mdspan(label_gpu.view())));
+    if (!flat_index_) {
+        flat_index_ = std::make_unique<raft::neighbors::ivf_flat::index<DataType, std::int64_t>>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
+            res_, raft::make_const_mdspan(vector_data_gpu.view()), build_params_));
+    } else {
+        raft::neighbors::ivf_flat::extend(res_, flat_index_.get(), raft::make_const_mdspan(vector_data_gpu.view()),
+            std::make_optional(raft::make_const_mdspan(label_gpu.view())));
+    }
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
     this->counts_ += 1;

@@ -36,6 +36,9 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMet
 // Vectors flags (for marking a specific vector)
 typedef enum { DELETE_MARK = 0x01 } Flags;
 
+// Codebook kind for Raft PQ index
+typedef enum { PerCluster, PerSubspace } RaftPQCodebookKind;
+
 typedef size_t labelType;
 typedef unsigned int idType;
 
@@ -133,7 +136,7 @@ typedef struct {
     size_t n_lists;                      // Number of inverted lists.
     size_t pq_bits;                      // If the lists centers should be updated for new vectors
     size_t pq_dims;                      // If the lists centers should be updated for new vectors
-    //std::string codebook_kind;           // "PER_SUBSPACE" or "PER_CLUSTER"
+    RaftPQCodebookKind codebook_kind;    // "PerCluster" or "PerSubspace"
     bool conservative_memory_allocation; // Use as little GPU memory as possible
 } RaftPQParams;
 
