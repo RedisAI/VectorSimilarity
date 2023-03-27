@@ -8,12 +8,8 @@ namespace RaftFlatFactory {
 
 VecSimIndex *NewIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)
 {
-    std::cout << "Test Raft\n";
-    if (params->type == VecSimType_FLOAT32) {
-        return new (allocator) RaftFlatIndex<float, float>(params, allocator);
-    } else if (params->type == VecSimType_FLOAT64) {
-        return new (allocator) RaftFlatIndex<double, double>(params, allocator);
-    }
+    assert(params->type == VecSimType_FLOAT32);
+    return new (allocator) RaftFlatIndex<float, float>(params, allocator);
 }
 size_t EstimateInitialSize(const RaftFlatParams *params)
 {

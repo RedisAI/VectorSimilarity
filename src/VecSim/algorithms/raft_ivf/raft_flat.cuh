@@ -1,3 +1,4 @@
+#include <optional>
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
@@ -32,7 +33,10 @@ public:
     RaftFlatIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType label) override { return 0;}
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override {
+        assert(!"getDistanceFrom not implemented");
+        return INVALID_SCORE;
+    }
     size_t indexSize() const override {
         if (!flat_index_) {
             return 0;
@@ -40,10 +44,11 @@ public:
         return counts_;
     }
     size_t indexCapacity() const override {
-        return 0; // Not needed
+        assert(!"indexCapacity not implemented");
+        return 0;
     }
     void increaseCapacity() override {
-        // Not needed
+        assert(!"increaseCapacity not implemented");
     }
     inline size_t indexLabelCount() const override {
         if (!flat_index_) {
@@ -110,34 +115,16 @@ int RaftFlatIndex<DataType, DistType>::addVector(const void *vector_data, labelT
     }
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
     auto label_converted = static_cast<std::int64_t>(label);
-    auto label_gpu = raft::make_device_vector<std::int64_t>(res_, 1);
+    auto label_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(res_, 1);
     raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
     raft::copy(label_gpu.data_handle(), &label_converted, 1, res_.get_stream());
 
     raft::neighbors::ivf_flat::extend(res_, flat_index_.get(), raft::make_const_mdspan(vector_data_gpu.view()),
-        raft::make_const_mdspan(label_gpu.view()));
+        std::make_optional(raft::make_const_mdspan(label_gpu.view())));
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
     this->counts_ += 1;
     return 1;
-}
-
-
-template <typename DataType, typename DistType>
-double RaftFlatIndex<DataType, DistType>::getDistanceFrom(labelType label, const void *vector_data) const
-{
-    assert(label < static_cast<labelType>(std::numeric_limits<std::int64_t>::max()));
-    if (!flat_index_) {
-        return INVALID_SCORE;
-    }
-
-    auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
-    auto label_gpu = raft::make_device_vector<std::int64_t>(res_, 1);
-    auto label_converted = static_cast<std::int64_t>(label);
-    raft::copy(vector_data_gpu.data_handle(), (const DataType*)vector_data, this->dim, res_.get_stream());
-    raft::copy(label_gpu.data_handle(), &label_converted, 1, res_.get_stream());
-    raft::neighbors::ivf_flat::search(res_, *flat_index_, vector_data_gpu.view(), label_gpu.view());
-    // TODO
 }
 
 // Search for the k closest vectors to a given vector in the index.

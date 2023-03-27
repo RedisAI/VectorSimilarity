@@ -17,7 +17,7 @@ template <typename DataType, typename DistType>
 RaftPQIndex<DataType, DistType>::RaftPQIndex(const RaftPQParams *params,
                                                std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
-      idToLabelMapping(allocator), vectorBlocks(allocator), count(0)
+      count(0)
 {
     /*assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     this->idToLabelMapping.resize(params->initialCapacity);
