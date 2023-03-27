@@ -4,23 +4,6 @@
 #include <iostream>
 
 
-auto GetRaftDistanceType(VecSimMetric vsm){
-    raft::distance::DistanceType result;
-    switch (vsm) {
-        case VecSimMetric::VecSimMetric_L2:
-            result = raft::distance::DistanceType::L2Expanded;
-            break;
-        case VecSimMetric_IP:
-            result = raft::distance::DistanceType::InnerProduct;
-            break;
-        case VecSimMetric_Cosine:
-            result = raft::distance::DistanceType::CosineExpanded;
-            break;
-        default:
-            throw std::runtime_error("Metric not supported");
-    }
-    return result;
-}
 namespace RaftFlatFactory {
 
 VecSimIndex *NewIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)

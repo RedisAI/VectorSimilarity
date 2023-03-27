@@ -117,16 +117,19 @@ typedef struct {
     VecSimType type;                     // Datatype to index.
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
+    size_t blockSize;
     size_t n_lists;                      // Number of inverted lists.
     bool adaptive_centers;               // If the lists centers should be updated for new vectors
     bool conservative_memory_allocation; // Use as little GPU memory as possible
-    
+    size_t kmeans_n_iters;
+    float kmeans_trainset_fraction;
 } RaftFlatParams;
 
 typedef struct {
     VecSimType type;                     // Datatype to index.
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
+    size_t blockSize;
     size_t n_lists;                      // Number of inverted lists.
     size_t pq_bits;                      // If the lists centers should be updated for new vectors
     size_t pq_dims;                      // If the lists centers should be updated for new vectors
