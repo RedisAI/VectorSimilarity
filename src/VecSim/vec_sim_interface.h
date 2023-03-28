@@ -12,6 +12,7 @@
 
 #include <stddef.h>
 #include <stdexcept>
+#include <cstdarg>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
@@ -187,9 +188,5 @@ public:
         VecSimIndexInterface::logCallbackCtx = ctx;
     }
 
-    void log(const char *fmt, ...) const {
-        if (logCallback) {
-            logCallback(logCallbackCtx, fmt);
-        }
-    }
+    void log(const char *fmt, ...) const;
 };

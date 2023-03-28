@@ -21,6 +21,10 @@ extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callba
     VecSimIndex::setTimeoutCallbackFunction(callback);
 }
 
+extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback, void *ctx) {
+    VecSimIndex::setLogCallbackFunction(ctx, callback);
+}
+
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams,
                                                   VecsimQueryType query_type) {
@@ -286,5 +290,3 @@ extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetS
                                               bool initial_check) {
     return index->preferAdHocSearch(subsetSize, k, initial_check);
 }
-
-extern "C" void VecSim_Log(VecSimIndex *index, const char *fmt, ...) { index->log(fmt); }

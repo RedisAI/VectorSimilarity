@@ -417,20 +417,9 @@ TEST_F(SerializerTest, HNSWSerialzer) {
                              "Cannot load index: bad algorithm type");
 }
 
-void test_log_impl(void *ctx, const char *fmt, ...) {
+void test_log_impl(void *ctx, const char *message) {
     std::vector<std::string> *log = (std::vector<std::string> *)ctx;
-    char *buf = NULL;
-    int len = 0;
-    va_list args;
-    va_start(args, fmt);
-    len = vsnprintf(buf, len, fmt, args);
-    va_end(args);
-    buf = new char[len + 1];
-    va_start(args, fmt);
-    vsnprintf(buf, len + 1, fmt, args);
-    va_end(args);
-    log->push_back(std::string(buf));
-    delete[] buf;
+    log->push_back(message);
 }
 
 TEST(CommonAPITest, testlog) {
@@ -441,12 +430,12 @@ TEST(CommonAPITest, testlog) {
 
     VecSimIndex::setLogCallbackFunction(&log, test_log_impl);
 
-    index->log("test log message c++ api");
-    VecSim_Log(index, "test log message c api");
+    index->log("test log message no fmt");
+    index->log("test log message %s %s", "with", "args");
 
     ASSERT_EQ(log.size(), 2);
-    ASSERT_EQ(log[0], "test log message c++ api");
-    ASSERT_EQ(log[1], "test log message c api");
+    ASSERT_EQ(log[0], "test log message no fmt");
+    ASSERT_EQ(log[1], "test log message with args");
 
     VecSimIndex_Free(index);
 }

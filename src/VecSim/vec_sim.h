@@ -199,13 +199,12 @@ void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
 void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 
 /**
- * @brief Allow 3rd party logging function to be used for logging.
- *
- * @param index the index to log from.
- * @param fmt format string.
- * @param ... variable number of arguments.
+ * @brief Allow 3rd party log callback to be used for logging.
+ * 
+ * @param callback logCallbackFunction function. should get void* and return void.
+ * @param ctx context to be passed to the callback function.
  */
-void VecSim_Log(VecSimIndex *index, const char *fmt, ...);
+void VecSim_SetLogCallbackFunction(logCallbackFunction callback, void *ctx);
 
 #ifdef __cplusplus
 }
