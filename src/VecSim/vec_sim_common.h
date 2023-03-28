@@ -118,6 +118,8 @@ typedef struct {
 typedef struct {
     HNSWParams hnswParams;
     TieredIndexParams tieredParams;
+    size_t maxSwapJobs; // The maximum number of swap jobs to accumulate before applying
+                        // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 
 typedef struct {

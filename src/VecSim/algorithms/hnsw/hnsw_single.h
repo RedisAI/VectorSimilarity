@@ -147,7 +147,7 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
     }
     idType element_internal_id = label_lookup_[label];
     label_lookup_.erase(label);
-    this->removeVector(element_internal_id);
+    this->removeVectorInPlace(element_internal_id);
     return 1;
 }
 

@@ -34,6 +34,8 @@ struct HNSWSwapJob : public VecsimBaseObject {
         assert(pending_repair_jobs_counter >= 0);
     }
 };
+#define DEFAULT_PENDING_SWAP_JOBS_THRESHOLD 1000
+#define MAX_PENDING_SWAP_JOBS_THRESHOLD 100000
 
 /**
  * Definition of a job that repairs a certain node's connection in HNSW Index after delete
@@ -60,13 +62,13 @@ struct HNSWRepairJob : public AsyncJob {
 template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
-    vecsim_stl::vector<HNSWSwapJob *> swapJobs;
-
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
     // In MULTI, we can have more than one insert job pending per label
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>> labelToInsertJobs;
     vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
+
+    size_t pendingSwapJobsThreshold;
 
     // Protect the both idToRepairJobs lookup and the pending_repair_jobs_counter for the
     // associated swap jobs.
@@ -76,7 +78,7 @@ private:
     void executeRepairJob(HNSWRepairJob *job);
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper.
-    void executeSwapJob(HNSWSwapJob *job) {}
+    void executeSwapJob(HNSWSwapJob *job, vecsim_stl::vector<idType> &idsToRemove);
 
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
@@ -101,7 +103,8 @@ private:
 #endif
 
 public:
-    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
+    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams,
+                    size_t maxSwapJobs);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -157,13 +160,51 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 }
 
 template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
+                                                         vecsim_stl::vector<idType> &idsToRemove) {
+    auto hnsw_index = this->getHNSWIndex();
+    hnsw_index->removeAndSwapDeletedElement(job->deleted_id);
+    // Get the id that was last and was had been swapped with the job's deleted id.
+    idType prev_last_id = this->getHNSWIndex()->indexSize();
+
+    // Invalidate repair jobs for the disposed id (if exist).
+    if (idToRepairJobs.find(job->deleted_id) != idToRepairJobs.end()) {
+        for (auto &job_it : idToRepairJobs.at(job->deleted_id)) {
+            job_it->node_id = INVALID_JOB_ID;
+        }
+    }
+    // Swap the ids in the pending jobs for the current last id (if exist).
+    if (idToRepairJobs.find(prev_last_id) != idToRepairJobs.end()) {
+        for (auto &job_it : idToRepairJobs.at(prev_last_id)) {
+            job_it->node_id = job->deleted_id;
+        }
+        if (idToRepairJobs.find(job->deleted_id) != idToRepairJobs.end()) {
+            idToRepairJobs.at(job->deleted_id) = idToRepairJobs.at(prev_last_id);
+        }
+        idToRepairJobs.erase(prev_last_id);
+    }
+    // Update the swap jobs.
+    if (idToSwapJob.find(prev_last_id) != idToSwapJob.end() && prev_last_id != job->deleted_id) {
+        // Update the curr_last_id pending swap job id after the removal that renamed curr_last_id
+        // with the deleted id.
+        idsToRemove.push_back(prev_last_id);
+        idToSwapJob.at(job->deleted_id) = idToSwapJob.at(prev_last_id);
+        idToSwapJob.at(job->deleted_id)->deleted_id = job->deleted_id;
+    } else {
+        idsToRemove.push_back(job->deleted_id);
+    }
+}
+
+
+template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
-    return reinterpret_cast<HNSWIndex<DataType, DistType> *>(this->index);
+    return dynamic_cast<HNSWIndex<DataType, DistType> *>(this->index);
 }
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
     auto *hnsw_index = getHNSWIndex();
+    int ret = 0;
 
     // Get the required data about the relevant ids to delete.
     // Internally, this will hold the index data lock.
@@ -171,7 +212,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
     if (internal_ids.empty()) {
         // Label doesn't exist, or it has already marked as deleted - we can finish now.
-        return 0;
+        return ret;
     }
     vecsim_stl::vector<size_t> ids_top_level(this->allocator);
     for (idType id : internal_ids) {
@@ -220,15 +261,36 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         }
         this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
                                 this->jobQueueCtx);
-        swapJobs.push_back(swap_job);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
         // node id is changed due to swap job).
         idToSwapJob[id] = swap_job;
     }
+    // If swapJobs size is larger than a threshold, go over the swap jobs and execute every job
+    // for which all of its pending repair jobs were executed (otherwise finish and return).
+    ret = internal_ids.size();
+    if (idToSwapJob.size() <= this->pendingSwapJobsThreshold) {
+        return ret;
+    }
 
-    // Todo: if swapJobs size is larger than a threshold, go over the swap jobs and execute it,
-    //  if all its pending repair jobs are executed (to be implemented later on).
-    return internal_ids.size();
+    // Execute swap jobs - acquire hnsw write lock.
+    this->mainIndexGuard.unlock();
+    this->mainIndexGuard.lock();
+    vecsim_stl::vector<idType> idsToRemove(this->allocator);
+    idsToRemove.reserve(idToSwapJob.size());
+    // todo: validate that the iterator doesn't become invalid when we swap between swap jobs
+    for (auto &it : idToSwapJob) {
+        if (it.second->pending_repair_jobs_counter.load() == 0) {
+            // Swap job is ready for execution.
+            this->executeSwapJob(it.second, idsToRemove);
+            delete it.second;  // release the swap job after it has been executed
+        }
+    }
+    for (idType id : idsToRemove) {
+        idToSwapJob.erase(id);
+    }
+    this->mainIndexGuard.unlock();
+    this->mainIndexGuard.lock_shared();
+    return ret;
 }
 
 template <typename DataType, typename DistType>
@@ -332,6 +394,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // Lock the HNSW shared lock before accessing its internals.
     this->mainIndexGuard.lock_shared();
     if (job->node_id == INVALID_JOB_ID) {
+        // The current node has already been removed and disposed.
         this->mainIndexGuard.unlock_shared();
         return;
     }
@@ -372,10 +435,17 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                                                     TieredIndexParams tieredParams)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams), swapJobs(this->allocator),
-      labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
+                                                     TieredIndexParams tieredParams,
+                                                     size_t maxSwapJobs)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams),
+        labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
+    // If the param for maxSwapJobs is 0 use the default value, if it exceeds the maximum allowed,
+    // use the maximum value.
+    this->pendingSwapJobsThreshold =
+        maxSwapJobs == 0 ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
+                          : (maxSwapJobs > MAX_PENDING_SWAP_JOBS_THRESHOLD
+                                ? MAX_PENDING_SWAP_JOBS_THRESHOLD : maxSwapJobs);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
@@ -394,8 +464,8 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
         }
     }
     // Delete all the pending swap jobs.
-    for (auto *job : this->swapJobs) {
-        delete job;
+    for (auto &it : this->idToSwapJob) {
+        delete it.second;
     }
 }
 
