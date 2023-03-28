@@ -68,7 +68,7 @@ inline VecSimParams CreateParams(const BFParams &bf_params) {
 }
 
 inline VecSimParams CreateParams(const TieredHNSWParams &tiered_hnsw_params) {
-    VecSimParams params{.algo = VecSimAlgo_TIEREDHNSW, .tieredHNSWParams = tiered_hnsw_params};
+    VecSimParams params{.algo = VecSimAlgo_TIERED_HNSW, .tieredHNSWParams = tiered_hnsw_params};
     return params;
 }
 

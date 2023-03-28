@@ -92,7 +92,7 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::FLAT_STRING;
     case VecSimAlgo_HNSWLIB:
         return VecSimCommonStrings::HNSW_STRING;
-    case VecSimAlgo_TIEREDHNSW:
+    case VecSimAlgo_TIERED_HNSW:
         return VecSimCommonStrings::TIERED_STRING;
     }
     return NULL;

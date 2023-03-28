@@ -160,7 +160,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     size_t memory_before = memory_ctx;
 
     // Note we are adding vectors with ascending values. This causes the numbers of
-    // double connections, which are not taking into account in EstimateElementSize,
+    // incoming edges, which are not taking into account in EstimateElementSize,
     // to be zero
     for (size_t i = 0; i < bs % n + bs; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i + n, i + n);
@@ -179,7 +179,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     ASSERT_EQ(index->indexSize(), hnsw_index->indexCapacity());
 
     ASSERT_GE(estimation * 1.02, delta);
-    ASSERT_LE(estimation * 0.99, delta);
+    ASSERT_LE(estimation * 0.98, delta);
 
     VecSimIndex_Free(index);
 }

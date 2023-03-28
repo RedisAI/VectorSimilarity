@@ -83,11 +83,13 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 }
 
 size_t EstimateElementSize(const HNSWParams *params) {
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
     size_t size_links_level0 = sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *) +
-                               sizeof(vecsim_stl::vector<idType>);
+                               sizeof(vecsim_stl::vector<idType>) + allocations_overhead;
     size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) +
-                                     sizeof(vecsim_stl::vector<idType>);
+                                     sizeof(vecsim_stl::vector<idType>) + allocations_overhead;
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
     // of levels is lower (intuitively, we "loose" a level every time the random generated number
@@ -101,7 +103,6 @@ size_t EstimateElementSize(const HNSWParams *params) {
                                          sizeof(labelType);
 
     size_t size_label_lookup_node;
-    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     if (params->multi) {
         // For each new insertion (of a new label), we add a new node to the label_lookup_ map,
