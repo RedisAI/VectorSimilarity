@@ -1636,7 +1636,6 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
     size_t dim = 4;
     size_t n = DEFAULT_BLOCK_SIZE;
     size_t bs = DEFAULT_BLOCK_SIZE;
-    size_t M = 32;
     size_t efC = n;
 
     // In this test we add identical vectors.
@@ -1652,107 +1651,112 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
     // M-1 incoming edges, according to their relative index within the level. The last M vectors
     // will behave in a similar way, if their index is counted relatively to the last vector in the
     // level (for example, the last vector will have 0 incoming edges)
-    HNSWParams params = {.dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .initialCapacity = n,
-                         .blockSize = bs,
-                         .M = M,
-                         .efConstruction = efC};
-    VecSimIndex *index = this->CreateNewIndex(params);
 
-    auto hnsw_index = this->CastToHNSW(index);
-    size_t inc_edges0 = 0;
+    for (size_t M : {2, 4, 16, 32}) {
+        HNSWParams params = {.dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .initialCapacity = n,
+                             .blockSize = bs,
+                             .M = M,
+                             .efConstruction = efC};
+        VecSimIndex *index = this->CreateNewIndex(params);
 
-    // Calculate expected allocations overhead after adding n vectors
-    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+        auto hnsw_index = this->CastToHNSW(index);
+        size_t inc_edges0 = 0;
 
-    // meta data per node at higher levels (level0 meta data was already allcoated at index
-    // construction)
-    size_t size_links_higher_level =
-        sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) + allocations_overhead;
+        // Calculate expected allocations overhead after adding n vectors
+        size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
-    size_t size_label_lookup_node =
-        sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) + allocations_overhead +
-        allocations_overhead;
+        // meta data per node at higher levels (level0 meta data was already allcoated at index
+        // construction)
+        size_t size_links_higher_level =
+            sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) + allocations_overhead;
 
-    size_t initial_memory = index->getAllocationSize();
-    size_t metadata_overhead_estimation = 0;
-    std::vector<size_t> nodes_per_level_hist(100, 0);
-    for (size_t i = 0; i < n; i++) {
+        size_t size_label_lookup_node =
+            sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
+            allocations_overhead + allocations_overhead;
 
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
+        size_t initial_memory = index->getAllocationSize();
+        size_t metadata_overhead_estimation = 0;
+        std::vector<size_t> nodes_per_level_hist(100, 0);
+        for (size_t i = 0; i < n; i++) {
 
-        size_t elem_level = hnsw_index->element_levels_[i];
-        // we generate a new incoming edges vector for each new node at each level.
-        metadata_overhead_estimation +=
-            (sizeof(vecsim_stl::vector<idType>) + allocations_overhead) * (elem_level + 1) +
-            size_links_higher_level * elem_level + size_label_lookup_node;
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
 
-        for (size_t j = 0; j <= elem_level; j++) {
-            nodes_per_level_hist[j] += 1;
-        }
-    }
+            size_t elem_level = hnsw_index->element_levels_[i];
+            // we generate a new incoming edges vector for each new node at each level.
+            metadata_overhead_estimation +=
+                (sizeof(vecsim_stl::vector<idType>) + allocations_overhead) * (elem_level + 1) +
+                size_links_higher_level * elem_level + size_label_lookup_node;
 
-    size_t incoming_edges_total_count = 0;
-    std::vector<size_t> incoming_per_level_hist(hnsw_index->max_level_ + 1, 0);
-
-    size_t incoming_edges_memory_overhead = 0;
-
-    for (size_t level = 0; level <= hnsw_index->max_level_; level++) {
-        size_t curr_visited_at_level_hist = 0;
-        for (size_t id = 0; id < n; id++) {
-            if (hnsw_index->element_levels_[id] >= level) {
-                curr_visited_at_level_hist += 1;
-                size_t curr_idx_at_level = curr_visited_at_level_hist - 1;
-                // The index of the vector at the current level counting backwards.
-                size_t curr_reverse_idx_at_level =
-                    nodes_per_level_hist[level] - curr_visited_at_level_hist - 1;
-                auto incoming_edges = hnsw_index->getIncomingEdgesPtr(id, level);
-                size_t incoming_edges_count = incoming_edges->size();
-
-                // if its level 0 or there are less then M nodes at this level, none of them has
-                // incoming edges.
-                if (level == 0 || nodes_per_level_hist[level] <= M) {
-                    ASSERT_EQ(incoming_edges_count, 0);
-                    continue;
-                }
-                if (curr_idx_at_level < M) { // this is one of the first M nodes
-                    if (incoming_edges_count != curr_idx_at_level) {
-                        std::cout << " level = " << level << std::endl;
-                    }
-                    ASSERT_EQ(incoming_edges_count, curr_idx_at_level);
-                } else if (curr_reverse_idx_at_level < M) { // this is one of the last M nodes
-                    ASSERT_EQ(incoming_edges_count, curr_reverse_idx_at_level);
-                } else {
-                    if (incoming_edges_count != M) {
-                        std::cout << " level = " << level << std::endl;
-                    }
-                    ASSERT_EQ(incoming_edges_count, M);
-                }
-                incoming_edges_total_count += incoming_edges_count;
-                incoming_per_level_hist[level] += incoming_edges_count;
-                incoming_edges->shrink_to_fit();
-                incoming_edges_memory_overhead += incoming_edges_count * sizeof(idType);
+            for (size_t j = 0; j <= elem_level; j++) {
+                nodes_per_level_hist[j] += 1;
             }
         }
-        // each node (except the first M and the last M) should have the same number of incoming
-        // edges.
-        if (level == 0 || nodes_per_level_hist[level] <= 2 * M) {
-            continue;
+
+        size_t incoming_edges_total_count = 0;
+        std::vector<size_t> incoming_per_level_hist(hnsw_index->max_level_ + 1, 0);
+
+        size_t incoming_edges_memory_overhead = 0;
+
+        for (size_t level = 0; level <= hnsw_index->max_level_; level++) {
+            size_t curr_visited_at_level_hist = 0;
+            for (size_t id = 0; id < n; id++) {
+                if (hnsw_index->element_levels_[id] >= level) {
+                    curr_visited_at_level_hist += 1;
+                    size_t curr_idx_at_level = curr_visited_at_level_hist - 1;
+                    // The index of the vector at the current level counting backwards.
+                    size_t curr_reverse_idx_at_level =
+                        nodes_per_level_hist[level] - curr_visited_at_level_hist - 1;
+                    auto incoming_edges = hnsw_index->getIncomingEdgesPtr(id, level);
+                    size_t incoming_edges_count = incoming_edges->size();
+
+                    // if its level 0 or there are less then M nodes at this level, none of them has
+                    // incoming edges.
+                    if (level == 0 || nodes_per_level_hist[level] <= M) {
+                        ASSERT_EQ(incoming_edges_count, 0);
+                        continue;
+                    }
+                    if (curr_idx_at_level < M) { // this is one of the first M nodes
+                        if (incoming_edges_count != curr_idx_at_level) {
+                            std::cout << " level = " << level << std::endl;
+                        }
+                        ASSERT_EQ(incoming_edges_count, curr_idx_at_level);
+                    } else if (curr_reverse_idx_at_level < M) { // this is one of the last M nodes
+                        ASSERT_EQ(incoming_edges_count, curr_reverse_idx_at_level);
+                    } else {
+                        if (incoming_edges_count != M) {
+                            std::cout << " level = " << level << std::endl;
+                        }
+                        ASSERT_EQ(incoming_edges_count, M);
+                    }
+                    incoming_edges_total_count += incoming_edges_count;
+                    incoming_per_level_hist[level] += incoming_edges_count;
+                    incoming_edges->shrink_to_fit();
+                    incoming_edges_memory_overhead += incoming_edges_count * sizeof(idType);
+                }
+            }
+            // each node (except the first M and the last M) should have the same number of incoming
+            // edges.
+            if (level == 0 || nodes_per_level_hist[level] <= 2 * M) {
+                continue;
+            }
+            size_t edge_nodes = (M * (M - 1)) / 2;
+            size_t expected_incoming_edges =
+                (nodes_per_level_hist[level] - 2 * M) * M + edge_nodes * 2;
+            ASSERT_EQ(incoming_per_level_hist[level], expected_incoming_edges);
         }
-        size_t edge_nodes = (M * (M - 1)) / 2;
-        size_t expected_incoming_edges = (nodes_per_level_hist[level] - 2 * M) * M + edge_nodes * 2;
-        ASSERT_EQ(incoming_per_level_hist[level], expected_incoming_edges);
+        ASSERT_EQ(hnsw_index->checkIntegrity().unidirectional_connections,
+                  incoming_edges_total_count);
+
+        size_t total_estimation = metadata_overhead_estimation + incoming_edges_memory_overhead;
+        size_t add_vectors_memory_delta = index->getAllocationSize() - initial_memory;
+
+        ASSERT_GE(total_estimation * 1.02, add_vectors_memory_delta);
+        ASSERT_LE(total_estimation * 0.98, add_vectors_memory_delta);
+
+        VecSimIndex_Free(index);
     }
-    ASSERT_EQ(hnsw_index->checkIntegrity().unidirectional_connections, incoming_edges_total_count);
-
-    size_t total_estimation = metadata_overhead_estimation + incoming_edges_memory_overhead;
-    size_t add_vectors_memory_delta = index->getAllocationSize() - initial_memory;
-
-    ASSERT_GE(total_estimation * 1.02, add_vectors_memory_delta);
-    ASSERT_LE(total_estimation * 0.98, add_vectors_memory_delta);
-
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTest, testTimeoutReturn) {
