@@ -427,8 +427,7 @@ TEST(CommonAPITest, testlog) {
 
     BFParams params = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
     VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
-
-    VecSimIndex::setLogCallbackFunction(&log, test_log_impl);
+    VecSim_SetLogCallbackFunction(test_log_impl, &log);
 
     index->log("test log message no fmt");
     index->log("test log message %s %s", "with", "args");
