@@ -1632,6 +1632,7 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 
     VecSimIndex_Free(index);
 }
+
 TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
     size_t dim = 4;
     size_t n = DEFAULT_BLOCK_SIZE;
@@ -1707,7 +1708,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
                     size_t curr_idx_at_level = curr_visited_at_level_hist - 1;
                     // The index of the vector at the current level counting backwards.
                     size_t curr_reverse_idx_at_level =
-                        nodes_per_level_hist[level] - curr_visited_at_level_hist - 1;
+                        nodes_per_level_hist[level] - curr_visited_at_level_hist;
                     auto incoming_edges = hnsw_index->getIncomingEdgesPtr(id, level);
                     size_t incoming_edges_count = incoming_edges->size();
 
@@ -1718,16 +1719,10 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
                         continue;
                     }
                     if (curr_idx_at_level < M) { // this is one of the first M nodes
-                        if (incoming_edges_count != curr_idx_at_level) {
-                            std::cout << " level = " << level << std::endl;
-                        }
                         ASSERT_EQ(incoming_edges_count, curr_idx_at_level);
                     } else if (curr_reverse_idx_at_level < M) { // this is one of the last M nodes
                         ASSERT_EQ(incoming_edges_count, curr_reverse_idx_at_level);
                     } else {
-                        if (incoming_edges_count != M) {
-                            std::cout << " level = " << level << std::endl;
-                        }
                         ASSERT_EQ(incoming_edges_count, M);
                     }
                     incoming_edges_total_count += incoming_edges_count;
