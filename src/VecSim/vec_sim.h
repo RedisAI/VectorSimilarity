@@ -200,7 +200,7 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 
 /**
  * @brief Allow 3rd party log callback to be used for logging.
- * 
+ *
  * @param callback logCallbackFunction function. should get void* and return void.
  * @param ctx context to be passed to the callback function.
  */
