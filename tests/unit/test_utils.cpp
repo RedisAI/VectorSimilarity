@@ -324,7 +324,7 @@ void tiered_index_mock::thread_main_loop(JobQueue &jobQ, bool &run_thread) {
     }
 }
 
-void tiered_index_mock::thread_pool_wait(JobQueue &jobQ, bool &run_thread) {
+void tiered_index_mock::thread_pool_join(JobQueue &jobQ, bool &run_thread) {
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

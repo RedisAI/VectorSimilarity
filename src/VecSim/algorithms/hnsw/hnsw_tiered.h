@@ -267,6 +267,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
     AddVectorCtx state = {0};
+    bool exclusive_lock_held = false;
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
@@ -275,6 +276,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
+        exclusive_lock_held = true;
         hnsw_index->lockIndexDataGuard();
         // Check if resizing is still required (another thread might have done it in the meantime
         // while we release the shared lock).
@@ -283,10 +285,14 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         }
         state = hnsw_index->storeNewElement(job->label);
         if (state.elementMaxLevel <= state.currMaxLevel) {
+            // If we're still holding the index data guard, we cannot take the main index lock for
+            // shared ownership as it may cause deadlocks, so we insert the vector with the current
+            // exclusive lock held.
             hnsw_index->unlockIndexDataGuard();
+            this->mainIndexGuard.unlock();
+            exclusive_lock_held = false;
+            this->mainIndexGuard.lock_shared();
         }
-        this->mainIndexGuard.unlock();
-        this->mainIndexGuard.lock_shared();
     } else {
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
@@ -302,7 +308,11 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
     }
-    this->mainIndexGuard.unlock_shared();
+    if (exclusive_lock_held) {
+        this->mainIndexGuard.unlock();
+    } else {
+        this->mainIndexGuard.unlock_shared();
+    }
 
     // Remove the vector and the insert job from the flat buffer.
     this->flatIndexGuard.unlock_shared();

@@ -1698,7 +1698,7 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
-// scenario, the index data guard and the entry point guard should be held by the caller.
+// scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
 AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label) {
     AddVectorCtx state{};
@@ -1795,9 +1795,8 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
             curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
         }
 
-        // Updating the maximum level (holding the entry point guard lock)
         if (element_max_level > curr_max_level) {
-            // create the incoming edges set for the new levels.
+            // Create the incoming edges sets for the new levels.
             for (int level_idx = curr_max_level + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);

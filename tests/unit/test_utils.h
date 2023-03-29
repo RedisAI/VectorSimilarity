@@ -163,13 +163,13 @@ typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;
 } IndexExtCtx;
 
-static const size_t THREAD_POOL_SIZE = MIN(8, std::thread::hardware_concurrency());
+static const size_t THREAD_POOL_SIZE = MIN(16, std::thread::hardware_concurrency());
 extern std::vector<std::thread> thread_pool;
 extern std::mutex queue_guard;
 extern std::condition_variable queue_cond;
 
 void thread_main_loop(JobQueue &jobQ, bool &run_thread);
 
-void thread_pool_wait(JobQueue &jobQ, bool &run_thread);
+void thread_pool_join(JobQueue &jobQ, bool &run_thread);
 
 } // namespace tiered_index_mock
