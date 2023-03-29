@@ -188,6 +188,8 @@ protected:
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
     inline void resizeIndexInternal(size_t new_max_elements);
+
+    template <bool has_marked_deleted>
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
@@ -1106,10 +1108,14 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 }
 
 template <typename DataType, typename DistType>
+template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
-    // Swap label
-    // todo: this should not occur in tiered index.
-    replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id, cur_element_count);
+    // Swap label - this is relevant for inplace delete only, since when we mark vector as deleted
+    // we already remove its label.
+    if (!has_marked_deleted) {
+        replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id,
+                         cur_element_count);
+    }
 
     // Swap neighbours
     size_t last_element_top_level = element_levels_[cur_element_count];
@@ -1642,7 +1648,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     for (size_t level = 0; level <= element_top_level; level++) {
         auto *neighbours = getNodeNeighborsAtLevel(internalId, level);
         auto neighbours_count = getNodeNeighborsCount(neighbours);
-        for (size_t i =0 ; i < neighbours_count; i++) {
+        for (size_t i = 0; i < neighbours_count; i++) {
             idType neighbour_id = neighbours[i];
             // If this neighbor was deleted and swapped, the new swapped vector under this id is not
             // the original one, and might be in a different level. Hence, we can safely continue
@@ -1665,7 +1671,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
                size_data_per_element_);
     } else {
-        SwapLastIdWithDeletedId(internalId);
+        SwapLastIdWithDeletedId<has_marked_deleted>(internalId);
     }
 
     // If we need to free a complete block and there is at least one block between the

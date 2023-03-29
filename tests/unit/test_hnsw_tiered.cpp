@@ -1520,10 +1520,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorMulti) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    HNSWParams params = {.type = TypeParam::get_index_type(),
-                         .dim = dim,
-                         .metric = VecSimMetric_L2,
-                         .multi = true};
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
@@ -1776,7 +1774,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
             HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
         ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
 
-        // Threshold is set to 1 - insert two vectors to HNSW index.
+        // Threshold is set to be >= 1: insert two vectors to HNSW index.
         GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
         GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
         EXPECT_EQ(tiered_index->indexLabelCount(), 2);
@@ -1801,7 +1799,6 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
         EXPECT_EQ(tiered_index->deleteVector(2), 1);
         EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
         EXPECT_EQ(tiered_index->indexSize(), 0);
-        EXPECT_EQ(tiered_index->index->indexSize(), 0);
         EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
         EXPECT_EQ(jobQ.size(), 0);
 
@@ -1817,29 +1814,50 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
         jobQ.front().job->Execute(jobQ.front().job);
         jobQ.pop();
         EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-        // Delete 2, expect to have again two repair job pending from 0 an 1. Also, expect that swap
-        // job for 0 will be executed, so that 2 and 0 are swapped.
+        // Delete 2, expect to create two repair job pending from 0 an 1. Also, expect that swap
+        // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
+        // pending repair job for the "new" 0 - since we invalidate the repair job from the "old" 0.
         EXPECT_EQ(tiered_index->deleteVector(2), 1);
         EXPECT_EQ(tiered_index->indexSize(), 2);
         EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
 
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 2);
+        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
         EXPECT_EQ(jobQ.size(), 2);
         // The first repair job should remove 1->0.
         ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
         ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 1);
-        ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)
-                      ->associatedSwapJobs[0]->deleted_id, 0);
+        ASSERT_EQ(
+            reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id,
+            0);
         jobQ.front().job->Execute(jobQ.front().job);
         jobQ.pop();
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
+        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
         // The second repair job is invalid due to the removal of (the original) 0.
         ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
         ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
-        ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)
-                      ->associatedSwapJobs[0]->deleted_id, 0);
+        ASSERT_EQ(
+            reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id,
+            0);
         jobQ.front().job->Execute(jobQ.front().job);
         jobQ.pop();
-        // todo: delete 1 also, see what happen. check integrity.
+        // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
+        // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
+        // get id 0, and then the new 0 should have no pending repair jobs.
+        EXPECT_EQ(tiered_index->deleteVector(1), 1);
+        EXPECT_EQ(jobQ.size(), 1);
+        EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
+        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
+        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
+        // The repair job is invalid due to the removal of (the previous) 0.
+        ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+        ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
+        ASSERT_EQ(
+            reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id,
+            0);
+        jobQ.front().job->Execute(jobQ.front().job);
+        jobQ.pop();
+        EXPECT_EQ(tiered_index->indexSize(), 1);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
     }
 }
