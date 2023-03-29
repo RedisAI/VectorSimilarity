@@ -37,7 +37,10 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMet
 typedef enum { DELETE_MARK = 0x01 } Flags;
 
 // Codebook kind for Raft PQ index
-typedef enum { PerCluster, PerSubspace } RaftPQCodebookKind;
+typedef enum { RaftPQ_PerCluster, RaftPQ_PerSubspace } RaftPQCodebookKind;
+
+// Supported CUDA type
+typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } RaftCudaType;
 
 typedef size_t labelType;
 typedef unsigned int idType;
@@ -121,11 +124,12 @@ typedef struct {
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
     size_t blockSize;
-    size_t n_lists;                      // Number of inverted lists.
-    bool adaptive_centers;               // If the lists centers should be updated for new vectors
-    bool conservative_memory_allocation; // Use as little GPU memory as possible
-    size_t kmeans_n_iters;
-    float kmeans_trainset_fraction;
+    size_t nLists;                       // Number of inverted lists.
+    bool adaptiveCenters;                // If the lists centers should be updated for new vectors
+    bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
+    size_t kmeans_nIters;
+    float kmeans_trainsetFraction;
+    unsigned nProbes;                    // The number of clusters to search
 } RaftFlatParams;
 
 typedef struct {
@@ -133,11 +137,17 @@ typedef struct {
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
     size_t blockSize;
-    size_t n_lists;                      // Number of inverted lists.
-    size_t pq_bits;                      // If the lists centers should be updated for new vectors
-    size_t pq_dims;                      // If the lists centers should be updated for new vectors
-    RaftPQCodebookKind codebook_kind;    // "PerCluster" or "PerSubspace"
-    bool conservative_memory_allocation; // Use as little GPU memory as possible
+    size_t nLists;                       // Number of inverted lists.
+    size_t pqBits;                       // If the lists centers should be updated for new vectors
+    size_t pqDim;                        // If the lists centers should be updated for new vectors
+    RaftPQCodebookKind codebookKind;     // "PerCluster" or "PerSubspace"
+    bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
+    size_t kmeans_nIters;                // Number of iterations searching for kmeans centers
+    float kmeans_trainsetFraction;       // Fraction of data to use during iterative kmeans building
+    unsigned nProbes;                    // Number of clusters to search
+    RaftCudaType lutType;                // Data type of look up table created at search time
+    RaftCudaType internalDistanceType;   // Data type of look up table created at search time
+    double preferredShmemCarveout;       // Fraction of SM's unified memory / L1 cache to be used as shared memory
 } RaftPQParams;
 
 typedef struct {

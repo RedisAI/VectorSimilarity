@@ -4,6 +4,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/algorithms/brute_force/bfs_batch_iterator.h"   // TODO: Temporary header to remove
 
 #include "raft/core/device_resources.hpp"
 #include "raft/neighbors/ivf_flat.cuh"
@@ -78,10 +79,22 @@ public:
     }
     virtual VecSimInfoIterator *infoIterator() const override
     {
-        
+        assert(!"infoIterator not implemented");
+        size_t numberOfInfoFields = 12;
+        VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+        return infoIterator;
     }
-    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob, VecSimQueryParams *queryParams) const override;
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob, VecSimQueryParams *queryParams) const override
+    {
+        assert(!"newBatchIterator not implemented");
+        // TODO: Using BFS_Batch Iterator temporarily for the return type
+        return new (this->allocator) BFS_BatchIterator<DataType, DistType>(const_cast<void*>(queryBlob), nullptr, queryParams, this->allocator);
+    }
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override
+    {
+        return true; // TODO: Implement this
+    }
+
 
 protected:
     raft::device_resources res_;
@@ -98,10 +111,10 @@ RaftFlatIndex<DataType, DistType>::RaftFlatIndex(const RaftFlatParams *params,
 {
     //auto build_params = raft::neighbors::ivf_flat::index_params{};
     build_params_.metric = GetRaftDistanceType(params->metric);
-    build_params_.n_lists = params->n_lists;
-    build_params_.kmeans_n_iters = params->kmeans_n_iters;
-    build_params_.kmeans_trainset_fraction = params->kmeans_trainset_fraction;
-    build_params_.adaptive_centers = params->adaptive_centers;
+    build_params_.n_lists = params->nLists;
+    build_params_.kmeans_n_iters = params->kmeans_nIters;
+    build_params_.kmeans_trainset_fraction = params->kmeans_trainsetFraction;
+    build_params_.adaptive_centers = params->adaptiveCenters;
     build_params_.add_data_on_build = true;
     // TODO: Can't build flat_index here because there is no initial data;
     //flat_index_ = std::make_unique<raft::neighbors::ivf_flat::index<DataType, std::int64_t>>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(res_, build_params,
