@@ -63,7 +63,8 @@ private:
     vecsim_stl::vector<HNSWSwapJob *> swapJobs;
 
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
-    // In MULTI, we can have more than one insert job pending per label
+    // In MULTI, we can have more than one insert job pending per label.
+    // **This map is protected with the flat buffer lock**
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>> labelToInsertJobs;
     vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
