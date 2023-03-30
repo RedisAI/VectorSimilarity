@@ -1367,7 +1367,10 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
             break;
         }
         // If this specific new neighbor is deleted, we don't add this connection and continue.
-        if (isMarkedDeleted(chosen_id)) {
+        // Also, don't add a new node whose being indexed in parallel, as it may choose this node
+        // as its neighbor and create a double connection (then this node will have a duplicate
+        // neighbor).
+        if (isMarkedDeleted(chosen_id) || isInProcess(chosen_id)) {
             continue;
         }
         auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(chosen_id, level);
