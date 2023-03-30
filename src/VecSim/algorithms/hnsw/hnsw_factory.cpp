@@ -103,21 +103,27 @@ size_t EstimateElementSize(const HNSWParams *params) {
                                          sizeof(labelType);
 
     size_t size_label_lookup_node;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     if (params->multi) {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map,
-        // and a new element to the vector in the map. These two allocations both results in a new
-        // allocation and therefore another VecSimAllocator::allocation_header_size.
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>::value_type) +
-            allocations_overhead + sizeof(vecsim_stl::vector<idType>::value_type) +
-            allocations_overhead;
+        auto dummy_lookup =
+            vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>(1, allocator);
+        size_t memory_before = allocator->getAllocationSize();
+        // For each new insertion (of a new label), we add a new node to the label_lookup_ map.
+        dummy_lookup.emplace(0, vecsim_stl::vector<idType>{allocator});
+        // In addition, a new element to the vector in the map.
+        dummy_lookup.at(0).push_back(0);
+        size_t memory_after = allocator->getAllocationSize();
+        // size_t memory_before = allocator->getAllocationSize();
+
+        size_label_lookup_node = memory_after - memory_before;
     } else {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
-        // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
-        // plus an internal pointer
-        size_label_lookup_node = sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
-                                 allocations_overhead + allocations_overhead;
+        auto dummy_lookup = vecsim_stl::unordered_map<size_t, unsigned int>(1, allocator);
+        size_t memory_before = allocator->getAllocationSize();
+        // For each new insertion (of a new label), we add a new node to the label_lookup_ map.
+        dummy_lookup.insert({1, 1}); // Insert a dummy {key, value} element pair.
+        size_t memory_after = allocator->getAllocationSize();
+        size_label_lookup_node = memory_after - memory_before;
     }
 
     // 1 entry in visited nodes + 1 entry in element levels + (approximately) 1 bucket in labels

@@ -1567,7 +1567,7 @@ TYPED_TEST(HNSWTest, testCosine) {
 
 TYPED_TEST(HNSWTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 1000;
+    size_t n = DEFAULT_BLOCK_SIZE;
     size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
 
@@ -1588,19 +1588,19 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
 
     ASSERT_EQ(estimation, actual);
 
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < bs; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = EstimateElementSize(params) * (bs % n + bs);
+    estimation = EstimateElementSize(params) * bs;
 
     // Note we are adding vectors with ascending values. This causes the numbers of
     // double connections, which are not taking into account in EstimateElementSize,
     // to be zero
     actual = 0;
-    for (size_t i = 0; i < bs + bs % n; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i + n);
+    for (size_t i = 0; i < bs; i++) {
+        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, i + bs);
     }
     ASSERT_GE(estimation * 1.02, actual);
     ASSERT_LE(estimation * 0.98, actual);
@@ -1643,15 +1643,17 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
     // Expected results:
     // in level 0: each new node is connected to the M last inserted nodes, and there will be no
     // unidirectional edges. The reason for that is that each node has room for 2 * M neighbors, but
-    // the search stops at M, so no reparations are required. for higher levels (if the max level of
-    // the new node is higher then 0): For each level, if there are already M + 1 nodes on this
-    // level, the new node will be connected to the last M existing nodes. These M last nodes will
-    // remove one of their neighbour, so one unidirectional for each node (total of M) will be
-    // added. Eventually, we expected that each vector at this level will have M incoming edges,
-    // except the first M vectors and the last M vectors. The first M vectors will have 1, 2, ...
-    // M-1 incoming edges, according to their relative index within the level. The last M vectors
-    // will behave in a similar way, if their index is counted relatively to the last vector in the
-    // level (for example, the last vector will have 0 incoming edges)
+    // only connects the M vectors whose ids are the maximal (due to the secondary sorting by id in
+    // the top candidates heap). Hence, every new connection is bidirectional, so no reparations are
+    // required. for higher levels (if the max level of the new node is higher then 0): For each
+    // level, if there are already M + 1 nodes on this level, the new node will be connected to the
+    // last M existing nodes. These M last nodes will remove one of their neighbour, so one
+    // unidirectional for each node (total of M) will be added. Eventually, we expected that each
+    // vector at this level will have M incoming edges, except the first M vectors and the last M
+    // vectors.The M vectors whose ids are minimal at some level should end up with 0, 1, ..., M-1
+    // incoming edges respectively. The last M vectors will behave in a similar way (the vector with
+    // maximum id at a level should have 0 incoming edges, the one whose is the second last should
+    // have 1, etc...)
 
     for (size_t M : {2, 4, 16, 32}) {
         HNSWParams params = {.dim = dim,
@@ -1670,12 +1672,9 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
 
         // meta data per node at higher levels (level0 meta data was already allcoated at index
         // construction)
-        size_t size_links_higher_level =
-            sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) + allocations_overhead;
+        size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *);
 
-        size_t size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
-            allocations_overhead + allocations_overhead;
+        size_t size_label_lookup_node = getLabelsLookupNodeSize();
 
         size_t initial_memory = index->getAllocationSize();
         size_t metadata_overhead_estimation = 0;
@@ -1685,11 +1684,10 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
 
             size_t elem_level = hnsw_index->element_levels_[i];
-            // we generate a new incoming edges vector for each new node at each level.
-            metadata_overhead_estimation +=
-                (sizeof(vecsim_stl::vector<idType>) + allocations_overhead) * (elem_level + 1) +
-                size_links_higher_level * elem_level + size_label_lookup_node;
 
+            size_t high_levels_memory =
+                elem_level ? size_links_higher_level * elem_level + allocations_overhead : 0;
+            metadata_overhead_estimation += size_label_lookup_node + high_levels_memory;
             for (size_t j = 0; j <= elem_level; j++) {
                 nodes_per_level_hist[j] += 1;
             }
@@ -1699,22 +1697,27 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         std::vector<size_t> incoming_per_level_hist(hnsw_index->max_level_ + 1, 0);
 
         size_t incoming_edges_memory_overhead = 0;
-
         for (size_t level = 0; level <= hnsw_index->max_level_; level++) {
             size_t curr_visited_at_level_hist = 0;
             for (size_t id = 0; id < n; id++) {
                 if (hnsw_index->element_levels_[id] >= level) {
+                    // we expect to generate a new incoming edges vector for each new node at each
+                    // level.
+                    incoming_edges_memory_overhead +=
+                        sizeof(vecsim_stl::vector<idType>) + allocations_overhead;
                     curr_visited_at_level_hist += 1;
                     size_t curr_idx_at_level = curr_visited_at_level_hist - 1;
                     // The index of the vector at the current level counting backwards.
                     size_t curr_reverse_idx_at_level =
                         nodes_per_level_hist[level] - curr_visited_at_level_hist;
                     auto incoming_edges = hnsw_index->getIncomingEdgesPtr(id, level);
+                    incoming_edges->shrink_to_fit();
                     size_t incoming_edges_count = incoming_edges->size();
 
-                    // if its level 0 or there are less then M nodes at this level, none of them has
-                    // incoming edges.
-                    if (level == 0 || nodes_per_level_hist[level] <= M) {
+                    // if it is level 0 or there are less than M nodes at this level, none of them
+                    // should have incoming edges.
+                    if (level == 0 || nodes_per_level_hist[level] <= M + 1 ||
+                        curr_idx_at_level == 0 || curr_reverse_idx_at_level == 0) {
                         ASSERT_EQ(incoming_edges_count, 0);
                         continue;
                     }
@@ -1727,8 +1730,9 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
                     }
                     incoming_edges_total_count += incoming_edges_count;
                     incoming_per_level_hist[level] += incoming_edges_count;
-                    incoming_edges->shrink_to_fit();
-                    incoming_edges_memory_overhead += incoming_edges_count * sizeof(idType);
+                    // The first insertion to the incoming edges vector causes another allocation.
+                    incoming_edges_memory_overhead +=
+                        incoming_edges_count * sizeof(idType) + allocations_overhead;
                 }
             }
             // each node (except the first M and the last M) should have the same number of incoming
@@ -1736,19 +1740,18 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
             if (level == 0 || nodes_per_level_hist[level] <= 2 * M) {
                 continue;
             }
-            size_t edge_nodes = (M * (M - 1)) / 2;
+            size_t edge_nodes_incoming_edges_sum = (M * (M - 1)) / 2;
             size_t expected_incoming_edges =
-                (nodes_per_level_hist[level] - 2 * M) * M + edge_nodes * 2;
+                (nodes_per_level_hist[level] - 2 * M) * M + edge_nodes_incoming_edges_sum * 2;
             ASSERT_EQ(incoming_per_level_hist[level], expected_incoming_edges);
         }
-        ASSERT_EQ(hnsw_index->checkIntegrity().unidirectional_connections,
-                  incoming_edges_total_count);
 
         size_t total_estimation = metadata_overhead_estimation + incoming_edges_memory_overhead;
         size_t add_vectors_memory_delta = index->getAllocationSize() - initial_memory;
 
-        ASSERT_GE(total_estimation * 1.02, add_vectors_memory_delta);
-        ASSERT_LE(total_estimation * 0.98, add_vectors_memory_delta);
+        ASSERT_EQ(total_estimation, add_vectors_memory_delta);
+        ASSERT_EQ(hnsw_index->checkIntegrity().unidirectional_connections,
+                  incoming_edges_total_count);
 
         VecSimIndex_Free(index);
     }

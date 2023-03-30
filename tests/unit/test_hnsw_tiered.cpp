@@ -106,7 +106,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
 
 TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n = 1000;
+    size_t n = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
     size_t bs = DEFAULT_BLOCK_SIZE;
     bool isMulti = TypeParam::get_index_label_type();
@@ -147,7 +147,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     ASSERT_EQ(memory_ctx, index->getAllocationSize());
     ASSERT_EQ(initial_size_estimation, memory_ctx);
 
-    // Add vectors up to initial capacity (initial capacity < block size).
+    // Add vectors up to initial capacity (initial capacity == block size).
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         jobQ.front().job->Execute(jobQ.front().job);
@@ -155,15 +155,15 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     }
 
     // Estimate memory delta for filling up the first block and adding another block.
-    size_t estimation = EstimateElementSize(tiered_hnsw_params) * (bs % n + bs);
+    size_t estimation = EstimateElementSize(tiered_hnsw_params) * bs;
 
     size_t memory_before = memory_ctx;
 
     // Note we are adding vectors with ascending values. This causes the numbers of
     // incoming edges, which are not taking into account in EstimateElementSize,
     // to be zero
-    for (size_t i = 0; i < bs % n + bs; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + n, i + n);
+    for (size_t i = 0; i < bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + bs, i + bs);
         jobQ.front().job->Execute(jobQ.front().job);
         jobQ.pop();
     }
