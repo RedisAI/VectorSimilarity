@@ -182,11 +182,7 @@ public:
     }
 
     static logCallbackFunction logCallback;
-    static void *logCallbackCtx;
-    inline static void setLogCallbackFunction(void *ctx, logCallbackFunction callback) {
+    inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
-        VecSimIndexInterface::logCallbackCtx = ctx;
     }
-
-    void log(const char *fmt, ...) const;
 };

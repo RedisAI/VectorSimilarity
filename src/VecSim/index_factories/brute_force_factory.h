@@ -14,7 +14,7 @@
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
 
 namespace BruteForceFactory {
-VecSimIndex *NewIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator);
 size_t EstimateInitialSize(const BFParams *params);
 size_t EstimateElementSize(const BFParams *params);
 }; // namespace BruteForceFactory

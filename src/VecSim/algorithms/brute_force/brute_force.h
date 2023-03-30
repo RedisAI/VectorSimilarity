@@ -33,7 +33,7 @@ protected:
     idType count;
 
 public:
-    BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -112,11 +112,10 @@ protected:
 
 /******************** Ctor / Dtor **************/
 template <typename DataType, typename DistType>
-BruteForceIndex<DataType, DistType>::BruteForceIndex(const BFParams *params,
-                                                     std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
-                                    params->blockSize, params->multi),
-      idToLabelMapping(allocator), vectorBlocks(allocator), count(0) {
+BruteForceIndex<DataType, DistType>::BruteForceIndex(
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
+    : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
+      vectorBlocks(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     this->idToLabelMapping.resize(params->initialCapacity);
 }

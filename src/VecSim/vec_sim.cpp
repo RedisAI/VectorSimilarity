@@ -110,10 +110,10 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     try {
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB:
-            index = HNSWFactory::NewIndex(&params->hnswParams, allocator);
+            index = HNSWFactory::NewIndex(params, allocator);
             break;
         case VecSimAlgo_BF:
-            index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
+            index = BruteForceFactory::NewIndex(params, allocator);
             break;
         case VecSimAlgo_TIERED:
             index = TieredFactory::NewIndex(&params->tieredParams, allocator);

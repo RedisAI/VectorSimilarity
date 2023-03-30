@@ -13,19 +13,28 @@ namespace HNSWFactory {
 
 template <typename DataType, typename DistType = DataType>
 inline HNSWIndex<DataType, DistType> *
-NewIndex_ChooseMultiOrSingle(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
+                             const AbstractIndexInitParams &abstractInitParams) {
     // check if single and return new hnsw_index
     if (params->multi)
-        return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
+        return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, abstractInitParams);
     else
-        return new (allocator) HNSWIndex_Single<DataType, DistType>(params, allocator);
+        return new (allocator) HNSWIndex_Single<DataType, DistType>(params, abstractInitParams);
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
-    if (params->type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
-    } else if (params->type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(params, allocator);
+VecSimIndex *NewIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+    const HNSWParams *hnswParams = &params->hnswParams;
+    AbstractIndexInitParams abstractInitParams = {.allocator = allocator,
+                                                  .dim = hnswParams->dim,
+                                                  .vecType = hnswParams->type,
+                                                  .metric = hnswParams->metric,
+                                                  .blockSize = hnswParams->blockSize,
+                                                  .multi = hnswParams->multi,
+                                                  .logCtx = params->logCtx};
+    if (hnswParams->type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams);
+    } else if (hnswParams->type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams);
     }
 
     // If we got here something is wrong.
