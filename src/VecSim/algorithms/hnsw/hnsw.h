@@ -1112,7 +1112,7 @@ template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
     // Swap label - this is relevant for inplace delete only, since when we mark vector as deleted
     // we already remove its label.
-    if (!has_marked_deleted) {
+    if (!has_marked_deleted || !isMarkedDeleted(cur_element_count)) {
         replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id,
                          cur_element_count);
     }
@@ -1377,7 +1377,10 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
             break;
         }
         // If this specific new neighbor is deleted, we don't add this connection and continue.
-        if (isMarkedDeleted(chosen_id)) {
+        // Also, don't add a new node whose being indexed in parallel, as it may choose this node
+        // as its neighbor and create a double connection (then this node will have a duplicate
+        // neighbor).
+        if (isMarkedDeleted(chosen_id) || isInProcess(chosen_id)) {
             continue;
         }
         auto *new_neighbor_incoming_edges = getIncomingEdgesPtr(chosen_id, level);
