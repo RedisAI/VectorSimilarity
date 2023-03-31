@@ -40,6 +40,11 @@ public:
 
     RaftFlatIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
+    int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true)
+    {
+        // TODO
+        return 0;
+    }
     int deleteVector(labelType label) override { return 0;}
     double getDistanceFrom(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
@@ -65,6 +70,7 @@ public:
         return counts_; //TODO: Return unique counts
     }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryResultBatch_List topKQueryBatch(const void *queryBlob, size_t k, VecSimQueryParams *queryParams);
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius, VecSimQueryParams *queryParams) override
     {
         assert(!"RangeQuery not implemented");
@@ -178,4 +184,38 @@ VecSimQueryResult_List RaftFlatIndex::topKQuery(
     array_free(neighbors);
     array_free(distances);
     return result_list;
+}
+
+// Search for the k closest vectors to a given vector in the index.
+VecSimQueryResultBatch_List RaftFlatIndex::topKQueryBatch(
+    const void *queryBlob, size_t k, VecSimQueryParams *queryParams)
+{
+    VecSimQueryResultBatch_List resultBatchList = {0};
+    if (!flat_index_) {
+        return resultBatchList;
+    }
+    auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, queryParams->batchSize, this->dim);
+    auto neighbors_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, queryParams->batchSize, k);
+    auto distances_gpu = raft::make_device_matrix<float, std::int64_t>(res_, queryParams->batchSize, k);
+    raft::copy(vector_data_gpu.data_handle(), (const DataType*)queryBlob, this->dim * queryParams->batchSize, res_.get_stream());
+    raft::neighbors::ivf_flat::search(res_, search_params_, *flat_index_, raft::make_const_mdspan(vector_data_gpu.view()), neighbors_gpu.view(), distances_gpu.view());
+
+    auto result_size = queryParams->batchSize * k;
+    auto neighbors = array_new_len<std::int64_t>(result_size, result_size);
+    auto distances = array_new_len<float>(result_size, result_size);
+    raft::copy(neighbors, neighbors_gpu.data_handle(), result_size, res_.get_stream());
+    raft::copy(distances, distances_gpu.data_handle(), result_size, res_.get_stream());
+    resultBatchList.nResults = queryParams->batchSize;
+    resultBatchList.resultsList = array_new_len<VecSimQueryResult_List>(queryParams->batchSize, queryParams->batchSize);
+    for (size_t queryId = 0; queryId < queryParams->batchSize; queryId++) {
+        resultBatchList.resultsList[queryId].code = VecSim_QueryResult_OK;
+        resultBatchList.resultsList[queryId].results = array_new_len<VecSimQueryResult>(k, k);
+        for (size_t i = 0; i < k; ++i) {
+            VecSimQueryResult_SetId(resultBatchList.resultsList[queryId].results[i], neighbors[i + queryId * k]);
+            VecSimQueryResult_SetScore(resultBatchList.resultsList[queryId].results[i], distances[i + queryId * k]);
+        }
+    }
+    array_free(neighbors);
+    array_free(distances);
+    return resultBatchList;
 }

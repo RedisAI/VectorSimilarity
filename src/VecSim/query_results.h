@@ -45,6 +45,14 @@ typedef struct {
 } VecSimQueryResult_List;
 
 /**
+ * @brief An opaque object from which resultsLists can be obtained via iterator.
+ */
+typedef struct {
+    VecSimQueryResult_List *resultsList;
+    size_t nResults;
+} VecSimQueryResultBatch_List;
+
+/**
  * @brief Iterator for going over the list of results that had returned form a query
  */
 typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
