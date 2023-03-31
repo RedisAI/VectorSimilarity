@@ -49,7 +49,7 @@ endif()
 
 if(USE_CUDA)
   rapids_cpm_init()
-  set(RAPIDS_VERSION 23.02)
+  set(RAPIDS_VERSION 23.04)
   include(cmake/libraft.cmake)
 
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")

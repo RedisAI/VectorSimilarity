@@ -290,7 +290,7 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) {
-    auto rl = (VecSimQueryResult_List){0};
+    VecSimQueryResult_List rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
 

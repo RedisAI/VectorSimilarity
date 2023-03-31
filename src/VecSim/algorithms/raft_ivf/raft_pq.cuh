@@ -9,11 +9,17 @@
 #include "raft/neighbors/ivf_pq.cuh"
 #include "raft/neighbors/ivf_pq_types.hpp"
 
+#ifdef RAFT_COMPILED
+#include <raft/neighbors/specializations.cuh>
+#endif
+
 extern raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm);
 
-template <typename DataType, typename DistType>
-class RaftPQIndex : public VecSimIndexAbstract<DistType> {
+class RaftPQIndex : public VecSimIndexAbstract<float> {
 public:
+    using DataType = float;
+    using DistType = float;
+    using raftIvfPQIndex = raft::neighbors::ivf_pq::index<std::int64_t>;
     RaftPQIndex(const RaftPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType label) override { 
@@ -83,15 +89,13 @@ public:
 
 protected:
     raft::device_resources res_;
-    std::unique_ptr<raft::neighbors::ivf_pq::index<std::int64_t>> pq_index_;
+    std::unique_ptr<raftIvfPQIndex> pq_index_;
     idType counts_;
     raft::neighbors::ivf_pq::index_params build_params_;
     raft::neighbors::ivf_pq::search_params search_params_;
 };
 
-template <typename DataType, typename DistType>
-RaftPQIndex<DataType, DistType>::RaftPQIndex(const RaftPQParams *params,
-                                               std::shared_ptr<VecSimAllocator> allocator)
+RaftPQIndex::RaftPQIndex(const RaftPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
       counts_(0)
 {
@@ -133,27 +137,24 @@ RaftPQIndex<DataType, DistType>::RaftPQIndex(const RaftPQParams *params,
             assert(!"Unexpected codebook kind value");
     }
     search_params_.preferred_shmem_carveout = params->preferredShmemCarveout;
-    //pq_index_ = std::make_unique<raft::neighbors::ivf_pq::index<std::int64_t>>(raft::neighbors::ivf_pq::build<std::int64_t>(res_, build_params,
+    //pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<std::int64_t>(res_, build_params,
     //                                                                       nullptr, 0, this->dim));
 }
 
-template <typename DataType, typename DistType>
-int RaftPQIndex<DataType, DistType>::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
+int RaftPQIndex::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
 {
     assert(label < static_cast<labelType>(std::numeric_limits<std::int64_t>::max()));
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
     auto label_converted = static_cast<std::int64_t>(label);
-    auto label_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(res_, 1);
+    auto label_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, 1, 1);
     raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
     raft::copy(label_gpu.data_handle(), &label_converted, 1, res_.get_stream());
 
-    // TODO use mdspan ivf_pq functions of 23.04
     if (!pq_index_) {
-        pq_index_ = std::make_unique<raft::neighbors::ivf_pq::index<std::int64_t>>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
-            res_, build_params_, vector_data_gpu.data_handle(), std::int64_t(1), uint32_t(this->dim)));
+        pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
+            res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
     } else {
-        raft::neighbors::ivf_pq::extend(res_, pq_index_.get(), vector_data_gpu.data_handle(),
-            label_gpu.data_handle(), std::int64_t(1));
+        raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()), std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
     }
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
@@ -162,8 +163,7 @@ int RaftPQIndex<DataType, DistType>::addVector(const void *vector_data, labelTyp
 }
 
 // Search for the k closest vectors to a given vector in the index.
-template <typename DataType, typename DistType>
-VecSimQueryResult_List RaftPQIndex<DataType, DistType>::topKQuery(
+VecSimQueryResult_List RaftPQIndex::topKQuery(
     const void *queryBlob, size_t k, VecSimQueryParams *queryParams)
 {
     VecSimQueryResult_List result_list = {0};
@@ -175,7 +175,7 @@ VecSimQueryResult_List RaftPQIndex<DataType, DistType>::topKQuery(
     auto neighbors_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, queryParams->batchSize, k);
     auto distances_gpu = raft::make_device_matrix<float, std::int64_t>(res_, queryParams->batchSize, k);
     raft::copy(vector_data_gpu.data_handle(), (const DataType*)queryBlob, this->dim * queryParams->batchSize, res_.get_stream());
-    raft::neighbors::ivf_pq::search(res_, search_params_, *pq_index_, vector_data_gpu.data_handle(), 1, k, neighbors_gpu.data_handle(), distances_gpu.data_handle());
+    raft::neighbors::ivf_pq::search(res_, search_params_, *pq_index_, raft::make_const_mdspan(vector_data_gpu.view()), neighbors_gpu.view(), distances_gpu.view());
 
     auto result_size = queryParams->batchSize * k;
     auto neighbors = array_new_len<std::int64_t>(result_size, result_size);

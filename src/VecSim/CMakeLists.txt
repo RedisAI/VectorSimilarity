@@ -41,5 +41,4 @@ PUBLIC
     $<$<BOOL:${VECSIM_BUILD_TESTS}>:VectorSimilaritySerializer>
 PRIVATE
     $<$<BOOL:${USE_CUDA}>:raft::raft>
-    $<$<BOOL:${USE_CUDA}>:raft::distance>
-    $<$<BOOL:${USE_CUDA}>:raft::nn>)
+    $<$<BOOL:${USE_CUDA}>:raft::compiled>)
