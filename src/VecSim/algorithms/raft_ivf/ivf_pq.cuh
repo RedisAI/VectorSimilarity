@@ -15,12 +15,12 @@
 
 extern raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm);
 
-class RaftPQIndex : public VecSimIndexAbstract<float> {
+class RaftIVFPQIndex : public VecSimIndexAbstract<float> {
 public:
     using DataType = float;
     using DistType = float;
     using raftIvfPQIndex = raft::neighbors::ivf_pq::index<std::int64_t>;
-    RaftPQIndex(const RaftPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType label) override { 
         assert(!"deleteVector not implemented");
@@ -57,7 +57,7 @@ public:
     virtual VecSimIndexInfo info() const override
     {
         VecSimIndexInfo info;
-        info.algo = VecSimAlgo_RaftPQ;
+        info.algo = VecSimAlgo_RaftIVFPQ;
         info.bfInfo.dim = this->dim;
         info.bfInfo.type = this->vecType;
         info.bfInfo.metric = this->metric;
@@ -95,7 +95,7 @@ protected:
     raft::neighbors::ivf_pq::search_params search_params_;
 };
 
-RaftPQIndex::RaftPQIndex(const RaftPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
+RaftIVFPQIndex::RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
       counts_(0)
 {
@@ -105,10 +105,10 @@ RaftPQIndex::RaftPQIndex(const RaftPQParams *params, std::shared_ptr<VecSimAlloc
     build_params_.pq_dim = params->pqDim;
     build_params_.add_data_on_build = true;
     switch (params->codebookKind) {
-        case (RaftPQ_PerCluster):
+        case (RaftIVFPQ_PerCluster):
             build_params_.codebook_kind = raft::neighbors::ivf_pq::codebook_gen::PER_CLUSTER;
             break;
-        case (RaftPQ_PerSubspace):
+        case (RaftIVFPQ_PerSubspace):
             build_params_.codebook_kind = raft::neighbors::ivf_pq::codebook_gen::PER_SUBSPACE;
             break;
         default:
@@ -141,7 +141,7 @@ RaftPQIndex::RaftPQIndex(const RaftPQParams *params, std::shared_ptr<VecSimAlloc
     //                                                                       nullptr, 0, this->dim));
 }
 
-int RaftPQIndex::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
+int RaftIVFPQIndex::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
 {
     assert(label < static_cast<labelType>(std::numeric_limits<std::int64_t>::max()));
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
@@ -163,7 +163,7 @@ int RaftPQIndex::addVector(const void *vector_data, labelType label, bool overwr
 }
 
 // Search for the k closest vectors to a given vector in the index.
-VecSimQueryResult_List RaftPQIndex::topKQuery(
+VecSimQueryResult_List RaftIVFPQIndex::topKQuery(
     const void *queryBlob, size_t k, VecSimQueryParams *queryParams)
 {
     VecSimQueryResult_List result_list = {0};

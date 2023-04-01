@@ -17,7 +17,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     algorithms/brute_force/brute_force_factory.cpp
     algorithms/hnsw/hnsw_factory.cpp
-    $<$<BOOL:${USE_CUDA}>:algorithms/raft_ivf/raft_ivf_factory.cu>
+    $<$<BOOL:${USE_CUDA}>:algorithms/raft_ivf/ivf_factory.cu>
     algorithms/brute_force/vector_block.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp

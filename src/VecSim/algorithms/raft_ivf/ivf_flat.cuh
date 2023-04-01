@@ -32,13 +32,13 @@ raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm){
     return result;
 }
 
-class RaftFlatIndex : public VecSimIndexAbstract<float> {
+class RaftIVFFlatIndex : public VecSimIndexAbstract<float> {
 public:
     using DataType = float;
     using DistType = float;
     using raftIvfFlatIndex = raft::neighbors::ivf_flat::index<DataType, std::int64_t>;
 
-    RaftFlatIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true)
     {
@@ -78,7 +78,7 @@ public:
     virtual VecSimIndexInfo info() const override
     {
         VecSimIndexInfo info;
-        info.algo = VecSimAlgo_RaftFlat;
+        info.algo = VecSimAlgo_RaftIVFFlat;
         info.bfInfo.dim = this->dim;
         info.bfInfo.type = this->vecType;
         info.bfInfo.metric = this->metric;
@@ -117,7 +117,7 @@ protected:
     raft::neighbors::ivf_flat::search_params search_params_;
 };
 
-RaftFlatIndex::RaftFlatIndex(const RaftFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)
+RaftIVFFlatIndex::RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
       counts_(0)
 {
@@ -134,7 +134,7 @@ RaftFlatIndex::RaftFlatIndex(const RaftFlatParams *params, std::shared_ptr<VecSi
     //                                                                       nullptr, 0, this->dim));
 }
 
-int RaftFlatIndex::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
+int RaftIVFFlatIndex::addVector(const void *vector_data, labelType label, bool overwrite_allowed)
 {
     assert(label < static_cast<labelType>(std::numeric_limits<std::int64_t>::max()));
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
@@ -157,7 +157,7 @@ int RaftFlatIndex::addVector(const void *vector_data, labelType label, bool over
 }
 
 // Search for the k closest vectors to a given vector in the index.
-VecSimQueryResult_List RaftFlatIndex::topKQuery(
+VecSimQueryResult_List RaftIVFFlatIndex::topKQuery(
     const void *queryBlob, size_t k, VecSimQueryParams *queryParams)
 {
     VecSimQueryResult_List result_list = {0};
@@ -187,7 +187,7 @@ VecSimQueryResult_List RaftFlatIndex::topKQuery(
 }
 
 // Search for the k closest vectors to a given vector in the index.
-VecSimQueryResultBatch_List RaftFlatIndex::topKQueryBatch(
+VecSimQueryResultBatch_List RaftIVFFlatIndex::topKQueryBatch(
     const void *queryBlob, size_t k, VecSimQueryParams *queryParams)
 {
     VecSimQueryResultBatch_List resultBatchList = {0};

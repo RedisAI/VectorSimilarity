@@ -13,7 +13,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
-#include "VecSim/algorithms/raft_ivf/raft_ivf_factory.h"
+#include "VecSim/algorithms/raft_ivf/ivf_factory.h"
 #include <cassert>
 #include "memory.h"
 
@@ -111,11 +111,11 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_BF:
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
-        case VecSimAlgo_RaftFlat:
-            index = RaftFlatFactory::NewIndex(&params->raftFlatParams, allocator);
+        case VecSimAlgo_RaftIVFFlat:
+            index = RaftIVFFlatFactory::NewIndex(&params->raftIVFFlatParams, allocator);
             break;
-        case VecSimAlgo_RaftPQ:
-            index = RaftPQFactory::NewIndex(&params->raftPQParams, allocator);
+        case VecSimAlgo_RaftIVFPQ:
+            index = RaftIVFPQFactory::NewIndex(&params->raftIVFPQParams, allocator);
             break;
         }
     } catch (...) {
@@ -130,10 +130,10 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
         return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->bfParams);
-    case VecSimAlgo_RaftFlat:
-        return RaftFlatFactory::EstimateInitialSize(&params->raftFlatParams);
-    case VecSimAlgo_RaftPQ:
-        return RaftPQFactory::EstimateInitialSize(&params->raftPQParams);
+    case VecSimAlgo_RaftIVFFlat:
+        return RaftIVFFlatFactory::EstimateInitialSize(&params->raftIVFFlatParams);
+    case VecSimAlgo_RaftIVFPQ:
+        return RaftIVFPQFactory::EstimateInitialSize(&params->raftIVFPQParams);
     }
     return -1;
 }
@@ -165,10 +165,10 @@ extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->bfParams);
-    case VecSimAlgo_RaftFlat:
-        return RaftFlatFactory::EstimateElementSize(&params->raftFlatParams);
-    case VecSimAlgo_RaftPQ:
-        return RaftPQFactory::EstimateElementSize(&params->raftPQParams);
+    case VecSimAlgo_RaftIVFFlat:
+        return RaftIVFFlatFactory::EstimateElementSize(&params->raftIVFFlatParams);
+    case VecSimAlgo_RaftIVFPQ:
+        return RaftIVFPQFactory::EstimateElementSize(&params->raftIVFPQParams);
     }
     return -1;
 }

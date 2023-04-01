@@ -52,6 +52,15 @@ inline VecSimParams CreateParams(const BFParams &bf_params) {
     return params;
 }
 
+inline VecSimParams CreateParams(const RaftIVFFlatParams &flat_params) {
+    VecSimParams params{.algo = flat_params, .raftIVFFlatParams = flat_params};
+    return params;
+}
+
+inline VecSimParams CreateParams(const RaftIVFPQParams &pq_params) {
+    VecSimParams params{.algo = VecSimAlgo_RaftIVFPQ, .raftIVFPQParams = pq_params};
+    return params;
+}
 namespace test_utils {
 template <typename IndexParams>
 inline VecSimIndex *CreateNewIndex(IndexParams &index_params, VecSimType type,

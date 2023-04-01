@@ -28,7 +28,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RaftFlat, VecSimAlgo_RaftPQ } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RaftIVFFlat, VecSimAlgo_RaftIVFPQ } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -37,7 +37,7 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMet
 typedef enum { DELETE_MARK = 0x01 } Flags;
 
 // Codebook kind for Raft PQ index
-typedef enum { RaftPQ_PerCluster, RaftPQ_PerSubspace } RaftPQCodebookKind;
+typedef enum { RaftIVFPQ_PerCluster, RaftIVFPQ_PerSubspace } RaftIVFPQCodebookKind;
 
 // Supported CUDA type
 typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } RaftCudaType;
@@ -130,7 +130,7 @@ typedef struct {
     size_t kmeans_nIters;
     float kmeans_trainsetFraction;
     unsigned nProbes;                    // The number of clusters to search
-} RaftFlatParams;
+} RaftIVFFlatParams;
 
 typedef struct {
     VecSimType type;                     // Datatype to index.
@@ -140,7 +140,7 @@ typedef struct {
     size_t nLists;                       // Number of inverted lists.
     size_t pqBits;                       // If the lists centers should be updated for new vectors
     size_t pqDim;                        // If the lists centers should be updated for new vectors
-    RaftPQCodebookKind codebookKind;     // "PerCluster" or "PerSubspace"
+    RaftIVFPQCodebookKind codebookKind;  // "PerCluster" or "PerSubspace"
     bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
     size_t kmeans_nIters;                // Number of iterations searching for kmeans centers
     float kmeans_trainsetFraction;       // Fraction of data to use during iterative kmeans building
@@ -148,7 +148,7 @@ typedef struct {
     RaftCudaType lutType;                // Data type of look up table created at search time
     RaftCudaType internalDistanceType;   // Data type of look up table created at search time
     double preferredShmemCarveout;       // Fraction of SM's unified memory / L1 cache to be used as shared memory
-} RaftPQParams;
+} RaftIVFPQParams;
 
 typedef struct {
     VecSimAlgo algo; // Algorithm to use.
@@ -156,8 +156,8 @@ typedef struct {
         HNSWParams hnswParams;
         BFParams bfParams;
         TieredHNSWParams tieredHNSWParams;
-        RaftFlatParams raftFlatParams;
-        RaftPQParams raftPQParams;
+        RaftIVFFlatParams raftIVFFlatParams;
+        RaftIVFPQParams raftIVFPQParams;
     };
 } VecSimParams;
 
@@ -290,6 +290,7 @@ typedef struct {
             size_t dim;              // Vector size (dimension).
             VecSearchMode last_mode; // The mode in which the last query ran.
         } bfInfo;
+        // TODO: Raft IVF info
     };
     VecSimAlgo algo; // Algorithm being used.
 } VecSimIndexInfo;
