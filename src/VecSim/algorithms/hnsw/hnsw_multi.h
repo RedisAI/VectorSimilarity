@@ -218,7 +218,7 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
-    std::shared_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;

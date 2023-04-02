@@ -1495,8 +1495,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
         ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
 
         // Re-insert a deleted label with a different vector.
-        TEST_DATA_T other_vec_val = 2.0;
-        GenerateVector<TEST_DATA_T>(vector, dim, other_vec_val);
+        TEST_DATA_T new_vec_val = 2.0;
+        GenerateVector<TEST_DATA_T>(vector, dim, new_vec_val);
         VecSimIndex_AddVector(tiered_index, vector, vec_label);
         ASSERT_EQ(tiered_index->indexSize(), 2);
         ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
@@ -1511,7 +1511,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
         TEST_DATA_T deleted_vector[dim];
         GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
         ASSERT_EQ(tiered_index->index->getDistanceFrom(vec_label, deleted_vector),
-                  dim * pow(other_vec_val, 2));
+                  dim * pow(new_vec_val, 2));
     }
 }
 
@@ -1565,10 +1565,13 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->flatBuffer->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 2);
+    ASSERT_EQ(tiered_index->indexSize(), 3);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     ASSERT_EQ(jobQ.size(), 0);

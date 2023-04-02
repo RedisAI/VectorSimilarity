@@ -59,9 +59,14 @@ public:
     inline const labelType getLabelByInternalId(idType internal_id) const {
         return idToLabelMapping[internal_id];
     }
+    // Remove a specific vector that is stored under a label from the index by its internal id.
     virtual int deleteVectorById(labelType label, idType id) = 0;
+    // Check if a certain label exists in the index.
     virtual inline bool isLabelExists(labelType label) = 0;
+    // Return a list of the internal ids that correspond a certain label.
     virtual inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const = 0;
+    // Return a set of all labels that are stored in the index (helper for computing label count
+    // without duplicates in tiered index).
     virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
     virtual ~BruteForceIndex();
