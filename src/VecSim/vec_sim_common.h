@@ -35,7 +35,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED_HNSW } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -83,6 +83,7 @@ typedef void (*JobCallback)(AsyncJob *);
  * @brief Index initialization parameters.
  *
  */
+typedef struct VecSimParams VecSimParams;
 typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
@@ -113,21 +114,17 @@ typedef struct {
     void *memoryCtx;            // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
+    VecSimParams *primaryIndexParams; // Parameters to initialize the index.
 } TieredIndexParams;
 
-typedef struct {
-    HNSWParams hnswParams;
-    TieredIndexParams tieredParams;
-} TieredHNSWParams;
-
-typedef struct {
+struct VecSimParams {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
-        TieredHNSWParams tieredHNSWParams;
+        TieredIndexParams tieredParams;
     };
-} VecSimParams;
+};
 
 /**
  * The specific job types in use (to be extended in the future by demand)

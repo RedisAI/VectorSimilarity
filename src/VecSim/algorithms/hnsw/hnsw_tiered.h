@@ -90,7 +90,8 @@ private:
 #endif
 
 public:
-    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
+    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
+                    const TieredIndexParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) override;
@@ -299,7 +300,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                                                     TieredIndexParams tieredParams)
+                                                     const TieredIndexParams &tieredParams)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams), swapJobs(this->allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {

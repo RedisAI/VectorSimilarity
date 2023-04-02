@@ -78,7 +78,7 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
         param.hnswParams.metric = VecSimMetric_L2;
         param.hnswParams.multi = false;
         break;
-    case VecSimAlgo_TIERED_HNSW:
+    case VecSimAlgo_TIERED:
         return NULL;
     }
 
