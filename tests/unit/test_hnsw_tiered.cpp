@@ -40,7 +40,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = 4,
                          .metric = VecSimMetric_L2,
-                         .multi = TypeParam::get_index_label_type()};
+                         .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto jobQueueCtx = IndexExtCtx();
@@ -110,7 +110,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     size_t n = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
     size_t bs = DEFAULT_BLOCK_SIZE;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
                               .dim = dim,
@@ -191,7 +191,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_L2,
@@ -279,7 +279,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_L2,
-                         .multi = TypeParam::get_index_label_type()};
+                         .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto *index_ctx = new IndexExtCtx();
@@ -357,7 +357,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_L2,
-                         .multi = TypeParam::get_index_label_type()};
+                         .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
@@ -752,7 +752,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
     size_t dim = 4;
     size_t k = 10;
     size_t n = 2000;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -863,7 +863,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
 
     size_t block_size = n / 100;
 
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -1002,7 +1002,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t dim = 4;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
@@ -1188,7 +1188,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t n = 1000;
     size_t dim = 4;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
@@ -1258,7 +1258,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
@@ -1488,7 +1488,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
     size_t n = 1000;
 
     size_t block_size = n / 100;
-    bool isMulti = TypeParam::get_index_label_type();
+    bool isMulti = TypeParam::isMulti();
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();

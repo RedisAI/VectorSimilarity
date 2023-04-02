@@ -33,7 +33,7 @@ using DataTypeSet =
 template <VecSimType type, bool IsMulti, typename DataType, typename DistType = DataType>
 struct IndexTypeExtended {
     static VecSimType get_index_type() { return type; }
-    static bool get_index_label_type() { return IsMulti; }
+    static bool isMulti() { return IsMulti; }
     typedef DataType data_t;
     typedef DistType dist_t;
 };
