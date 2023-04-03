@@ -260,6 +260,8 @@ public:
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
                                                                           size_t node_top_level);
+    // Return all the labels in the index - this should be used for computing the number of distinct
+    // labels in a tiered index, and caller should hold the index data guard.
     virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
     // Inline priority queue getter that need to be implemented by derived class.
@@ -456,9 +458,12 @@ void HNSWIndex<DataType, DistType>::returnVisitedList(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
+    // Here we are holding the global index data guard (and the main index lock of the tiered index
+    // for shared ownership).
     assert(internalId < this->cur_element_count);
     if (!isMarkedDeleted(internalId)) {
         if (internalId == entrypoint_node_) {
+            // Internally, we hold and release the entrypoint neighbors lock.
             replaceEntryPoint();
         }
         elementFlags *flags = getElementFlags(internalId);

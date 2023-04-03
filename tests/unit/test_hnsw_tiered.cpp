@@ -1595,9 +1595,99 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(jobQ.size(), 2);
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 2);
+    jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 1);
+    jobQ.front().job->Execute(jobQ.front().job);
+}
+
+TYPED_TEST(HNSWTieredIndexTest, deleteVectorMultiFromFlatAdvanced) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                       .jobQueueCtx = &index_ctx,
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback};
+    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+
+    // Insert vectors to flat buffer under two distinct labels, so that ids 0, 2 will be associated
+    // with the first label, and ids 1, 3, 4 will be associated with the second label.
+    labelType vec_label_first = 0;
+    labelType vec_label_second = 1;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+
+    // Remove the second label, expect to see that id 1 will hold id 2 eventually.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
+    auto updated_ids = tiered_index->flatBuffer->deleteVectorAndGetUpdatedIds(vec_label_second);
+    ASSERT_EQ(updated_ids.size(), 1);
+    ASSERT_EQ(updated_ids.at(1), 2);
+    for (auto &it : updated_ids) {
+        tiered_index->updateInsertJobInternalId(it.second, it.first);
+    }
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first).size(), 2);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->id, 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->id, 1);
+
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 2);
+
+    // Remove the first label, expect an empty set.
+    updated_ids = tiered_index->flatBuffer->deleteVectorAndGetUpdatedIds(vec_label_first);
+    ASSERT_EQ(updated_ids.size(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+    tiered_index->labelToInsertJobs.clear();
+
+    // Insert vectors to flat buffer under two distinct labels, so that ids 0, 3 will be associated
+    // with the first label, and ids 1, 2, 4 will be associated with the second label. This should
+    // test the case of multiple moves once we delete the second label:
+    // {1->4} => {1->4, 2->3} => {1->3}
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
+    updated_ids = tiered_index->flatBuffer->deleteVectorAndGetUpdatedIds(vec_label_second);
+    ASSERT_EQ(updated_ids.size(), 1);
+    ASSERT_EQ(updated_ids.at(1), 3);
+    for (auto &it : updated_ids) {
+        tiered_index->updateInsertJobInternalId(it.second, it.first);
+    }
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first).size(), 2);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->id, 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->id, 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 2);
+    tiered_index->labelToInsertJobs.clear();
+
+    // Clean pending insert jobs.
+    while (!jobQ.empty()) {
+        delete jobQ.front().job;
+        jobQ.pop();
+    }
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
@@ -1626,7 +1716,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         // Set the created tiered index in the index external context.
         index_ctx.index_strong_ref.reset(tiered_index);
 
-        size_t per_label = isMulti ? 10 : 1;
+        size_t per_label = isMulti ? 50 : 1;
         size_t n_labels = n / per_label;
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.

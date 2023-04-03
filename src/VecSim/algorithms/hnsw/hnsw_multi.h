@@ -31,6 +31,9 @@ private:
         label_lookup_.at(label).push_back(id);
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
+
+    // Return all the labels in the index - this should be used for computing the number of distinct
+    // labels in a tiered index, and caller should hold the index data guard.
     inline vecsim_stl::set<labelType> getLabelsSet() const override {
         vecsim_stl::set<labelType> keys(this->allocator);
         for (auto &it : label_lookup_) {
