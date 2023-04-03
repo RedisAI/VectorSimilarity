@@ -61,8 +61,8 @@ public:
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
 
-    VecSimInfo* info() override const {
-        VecSimInfo* info = VecSimInfo_New();
+    VecSimInfo *info() override const {
+        VecSimInfo *info = VecSimInfo_New();
         info->indexType = this->getType();
         info->metric = this->getMetric();
         info->dimension = this->getDim();

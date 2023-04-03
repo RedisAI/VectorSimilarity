@@ -1,8 +1,8 @@
 #include "vec_sim_info.h"
 #include "utils/vec_utils.h"
 
-VecSimInfoIterator* VecSimInfo::getIterator() {
-        VecSimInfoIterator *infoIterator = new VecSimInfoIterator(7);
+VecSimInfoIterator *VecSimInfo::getIterator() {
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(7);
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
@@ -36,9 +36,8 @@ VecSimInfoIterator* VecSimInfo::getIterator() {
         VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = this->memory}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
-                         .fieldType = INFOFIELD_STRING,
-                         .fieldValue = {FieldValue{
-                             .stringValue = VecSimSearchMode_ToString(this->last_mode)}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(this->last_mode)}}});
 }
