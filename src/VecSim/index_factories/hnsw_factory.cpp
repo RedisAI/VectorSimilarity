@@ -6,7 +6,7 @@
 
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 
 namespace HNSWFactory {

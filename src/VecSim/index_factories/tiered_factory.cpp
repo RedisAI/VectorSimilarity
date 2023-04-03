@@ -4,11 +4,11 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/algorithms/hnsw/tiered_factory.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
-#include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
+#include "VecSim/index_factories/brute_force_factory.h"
 
-#include "hnsw_tiered.h"
+#include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 
 namespace TieredFactory {
 

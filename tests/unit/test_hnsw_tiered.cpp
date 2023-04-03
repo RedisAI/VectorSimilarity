@@ -1,4 +1,4 @@
-#include "VecSim/algorithms/hnsw/tiered_factory.h"
+#include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"

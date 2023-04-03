@@ -2,7 +2,7 @@
 
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
-#include "hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/utils/merge_results.h"
 
 #include <unordered_map>

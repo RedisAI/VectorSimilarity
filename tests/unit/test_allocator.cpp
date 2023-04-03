@@ -12,7 +12,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "test_utils.h"
 #include "VecSim/utils/serializer.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 
 const size_t vecsimAllocationOverhead = VecSimAllocator::getAllocationOverheadSize();
 

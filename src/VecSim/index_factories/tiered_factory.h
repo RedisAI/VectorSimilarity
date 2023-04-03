@@ -5,12 +5,9 @@
  */
 #pragma once
 
-#include <cstdlib> // size_t
-#include <memory>  // std::shared_ptr
-
-#include "VecSim/vec_sim.h"              //typedef VecSimIndex
-#include "VecSim/vec_sim_common.h"       // TieredIndexParams
-#include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
+#include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_common.h"
+#include "VecSim/memory/vecsim_malloc.h"
 
 namespace TieredFactory {
 VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator);

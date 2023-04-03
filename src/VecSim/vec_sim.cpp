@@ -11,9 +11,9 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/brute_force/brute_force_factory.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
-#include "VecSim/algorithms/hnsw/tiered_factory.h"
+#include "VecSim/index_factories/brute_force_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
+#include "VecSim/index_factories/tiered_factory.h"
 #include <cassert>
 #include "memory.h"
 
