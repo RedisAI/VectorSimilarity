@@ -259,8 +259,6 @@ extern "C" void VecSimIndex_Free(VecSimIndex *index) {
     delete index;
 }
 
-extern "C" VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index) { return index->info(); }
-
 extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
     return index->infoIterator();
 }

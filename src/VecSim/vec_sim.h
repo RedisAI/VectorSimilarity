@@ -141,12 +141,6 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
 VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
                                               double radius, VecSimQueryParams *queryParams,
                                               VecSimQueryResult_Order);
-/**
- * @brief Return index information.
- * @param index the index to return its info.
- * @return Index general and specific meta-data.
- */
-VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
 
 /**
  * @brief Returns an info iterator for generic reply purposes.

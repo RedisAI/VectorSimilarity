@@ -60,4 +60,23 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
+
+    VecSimInfo* info() override const {
+        VecSimInfo* info = VecSimInfo_New();
+        info->indexType = this->getType();
+        info->metric = this->getMetric();
+        info->dimension = this->getDim();
+        info->size = this->size();
+        info->lastSearchMode = this->last_mode;
+        info->isMultiValue = this->isMultiValue();
+        info->labelCount = this->getLabelCount();
+        return info;
+    }
+
+    VecSimInfoIterator *infoIterator() override const {
+        VecSimInfo *info = this->info();
+        VecSimInfoIterator *iter = info->infoIterator();
+        delete info;
+        return iter;
+    }
 };
