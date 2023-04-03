@@ -123,7 +123,8 @@ typedef struct {
     VecSimType type;                     // Datatype to index.
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
-    size_t blockSize;
+    bool multi;                          // Determines if the index should multi-index or not.
+    size_t blockSize;                    // TODO: Unused currently
     size_t nLists;                       // Number of inverted lists.
     bool adaptiveCenters;                // If the lists centers should be updated for new vectors
     bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
@@ -136,11 +137,12 @@ typedef struct {
     VecSimType type;                     // Datatype to index.
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
+    bool multi;                          // Determines if the index should multi-index or not.
     size_t blockSize;
     size_t nLists;                       // Number of inverted lists.
     size_t pqBits;                       // If the lists centers should be updated for new vectors
     size_t pqDim;                        // If the lists centers should be updated for new vectors
-    RaftIVFPQCodebookKind codebookKind;  // "PerCluster" or "PerSubspace"
+    RaftIVFPQCodebookKind codebookKind;  // "RaftIVFPQ_PerCluster" or "RaftIVFPQ_PerSubspace"
     bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
     size_t kmeans_nIters;                // Number of iterations searching for kmeans centers
     float kmeans_trainsetFraction;       // Fraction of data to use during iterative kmeans building

@@ -6,9 +6,9 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/algorithms/brute_force/bfs_batch_iterator.h"   // TODO: Temporary header to remove
 
-#include "raft/core/device_resources.hpp"
-#include "raft/neighbors/ivf_flat.cuh"
-#include "raft/neighbors/ivf_flat_types.hpp"
+#include <raft/core/device_resources.hpp>
+#include <raft/neighbors/ivf_flat.cuh>
+#include <raft/neighbors/ivf_flat_types.hpp>
 
 #ifdef RAFT_COMPILED
 #include <raft/neighbors/specializations.cuh>
@@ -40,22 +40,13 @@ public:
 
     RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
-    int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true)
-    {
-        // TODO
-        return 0;
-    }
+    int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true);
     int deleteVector(labelType label) override { return 0;}
     double getDistanceFrom(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
         return INVALID_SCORE;
     }
-    size_t indexSize() const override {
-        if (!flat_index_) {
-            return 0;
-        }
-        return counts_;
-    }
+    size_t indexSize() const override { return counts_; }
     size_t indexCapacity() const override {
         assert(!"indexCapacity not implemented");
         return 0;
@@ -64,9 +55,6 @@ public:
         assert(!"increaseCapacity not implemented");
     }
     inline size_t indexLabelCount() const override {
-        if (!flat_index_) {
-            return 0;
-        }
         return counts_; //TODO: Return unique counts
     }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
@@ -118,7 +106,7 @@ protected:
 };
 
 RaftIVFFlatIndex::RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, params->multi),
       counts_(0)
 {
     //auto build_params = raft::neighbors::ivf_flat::index_params{};
@@ -154,6 +142,28 @@ int RaftIVFFlatIndex::addVector(const void *vector_data, labelType label, bool o
     // TODO normalizeVector for cosine?
     this->counts_ += 1;
     return 1;
+}
+
+int RaftIVFFlatIndex::addVectorBatch(const void *vector_data, labelType* labels, size_t batch_size, bool overwrite_allowed)
+{
+    auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, batch_size, this->dim);
+    auto label_original = std::vector<labelType>(labels, labels + batch_size);
+    auto label_converted = std::vector<std::int64_t>(label_original.begin(), label_original.end());
+    auto label_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(res_, batch_size);
+    raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
+    raft::copy(label_gpu.data_handle(), label_converted.data(), batch_size, res_.get_stream());
+
+    if (!flat_index_) {
+        flat_index_ = std::make_unique<raftIvfFlatIndex>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
+            res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
+    } else {
+        raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
+            std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
+    }
+    // TODO: Verify that label exists already?
+    // TODO normalizeVector for cosine?
+    this->counts_ += batch_size;
+    return batch_size;
 }
 
 // Search for the k closest vectors to a given vector in the index.

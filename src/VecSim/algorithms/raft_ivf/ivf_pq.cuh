@@ -30,12 +30,7 @@ public:
         assert(!"getDistanceFrom not implemented");
         return INVALID_SCORE;
     }
-    size_t indexSize() const override {
-        if (!pq_index_) {
-            return 0;
-        }
-        return counts_;
-    }
+    size_t indexSize() const override { return counts_; }
     size_t indexCapacity() const override {
         assert(!"indexCapacity not implemented");
         return 0;
@@ -44,9 +39,6 @@ public:
         assert(!"increaseCapacity not implemented");
     }
     inline size_t indexLabelCount() const override {
-        if (!pq_index_) {
-            return 0;
-        }
         return counts_; //TODO: Return unique counts
     }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
@@ -96,7 +88,7 @@ protected:
 };
 
 RaftIVFPQIndex::RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, false),
+    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, params->multi),
       counts_(0)
 {
     build_params_.metric = GetRaftDistanceType(params->metric);

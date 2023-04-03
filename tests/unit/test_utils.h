@@ -53,7 +53,7 @@ inline VecSimParams CreateParams(const BFParams &bf_params) {
 }
 
 inline VecSimParams CreateParams(const RaftIVFFlatParams &flat_params) {
-    VecSimParams params{.algo = flat_params, .raftIVFFlatParams = flat_params};
+    VecSimParams params{.algo = VecSimAlgo_RaftIVFFlat, .raftIVFFlatParams = flat_params};
     return params;
 }
 
