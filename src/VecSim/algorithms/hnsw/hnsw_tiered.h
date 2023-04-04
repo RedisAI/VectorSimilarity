@@ -2,7 +2,7 @@
 
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
-#include "hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/utils/merge_results.h"
 
 #include <unordered_map>
@@ -103,7 +103,8 @@ private:
 #endif
 
 public:
-    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams);
+    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
+                    const TieredIndexParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -145,8 +146,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
     delete insert_job;
+    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -386,7 +387,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                                                     TieredIndexParams tieredParams)
+                                                     const TieredIndexParams &tieredParams)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams), swapJobs(this->allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {

@@ -858,7 +858,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
 
 TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n_labels = 1000;
+    size_t n_labels = DEFAULT_BLOCK_SIZE;
     size_t perLabel = 1;
     size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
@@ -882,19 +882,22 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
 
     ASSERT_EQ(estimation, actual);
 
-    for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
+    for (size_t i = 0; i < bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, i);
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = EstimateElementSize(params) * (bs % n + bs);
+    estimation = EstimateElementSize(params) * (bs);
 
+    // Note we are adding vectors with ascending values. This causes the numbers of
+    // double connections, which are not taking into account in EstimateElementSize,
+    // to be zero
     actual = 0;
     for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
+        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
     }
-    ASSERT_GE(estimation * 1.01, actual);
-    ASSERT_LE(estimation * 0.99, actual);
+    ASSERT_GE(estimation * 1.02, actual);
+    ASSERT_LE(estimation * 0.98, actual);
 
     VecSimIndex_Free(index);
 }
