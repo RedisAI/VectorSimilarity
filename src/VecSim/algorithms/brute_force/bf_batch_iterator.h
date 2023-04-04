@@ -23,6 +23,7 @@ template <typename DataType, typename DistType>
 class BF_BatchIterator : public VecSimBatchIterator {
 protected:
     const BruteForceIndex<DataType, DistType> *index;
+    size_t index_label_count;
     vecsim_stl::vector<pair<DistType, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.
@@ -56,7 +57,7 @@ template <typename DataType, typename DistType>
 VecSimQueryResult_List
 BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
                                                          VecSimQueryResult_Order order) {
-    if ((this->index->indexLabelCount() - this->getResultsCount()) / 1000 > n_res) {
+    if ((this->index_label_count - this->getResultsCount()) / 1000 > n_res) {
         // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
     }
@@ -167,7 +168,8 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
     void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
-      index(bf_index), scores(allocator), scores_valid_start_pos(0) {}
+      index(bf_index), index_label_count(index->indexLabelCount()), scores(allocator),
+      scores_valid_start_pos(0) {}
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
@@ -178,6 +180,7 @@ BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryRe
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
 
+        // The only time we access the index. This function also updates the iterator's label count.
         auto rc = calculateScores();
 
         if (VecSim_OK != rc) {
@@ -198,8 +201,8 @@ BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryRe
 
 template <typename DataType, typename DistType>
 bool BF_BatchIterator<DataType, DistType>::isDepleted() {
-    assert(this->getResultsCount() <= this->index->indexLabelCount());
-    bool depleted = this->getResultsCount() == this->index->indexLabelCount();
+    assert(this->getResultsCount() <= this->index_label_count);
+    bool depleted = this->getResultsCount() == this->index_label_count;
     return depleted;
 }
 
