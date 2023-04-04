@@ -12,7 +12,7 @@
 
 # Ignore benchmark fetched data but not the source file
 /tests/benchmark/data/*
-!/tests/benchmark/data/hnsw_indices.txt
+!/tests/benchmark/data/hnsw_indices
 
 # Prerequisites
 *.d

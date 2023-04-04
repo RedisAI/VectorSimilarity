@@ -1,0 +1,94 @@
+name: default flow
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: default build job
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+      - name: install dependencies
+        run: sudo .install/install_script.sh
+      - name: install python packages
+        run: pip3 install -r requirements.txt
+      - name: check format
+        run: make check-format
+      - name: unit tests
+        run: make unit_test
+      - name: flow tests
+        run: make flow_test
+
+  start-runner:
+    needs: build
+    name: Start self-hosted EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          # Ubuntu 20.04 AMI
+          ec2-image-id: ami-0f4feb99425e13b50
+          ec2-instance-type: t3.xlarge
+          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_EC2_SG_ID }}
+
+
+  codecov:
+    name: codecov job
+    needs: start-runner # required to start the main job when the runner is ready
+    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: install dependencies
+        run: sudo .install/install_script.sh
+      - name: run codecov
+        run: make coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: /bin/Linux-x86_64-debug/cov.info
+
+  stop-runner:
+    name: Stop self-hosted EC2 runner
+    needs:
+      - start-runner
+      - codecov
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

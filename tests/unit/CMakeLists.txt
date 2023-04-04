@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 if(NOT DEFINED root)
 	get_filename_component(root ${CMAKE_CURRENT_LIST_DIR}/../.. ABSOLUTE)
 endif()
+
 message("# VectorSimilarity/tests/unit root: " ${root})
 message("# VectorSimilarity/tests/unit binroot: " ${binroot})
 

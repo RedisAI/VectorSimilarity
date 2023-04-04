@@ -77,4 +77,4 @@ void *VecSimAllocator::operator new[](size_t size) { return vecsim_malloc(size);
 void VecSimAllocator::operator delete(void *p, size_t size) { vecsim_free(p); }
 void VecSimAllocator::operator delete[](void *p, size_t size) { vecsim_free(p); }
 
-int64_t VecSimAllocator::getAllocationSize() { return *this->allocated.get(); }
+int64_t VecSimAllocator::getAllocationSize() const { return *this->allocated.get(); }
