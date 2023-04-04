@@ -739,7 +739,8 @@ TYPED_TEST(BruteForceMultiTest, removeVectorWithSwaps) {
 
     // Expect that the ids array of the second label will behave as following:
     // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
-    ASSERT_EQ(index->deleteVector(second_label), n / 2);
+    index->deleteVector(second_label);
+    ASSERT_EQ(index->indexLabelCount(), 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
 
     // Check that the internal ids of the first label are as expected.
@@ -748,7 +749,8 @@ TYPED_TEST(BruteForceMultiTest, removeVectorWithSwaps) {
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 0) != ids.end());
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 1) != ids.end());
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 2) != ids.end());
-    ASSERT_EQ(index->deleteVector(first_label), n / 2);
+    index->deleteVector(first_label);
+    ASSERT_EQ(index->indexLabelCount(), 0);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
