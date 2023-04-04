@@ -13,19 +13,15 @@
 
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
 template <bool withSet>
-VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryResult_List second,
-                                     size_t limit) {
-
+VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryResult *first_end,
+                                 VecSimQueryResult *&second, const VecSimQueryResult *second_end,
+                                 size_t limit) {
     VecSimQueryResult *results = array_new<VecSimQueryResult>(limit);
-    VecSimQueryResult_List mergedResults{.results = results, .code = VecSim_QueryResult_OK};
-    VecSimQueryResult *cur_first = first.results;
-    VecSimQueryResult *cur_second = second.results;
-    const auto first_end = cur_first + VecSimQueryResult_Len(first);
-    const auto second_end = cur_second + VecSimQueryResult_Len(second);
-
     // Will hold the ids of the results we've already added to the merged results.
     // Will be used only if withSet is true.
     std::unordered_set<size_t> ids;
+    auto &cur_first = first;
+    auto &cur_second = second;
 
     while (limit && cur_first != first_end && cur_second != second_end) {
         int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
@@ -69,7 +65,32 @@ VecSimQueryResult_List merge_results(VecSimQueryResult_List first, VecSimQueryRe
         }
     }
 
+    return results;
+}
+
+// Assumes that the arrays are sorted by score firstly and by id secondarily.
+template <bool withSet>
+VecSimQueryResult_List merge_result_lists(VecSimQueryResult_List first,
+                                          VecSimQueryResult_List second, size_t limit) {
+
+    VecSimQueryResult *cur_first = first.results;
+    VecSimQueryResult *cur_second = second.results;
+    const auto first_end = cur_first + VecSimQueryResult_Len(first);
+    const auto second_end = cur_second + VecSimQueryResult_Len(second);
+
+    auto results = merge_results<withSet>(cur_first, first_end, cur_second, second_end, limit);
+    VecSimQueryResult_List mergedResults{.results = results, .code = VecSim_QueryResult_OK};
+
     VecSimQueryResult_Free(first);
     VecSimQueryResult_Free(second);
     return mergedResults;
+}
+
+static inline void concat_results(VecSimQueryResult_List &first, VecSimQueryResult_List &second) {
+    VecSimQueryResult *dst = first.results;
+    VecSimQueryResult *src = second.results;
+
+    dst = array_ensure_cap(dst, array_len(dst) + array_len(src));
+    memcpy(dst + array_len(dst), src, array_len(src) * sizeof(VecSimQueryResult));
+    array_hdr(dst)->len += array_len(src);
 }

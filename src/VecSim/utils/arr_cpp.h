@@ -72,3 +72,12 @@ void array_free(T *arr) {
     array_hdr_t<T> *arr_hdr = array_hdr(arr);
     vecsim_free(arr_hdr);
 }
+
+#define array_pop_front(arr) array_pop_front_n(arr, 1)
+
+template <typename T>
+void array_pop_front_n(T *arr, size_t n) {
+    array_hdr_t<T> *arr_hdr = array_hdr(arr);
+    arr_hdr->len -= MIN(n, arr_hdr->len);
+    memmove(arr, arr + n, arr_hdr->len * sizeof(T));
+}
