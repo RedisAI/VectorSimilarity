@@ -449,6 +449,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                                                    void *auxiliaryCtx) {
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
     this->flatIndexGuard.lock();
+    if (this->flatBuffer->isLabelExists(label) && !this->index->isMultiValue()) {
+        // Overwrite the vector and invalidate its pending job.
+        auto *old_job = this->labelToInsertJobs.at(label).at(0);
+        old_job->id = INVALID_JOB_ID;
+        this->labelToInsertJobs.erase(label);
+    }
+
     if (this->flatBuffer->indexCapacity() == this->flatBuffer->indexSize()) {
         this->flatBuffer->increaseCapacity();
     }
@@ -469,6 +476,14 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     this->flatIndexGuard.unlock();
 
+    // Here, a worker might ingest the previous vector that was stored under "label"
+    // (in case of override in non-MULTI index) - so if it's there, we remove it (and create the
+    // required repair jobs).
+    if (!this->index->isMultiValue()) {
+        this->mainIndexGuard.lock_shared();
+        this->deleteLabelFromHNSW(label);
+        this->mainIndexGuard.unlock_shared();
+    }
     // Insert job to the queue and signal the workers updater
     this->submitSingleJob(new_insert_job);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
