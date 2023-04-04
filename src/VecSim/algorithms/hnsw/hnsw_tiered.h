@@ -3,7 +3,6 @@
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
-#include "VecSim/utils/merge_results.h"
 
 #include <unordered_map>
 /**
@@ -134,10 +133,6 @@ public:
     }
     VecSimIndexInfo info() const override { return this->backendIndex->info(); }
     VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }
-    VecSimBatchIterator *newBatchIterator(const void *queryBlob,
-                                          VecSimQueryParams *queryParams) const override {
-        return this->backendIndex->newBatchIterator(queryBlob, queryParams);
-    }
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
         return this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
