@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/index_factories/brute_force_factory.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
@@ -42,8 +42,11 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 
 size_t EstimateInitialSize(const BFParams *params) {
 
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
     // Constant part (not effected by parameters).
-    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
+    size_t est = sizeof(VecSimAllocator) + allocations_overhead;
+
     if (params->type == VecSimType_FLOAT32) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
@@ -52,7 +55,7 @@ size_t EstimateInitialSize(const BFParams *params) {
     // Parameters related part.
 
     if (params->initialCapacity) {
-        est += params->initialCapacity * sizeof(labelType) + sizeof(size_t);
+        est += params->initialCapacity * sizeof(labelType) + allocations_overhead;
     }
 
     return est;

@@ -53,7 +53,7 @@ void _delete_vectors(VecSimIndex *index, long long amount) {
         VecSimIndex_DeleteVector(index, i);
 }
 
-// Creates a generic index, supports Broute Force and HNSW.
+// Creates a generic index, supports Brute Force and HNSW.
 VecSimIndex *_create_index(VecSimAlgo algo) {
 
     VecSimParams param = {0};
@@ -78,6 +78,9 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
         param.hnswParams.metric = VecSimMetric_L2;
         param.hnswParams.multi = false;
         break;
+    // TODO: add memory test for tiered index
+    case VecSimAlgo_TIERED:
+        return NULL;
     }
 
     return VecSimIndex_New(&param);

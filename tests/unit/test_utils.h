@@ -29,6 +29,20 @@ struct IndexType {
 using DataTypeSet =
     ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
 
+// Define index type for tests that can be automatically generated for single and multi.
+template <VecSimType type, bool IsMulti, typename DataType, typename DistType = DataType>
+struct IndexTypeExtended {
+    static VecSimType get_index_type() { return type; }
+    static bool isMulti() { return IsMulti; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
+};
+
+using DataTypeSetExtended = ::testing::Types<IndexTypeExtended<VecSimType_FLOAT32, false, float>,
+                                             IndexTypeExtended<VecSimType_FLOAT32, true, float>,
+                                             IndexTypeExtended<VecSimType_FLOAT64, false, double>,
+                                             IndexTypeExtended<VecSimType_FLOAT64, true, double>>;
+
 template <typename data_t>
 static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
     for (size_t i = 0; i < dim; i++) {
@@ -50,6 +64,11 @@ inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
 
 inline VecSimParams CreateParams(const BFParams &bf_params) {
     VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    return params;
+}
+
+inline VecSimParams CreateParams(const TieredIndexParams &tiered_params) {
+    VecSimParams params{.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
     return params;
 }
 
