@@ -1,0 +1,63 @@
+name: multi-build flow
+
+on:
+  workflow_call:
+  pull_request:
+    types:
+      - labeled
+    branches-ignore:
+      - '*docs'
+      - '*noci'
+
+
+jobs:
+  checks:
+    if: (!endsWith(github.head_ref, 'docs') && !endsWith(github.head_ref, 'noci'))
+    name: checks if multi-build is required
+    runs-on: ubuntu-latest
+    outputs:
+      globally-needed: ${{ steps.check.outputs.globally-needed }}
+    steps:
+      - id: check
+        run: |
+          if [[ '${{ github.event_name }}' == 'schedule' ]] || [[ '${{ github.event_name }}' == 'workflow_call' ]] || [[ '${{ github.event.label.name }}' == 'multi-build' ]]; then
+            echo "globally-needed=true" >> $GITHUB_OUTPUT
+          else
+            echo "globally-needed=false" >> $GITHUB_OUTPUT
+          fi
+
+  rocky8:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'rocky8'
+    uses: ./.github/workflows/rocky8.yml
+
+  bionic:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'bionic'
+    uses: ./.github/workflows/bionic.yml
+
+  xenial:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'xenial'
+    uses: ./.github/workflows/xenial.yml
+
+  focal:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'focal'
+    uses: ./.github/workflows/focal.yml
+
+  jammy:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'jammy'
+    uses: ./.github/workflows/jammy.yml
+
+  macos:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'macos'
+    uses: ./.github/workflows/macos.yml
+
+  arm:
+    needs: checks
+    if: needs.checks.outputs.globally-needed == 'true' || github.event.label.name == 'arm'
+    uses: ./.github/workflows/arm.yml
+    secrets: inherit

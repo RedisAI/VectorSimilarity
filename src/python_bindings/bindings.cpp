@@ -6,7 +6,7 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
-#include "VecSim/algorithms/hnsw/serialization.h"
+#include "VecSim/algorithms/hnsw/hnsw_factory.h"
 #include "VecSim/batch_iterator.h"
 
 #include "pybind11/pybind11.h"
@@ -69,24 +69,32 @@ public:
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
     virtual ~PyBatchIterator() {}
 };
+// @input or @query arguments are a py::object object. (numpy arrays are acceptable)
+
+// To convert input or query to a pointer use input_to_blob(input)
+// For example:
+// VecSimIndex_AddVector(index, input_to_blob(input), id);
 
 class PyVecSimIndex {
 public:
-    PyVecSimIndex() {}
+    PyVecSimIndex()
+        : create_bytearray(
+              py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {}
 
-    PyVecSimIndex(const VecSimParams &params) { index = VecSimIndex_New(&params); }
-
-    void addVector(py::object input, size_t id) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
-        VecSimIndex_AddVector(index, (void *)items.data(0), id);
+    PyVecSimIndex(const VecSimParams &params)
+        : create_bytearray(
+              py::module::import("src.python_bindings.Mybytearray").attr("create_bytearray")) {
+        index = VecSimIndex_New(&params);
     }
 
+    void addVector(py::object input, size_t id) {
+        VecSimIndex_AddVector(index, input_to_blob(input), id);
+    }
     void deleteVector(size_t id) { VecSimIndex_DeleteVector(index, id); }
 
     py::object knn(py::object input, size_t k, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         VecSimQueryResult_List res =
-            VecSimIndex_TopKQuery(index, (void *)items.data(0), k, query_params, BY_SCORE);
+            VecSimIndex_TopKQuery(index, input_to_blob(input), k, query_params, BY_SCORE);
         if (VecSimQueryResult_Len(res) != k) {
             throw std::runtime_error("Cannot return the results in a contiguous 2D array. Probably "
                                      "ef or M is too small");
@@ -95,27 +103,32 @@ public:
     }
 
     py::object range(py::object input, double radius, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(input);
         VecSimQueryResult_List res =
-            VecSimIndex_RangeQuery(index, (void *)items.data(0), radius, query_params, BY_SCORE);
+            VecSimIndex_RangeQuery(index, input_to_blob(input), radius, query_params, BY_SCORE);
         return wrap_results(res, VecSimQueryResult_Len(res));
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index); }
 
-    PyBatchIterator createBatchIterator(py::object &query_blob, VecSimQueryParams *query_params) {
-        py::array_t<float, py::array::c_style | py::array::forcecast> items(query_blob);
-        float *vector_data = (float *)items.data(0);
-        return PyBatchIterator(VecSimBatchIterator_New(index, vector_data, query_params));
+    PyBatchIterator createBatchIterator(py::object input, VecSimQueryParams *query_params) {
+        return PyBatchIterator(VecSimBatchIterator_New(index, input_to_blob(input), query_params));
     }
 
     virtual ~PyVecSimIndex() { VecSimIndex_Free(index); }
 
 protected:
     VecSimIndex *index;
+
+private:
+    // save the bytearray to keep its pointer valid
+    py::bytearray tmp_bytearray;
+    const py::function create_bytearray;
+    const char *input_to_blob(py::object input) {
+        tmp_bytearray = create_bytearray(input);
+        return PyByteArray_AS_STRING(tmp_bytearray.ptr());
+    }
 };
 
-// Currently supports only floats. TODO change after serializer refactoring
 class PyHNSWLibIndex : public PyVecSimIndex {
 public:
     PyHNSWLibIndex(const HNSWParams &hnsw_params) {
@@ -123,18 +136,18 @@ public:
         this->index = VecSimIndex_New(&params);
     }
 
+    // @params is required only in V1.
+    PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
+        this->index = HNSWFactory::NewIndex(location, hnsw_params);
+    }
+
     void setDefaultEf(size_t ef) {
         auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
         hnsw->setEf(ef);
     }
     void saveIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.saveIndex(location);
-    }
-
-    void loadIndex(const std::string &location) {
-        auto serializer = HNSWIndexSerializer(reinterpret_cast<HNSWIndex<float, float> *>(index));
-        serializer.loadIndex(location);
+        auto *hnsw = reinterpret_cast<HNSWIndex<float, float> *>(index);
+        hnsw->saveIndex(location);
     }
 };
 
@@ -223,9 +236,12 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
+        .def(py::init([](const std::string &location, const HNSWParams *params) {
+                 return new PyHNSWLibIndex(location, params);
+             }),
+             py::arg("location"), py::arg("params") = nullptr)
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
-        .def("save_index", &PyHNSWLibIndex::saveIndex)
-        .def("load_index", &PyHNSWLibIndex::loadIndex);
+        .def("save_index", &PyHNSWLibIndex::saveIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

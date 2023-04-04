@@ -1,4 +1,3 @@
-
 ifeq (n,$(findstring n,$(firstword -$(MAKEFLAGS))))
 DRY_RUN:=1
 else
@@ -52,17 +51,8 @@ endif
 export SAN
 endif # SAN
 
-#----------------------------------------------------------------------------------------------
-
 ROOT=.
-MK.pyver:=3
-
-ifeq ($(wildcard $(ROOT)/deps/readies/mk),)
-$(shell mkdir -p deps; cd deps; git clone https://github.com/RedisLabsModules/readies.git)
-endif
-include $(ROOT)/deps/readies/mk/main
 export ROOT
-
 #----------------------------------------------------------------------------------------------
 
 define HELPTEXT
@@ -78,27 +68,16 @@ make pybind        # build Python bindings
 make clean         # remove binary files
   ALL=1            # remove binary directories
 
-make all           # build all libraries and packages
-
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
   VG|VALGRIND=1      # run tests with valgrind
 make valgrind      # build for Valgrind and run tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
-  BB=1               # run with debugger, stop on BB()
 make mod_test      # run Redis module intergration tests (with RLTest)
   TEST=file:name     # run specific test
   VERBOSE=1          # show more test detail
-  BB=1               # run with debugger, stop on BB()
 make benchmark	   # run benchmarks
-make toxenv        # enter Tox environment (for debugging flow tests)
-
-make platform      # build for specific Linux distribution
-  OSNICK=nick        # Linux distribution to build for
-  REDIS_VER=ver      # use Redis version `ver`
-  TEST=1             # test aftar build
-  PUBLISH=1          # publish (i.e. docker push) after build
 
 make format          # fix formatting of sources
 make check-format    # check formatting of sources
@@ -109,11 +88,18 @@ endef
 
 #----------------------------------------------------------------------------------------------
 
+ROOT=$(shell pwd)
+ifeq ($(DEBUG),1)
+FLAVOR=debug
+else
+FLAVOR=release
+endif
+FULL_VARIANT:=$(shell uname)-$(shell uname -m)-$(FLAVOR)
+BINROOT=$(ROOT)/bin/$(FULL_VARIANT)
 BINDIR=$(BINROOT)
-TARGET=$(BINDIR)/libVectorSimilarity.so
+TESTDIR=$(BINDIR)/unit_tests
+BENCHMARKDIR=$(BINDIR)/benchmark
 SRCDIR=src
-
-MK_CUSTOM_CLEAN=1
 
 ifeq ($(SLOW),1)
 MAKE_J=
@@ -121,40 +107,7 @@ else
 MAKE_J:=-j$(shell nproc)
 endif
 
-#----------------------------------------------------------------------------------------------
-
-ifeq ($(ARCH),x64)
-
-ifeq ($(SAN),)
-ifneq ($(findstring centos,$(OSNICK)),)
-VECSIM_MARCH ?= skylake-avx512
-else ifneq ($(findstring xenial,$(OSNICK)),)
-VECSIM_MARCH ?= skylake-avx512
-else
-VECSIM_MARCH ?= x86-64-v4
-endif
-else
-VECSIM_MARCH ?= skylake-avx512
-endif
-
-CMAKE_VECSIM=-DVECSIM_MARCH=$(VECSIM_MARCH)
-
-else # ARCH != x64
-
-CMAKE_VECSIM=
-
-endif # ARCH
-
-#----------------------------------------------------------------------------------------------
-
-CMAKE_DIR=$(ROOT)/src
-
-CMAKE_FILES= \
-	src/CMakeLists.txt \
-	src/VecSim/spaces/CMakeLists.txt \
-	cmake/common.cmake \
-	cmake/gtest.cmake \
-	cmake/clang-sanitizers.cmake
+CMAKE_DIR=$(ROOT)
 
 ifeq ($(DEBUG),1)
 CMAKE_BUILD_TYPE=DEBUG
@@ -176,39 +129,22 @@ CMAKE_FLAGS += \
 	-DCMAKE_WARN_DEPRECATED=OFF \
 	-Wno-dev \
 	--no-warn-unused-cli \
-	-DOSNICK=$(OSNICK) \
-	-DARCH=$(ARCH) \
 	$(CMAKE_SAN) \
-	$(CMAKE_VECSIM) \
 	$(CMAKE_COV) \
 	$(CMAKE_TESTS)
 
-#----------------------------------------------------------------------------------------------
-
-include $(MK)/defs
-
-include $(MK)/rules
-
-#----------------------------------------------------------------------------------------------
-
-.PHONY: __force
-
-$(BINDIR)/Makefile: __force
+build:
+	$(SHOW)mkdir -p $(BINDIR)
 	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
 
-$(TARGET): $(BINDIR)/Makefile
-	@echo Building $(TARGET) ...
-ifneq ($(DRY_RUN),1)
-	$(SHOW)$(MAKE) -C $(BINDIR) $(MAKE_J)
-else
-	@make -C $(BINDIR) $(MAKE_J)
-endif
+.PHONY: build
 
 clean:
 ifeq ($(ALL),1)
 	$(SHOW)rm -rf $(BINROOT) build dist .tox
 else
-	$(SHOW)$(MAKE) -C $(BINDIR) clean
+	$(SHOW)$(MAKE) --no-print-directory -C $(BINDIR) clean
 endif
 
 .PHONY: clean
@@ -237,10 +173,13 @@ _CTEST_ARGS += \
 endif
 
 unit_test:
-	$(SHOW)cd $(BINDIR)/unit_tests && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
+	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 
 valgrind:
-	$(SHOW)$(MAKE) VG=1 build unit_test
+	$(SHOW)$(MAKE) VG=1 unit_test
 
 .PHONY: unit_test valgrind
 
@@ -273,10 +212,11 @@ mod_test:
 #----------------------------------------------------------------------------------------------
 
 benchmark:
-	for bm_class in basics updated_index spaces batch_iterator; do \
-  		$(BINDIR)/benchmark/bm_$${bm_class} --benchmark_out=$${bm_class}_results.json --benchmark_out_format=json; \
-  	done
-	$(SHOW)python3 -m tox -e benchmark
+	$(SHOW)mkdir -p $(BINDIR)
+	$(SHOW)cd $(BINDIR) && cmake $(CMAKE_FLAGS) $(CMAKE_DIR)
+	@make --no-print-directory -C $(BINDIR) $(MAKE_J)
+	$(ROOT)/tests/benchmark/benchmarks.sh $(BM_FILTER) | xargs -I {} bash -lc \
+		"$(BENCHMARKDIR)/bm_{} --benchmark_out_format=json --benchmark_out={}_results.json || exit 255"
 
 toxenv:
 ifeq ($(wildcard .tox),)
@@ -289,39 +229,59 @@ endif
 #----------------------------------------------------------------------------------------------
 
 check-format:
-	$(SHOW)./sbin/check-format.sh
+	$(SHOW)./check-format.sh
 
 format:
-	$(SHOW)FIX=1 ./sbin/check-format.sh
+	$(SHOW)FIX=1 ./check-format.sh
 
 .PHONY: check-format format
-
-#----------------------------------------------------------------------------------------------
-
-platform:
-	$(SHOW)make -C build/platforms build PACK=1 ARTIFACTS=1
-ifeq ($(PUBLISH),1)
-	$(SHOW)make -C build/platforms publish
-endif
-
-.PHONY: platform
-
-#----------------------------------------------------------------------------------------------
 
 COV_EXCLUDE_DIRS += bin tests
 COV_EXCLUDE+=$(foreach D,$(COV_EXCLUDE_DIRS),'$(realpath $(ROOT))/$(D)/*')
 
+COV_INFO=$(BINROOT)/cov.info
+COV_DIR=$(BINROOT)/cov
+COV_PROFDATA=$(COV_DIR)/cov.profdata
+
+define COVERAGE_RESET
+$(SHOW)set -e ;\
+echo "Starting coverage analysis." ;\
+mkdir -p $(COV_DIR) ;\
+lcov --directory $(BINROOT) --base-directory $(SRCDIR) -z
+endef
+
+
+define COVERAGE_COLLECT
+$(SHOW)set -e ;\
+echo "Collecting coverage data ..." ;\
+lcov --capture --directory $(BINROOT) --base-directory $(SRCDIR) --output-file $(COV_INFO);\
+lcov -o $(COV_INFO).1 -r $(COV_INFO) $(COV_EXCLUDE);\
+mv $(COV_INFO).1 $(COV_INFO)
+endef
+
+define COVERAGE_REPORT
+$(SHOW)set -e ;\
+lcov -l $(COV_INFO) ;\
+genhtml --legend --ignore-errors source -o $(COV_DIR) $(COV_INFO) > /dev/null 2>&1 ;\
+echo "Coverage info at $$(realpath $(COV_DIR))/index.html"
+endef
+
+define COVERAGE_COLLECT_REPORT
+$(COVERAGE_COLLECT)
+$(COVERAGE_REPORT)
+endef
+
 coverage:
 	$(SHOW)$(MAKE) build COV=1
 	$(SHOW)$(COVERAGE_RESET)
-	$(SHOW)$(MAKE) unit_test COV=1
+	$(SHOW)cd $(TESTDIR) && GTEST_COLOR=1 ctest $(_CTEST_ARGS)
 	$(SHOW)$(COVERAGE_COLLECT_REPORT)
 
 show-cov:
 	$(SHOW)lcov -l $(COV_INFO)
 
 upload-cov:
-	$(SHOW)bash <(curl -s https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f bin/linux-x64-debug-cov/cov.info
+	$(SHOW)bash <(curl  https://raw.githubusercontent.com/codecov/codecov-bash/master/codecov) -f ${COV_INFO}
 
 .PHONY: coverage show-cov upload-cov
 

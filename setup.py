@@ -6,13 +6,6 @@ import sys
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
-HERE = os.path.abspath(os.path.dirname(__file__))
-ROOT = HERE
-READIES = os.path.join(ROOT, "deps/readies")
-sys.path.insert(0, READIES)
-import paella # automation code, also allows setting breakpoints via BB()
-
-
 # A CMakeExtension needs a sourcedir instead of a file list.
 # The name must be the _single_ output extension from the CMake build.
 # If you need multiple extensions, see scikit-build.
@@ -24,14 +17,6 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
-        platform = paella.Platform()
-
-        ## to be enabled once it is possible to set build directories for artifacts 
-        ## used to construct .whl files
-        # bindir = os.path.join(os.getenv("BINDIR", f"bin/{plat.os}-{plat.arch}-release"), "pybind")
-        # paella.mkdir_p(bindir)
-        # self.build_lib = bindir
-        # self.build_temp = bindir + ".tmp"
 
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
@@ -97,7 +82,6 @@ class CMakeBuild(build_ext):
             ["cmake", "--build", "."] + build_args, cwd=self.build_temp
         )
 
-
 # The information here can also be placed in setup.cfg - better separation of
 # logic and declaration, and simpler if you include description/version in a file.
 setup(
@@ -108,5 +92,6 @@ setup(
     description="Python library around collection of vector similarity algorithm",
     long_description="",
     ext_modules=[CMakeExtension("VecSim", "src/python_bindings")],
+    py_modules=['src/python_bindings/Mybytearray'],
     cmdclass={"build_ext": CMakeBuild}
 )

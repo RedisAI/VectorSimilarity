@@ -31,7 +31,16 @@ public:
     }
 
     inline size_t indexLabelCount() const override { return this->count; }
+#ifdef BUILD_TESTS
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
 
+        auto id = labelToIdLookup.at(label);
+
+        auto vec = std::vector<DataType>(this->dim);
+        memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
+        vectors_output.push_back(vec);
+    }
+#endif
 protected:
     // inline definitions
 

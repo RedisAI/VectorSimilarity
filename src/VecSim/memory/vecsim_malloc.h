@@ -39,7 +39,7 @@ public:
     void operator delete(void *p, size_t size);
     void operator delete[](void *p, size_t size);
 
-    int64_t getAllocationSize();
+    int64_t getAllocationSize() const;
     inline friend bool operator==(const VecSimAllocator &a, const VecSimAllocator &b) {
         return a.allocated == b.allocated;
     }

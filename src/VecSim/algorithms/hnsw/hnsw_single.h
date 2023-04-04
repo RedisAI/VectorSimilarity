@@ -15,7 +15,6 @@ private:
     vecsim_stl::unordered_map<labelType, idType> label_lookup_;
 
 #ifdef BUILD_TESTS
-    friend class HNSWIndexSerializer;
 #include "VecSim/algorithms/hnsw/hnsw_single_tests_friends.h"
 #endif
 
@@ -28,7 +27,23 @@ public:
                      size_t random_seed = 100, size_t initial_pool_size = 1)
         : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
           label_lookup_(this->max_elements_, allocator) {}
+#ifdef BUILD_TESTS
+    // Ctor to be used before loading a serialized index. Can be used from v2 and up.
+    HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
+                     std::shared_ptr<VecSimAllocator> allocator,
+                     Serializer::EncodingVersion version)
+        : HNSWIndex<DataType, DistType>(input, params, allocator, version),
+          label_lookup_(this->max_elements_, allocator) {}
 
+    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
+
+        auto id = label_lookup_.at(label);
+
+        auto vec = std::vector<DataType>(this->dim);
+        memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+        vectors_output.push_back(vec);
+    }
+#endif
     ~HNSWIndex_Single() {}
 
     inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
