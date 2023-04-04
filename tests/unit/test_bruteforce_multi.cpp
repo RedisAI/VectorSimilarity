@@ -737,7 +737,7 @@ TYPED_TEST(BruteForceMultiTest, removeVectorWithSwaps) {
     index->labelToIdsLookup.at(second_label)[1] = 2;
     index->labelToIdsLookup.at(second_label)[2] = 5;
 
-    // Expect that the ids array of label 0 will behave as following:
+    // Expect that the ids array of the second label will behave as following:
     // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
     ASSERT_EQ(index->deleteVector(second_label), n / 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
