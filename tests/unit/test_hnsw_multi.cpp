@@ -682,6 +682,52 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(HNSWMultiTest, removeVectorWithSwaps) {
+    size_t dim = 4;
+    size_t n = 6;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    auto *index = this->CastToHNSW_Multi(this->CreateNewIndex(params));
+
+    // Insert 3 vectors under two different labels, so that we will have:
+    // {first_label->[0,1,3], second_label->[2,4,5]}
+    labelType first_label = 1;
+    labelType second_label = 2;
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Artificially reorder the internal ids to test that we make the right changes
+    // when we have an id that appears twice in the array upon deleting the ids one by one.
+    ASSERT_EQ(index->label_lookup_.at(second_label).size(), n / 2);
+    index->label_lookup_.at(second_label)[0] = 4;
+    index->label_lookup_.at(second_label)[1] = 2;
+    index->label_lookup_.at(second_label)[2] = 5;
+
+    // Expect that the ids array of the second label will behave as following:
+    // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
+    index->deleteVector(second_label);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Check that the internal ids of the first label are as expected.
+    auto ids = index->label_lookup_.at(first_label);
+    ASSERT_EQ(ids.size(), n / 2);
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 0) != ids.end());
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 1) != ids.end());
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 2) != ids.end());
+    index->deleteVector(first_label);
+    ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWMultiTest, remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t bs = 2;
