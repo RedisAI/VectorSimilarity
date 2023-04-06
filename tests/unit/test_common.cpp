@@ -14,7 +14,7 @@
 #include "VecSim/utils/serializer.h"
 #include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 
 #include <cstdlib>
 #include <limits>

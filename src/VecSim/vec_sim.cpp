@@ -11,8 +11,9 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/algorithms/brute_force/brute_force_factory.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/brute_force_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
+#include "VecSim/index_factories/tiered_factory.h"
 #include <cassert>
 #include "memory.h"
 
@@ -110,6 +111,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_BF:
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
+        case VecSimAlgo_TIERED:
+            index = TieredFactory::NewIndex(&params->tieredParams, allocator);
+            break;
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
@@ -123,6 +127,8 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
         return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->bfParams);
+    case VecSimAlgo_TIERED:
+        return TieredFactory::EstimateInitialSize(&params->tieredParams);
     }
     return -1;
 }
@@ -150,6 +156,8 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
+    case VecSimAlgo_TIERED:
+        return TieredFactory::EstimateElementSize(&params->tieredParams);
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:

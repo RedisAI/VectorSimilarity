@@ -26,6 +26,7 @@ public:
     static const char *ALGORITHM_STRING;
     static const char *FLAT_STRING;
     static const char *HNSW_STRING;
+    static const char *TIERED_STRING;
 
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;

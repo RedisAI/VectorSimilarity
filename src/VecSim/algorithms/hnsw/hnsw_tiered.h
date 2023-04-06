@@ -2,7 +2,7 @@
 
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
-#include "hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/utils/merge_results.h"
 
 #include <unordered_map>
@@ -63,7 +63,8 @@ template <typename DataType, typename DistType>
 class TieredHNSWIndex : public VecSimTieredIndex<DataType, DistType> {
 private:
     /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
-    // In MULTI, we can have more than one insert job pending per label
+    // In MULTI, we can have more than one insert job pending per label.
+    // **This map is protected with the flat buffer lock**
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>> labelToInsertJobs;
     vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
@@ -88,10 +89,11 @@ private:
     inline HNSWIndex<DataType, DistType> *getHNSWIndex() const;
 
     // Helper function for deleting a vector from the flat buffer (after it has already been
-    // ingested into HNSW or deleted). This includes removing the corresponding job from the lookup
-    // and update the id of the pending job that corresponds to the last id that is swapped
-    // (if needed). This should be called while *flat lock is held* (exclusive lock).
-    void deleteVectorFromFlatBuffer(labelType label, idType internal_id);
+    // ingested into HNSW or deleted). This includes removing the corresponding insert job from the
+    // label-to-insert-jobs lookup. Also, since deletion a vector triggers swapping of the
+    // internal last id with the deleted vector id, here we update the pending insert job(s) for the
+    // last id (if needed). This should be called while *flat lock is held* (exclusive lock).
+    void updateInsertJobInternalId(idType prev_id, idType new_id);
 
     // Helper function for performing in place mark delete of vector(s) associated with a label
     // and creating the appropriate repair jobs for the effected connections. This should be called
@@ -103,8 +105,8 @@ private:
 #endif
 
 public:
-    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index, TieredIndexParams tieredParams,
-                    size_t maxSwapJobs);
+    TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
+                    const TieredIndexParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -146,8 +148,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
     delete insert_job;
+    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -225,39 +227,40 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
         // Go over all the deleted element links in every level and create repair jobs.
         auto incoming_edges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id, ids_top_level[i]);
-        {
-            // Protect the id->repair_jobs lookup while we update it with the new jobs.
-            std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
-            for (pair<idType, ushort> &node : incoming_edges) {
-                bool repair_job_exists = false;
-                HNSWRepairJob *repair_job = nullptr;
-                if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
-                    for (auto it : idToRepairJobs.at(node.first)) {
-                        if (it->level == node.second) {
-                            // There is already an existing pending repair job for this node due to
-                            // the deletion of another node - avoid creating another job.
-                            repair_job_exists = true;
-                            repair_job = it;
-                            break;
-                        }
+
+        // Protect the id->repair_jobs lookup while we update it with the new jobs.
+        this->idToRepairJobsGuard.lock();
+        for (pair<idType, ushort> &node : incoming_edges) {
+            bool repair_job_exists = false;
+            HNSWRepairJob *repair_job = nullptr;
+            if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
+                for (auto it : idToRepairJobs.at(node.first)) {
+                    if (it->level == node.second) {
+                        // There is already an existing pending repair job for this node due to
+                        // the deletion of another node - avoid creating another job.
+                        repair_job_exists = true;
+                        repair_job = it;
+                        break;
                     }
-                } else {
-                    // There is no repair jobs at all for this element, create a new array for it.
-                    idToRepairJobs.insert(
-                        {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
                 }
-                if (repair_job_exists) {
-                    repair_job->appendAnotherAssociatedSwapJob(swap_job);
-                } else {
-                    repair_job = new (this->allocator)
-                        HNSWRepairJob(this->allocator, node.first, node.second,
-                                      executeRepairJobWrapper, this, swap_job);
-                    repair_jobs.emplace_back(repair_job);
-                    idToRepairJobs.at(node.first).push_back(repair_job);
-                }
+            } else {
+                // There is no repair jobs at all for this element, create a new array for it.
+                idToRepairJobs.insert(
+                    {node.first, vecsim_stl::vector<HNSWRepairJob *>(this->allocator)});
             }
-            swap_job->setRepairJobsNum(incoming_edges.size());
+            if (repair_job_exists) {
+                repair_job->appendAnotherAssociatedSwapJob(swap_job);
+            } else {
+                repair_job =
+                    new (this->allocator) HNSWRepairJob(this->allocator, node.first, node.second,
+                                                        executeRepairJobWrapper, this, swap_job);
+                repair_jobs.emplace_back(repair_job);
+                idToRepairJobs.at(node.first).push_back(repair_job);
+            }
         }
+        swap_job->setRepairJobsNum(incoming_edges.size());
+        this->idToRepairJobsGuard.unlock();
+
         this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
                                 this->jobQueueCtx);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
@@ -293,20 +296,16 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::deleteVectorFromFlatBuffer(labelType label,
-                                                                     idType internal_id) {
-    // Remove the vector from the flat buffer.
-    int deleted = this->flatBuffer->deleteVectorById(label, internal_id);
-    // This will cause the last id to swap with the deleted id - update the job with the
-    // pending job with the last id, unless the deleted id is the last id.
-    if (deleted && internal_id != this->flatBuffer->indexSize()) {
-        labelType last_idx_label = this->flatBuffer->getLabelByInternalId(internal_id);
-        if (this->labelToInsertJobs.find(last_idx_label) != this->labelToInsertJobs.end()) {
-            // There is a pending job for the label of the swapped last id - update its id.
-            for (HNSWInsertJob *job_it : this->labelToInsertJobs.at(last_idx_label)) {
-                if (job_it->id == this->flatBuffer->indexSize()) {
-                    job_it->id = internal_id;
-                }
+void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_id, idType new_id) {
+    // Update the pending job id, due to a swap that was caused after the removal of new_id.
+    assert(new_id != INVALID_ID && prev_id != INVALID_ID);
+    labelType last_idx_label = this->flatBuffer->getLabelByInternalId(prev_id);
+    auto it = this->labelToInsertJobs.find(last_idx_label);
+    if (it != this->labelToInsertJobs.end()) {
+        // There is a pending job for the label of the swapped last id - update its id.
+        for (HNSWInsertJob *job_it : it->second) {
+            if (job_it->id == prev_id) {
+                job_it->id = new_id;
             }
         }
     }
@@ -328,6 +327,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
     AddVectorCtx state = {0};
+    bool exclusive_lock_held = false;
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
@@ -336,6 +336,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
+        exclusive_lock_held = true;
         hnsw_index->lockIndexDataGuard();
         // Check if resizing is still required (another thread might have done it in the meantime
         // while we release the shared lock).
@@ -343,11 +344,16 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             hnsw_index->increaseCapacity();
         }
         state = hnsw_index->storeNewElement(job->label);
+        // If we're still holding the index data guard, we cannot take the main index lock for
+        // shared ownership as it may cause deadlocks, so we insert the vector with the current
+        // exclusive lock held. Otherwise, we can release the exclusive lock and take the shared
+        // lock instead.
         if (state.elementMaxLevel <= state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
+            this->mainIndexGuard.unlock();
+            exclusive_lock_held = false;
+            this->mainIndexGuard.lock_shared();
         }
-        this->mainIndexGuard.unlock();
-        this->mainIndexGuard.lock_shared();
     } else {
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
@@ -363,29 +369,38 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
     }
-    this->mainIndexGuard.unlock_shared();
+    if (exclusive_lock_held) {
+        this->mainIndexGuard.unlock();
+    } else {
+        this->mainIndexGuard.unlock_shared();
+    }
 
     // Remove the vector and the insert job from the flat buffer.
     this->flatIndexGuard.unlock_shared();
-    {
-        std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        // The job might have been invalidated due to overwrite in the meantime. In this case,
-        // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
-        if (job->id != INVALID_JOB_ID) {
-            // Remove the job pointer from the labelToInsertJobs mapping.
-            auto &jobs = labelToInsertJobs.at(job->label);
-            for (size_t i = 0; i < jobs.size(); i++) {
-                if (jobs[i]->id == job->id) {
-                    jobs.erase(jobs.begin() + (long)i);
-                    break;
-                }
+
+    this->flatIndexGuard.lock();
+    // The job might have been invalidated due to overwrite in the meantime. In this case,
+    // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
+    if (job->id != INVALID_JOB_ID) {
+        // Remove the job pointer from the labelToInsertJobs mapping.
+        auto &jobs = labelToInsertJobs.at(job->label);
+        for (size_t i = 0; i < jobs.size(); i++) {
+            if (jobs[i]->id == job->id) {
+                jobs.erase(jobs.begin() + (long)i);
+                break;
             }
-            if (labelToInsertJobs.at(job->label).empty()) {
-                labelToInsertJobs.erase(job->label);
-            }
-            this->deleteVectorFromFlatBuffer(job->label, job->id);
+        }
+        if (labelToInsertJobs.at(job->label).empty()) {
+            labelToInsertJobs.erase(job->label);
+        }
+        // Remove the vector from the flat buffer.
+        int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
+        if (deleted && job->id != this->flatBuffer->indexSize()) {
+            // If the vector removal caused a swap with the last id, update the relevant insert job.
+            this->updateInsertJobInternalId(this->flatBuffer->indexSize(), job->id);
         }
     }
+    this->flatIndexGuard.unlock();
 }
 
 template <typename DataType, typename DistType>
@@ -403,26 +418,25 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // it after executing the repair job, we might have see that there is a pending repair job for
     // this node id upon deleting another neighbor of this node, and we may avoid creating another
     // repair job even though *it has already been executed*.
-    {
-        std::unique_lock<std::mutex> lock(this->idToRepairJobsGuard);
-        auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
-        assert(repair_jobs.size() > 0);
-        if (repair_jobs.size() == 1) {
-            // This was the only pending repair job for this id.
-            this->idToRepairJobs.erase(job->node_id);
-        } else {
-            // There are more pending jobs for the current id, remove just this job from the pending
-            // repair jobs list for this element id by replacing it with the last one (and trim the
-            // last job in the list).
-            auto it = std::find(repair_jobs.begin(), repair_jobs.end(), job);
-            assert(it != repair_jobs.end());
-            *it = repair_jobs.back();
-            repair_jobs.pop_back();
-        }
-        for (auto &it : job->associatedSwapJobs) {
-            it->atomicDecreasePendingJobsNum();
-        }
+    this->idToRepairJobsGuard.lock();
+    auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
+    assert(repair_jobs.size() > 0);
+    if (repair_jobs.size() == 1) {
+        // This was the only pending repair job for this id.
+        this->idToRepairJobs.erase(job->node_id);
+    } else {
+        // There are more pending jobs for the current id, remove just this job from the pending
+        // repair jobs list for this element id by replacing it with the last one (and trim the
+        // last job in the list).
+        auto it = std::find(repair_jobs.begin(), repair_jobs.end(), job);
+        assert(it != repair_jobs.end());
+        *it = repair_jobs.back();
+        repair_jobs.pop_back();
     }
+    for (auto &it : job->associatedSwapJobs) {
+        it->atomicDecreasePendingJobsNum();
+    }
+    this->idToRepairJobsGuard.unlock();
 
     hnsw_index->repairNodeConnections(job->node_id, job->level);
 
@@ -434,18 +448,17 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                                                     TieredIndexParams tieredParams,
-                                                     size_t maxSwapJobs)
+                                                     const TieredIndexParams &tieredParams)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     // If the param for maxSwapJobs is 0 use the default value, if it exceeds the maximum allowed,
     // use the maximum value.
     this->pendingSwapJobsThreshold =
-        maxSwapJobs == 0
-            ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
-            : (maxSwapJobs > MAX_PENDING_SWAP_JOBS_THRESHOLD ? MAX_PENDING_SWAP_JOBS_THRESHOLD
-                                                             : maxSwapJobs);
+        tieredParams.maxSwapJobs == 0 ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
+                                      : (tieredParams.maxSwapJobs > MAX_PENDING_SWAP_JOBS_THRESHOLD
+                                             ? MAX_PENDING_SWAP_JOBS_THRESHOLD
+                                             : tieredParams.maxSwapJobs);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
@@ -471,10 +484,11 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
-    std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+    this->flatIndexGuard.lock_shared();
     this->getHNSWIndex()->lockIndexDataGuard();
     size_t res = this->index->indexSize() + this->flatBuffer->indexSize();
     this->getHNSWIndex()->unlockIndexDataGuard();
+    this->flatIndexGuard.unlock_shared();
     return res;
 }
 
@@ -486,15 +500,15 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     // Compute the union of both labels set in both tiers of the index.
-    std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-    std::unique_lock<std::shared_mutex> hnsw_lock(this->mainIndexGuard);
-
+    this->flatIndexGuard.lock();
+    this->mainIndexGuard.lock();
     auto flat_labels = this->flatBuffer->getLabelsSet();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
     std::vector<labelType> output;
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
                    std::back_inserter(output));
-
+    this->flatIndexGuard.unlock();
+    this->mainIndexGuard.unlock();
     return output.size();
 }
 
@@ -539,19 +553,20 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         // Check again if the label exists, as it may have been removed while we released the lock.
         if (this->flatBuffer->isLabelExists(label)) {
             // Invalidate the pending insert job(s) into HNSW associated with this label
-            for (auto *job : this->labelToInsertJobs.at(label)) {
+            auto &insert_jobs = this->labelToInsertJobs.at(label);
+            for (auto *job : insert_jobs) {
                 reinterpret_cast<HNSWInsertJob *>(job)->id = INVALID_JOB_ID;
             }
+            num_deleted_vectors += insert_jobs.size();
             // Remove the pending insert job(s) from the labelToInsertJobs mapping.
             this->labelToInsertJobs.erase(label);
-            auto ids = this->flatBuffer->getIdsOfLabel(label);
             // Go over the every id that corresponds the label and remove it from the flat buffer.
-            // We fetch the ids every time since in case of multi value, we delete ids from the
-            // flat, and it triggers swap between the last id and the deleted one.
-            while (!ids.empty()) {
-                this->deleteVectorFromFlatBuffer(label, ids[0]);
-                num_deleted_vectors++;
-                ids = this->flatBuffer->getIdsOfLabel(label);
+            // Every delete may cause a swap of the deleted id with the last id, and we return a
+            // mapping from id to the original id that resides in this id after the deletion(s) (see
+            // an example in this function implementation in MULTI index).
+            auto updated_ids = this->flatBuffer->deleteVectorAndGetUpdatedIds(label);
+            for (auto &it : updated_ids) {
+                this->updateInsertJobInternalId(it.second, it.first);
             }
         }
         this->flatIndexGuard.unlock();

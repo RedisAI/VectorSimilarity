@@ -1,88 +1,189 @@
+#include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/algorithms/hnsw/hnsw_multi.h"
+
 #include "test_utils.h"
 
 #include <thread>
 
 using namespace tiered_index_mock;
-#define IS_MULTI (isMulti ? "on multi index" : "on single index")
+
+// Runs the test for all combination of data type(float/double) - label type (single/multi)
 
 template <typename index_type_t>
-class HNSWTieredIndexTest : public ::testing::Test {};
+class HNSWTieredIndexTest : public ::testing::Test {
+public:
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
 
-TYPED_TEST_SUITE(HNSWTieredIndexTest, DataTypeSet);
+protected:
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
+        return tiered_index->getHNSWIndex();
+    }
+};
+
+TYPED_TEST_SUITE(HNSWTieredIndexTest, DataTypeSetExtended);
+
+// Runs the test for each data type(float/double). The label type should be explicitly
+// set in the test.
+
+template <typename index_type_t>
+class HNSWTieredIndexTestBasic : public ::testing::Test {};
+TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
 TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
-    for (auto isMulti : {true, false}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = 4,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti};
-        auto jobQ = JobQueue();
-        auto jobQueueCtx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &jobQueueCtx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        jobQueueCtx.index_strong_ref.reset(tiered_index);
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto jobQueueCtx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &jobQueueCtx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    jobQueueCtx.index_strong_ref.reset(tiered_index);
 
-        // Add a vector to the flat index.
-        TEST_DATA_T vector[tiered_index->index->getDim()];
-        GenerateVector<TEST_DATA_T>(vector, tiered_index->index->getDim());
-        labelType vector_label = 1;
-        VecSimIndex_AddVector(tiered_index->flatBuffer, vector, vector_label);
+    // Add a vector to the flat index.
+    TEST_DATA_T vector[tiered_index->index->getDim()];
+    GenerateVector<TEST_DATA_T>(vector, tiered_index->index->getDim());
+    labelType vector_label = 1;
+    VecSimIndex_AddVector(tiered_index->flatBuffer, vector, vector_label);
 
-        // Create a mock job that inserts some vector into the HNSW index.
-        auto insert_to_index = [](AsyncJob *job) {
-            auto *my_insert_job = reinterpret_cast<HNSWInsertJob *>(job);
-            auto my_index =
-                reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(my_insert_job->index);
+    // Create a mock job that inserts some vector into the HNSW index.
+    auto insert_to_index = [](AsyncJob *job) {
+        auto *my_insert_job = reinterpret_cast<HNSWInsertJob *>(job);
+        auto my_index =
+            reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(my_insert_job->index);
 
-            // Move the vector from the temp flat index into the HNSW index.
-            // Note that we access the vector via its internal id since in index of type MULTI,
-            // this is the only way to do so (knowing the label is not enough...)
-            VecSimIndex_AddVector(my_index->index,
-                                  my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
-                                  my_insert_job->label);
-            // TODO: enable deleting vectors by internal id for the case of moving a single vector
-            //  from the flat buffer in MULTI.
-            VecSimIndex_DeleteVector(my_index->flatBuffer, my_insert_job->label);
-            auto it = my_index->labelToInsertJobs.at(my_insert_job->label).begin();
-            ASSERT_EQ(job, *it); // Assert pointers equation
-            // Here we update labelToInsertJobs mapping, as we except that for every insert job
-            // there will be a corresponding item in the map.
-            my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
-            my_index->UpdateIndexMemory(my_index->memoryCtx,
-                                        my_index->getAllocator()->getAllocationSize());
-        };
+        // Move the vector from the temp flat index into the HNSW index.
+        // Note that we access the vector via its internal id since in index of type MULTI,
+        // this is the only way to do so (knowing the label is not enough...)
+        VecSimIndex_AddVector(my_index->index,
+                              my_index->flatBuffer->getDataByInternalId(my_insert_job->id),
+                              my_insert_job->label);
+        // TODO: enable deleting vectors by internal id for the case of moving a single vector
+        //  from the flat buffer in MULTI.
+        VecSimIndex_DeleteVector(my_index->flatBuffer, my_insert_job->label);
+        auto it = my_index->labelToInsertJobs.at(my_insert_job->label).begin();
+        ASSERT_EQ(job, *it); // Assert pointers equation
+        // Here we update labelToInsertJobs mapping, as we except that for every insert job
+        // there will be a corresponding item in the map.
+        my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
+        my_index->UpdateIndexMemory(my_index->memoryCtx,
+                                    my_index->getAllocator()->getAllocationSize());
+    };
 
-        HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
-        auto jobs_vec = vecsim_stl::vector<HNSWInsertJob *>(1, &job, allocator);
-        tiered_index->labelToInsertJobs.insert({vector_label, jobs_vec});
+    HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
+    auto jobs_vec = vecsim_stl::vector<HNSWInsertJob *>(1, &job, allocator);
+    tiered_index->labelToInsertJobs.insert({vector_label, jobs_vec});
 
-        // Wrap this job with an array and submit the jobs to the queue.
-        // TODO: in the future this should be part of the tiered index "add_vector" flow, and
-        //  we can replace this to avoid the breaking of the abstraction.
-        tiered_index->submitSingleJob((AsyncJob *)&job);
-        ASSERT_EQ(jobQ.size(), 1);
+    // Wrap this job with an array and submit the jobs to the queue.
+    // TODO: in the future this should be part of the tiered index "add_vector" flow, and
+    //  we can replace this to avoid the breaking of the abstraction.
+    tiered_index->submitSingleJob((AsyncJob *)&job);
+    ASSERT_EQ(jobQ.size(), 1);
 
-        // Execute the job from the queue and validate that the index was updated properly.
-        reinterpret_cast<AsyncJob *>(jobQ.front().job)->Execute(jobQ.front().job);
-        ASSERT_EQ(tiered_index->indexSize(), 1);
-        ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
-        ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
+    // Execute the job from the queue and validate that the index was updated properly.
+    reinterpret_cast<AsyncJob *>(jobQ.front().job)->Execute(jobQ.front().job);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
+    ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
+    size_t dim = 128;
+    size_t n = DEFAULT_BLOCK_SIZE;
+    size_t M = 32;
+    size_t bs = DEFAULT_BLOCK_SIZE;
+    bool isMulti = TypeParam::isMulti();
+
+    HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
+                              .dim = dim,
+                              .metric = VecSimMetric_L2,
+                              .multi = isMulti,
+                              .initialCapacity = n,
+                              .M = M};
+    VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
+
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                       .jobQueueCtx = &index_ctx,
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback,
+                                       .primaryIndexParams = &vecsim_hnsw_params};
+    VecSimParams params = CreateParams(tiered_params);
+    auto *index = VecSimIndex_New(&params);
+
+    size_t initial_size_estimation = VecSimIndex_EstimateInitialSize(&params);
+
+    // labels_lookup hash table has additional memory, since STL implementation chooses "an
+    // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
+    // buckets are created)
+    auto hnsw_index = this->CastToHNSW(index);
+    if (isMulti == false) {
+        auto hnsw = reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
+        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+    } else { // if its a multi value index cast to HNSW_Multi
+        auto hnsw = reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
+        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
     }
+
+    ASSERT_EQ(memory_ctx, index->getAllocationSize());
+    ASSERT_EQ(initial_size_estimation, memory_ctx);
+
+    // Add vectors up to initial capacity (initial capacity == block size).
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        jobQ.front().job->Execute(jobQ.front().job);
+        jobQ.pop();
+    }
+
+    // Estimate memory delta for filling up the first block and adding another block.
+    size_t estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+
+    size_t memory_before = memory_ctx;
+
+    // Note we are adding vectors with ascending values. This causes the numbers of
+    // incoming edges, which are not taking into account in EstimateElementSize,
+    // to be zero
+    for (size_t i = 0; i < bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + bs, i + bs);
+        jobQ.front().job->Execute(jobQ.front().job);
+        jobQ.pop();
+    }
+
+    size_t delta = memory_ctx - memory_before;
+
+    // Flat index should be empty, hence the index size includes only hnsw size.
+    ASSERT_EQ(index->indexSize(), hnsw_index->indexSize());
+    // We added 2 * bs vectors
+    ASSERT_EQ(index->indexSize(), 2 * bs);
+    // Which is the current maximum capacity.
+    ASSERT_EQ(index->indexSize(), index->indexCapacity());
+    ASSERT_EQ(index->indexSize(), hnsw_index->indexCapacity());
+
+    ASSERT_GE(estimation * 1.02, delta);
+    ASSERT_LE(estimation * 0.98, delta);
+
+    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, addVector) {
@@ -90,85 +191,83 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    for (auto isMulti : {false, true}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti};
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
+    bool isMulti = TypeParam::isMulti();
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = isMulti};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                       .jobQueueCtx = &index_ctx,
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback,
+                                       .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
 
-        BFParams bf_params = {.type = TypeParam::get_index_type(),
-                              .dim = dim,
-                              .metric = VecSimMetric_L2,
-                              .multi = isMulti};
+    BFParams bf_params = {.type = TypeParam::get_index_type(),
+                          .dim = dim,
+                          .metric = VecSimMetric_L2,
+                          .multi = isMulti};
 
-        // Validate that memory upon creating the tiered index is as expected (no more than 2%
-        // above te expected, since in different platforms there are some minor additional
-        // allocations).
-        size_t expected_mem = HNSWFactory::EstimateInitialSize(&params) +
-                              BruteForceFactory::EstimateInitialSize(&bf_params) +
-                              sizeof(*tiered_index);
-        ASSERT_LE(expected_mem, memory_ctx);
-        ASSERT_GE(expected_mem * 1.02, memory_ctx);
+    // Validate that memory upon creating the tiered index is as expected (no more than 2%
+    // above te expected, since in different platforms there are some minor additional
+    // allocations).
+    size_t expected_mem = TieredFactory::EstimateInitialSize(&tiered_params);
+    ASSERT_LE(expected_mem, memory_ctx);
+    ASSERT_GE(expected_mem * 1.02, memory_ctx);
 
-        // Create a vector and add it to the tiered index.
-        labelType vec_label = 1;
-        TEST_DATA_T vector[dim];
-        GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
+    // Create a vector and add it to the tiered index.
+    labelType vec_label = 1;
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
+    VecSimIndex_AddVector(tiered_index, vector, vec_label);
+    // Validate that the vector was inserted to the flat buffer properly.
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
+    ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->flatBuffer->getDistanceFrom(vec_label, vector), 0);
+    // Validate that the job was created properly
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->id, 0);
+
+    // Account for the allocation of a new block due to the vector insertion.
+    expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
+    // Account for the memory that was allocated in the labelToId map (approx.)
+    expected_mem += sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
+                    sizeof(void *) + sizeof(size_t);
+    // Account for the memory that was allocated in the labelToInsertJobs map (approx.)
+    expected_mem +=
+        sizeof(
+            vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>>::value_type) +
+        sizeof(void *) + sizeof(size_t);
+    // Account for the inner buffer of the std::vector<HNSWInsertJob *> in the map.
+    expected_mem += sizeof(void *) + sizeof(size_t);
+    // Account for the insert job that was created.
+    expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
+    ASSERT_GE(expected_mem * 1.02, memory_ctx);
+    ASSERT_LE(expected_mem, memory_ctx);
+
+    if (isMulti) {
+        // Add another vector under the same label (create another insert job)
         VecSimIndex_AddVector(tiered_index, vector, vec_label);
-        // Validate that the vector was inserted to the flat buffer properly.
-        ASSERT_EQ(tiered_index->indexSize(), 1);
+        ASSERT_EQ(tiered_index->indexSize(), 2);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
         ASSERT_EQ(tiered_index->index->indexSize(), 0);
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
-        ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), DEFAULT_BLOCK_SIZE);
-        ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
-        ASSERT_EQ(tiered_index->flatBuffer->getDistanceFrom(vec_label, vector), 0);
-        // Validate that the job was created properly
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 1);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->label, vec_label);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[0]->id, 0);
-
-        // Account for the allocation of a new block due to the vector insertion.
-        expected_mem += (BruteForceFactory::EstimateElementSize(&bf_params)) * DEFAULT_BLOCK_SIZE;
-        // Account for the memory that was allocated in the labelToId map (approx.)
-        expected_mem += sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
-                        sizeof(void *) + sizeof(size_t);
-        // Account for the memory that was allocated in the labelToInsertJobs map (approx.)
-        expected_mem +=
-            sizeof(vecsim_stl::unordered_map<labelType,
-                                             vecsim_stl::vector<HNSWInsertJob *>>::value_type) +
-            sizeof(void *) + sizeof(size_t);
-        // Account for the inner buffer of the std::vector<HNSWInsertJob *> in the map.
-        expected_mem += sizeof(void *) + sizeof(size_t);
-        // Account for the insert job that was created.
-        expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
-        ASSERT_GE(expected_mem * 1.02, memory_ctx);
-        ASSERT_LE(expected_mem, memory_ctx);
-
-        if (isMulti) {
-            // Add another vector under the same label (create another insert job)
-            VecSimIndex_AddVector(tiered_index, vector, vec_label);
-            ASSERT_EQ(tiered_index->indexSize(), 2);
-            ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-            ASSERT_EQ(tiered_index->index->indexSize(), 0);
-            ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 2);
-            // Validate that the second job was created properly
-            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 2);
-            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->label, vec_label);
-            ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->id, 1);
-        }
+        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 2);
+        // Validate that the second job was created properly
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label).size(), 2);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->label, vec_label);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->id, 1);
     }
 }
 
@@ -176,80 +275,78 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
-    for (auto isMulti : {true, false}) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto *index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx->index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+    size_t initial_mem = memory_ctx;
+
+    // Create a dummy job callback that insert one vector to the underline HNSW index.
+    auto dummy_job = [](AsyncJob *job) {
+        auto *my_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(job->index);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         size_t dim = 4;
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti};
-        auto jobQ = JobQueue();
-        auto *index_ctx = new IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx->index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
-        size_t initial_mem = memory_ctx;
+        TEST_DATA_T vector[dim];
+        GenerateVector<TEST_DATA_T>(vector, dim);
+        if (my_index->index->indexCapacity() == my_index->index->indexSize()) {
+            my_index->index->increaseCapacity();
+        }
+        my_index->index->addVector(vector, my_index->index->indexSize());
+    };
 
-        // Create a dummy job callback that insert one vector to the underline HNSW index.
-        auto dummy_job = [](AsyncJob *job) {
-            auto *my_index =
-                reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(job->index);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-            size_t dim = 4;
-            TEST_DATA_T vector[dim];
-            GenerateVector<TEST_DATA_T>(vector, dim);
-            if (my_index->index->indexCapacity() == my_index->index->indexSize()) {
-                my_index->index->increaseCapacity();
-            }
-            my_index->index->addVector(vector, my_index->index->indexSize());
-        };
+    AsyncJob job(tiered_index->allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
 
-        AsyncJob job(tiered_index->allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
+    // Wrap this job with an array and submit the jobs to the queue.
+    tiered_index->submitSingleJob((AsyncJob *)&job);
+    tiered_index->submitSingleJob((AsyncJob *)&job);
+    ASSERT_EQ(jobQ.size(), 2);
 
-        // Wrap this job with an array and submit the jobs to the queue.
-        tiered_index->submitSingleJob((AsyncJob *)&job);
-        tiered_index->submitSingleJob((AsyncJob *)&job);
-        ASSERT_EQ(jobQ.size(), 2) << IS_MULTI;
+    // Execute the job from the queue asynchronously, delete the index in the meantime.
+    auto run_fn = [&jobQ]() {
+        // Create a temporary strong reference of the index from the weak reference that the
+        // job holds, to ensure that the index is not deleted while the job is running.
+        if (auto temp_ref = jobQ.front().index_weak_ref.lock()) {
+            // At this point we wish to validate that we have both the index strong ref (stored
+            // in index_ctx) and the weak ref owned by the job (that we currently promoted).
+            EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 2);
 
-        // Execute the job from the queue asynchronously, delete the index in the meantime.
-        auto run_fn = [&jobQ, isMulti]() {
-            // Create a temporary strong reference of the index from the weak reference that the
-            // job holds, to ensure that the index is not deleted while the job is running.
-            if (auto temp_ref = jobQ.front().index_weak_ref.lock()) {
-                // At this point we wish to validate that we have both the index strong ref (stored
-                // in index_ctx) and the weak ref owned by the job (that we currently promoted).
-                EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 2) << IS_MULTI;
+            jobQ.front().job->Execute(jobQ.front().job);
+        }
+        jobQ.pop();
+    };
+    std::thread t1(run_fn);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Delete the index while the job is still running, to ensure that the weak ref protects
+    // the index.
+    delete index_ctx;
+    EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1);
+    t1.join();
+    // Expect that the first job will succeed.
+    ASSERT_GE(memory_ctx, initial_mem);
+    size_t cur_mem = memory_ctx;
 
-                jobQ.front().job->Execute(jobQ.front().job);
-            }
-            jobQ.pop();
-        };
-        std::thread t1(run_fn);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        // Delete the index while the job is still running, to ensure that the weak ref protects
-        // the index.
-        delete index_ctx;
-        EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1) << IS_MULTI;
-        t1.join();
-        // Expect that the first job will succeed.
-        ASSERT_GE(memory_ctx, initial_mem) << IS_MULTI;
-        size_t cur_mem = memory_ctx;
-
-        // The second job should not run, since the weak reference is not supposed to become a
-        // strong references now.
-        ASSERT_EQ(jobQ.front().index_weak_ref.use_count(), 0) << IS_MULTI;
-        std::thread t2(run_fn);
-        t2.join();
-        ASSERT_EQ(memory_ctx, cur_mem) << IS_MULTI;
-    }
+    // The second job should not run, since the weak reference is not supposed to become a
+    // strong references now.
+    ASSERT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
+    std::thread t2(run_fn);
+    t2.join();
+    ASSERT_EQ(memory_ctx, cur_mem);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, insertJob) {
@@ -257,55 +354,54 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    for (auto isMulti : {false, true}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti};
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        index_ctx.index_strong_ref.reset(tiered_index);
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    index_ctx.index_strong_ref.reset(tiered_index);
 
-        // Create a vector and add it to the tiered index.
-        labelType vec_label = 1;
-        TEST_DATA_T vector[dim];
-        GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
-        VecSimIndex_AddVector(tiered_index, vector, vec_label);
-        ASSERT_EQ(tiered_index->indexSize(), 1) << IS_MULTI;
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1) << IS_MULTI;
+    // Create a vector and add it to the tiered index.
+    labelType vec_label = 1;
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
+    VecSimIndex_AddVector(tiered_index, vector, vec_label);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
 
-        // Execute the insert job manually (in a synchronous manner).
-        ASSERT_EQ(jobQ.size(), 1) << IS_MULTI;
-        auto *insertion_job = reinterpret_cast<HNSWInsertJob *>(jobQ.front().job);
-        ASSERT_EQ(insertion_job->label, vec_label) << IS_MULTI;
-        ASSERT_EQ(insertion_job->id, 0) << IS_MULTI;
-        ASSERT_EQ(insertion_job->jobType, HNSW_INSERT_VECTOR_JOB) << IS_MULTI;
+    // Execute the insert job manually (in a synchronous manner).
+    ASSERT_EQ(jobQ.size(), 1);
+    auto *insertion_job = reinterpret_cast<HNSWInsertJob *>(jobQ.front().job);
+    ASSERT_EQ(insertion_job->label, vec_label);
+    ASSERT_EQ(insertion_job->id, 0);
+    ASSERT_EQ(insertion_job->jobType, HNSW_INSERT_VECTOR_JOB);
 
-        insertion_job->Execute(insertion_job);
-        ASSERT_EQ(tiered_index->indexSize(), 1) << IS_MULTI;
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0) << IS_MULTI;
-        ASSERT_EQ(tiered_index->index->indexSize(), 1) << IS_MULTI;
-        // HNSW index should have allocated a single block, while flat index should remove the
-        // block.
-        ASSERT_EQ(tiered_index->index->indexCapacity(), DEFAULT_BLOCK_SIZE) << IS_MULTI;
-        ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE) << IS_MULTI;
-        ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), 0) << IS_MULTI;
-        ASSERT_EQ(tiered_index->index->getDistanceFrom(vec_label, vector), 0) << IS_MULTI;
-        // After the execution, the job should be removed from the labelToInsertJobs mapping.
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0) << IS_MULTI;
-    }
+    insertion_job->Execute(insertion_job);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    ASSERT_EQ(tiered_index->index->indexSize(), 1);
+    // HNSW index should have allocated a single block, while flat index should remove the
+    // block.
+    ASSERT_EQ(tiered_index->index->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->indexCapacity(), DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(tiered_index->flatBuffer->indexCapacity(), 0);
+    ASSERT_EQ(tiered_index->index->getDistanceFrom(vec_label, vector), 0);
+    // After the execution, the job should be removed from the labelToInsertJobs mapping.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
 }
 
-TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
+TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
@@ -313,18 +409,19 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     size_t n = 5000;
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
 
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = &index_ctx,
-                                       .submitCb = submit_callback,
-                                       .memoryCtx = &memory_ctx,
-                                       .UpdateMemCb = update_mem_callback};
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     index_ctx.index_strong_ref.reset(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -338,7 +435,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
 
-    thread_pool_wait(jobQ, run_thread);
+    thread_pool_join(jobQ, run_thread);
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->index->indexSize(), n);
     ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
@@ -352,7 +449,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsync) {
     }
 }
 
-TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
+TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
@@ -360,18 +457,19 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     size_t n = 5000;
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
     size_t per_label = 5;
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = &index_ctx,
-                                       .submitCb = submit_callback,
-                                       .memoryCtx = &memory_ctx,
-                                       .UpdateMemCb = update_mem_callback};
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     index_ctx.index_strong_ref.reset(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
@@ -390,7 +488,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
         }
     }
 
-    thread_pool_wait(jobQ, run_thread);
+    thread_pool_join(jobQ, run_thread);
     EXPECT_EQ(tiered_index->index->indexSize(), n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n / per_label);
     EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
@@ -407,7 +505,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJobAsyncMulti) {
     }
 }
 
-TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
+TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     size_t dim = 4;
     size_t k = 10;
 
@@ -420,19 +518,18 @@ TYPED_TEST(HNSWTieredIndexTest, KNNSearch) {
         .dim = dim,
         .metric = VecSimMetric_L2,
     };
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t cur_memory_usage, memory_ctx = 0;
-    TieredIndexParams tiered_params = {
-        .jobQueue = &jobQ,
-        .jobQueueCtx = &index_ctx,
-        .submitCb = submit_callback,
-        .memoryCtx = &memory_ctx,
-        .UpdateMemCb = update_mem_callback,
-    };
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
     EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -626,99 +723,93 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
     size_t dim = 4;
     size_t k = 10;
     size_t n = 2000;
+    bool isMulti = TypeParam::isMulti();
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto isMulti : {false, true}) {
-        HNSWParams params = {
-            .type = TypeParam::get_index_type(),
-            .dim = dim,
-            .metric = VecSimMetric_L2,
-            .multi = isMulti,
-            .efRuntime = 20,
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .efRuntime = 20,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+
+    std::atomic_int successful_searches(0);
+    auto parallel_knn_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        size_t k = search_job->k;
+        size_t dim = search_job->dim;
+        auto query = search_job->query;
+
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            TEST_DATA_T element = *(TEST_DATA_T *)query;
+            ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
+            ASSERT_EQ(score, dim * (id - element) * (id - element));
         };
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-        };
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << IS_MULTI;
+        runTopKSearchTest(job->index, query, k, verify_res);
+        search_job->successful_searches++;
 
-        std::atomic_int successful_searches(0);
-        auto parallel_knn_search = [](AsyncJob *job) {
-            auto *search_job = reinterpret_cast<SearchJobMock *>(job);
-            size_t k = search_job->k;
-            size_t dim = search_job->dim;
-            auto query = search_job->query;
+        delete search_job;
+    };
 
-            auto verify_res = [&](size_t id, double score, size_t res_index) {
-                TEST_DATA_T element = *(TEST_DATA_T *)query;
-                ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
-                ASSERT_EQ(score, dim * (id - element) * (id - element));
-            };
-            runTopKSearchTest(job->index, query, k, verify_res);
-            search_job->successful_searches++;
+    size_t per_label = isMulti ? 10 : 1;
+    size_t n_labels = n / per_label;
 
-            delete search_job;
-        };
+    // Fill the job queue with insert and search jobs, while filling the flat index, before
+    // initializing the thread pool.
+    for (size_t i = 0; i < n; i++) {
+        // Insert a vector to the flat index and add a job to insert it to the main index.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
 
-        size_t per_label = isMulti ? 10 : 1;
-        size_t n_labels = n / per_label;
-
-        // Fill the job queue with insert and search jobs, while filling the flat index, before
-        // initializing the thread pool.
-        for (size_t i = 0; i < n; i++) {
-            // Insert a vector to the flat index and add a job to insert it to the main index.
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
-
-            // Add a search job. Make sure the query element is between k and n - k.
-            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
-            GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
-            auto search_job =
-                new (allocator) SearchJobMock(allocator, parallel_knn_search, tiered_index, query,
-                                              k, n, dim, successful_searches);
-            tiered_index->submitSingleJob(search_job);
-        }
-
-        EXPECT_EQ(tiered_index->indexSize(), n) << IS_MULTI;
-        EXPECT_EQ(tiered_index->indexLabelCount(), n_labels) << IS_MULTI;
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels) << IS_MULTI;
-        for (auto &it : tiered_index->labelToInsertJobs) {
-            EXPECT_EQ(it.second.size(), per_label) << IS_MULTI;
-        }
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n) << IS_MULTI;
-        EXPECT_EQ(tiered_index->index->indexSize(), 0) << IS_MULTI;
-
-        // Launch the BG threads loop that takes jobs from the queue and executes them.
-        // All the vectors are already in the tiered index, so we expect to find the expected
-        // results from the get-go.
-        bool run_thread = true;
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
-        }
-
-        thread_pool_wait(jobQ, run_thread);
-
-        EXPECT_EQ(tiered_index->index->indexSize(), n) << IS_MULTI;
-        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels) << IS_MULTI;
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << IS_MULTI;
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << IS_MULTI;
-        EXPECT_EQ(successful_searches, n) << IS_MULTI;
-        EXPECT_EQ(jobQ.size(), 0) << IS_MULTI;
-
-        // Cleanup.
-        thread_pool.clear();
+        // Add a search job. Make sure the query element is between k and n - k.
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
+        auto search_job = new (allocator) SearchJobMock(
+            allocator, parallel_knn_search, tiered_index, query, k, n, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
     }
+
+    EXPECT_EQ(tiered_index->indexSize(), n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
+    for (auto &it : tiered_index->labelToInsertJobs) {
+        EXPECT_EQ(it.second.size(), per_label);
+    }
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexSize(), 0);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // All the vectors are already in the tiered index, so we expect to find the expected
+    // results from the get-go.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(tiered_index->index->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
@@ -728,79 +819,77 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
 
     size_t block_size = n / 100;
 
+    bool isMulti = TypeParam::isMulti();
+
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto isMulti : {false, true}) {
-        size_t n_labels = isMulti ? n / 25 : n;
-        HNSWParams params = {
-            .type = TypeParam::get_index_type(),
-            .dim = dim,
-            .metric = VecSimMetric_L2,
-            .multi = isMulti,
-            .blockSize = block_size,
-        };
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-        };
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << IS_MULTI;
+    size_t n_labels = isMulti ? n / 25 : n;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .blockSize = block_size,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
 
-        // Launch the BG threads loop that takes jobs from the queue and executes them.
-        // Save the number fo tasks done by thread i in the i-th entry.
-        std::vector<size_t> completed_tasks(THREAD_POOL_SIZE, 0);
-        bool run_thread = true;
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
-        }
-        std::atomic_int successful_searches(0);
-
-        auto parallel_knn_search = [](AsyncJob *job) {
-            auto *search_job = reinterpret_cast<SearchJobMock *>(job);
-            size_t k = search_job->k;
-            auto query = search_job->query;
-            // In this test we don't care about the results, just that the search doesn't crash
-            // and returns the correct number of valid results.
-            auto verify_res = [&](size_t id, double score, size_t res_index) {};
-            runTopKSearchTest(job->index, query, k, verify_res);
-            search_job->successful_searches++;
-
-            delete search_job;
-        };
-
-        // Insert vectors in parallel to search.
-        for (size_t i = 0; i < n; i++) {
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
-            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
-            GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 4 + (i % 1000) * M_PI);
-            auto search_job =
-                new (allocator) SearchJobMock(allocator, parallel_knn_search, tiered_index, query,
-                                              k, n, dim, successful_searches);
-            tiered_index->submitSingleJob(search_job);
-        }
-
-        thread_pool_wait(jobQ, run_thread);
-
-        EXPECT_EQ(successful_searches, n) << IS_MULTI;
-        EXPECT_EQ(tiered_index->index->indexSize(), n) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels) << IS_MULTI;
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << (isMulti ? "multi" : "single");
-        EXPECT_EQ(jobQ.size(), 0);
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // Save the number fo tasks done by thread i in the i-th entry.
+    std::vector<size_t> completed_tasks(THREAD_POOL_SIZE, 0);
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
     }
+    std::atomic_int successful_searches(0);
+
+    auto parallel_knn_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        size_t k = search_job->k;
+        auto query = search_job->query;
+        // In this test we don't care about the results, just that the search doesn't crash
+        // and returns the correct number of valid results.
+        auto verify_res = [&](size_t id, double score, size_t res_index) {};
+        runTopKSearchTest(job->index, query, k, verify_res);
+        search_job->successful_searches++;
+
+        delete search_job;
+    };
+
+    // Insert vectors in parallel to search.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 4 + (i % 1000) * M_PI);
+        auto search_job = new (allocator) SearchJobMock(
+            allocator, parallel_knn_search, tiered_index, query, k, n, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(tiered_index->index->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(jobQ.size(), 0);
 }
 
-TYPED_TEST(HNSWTieredIndexTest, MergeMulti) {
+TYPED_TEST(HNSWTieredIndexTestBasic, MergeMulti) {
     size_t dim = 4;
 
     // Create TieredHNSW index instance with a mock queue.
@@ -811,19 +900,18 @@ TYPED_TEST(HNSWTieredIndexTest, MergeMulti) {
         .metric = VecSimMetric_L2,
         .multi = true,
     };
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {
-        .jobQueue = &jobQ,
-        .jobQueueCtx = &index_ctx,
-        .submitCb = submit_callback,
-        .memoryCtx = &memory_ctx,
-        .UpdateMemCb = update_mem_callback,
-    };
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
     EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -856,83 +944,85 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t dim = 4;
+    bool isMulti = TypeParam::isMulti();
 
-    for (auto isMulti : {false, true}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti};
-        auto jobQ = JobQueue();
-        size_t memory_ctx = 0;
-        auto index_ctx = IndexExtCtx();
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = isMulti};
+    VecSimParams hnsw_params = CreateParams(params);
 
-        // Delete a non existing label.
-        ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 0) << IS_MULTI;
-        ASSERT_EQ(jobQ.size(), 0) << IS_MULTI;
+    auto jobQ = JobQueue();
+    size_t memory_ctx = 0;
+    auto index_ctx = IndexExtCtx();
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
 
-        // Insert one vector to HNSW and then delete it (it should have no neighbors to repair).
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0);
-        ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 1) << IS_MULTI;
-        ASSERT_EQ(jobQ.size(), 0) << IS_MULTI;
+    // Delete a non existing label.
+    ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 0);
+    ASSERT_EQ(jobQ.size(), 0);
 
-        // Add another vector and remove it. Since the other vector in the index has marked deleted,
-        // this vector should have no neighbors, and again, no neighbors to repair.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
-        ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 1) << IS_MULTI;
-        ASSERT_EQ(jobQ.size(), 0) << IS_MULTI;
+    // Insert one vector to HNSW and then delete it (it should have no neighbors to repair).
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0);
+    ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 1);
+    ASSERT_EQ(jobQ.size(), 0);
 
-        // Add two vectors and delete one, expect that at least one repair job will be created.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 3, 3);
-        ASSERT_EQ(tiered_index->deleteLabelFromHNSW(3), 1) << IS_MULTI;
+    // Add another vector and remove it. Since the other vector in the index has marked deleted,
+    // this vector should have no neighbors, and again, no neighbors to repair.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
+    ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 1);
+    ASSERT_EQ(jobQ.size(), 0);
 
-        // The first job should be a repair job of the first inserted non-deleted node id (2)
-        // in level 0.
-        ASSERT_EQ(jobQ.size(), 1) << IS_MULTI;
-        ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB) << IS_MULTI;
-        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2) << IS_MULTI;
-        ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0) << IS_MULTI;
-        ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1) << IS_MULTI;
-        ASSERT_GE(tiered_index->idToRepairJobs.at(2).size(), 1) << IS_MULTI;
-        ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1) << IS_MULTI;
-        ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 3)
-            << IS_MULTI;
+    // Add two vectors and delete one, expect that at least one repair job will be created.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 3, 3);
+    ASSERT_EQ(tiered_index->deleteLabelFromHNSW(3), 1);
 
-        ASSERT_EQ(tiered_index->indexSize(), 4) << IS_MULTI;
-        ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3) << IS_MULTI;
-        ASSERT_EQ(tiered_index->idToSwapJob.size(), 3) << IS_MULTI;
-        jobQ.pop();
+    // The first job should be a repair job of the first inserted non-deleted node id (2)
+    // in level 0.
+    ASSERT_EQ(jobQ.size(), 1);
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2);
+    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+    ASSERT_GE(tiered_index->idToRepairJobs.at(2).size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 3);
 
-        delete tiered_index;
-    }
+    ASSERT_EQ(tiered_index->indexSize(), 4);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
+    jobQ.pop();
+
+    delete tiered_index;
 }
 
-TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWMulti) {
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t dim = 4;
 
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+
     auto jobQ = JobQueue();
     size_t memory_ctx = 0;
     auto index_ctx = IndexExtCtx();
-    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = &index_ctx,
-                                       .submitCb = submit_callback,
-                                       .memoryCtx = &memory_ctx,
-                                       .UpdateMemCb = update_mem_callback};
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
 
     // Add two vectors and delete one, expect that at least one repair job will be created.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
@@ -981,24 +1071,25 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWMulti) {
     delete tiered_index;
 }
 
-TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWMultiLevels) {
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t dim = 4;
 
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     size_t memory_ctx = 0;
     auto index_ctx = IndexExtCtx();
-    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = &index_ctx,
-                                       .submitCb = submit_callback,
-                                       .memoryCtx = &memory_ctx,
-                                       .UpdateMemCb = update_mem_callback};
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
 
     // Test that repair jobs are created for multiple levels.
     size_t num_elements_with_multiple_levels = 0;
@@ -1039,136 +1130,132 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t n = 1000;
     size_t dim = 4;
+    bool isMulti = TypeParam::isMulti();
 
-    for (auto isMulti : {false, true}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti,
-                             .M = 4};
-        auto jobQ = JobQueue();
-        size_t memory_ctx = 0;
-        auto index_ctx = IndexExtCtx();
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = isMulti,
+                         .M = 4};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    size_t memory_ctx = 0;
+    auto index_ctx = IndexExtCtx();
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
 
-        for (size_t i = 0; i < n; i++) {
-            GenerateAndAddVector(tiered_index->index, dim, i, i);
-        }
-
-        // Delete vectors one by one and run the resulted repair jobs.
-        while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
-            // Choose the current entry point each time (it should be modified after the deletion).
-            idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointCopy();
-            auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
-            auto incoming_neighbors =
-                tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
-            ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1) << IS_MULTI;
-            ASSERT_EQ(jobQ.size(), incoming_neighbors.size()) << IS_MULTI;
-            ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
-                      jobQ.size())
-                << IS_MULTI;
-            ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), ep) << IS_MULTI;
-
-            // Execute synchronously all the repair jobs for the current deletion.
-            while (!jobQ.empty()) {
-                idType repair_node_id = ((HNSWRepairJob *)(jobQ.front().job))->node_id;
-                auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
-                auto orig_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
-                    repair_node_id, repair_node_level);
-
-                tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id,
-                                                                    repair_node_level);
-                auto new_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
-                    repair_node_id, repair_node_level);
-                size_t new_neighbors_count =
-                    tiered_index->getHNSWIndex()->getNodeNeighborsCount(new_neighbors);
-                // This makes sure that the deleted node is no longer in the neighbors set of the
-                // repaired node.
-                ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
-                            new_neighbors + new_neighbors_count)
-                    << IS_MULTI;
-                // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
-                // still pending and avoid creating new jobs for nodes that already been repaired
-                // as they were pointing to deleted elements.
-                tiered_index->idToRepairJobs.erase(repair_node_id);
-                delete jobQ.front().job;
-                jobQ.pop();
-            }
-            ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0)
-                << IS_MULTI;
-        }
-        delete tiered_index;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector(tiered_index->index, dim, i, i);
     }
+
+    // Delete vectors one by one and run the resulted repair jobs.
+    while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
+        // Choose the current entry point each time (it should be modified after the deletion).
+        idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointCopy();
+        auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
+        auto incoming_neighbors =
+            tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
+        ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1);
+        ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
+        ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
+                  jobQ.size());
+        ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), ep);
+
+        // Execute synchronously all the repair jobs for the current deletion.
+        while (!jobQ.empty()) {
+            idType repair_node_id = ((HNSWRepairJob *)(jobQ.front().job))->node_id;
+            auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
+            auto orig_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
+                repair_node_id, repair_node_level);
+
+            tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
+            auto new_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
+                repair_node_id, repair_node_level);
+            size_t new_neighbors_count =
+                tiered_index->getHNSWIndex()->getNodeNeighborsCount(new_neighbors);
+            // This makes sure that the deleted node is no longer in the neighbors set of the
+            // repaired node.
+            ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
+                        new_neighbors + new_neighbors_count);
+            // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
+            // still pending and avoid creating new jobs for nodes that already been repaired
+            // as they were pointing to deleted elements.
+            tiered_index->idToRepairJobs.erase(repair_node_id);
+            delete jobQ.front().job;
+            jobQ.pop();
+        }
+        ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
+    }
+    delete tiered_index;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
-    for (auto isMulti : {true, false}) {
-        size_t dim = 4;
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = isMulti};
-        auto jobQ = JobQueue();
-        auto *index_ctx = new IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx->index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1) << IS_MULTI;
+    size_t dim = 4;
+    bool isMulti = TypeParam::isMulti();
 
-        // Add a vector and create a pending insert job.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1) << IS_MULTI;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = isMulti};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto *index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx->index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
-        // Delete the index before the job was executed.
-        EXPECT_EQ(jobQ.size(), 1) << IS_MULTI;
-        EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1) << IS_MULTI;
-        delete index_ctx;
-        EXPECT_EQ(jobQ.size(), 1) << IS_MULTI;
-        EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0) << IS_MULTI;
-        jobQ.pop();
+    // Add a vector and create a pending insert job.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
 
-        // Recreate the index with a new ctx.
-        tiered_params.jobQueueCtx = index_ctx = new IndexExtCtx();
-        tiered_hnsw_params.tieredParams = tiered_params;
-        tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        index_ctx->index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1) << IS_MULTI;
+    // Delete the index before the job was executed.
+    EXPECT_EQ(jobQ.size(), 1);
+    EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1);
+    delete index_ctx;
+    EXPECT_EQ(jobQ.size(), 1);
+    EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
+    jobQ.pop();
 
-        // Add two vectors directly to HNSW, and remove one vector to create a repair job.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
-        ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 1) << IS_MULTI;
-        ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1) << IS_MULTI;
+    // Recreate the index with a new ctx.
+    tiered_hnsw_params.jobQueueCtx = index_ctx = new IndexExtCtx();
+    tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    index_ctx->index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
-        // Delete the index before the job was executed.
-        EXPECT_EQ(jobQ.size(), 1) << IS_MULTI;
-        EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1) << IS_MULTI;
-        delete index_ctx;
-        EXPECT_EQ(jobQ.size(), 1) << IS_MULTI;
-        EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0) << IS_MULTI;
-    }
+    // Add two vectors directly to HNSW, and remove one vector to create a repair job.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
+    ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 1);
+    ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
+
+    // Delete the index before the job was executed.
+    EXPECT_EQ(jobQ.size(), 1);
+    EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1);
+    delete index_ctx;
+    EXPECT_EQ(jobQ.size(), 1);
+    EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
 }
 
-TYPED_TEST(HNSWTieredIndexTest, AdHocSingle) {
+TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
     size_t dim = 4;
 
     // Create TieredHNSW index instance with a mock queue.
@@ -1178,19 +1265,18 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocSingle) {
         .dim = dim,
         .metric = VecSimMetric_L2,
     };
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {
-        .jobQueue = &jobQ,
-        .jobQueueCtx = &index_ctx,
-        .submitCb = submit_callback,
-        .memoryCtx = &memory_ctx,
-        .UpdateMemCb = update_mem_callback,
-    };
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
     EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -1229,7 +1315,7 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocSingle) {
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
 }
 
-TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
+TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
     size_t dim = 4;
 
     // Create TieredHNSW index instance with a mock queue.
@@ -1240,19 +1326,18 @@ TYPED_TEST(HNSWTieredIndexTest, AdHocMulti) {
         .metric = VecSimMetric_L2,
         .multi = true,
     };
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {
-        .jobQueue = &jobQ,
-        .jobQueueCtx = &index_ctx,
-        .submitCb = submit_callback,
-        .memoryCtx = &memory_ctx,
-        .UpdateMemCb = update_mem_callback,
-    };
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
     EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
@@ -1345,92 +1430,75 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
     size_t n = 1000;
 
     size_t block_size = n / 100;
+    bool isMulti = TypeParam::isMulti();
 
     // Create TieredHNSW index instance with a mock queue.
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto isMulti : {false, true}) {
-        size_t n_labels = isMulti ? n / 50 : n;
-        HNSWParams params = {
-            .type = TypeParam::get_index_type(),
-            .dim = dim,
-            .metric = VecSimMetric_L2,
-            .multi = isMulti,
-            .blockSize = block_size,
-        };
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-        };
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << IS_MULTI;
+    size_t n_labels = isMulti ? n / 50 : n;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .blockSize = block_size,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
 
-        // Launch the BG threads loop that takes jobs from the queue and executes them.
-        bool run_thread = true;
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
-        }
-        std::atomic_int successful_searches(0);
-
-        auto parallel_adhoc_search = [](AsyncJob *job) {
-            auto *search_job = reinterpret_cast<SearchJobMock *>(job);
-            auto query = search_job->query;
-            size_t element = *(TEST_DATA_T *)query;
-            size_t label = element % search_job->n;
-            bool isMulti =
-                reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
-                    ->index->isMultiValue();
-
-            ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query))
-                << "Label: " << label << IS_MULTI;
-
-            search_job->successful_searches++;
-            delete search_job;
-        };
-
-        // Insert vectors in parallel to search.
-        for (size_t i = 0; i < n; i++) {
-            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
-            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
-            GenerateVector<TEST_DATA_T>(query, dim, i);
-            auto search_job =
-                new (allocator) SearchJobMock(allocator, parallel_adhoc_search, tiered_index, query,
-                                              1, n_labels, dim, successful_searches);
-            tiered_index->submitSingleJob(search_job);
-        }
-
-        // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            std::unique_lock<std::mutex> lock(queue_guard);
-            if (jobQ.empty()) {
-                run_thread = false;
-                queue_cond.notify_all();
-                break;
-            }
-        }
-        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool[i].join();
-        }
-        EXPECT_EQ(successful_searches, n) << IS_MULTI;
-        EXPECT_EQ(tiered_index->index->indexSize(), n) << IS_MULTI;
-        EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels) << IS_MULTI;
-        EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0) << IS_MULTI;
-        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0) << IS_MULTI;
-        EXPECT_EQ(jobQ.size(), 0);
-
-        // Cleanup.
-        thread_pool.clear();
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
     }
+    std::atomic_int successful_searches(0);
+
+    auto parallel_adhoc_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        auto query = search_job->query;
+        size_t element = *(TEST_DATA_T *)query;
+        size_t label = element % search_job->n;
+        bool isMulti =
+            reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(search_job->index)
+                ->index->isMultiValue();
+
+        ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
+
+        search_job->successful_searches++;
+        delete search_job;
+    };
+
+    // Insert vectors in parallel to search.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, i);
+        auto search_job =
+            new (allocator) SearchJobMock(allocator, parallel_adhoc_search, tiered_index, query, 1,
+                                          n_labels, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(tiered_index->index->indexSize(), n);
+    EXPECT_EQ(tiered_index->index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
@@ -1438,101 +1506,101 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    for (auto is_multi : {false, true}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = is_multi};
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
 
-        labelType vec_label = 0;
-        // Delete from an empty index.
-        ASSERT_EQ(tiered_index->deleteVector(0), vec_label);
+    labelType vec_label = 0;
+    // Delete from an empty index.
+    ASSERT_EQ(tiered_index->deleteVector(vec_label), 0);
 
-        // Create a vector and add it to the tiered index (expect it to go into the flat buffer).
-        TEST_DATA_T vector[dim];
-        GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
-        VecSimIndex_AddVector(tiered_index, vector, vec_label);
-        ASSERT_EQ(tiered_index->indexSize(), 1);
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
+    // Create a vector and add it to the tiered index (expect it to go into the flat buffer).
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
+    VecSimIndex_AddVector(tiered_index, vector, vec_label);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
 
-        // Expect to have one pending insert job.
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
-        auto *job = tiered_index->labelToInsertJobs.at(vec_label).back();
+    // Expect to have one pending insert job.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    auto *job = tiered_index->labelToInsertJobs.at(vec_label).back();
 
-        // Remove vector from flat buffer.
-        ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
-        ASSERT_EQ(tiered_index->indexSize(), 0);
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
-        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-        // The insert job should become invalid, and executing it should do nothing.
-        ASSERT_EQ(job->id, INVALID_JOB_ID);
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        ASSERT_EQ(tiered_index->index->indexSize(), 0);
+    // Remove vector from flat buffer.
+    ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    // The insert job should become invalid, and executing it should do nothing.
+    ASSERT_EQ(job->id, INVALID_JOB_ID);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    ASSERT_EQ(tiered_index->index->indexSize(), 0);
 
-        // Create a vector and add it to HNSW in the tiered index.
-        VecSimIndex_AddVector(tiered_index->index, vector, vec_label);
-        ASSERT_EQ(tiered_index->indexSize(), 1);
-        ASSERT_EQ(tiered_index->index->indexSize(), 1);
+    // Create a vector and add it to HNSW in the tiered index.
+    VecSimIndex_AddVector(tiered_index->index, vector, vec_label);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->index->indexSize(), 1);
 
-        // Remove from main index.
-        ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
-        ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-        ASSERT_EQ(tiered_index->indexSize(), 1);
-        ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    // Remove from main index.
+    ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
 
-        // Re-insert a deleted label with a different vector.
-        TEST_DATA_T other_vec_val = 2.0;
-        GenerateVector<TEST_DATA_T>(vector, dim, other_vec_val);
-        VecSimIndex_AddVector(tiered_index, vector, vec_label);
-        ASSERT_EQ(tiered_index->indexSize(), 2);
-        ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
+    // Re-insert a deleted label with a different vector.
+    TEST_DATA_T new_vec_val = 2.0;
+    GenerateVector<TEST_DATA_T>(vector, dim, new_vec_val);
+    VecSimIndex_AddVector(tiered_index, vector, vec_label);
+    ASSERT_EQ(tiered_index->indexSize(), 2);
+    ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 1);
 
-        // Move the vector to HNSW by executing the insert job.
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-        ASSERT_EQ(tiered_index->index->indexSize(), 2);
-        // Check that the distance from the deleted vector (of zeros) to the label is the distance
-        // to the new vector (L2 distance).
-        TEST_DATA_T deleted_vector[dim];
-        GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
-        ASSERT_EQ(tiered_index->index->getDistanceFrom(vec_label, deleted_vector),
-                  dim * pow(other_vec_val, 2));
-    }
+    // Move the vector to HNSW by executing the insert job.
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->index->indexSize(), 2);
+    // Check that the distance from the deleted vector (of zeros) to the label is the distance
+    // to the new vector (L2 distance).
+    TEST_DATA_T deleted_vector[dim];
+    GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
+    ASSERT_EQ(tiered_index->index->getDistanceFrom(vec_label, deleted_vector),
+              dim * pow(new_vec_val, 2));
 }
 
-TYPED_TEST(HNSWTieredIndexTest, deleteVectorMulti) {
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = &index_ctx,
-                                       .submitCb = submit_callback,
-                                       .memoryCtx = &memory_ctx,
-                                       .UpdateMemCb = update_mem_callback};
-    TieredHNSWParams tiered_hnsw_params = {.hnswParams = params, .tieredParams = tiered_params};
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Set the created tiered index in the index external context.
     index_ctx.index_strong_ref.reset(tiered_index);
 
@@ -1565,9 +1633,14 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->flatBuffer->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->flatBuffer->indexSize(), 2);
+    ASSERT_EQ(tiered_index->indexSize(), 3);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     ASSERT_EQ(jobQ.size(), 0);
 
@@ -1590,97 +1663,187 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(jobQ.size(), 2);
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 2);
+    jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 1);
+    jobQ.front().job->Execute(jobQ.front().job);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    // Set the created tiered index in the index external context.
+    index_ctx.index_strong_ref.reset(tiered_index);
+
+    // Insert vectors to flat buffer under two distinct labels, so that ids 0, 2 will be associated
+    // with the first label, and ids 1, 3, 4 will be associated with the second label.
+    labelType vec_label_first = 0;
+    labelType vec_label_second = 1;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+
+    // Remove the second label, expect to see that id 1 will hold id 2 eventually.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
+    auto updated_ids = tiered_index->flatBuffer->deleteVectorAndGetUpdatedIds(vec_label_second);
+    ASSERT_EQ(updated_ids.size(), 1);
+    ASSERT_EQ(updated_ids.at(1), 2);
+    for (auto &it : updated_ids) {
+        tiered_index->updateInsertJobInternalId(it.second, it.first);
+    }
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first).size(), 2);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->id, 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->id, 1);
+
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 2);
+
+    // Remove the first label, expect an empty set.
+    updated_ids = tiered_index->flatBuffer->deleteVectorAndGetUpdatedIds(vec_label_first);
+    ASSERT_EQ(updated_ids.size(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+    tiered_index->labelToInsertJobs.clear();
+
+    // Insert vectors to flat buffer under two distinct labels, so that ids 0, 3 will be associated
+    // with the first label, and ids 1, 2, 4 will be associated with the second label. This should
+    // test the case of multiple moves once we delete the second label:
+    // {1->4} => {1->4, 2->3} => {1->3}
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_first);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label_second);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
+    updated_ids = tiered_index->flatBuffer->deleteVectorAndGetUpdatedIds(vec_label_second);
+    ASSERT_EQ(updated_ids.size(), 1);
+    ASSERT_EQ(updated_ids.at(1), 3);
+    for (auto &it : updated_ids) {
+        tiered_index->updateInsertJobInternalId(it.second, it.first);
+    }
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first).size(), 2);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[0]->id, 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->label, vec_label_first);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first)[1]->id, 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 2);
+    tiered_index->labelToInsertJobs.clear();
+
+    // Clean pending insert jobs.
+    while (!jobQ.empty()) {
+        delete jobQ.front().job;
+        jobQ.pop();
+    }
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Create TieredHNSW index instance with a mock queue.
-    size_t dim = 16;
+    size_t dim = 4;
     size_t n = 1000;
     for (size_t maxSwapJobs : {(int)n, 10, 1}) {
-        for (auto isMulti : {false, true}) {
-            HNSWParams params = {.type = TypeParam::get_index_type(),
-                                 .dim = dim,
-                                 .metric = VecSimMetric_L2,
-                                 .multi = isMulti,
-                                 .blockSize = 100};
-            auto jobQ = JobQueue();
-            auto index_ctx = IndexExtCtx();
-            size_t memory_ctx = 0;
-            TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                               .jobQueueCtx = &index_ctx,
-                                               .submitCb = submit_callback,
-                                               .memoryCtx = &memory_ctx,
-                                               .UpdateMemCb = update_mem_callback};
-            TieredHNSWParams tiered_hnsw_params = {
-                .hnswParams = params, .tieredParams = tiered_params, .maxSwapJobs = maxSwapJobs};
-            auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-                HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-            // Set the created tiered index in the index external context.
-            index_ctx.index_strong_ref.reset(tiered_index);
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = TypeParam::isMulti(),
+                             .blockSize = 100};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto jobQ = JobQueue();
+        auto index_ctx = IndexExtCtx();
+        size_t memory_ctx = 0;
+        TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                                .jobQueueCtx = &index_ctx,
+                                                .submitCb = submit_callback,
+                                                .memoryCtx = &memory_ctx,
+                                                .UpdateMemCb = update_mem_callback,
+                                                .primaryIndexParams = &hnsw_params,
+                                                .maxSwapJobs = maxSwapJobs};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+        // Set the created tiered index in the index external context.
+        index_ctx.index_strong_ref.reset(tiered_index);
 
-            size_t per_label = isMulti ? 5 : 1;
-            size_t n_labels = n / per_label;
+        size_t per_label = TypeParam::isMulti() ? 50 : 1;
+        size_t n_labels = n / per_label;
 
-            // Launch the BG threads loop that takes jobs from the queue and executes them.
-            bool run_thread = true;
-            for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-                thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
-            }
-
-            // Create and insert vectors one by one, then delete them one by one.
-            std::srand(10); // create pseudo random generator with any arbitrary seed.
-            for (size_t i = 0; i < n; i++) {
-                TEST_DATA_T vector[dim];
-                for (size_t j = 0; j < dim; j++) {
-                    vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
-                }
-                VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
-            }
-            // While a thread is ingesting a vector into HNSW, a vector may appear in both indexes
-            // (hence it will be counted twice in the index size calculation).
-            EXPECT_GE(tiered_index->indexSize(), n);
-            EXPECT_LE(tiered_index->indexSize(), n + THREAD_POOL_SIZE);
-            EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
-            for (size_t i = 0; i < n_labels; i++) {
-                // Every vector associated with the label may appear in flat/HNSW index or in both
-                // if its just being ingested.
-                int num_deleted = tiered_index->deleteVector(i);
-                EXPECT_GE(num_deleted, per_label);
-                EXPECT_LE(num_deleted, MIN(2 * per_label, per_label + THREAD_POOL_SIZE));
-                EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
-            }
-            EXPECT_EQ(tiered_index->indexLabelCount(), 0);
-
-            thread_pool_wait(jobQ, run_thread);
-
-            EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
-            EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
-            // Verify that we have no pending jobs.
-            EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-            EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
-            for (auto &it : tiered_index->idToSwapJob) {
-                EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
-            }
-            // Delete another vector to trigger swapping of vectors that hadn't been swapped yet.
-            // If the number of swap jobs is lower than the threshold, none of them are going to be
-            // executed, but otherwise, ALL of them should be executed.
-            size_t pending_swap_jobs = tiered_index->idToSwapJob.size();
-            EXPECT_EQ(tiered_index->deleteVector(0), 0);
-            if (pending_swap_jobs > maxSwapJobs) {
-                ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
-                EXPECT_EQ(tiered_index->indexSize(), 0);
-            } else {
-                ASSERT_LE(tiered_index->idToSwapJob.size(), maxSwapJobs);
-                ASSERT_EQ(tiered_index->idToSwapJob.size(), tiered_index->indexSize());
-            }
-            EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
-                      tiered_index->indexSize());
+        // Launch the BG threads loop that takes jobs from the queue and executes them.
+        bool run_thread = true;
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
         }
+
+        // Create and insert vectors one by one, then delete them one by one.
+        std::srand(10); // create pseudo random generator with any arbitrary seed.
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
+        }
+        // While a thread is ingesting a vector into HNSW, a vector may appear in both indexes
+        // (hence it will be counted twice in the index size calculation).
+        EXPECT_GE(tiered_index->indexSize(), n);
+        EXPECT_LE(tiered_index->indexSize(), n + THREAD_POOL_SIZE);
+        EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+        for (size_t i = 0; i < n_labels; i++) {
+            // Every vector associated with the label may appear in flat/HNSW index or in both if
+            // its just being ingested.
+            int num_deleted = tiered_index->deleteVector(i);
+            EXPECT_GE(num_deleted, per_label);
+            EXPECT_LE(num_deleted, MIN(2 * per_label, per_label + THREAD_POOL_SIZE));
+            EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
+        }
+        EXPECT_EQ(tiered_index->indexLabelCount(), 0);
+
+        thread_pool_join(jobQ, run_thread);
+
+        EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+        // Verify that we have no pending jobs.
+        EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+        EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
+        EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->idToSwapJob.size());
+        for (auto &it : tiered_index->idToSwapJob) {
+            EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
+        }
+        // Delete another vector to trigger swapping of vectors that hadn't been swapped yet.
+        // If the number of swap jobs is lower than the threshold, none of them are going to be
+        // executed, but otherwise, ALL of them should be executed.
+        size_t pending_swap_jobs = tiered_index->idToSwapJob.size();
+        EXPECT_EQ(tiered_index->deleteVector(0), 0);
+        if (pending_swap_jobs > maxSwapJobs) {
+            ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+            EXPECT_EQ(tiered_index->indexSize(), 0);
+        } else {
+            ASSERT_LE(tiered_index->idToSwapJob.size(), maxSwapJobs);
+            ASSERT_EQ(tiered_index->idToSwapJob.size(), tiered_index->indexSize());
+        }
+        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), tiered_index->indexSize());
     }
 }
 
@@ -1691,34 +1854,38 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
     size_t dim = 16;
     size_t n = 1000;
     for (size_t maxSwapJobs : {1000, 10, 1}) {
-        for (auto isMulti : {false, true}) {
+        for (size_t M : {2, 16}) {
             HNSWParams params = {.type = TypeParam::get_index_type(),
                                  .dim = dim,
                                  .metric = VecSimMetric_L2,
-                                 .multi = isMulti,
-                                 .blockSize = 100};
+                                 .multi = TypeParam::isMulti(),
+                                 .blockSize = 100,
+                                 .M = M};
+            VecSimParams hnsw_params = CreateParams(params);
             auto jobQ = JobQueue();
             auto index_ctx = IndexExtCtx();
             size_t memory_ctx = 0;
-            TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                               .jobQueueCtx = &index_ctx,
-                                               .submitCb = submit_callback,
-                                               .memoryCtx = &memory_ctx,
-                                               .UpdateMemCb = update_mem_callback};
-            TieredHNSWParams tiered_hnsw_params = {
-                .hnswParams = params, .tieredParams = tiered_params, .maxSwapJobs = maxSwapJobs};
+            TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                                    .jobQueueCtx = &index_ctx,
+                                                    .submitCb = submit_callback,
+                                                    .memoryCtx = &memory_ctx,
+                                                    .UpdateMemCb = update_mem_callback,
+                                                    .primaryIndexParams = &hnsw_params,
+                                                    .maxSwapJobs = maxSwapJobs};
             auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-                HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+                TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
             // Set the created tiered index in the index external context.
             index_ctx.index_strong_ref.reset(tiered_index);
 
-            size_t per_label = isMulti ? 10 : 1;
+            size_t per_label = TypeParam::isMulti() ? 5 : 1;
             size_t n_labels = n / per_label;
+
             // Launch the BG threads loop that takes jobs from the queue and executes them.
             bool run_thread = true;
             for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
                 thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
             }
+
             // Create and insert 10 vectors, then delete them right after.
             size_t batch_size = 10;
             std::srand(10); // create pseudo random generator with any arbitrary seed.
@@ -1728,14 +1895,14 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
                     for (size_t j = 0; j < dim; j++) {
                         vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
                     }
-                    tiered_index->addVector(vector, (i * batch_size + l) % n_labels);
+                    tiered_index->addVector(vector, (i * batch_size + l) / per_label);
                 }
-                for (size_t l = 0; l < batch_size; l++) {
+                for (size_t l = 0; l < batch_size / per_label; l++) {
                     // Every vector associated with the label may appear in flat/HNSW index or in
                     // both if its just being ingested.
-                    int num_deleted = tiered_index->deleteVector((i * batch_size + l) % n_labels);
-                    EXPECT_GE(num_deleted, 1);
-                    EXPECT_LE(num_deleted, 2);
+                    int num_deleted = tiered_index->deleteVector(i * batch_size / per_label + l);
+                    EXPECT_GE(num_deleted, per_label);
+                    EXPECT_LE(num_deleted, 2 * per_label);
                 }
             }
             // Vectors are deleted from flat buffer in place (in HNSW they are only marked as
@@ -1743,13 +1910,14 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             EXPECT_GE(tiered_index->flatBuffer->indexSize(), 0);
             EXPECT_EQ(tiered_index->indexLabelCount(), 0);
 
-            thread_pool_wait(jobQ, run_thread);
+            thread_pool_join(jobQ, run_thread);
 
             EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
             EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
             // Verify that we have no pending jobs.
             EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
             EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
+            EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->idToSwapJob.size());
             for (auto &it : tiered_index->idToSwapJob) {
                 EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
             }
@@ -1769,121 +1937,117 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
 
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
-    for (auto is_multi : {false, true}) {
-        HNSWParams params = {.type = TypeParam::get_index_type(),
-                             .dim = dim,
-                             .metric = VecSimMetric_L2,
-                             .multi = is_multi};
-        auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
-        size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                           .jobQueueCtx = &index_ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = &memory_ctx,
-                                           .UpdateMemCb = update_mem_callback};
-        TieredHNSWParams tiered_hnsw_params = {
-            .hnswParams = params, .tieredParams = tiered_params, .maxSwapJobs = 0};
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
+                                            .jobQueueCtx = &index_ctx,
+                                            .submitCb = submit_callback,
+                                            .memoryCtx = &memory_ctx,
+                                            .UpdateMemCb = update_mem_callback,
+                                            .primaryIndexParams = &hnsw_params,
+                                            .maxSwapJobs = 0};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
 
-        // Test initialization of the pendingSwapJobsThreshold value.
-        ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
-        delete tiered_index;
-        tiered_hnsw_params.maxSwapJobs = MAX_PENDING_SWAP_JOBS_THRESHOLD + 1;
-        tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
-        delete tiered_index;
-        tiered_hnsw_params.maxSwapJobs = 1;
-        tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            HNSWFactory::NewTieredIndex(&tiered_hnsw_params, allocator));
-        ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
+    // Test initialization of the pendingSwapJobsThreshold value.
+    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
+    delete tiered_index;
+    tiered_hnsw_params.maxSwapJobs = MAX_PENDING_SWAP_JOBS_THRESHOLD + 1;
+    tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
+    delete tiered_index;
+    tiered_hnsw_params.maxSwapJobs = 1;
+    tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
 
-        // Threshold is set to be >= 1: insert two vectors to HNSW index.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
-        EXPECT_EQ(tiered_index->indexLabelCount(), 2);
-        EXPECT_EQ(tiered_index->indexSize(), 2);
-        // Delete both vectors
-        EXPECT_EQ(tiered_index->deleteVector(0), 1);
-        EXPECT_EQ(tiered_index->deleteVector(1), 1);
-        EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
-        // Expect to have pending repair jobs, so that swap job cannot be executed yet - for each
-        // deleted vector there should be a single repair job.
-        EXPECT_EQ(jobQ.size(), 2);
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-        EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 1);
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        // Insert another vector and remove it. expect it to have no neighbors. Then execute the
-        // repair jobs.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
-        EXPECT_EQ(tiered_index->deleteVector(2), 1);
-        EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
-        EXPECT_EQ(tiered_index->indexSize(), 0);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
-        EXPECT_EQ(jobQ.size(), 0);
+    // Threshold is set to be >= 1: insert two vectors to HNSW index.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
+    EXPECT_EQ(tiered_index->indexLabelCount(), 2);
+    EXPECT_EQ(tiered_index->indexSize(), 2);
+    // Delete both vectors
+    EXPECT_EQ(tiered_index->deleteVector(0), 1);
+    EXPECT_EQ(tiered_index->deleteVector(1), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    // Expect to have pending repair jobs, so that swap job cannot be executed yet - for each
+    // deleted vector there should be a single repair job.
+    EXPECT_EQ(jobQ.size(), 2);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 1);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    // Insert another vector and remove it. expect it to have no neighbors. Then execute the
+    // repair jobs.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
+    EXPECT_EQ(tiered_index->deleteVector(2), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
+    EXPECT_EQ(tiered_index->indexSize(), 0);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(jobQ.size(), 0);
 
-        // Insert 3 vectors, expect to have a fully connected graph.
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
-        // Delete 0, expect to have two repair jobs pending for 1 and 2 and execute it.
-        EXPECT_EQ(tiered_index->deleteVector(0), 1);
-        EXPECT_EQ(jobQ.size(), 2);
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-        // Delete 2, expect to create two repair job pending from 0 an 1. Also, expect that swap
-        // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
-        // pending repair job for the "new" 0 - since we invalidate the repair job from the "old" 0.
-        EXPECT_EQ(tiered_index->deleteVector(2), 1);
-        EXPECT_EQ(tiered_index->indexSize(), 2);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    // Insert 3 vectors, expect to have a fully connected graph.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
+    // Delete 0, expect to have two repair jobs pending for 1 and 2 and execute it.
+    EXPECT_EQ(tiered_index->deleteVector(0), 1);
+    EXPECT_EQ(jobQ.size(), 2);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
+    // Delete 2, expect to create two repair job pending from 0 an 1. Also, expect that swap
+    // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
+    // pending repair job for the "new" 0 - since we invalidate the repair job from the "old" 0.
+    EXPECT_EQ(tiered_index->deleteVector(2), 1);
+    EXPECT_EQ(tiered_index->indexSize(), 2);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
 
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-        EXPECT_EQ(jobQ.size(), 2);
-        // The first repair job should remove 1->0.
-        ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-        ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 1);
-        ASSERT_EQ(
-            reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id,
-            0);
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-        // The second repair job is invalid due to the removal of (the original) 0.
-        ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-        ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
-        ASSERT_EQ(
-            reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id,
-            0);
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
-        // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
-        // get id 0, and then the new 0 should have no pending repair jobs.
-        EXPECT_EQ(tiered_index->deleteVector(1), 1);
-        EXPECT_EQ(jobQ.size(), 1);
-        EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
-        EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-        // The repair job is invalid due to the removal of (the previous) 0.
-        ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-        ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
-        ASSERT_EQ(
-            reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id,
-            0);
-        jobQ.front().job->Execute(jobQ.front().job);
-        jobQ.pop();
-        EXPECT_EQ(tiered_index->indexSize(), 1);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
-    }
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
+    EXPECT_EQ(jobQ.size(), 2);
+    // The first repair job should remove 1->0.
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 1);
+    ASSERT_EQ(
+        reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id, 0);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
+    // The second repair job is invalid due to the removal of (the original) 0.
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
+    ASSERT_EQ(
+        reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id, 0);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
+    // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
+    // get id 0, and then the new 0 should have no pending repair jobs.
+    EXPECT_EQ(tiered_index->deleteVector(1), 1);
+    EXPECT_EQ(jobQ.size(), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
+    // The repair job is invalid due to the removal of (the previous) 0.
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
+    ASSERT_EQ(
+        reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id, 0);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    EXPECT_EQ(tiered_index->indexSize(), 1);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
 }

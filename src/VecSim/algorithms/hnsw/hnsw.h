@@ -56,6 +56,7 @@ typedef enum {
 // The state of the index and the newly inserted vector to be passed into addVector API in case that
 // the index global data structures are updated atomically from an external scope (such as in
 // tiered index),
+// TODO: this might need to be generalized for future usages of async indexing.
 struct AddVectorCtx {
     idType newElementId;
     int elementMaxLevel;
@@ -264,9 +265,11 @@ public:
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
                                                                           size_t node_top_level);
+    // Return all the labels in the index - this should be used for computing the number of distinct
+    // labels in a tiered index, and caller should hold the index data guard.
     virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
 
-    // inline priority queue getter that need to be implemented by derived class
+    // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
@@ -460,9 +463,12 @@ void HNSWIndex<DataType, DistType>::returnVisitedList(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
+    // Here we are holding the global index data guard (and the main index lock of the tiered index
+    // for shared ownership).
     assert(internalId < this->cur_element_count);
     if (!isMarkedDeleted(internalId)) {
         if (internalId == entrypoint_node_) {
+            // Internally, we hold and release the entrypoint neighbors lock.
             replaceEntryPoint();
         }
         elementFlags *flags = getElementFlags(internalId);
@@ -1373,7 +1379,10 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
             break;
         }
         // We don't add new neighbors for deleted nodes - if node_id is deleted we can finish.
-        if (isMarkedDeleted(node_id)) {
+        // Also, don't add new neighbors to a node who is currently being indexed in parallel, as it
+        // may choose the same element as its neighbor right after the repair is done and connect it
+        // to it, and have a duplicate neighbor as a result.
+        if (isMarkedDeleted(node_id) || isInProcess(node_id)) {
             break;
         }
         // If this specific new neighbor is deleted, we don't add this connection and continue.
@@ -1753,7 +1762,7 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
-// scenario, the index data guard and the entry point guard should be held by the caller.
+// scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
 AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label) {
     AddVectorCtx state{};
@@ -1806,8 +1815,10 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     } else {
         state = *auxiliaryCtx;
     }
-    // Deconstruct the state variables from the auxiliaryCtx.
-    auto [new_element_id, element_max_level, curr_entry_point, curr_max_level] = state;
+    // Deconstruct the state variables from the auxiliaryCtx. prev_entry_point and prev_max_level
+    // are the entry point and index max level at the point of time when the element was stored, and
+    // they may (or may not) have changed due to the insertion.
+    auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
     // Initialisation of the vector data and its label.
     setExternalLabel(new_element_id, label);
     DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'
@@ -1827,13 +1838,13 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     }
 
     // Start scanning the graph from the current entry point.
-    idType curr_element = curr_entry_point;
+    idType curr_element = prev_entry_point;
     // This condition only means that we are not inserting the first (non-deleted) element.
     if (curr_element != INVALID_ID) {
         DistType cur_dist = std::numeric_limits<DistType>::max();
-        if (element_max_level < curr_max_level) {
+        if (element_max_level < prev_max_level) {
             cur_dist = this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
-            for (int level = curr_max_level; level > element_max_level; level--) {
+            for (int level = prev_max_level; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
                 // a greedy search in the graph starting from the entry point
@@ -1843,17 +1854,16 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
             }
         }
 
-        auto max_common_level = std::min(element_max_level, curr_max_level);
+        auto max_common_level = std::min(element_max_level, prev_max_level);
         for (int level = max_common_level; (int)level >= 0; level--) {
             candidatesMaxHeap<DistType> top_candidates =
                 searchLayer<false>(curr_element, vector_data, level, ef_construction_);
             curr_element = mutuallyConnectNewElement(new_element_id, top_candidates, level);
         }
 
-        // Updating the maximum level (holding the entry point guard lock)
-        if (element_max_level > curr_max_level) {
-            // create the incoming edges set for the new levels.
-            for (int level_idx = curr_max_level + 1; level_idx <= element_max_level; level_idx++) {
+        if (element_max_level > prev_max_level) {
+            // Create the incoming edges sets for the new levels.
+            for (int level_idx = prev_max_level + 1; level_idx <= element_max_level; level_idx++) {
                 auto *incoming_edges =
                     new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
                 setIncomingEdgesPtr(new_element_id, level_idx, incoming_edges);

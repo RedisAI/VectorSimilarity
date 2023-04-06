@@ -32,6 +32,7 @@ public:
     }
 
     inline size_t indexLabelCount() const override { return this->count; }
+    std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) override;
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -67,15 +68,8 @@ protected:
     inline bool isLabelExists(labelType label) override {
         return labelToIdLookup.find(label) != labelToIdLookup.end();
     }
-
-    inline vecsim_stl::vector<idType> getIdsOfLabel(labelType label) const override {
-        vecsim_stl::vector<idType> ids(this->allocator);
-        auto it = labelToIdLookup.find(label);
-        if (it != labelToIdLookup.end()) {
-            ids.push_back(it->second); // put the id that was found in the result
-        }
-        return ids;
-    }
+    // Return a set of all labels that are stored in the index (helper for computing label count
+    // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     inline vecsim_stl::set<labelType> getLabelsSet() const override {
         vecsim_stl::set<labelType> keys(this->allocator);
         for (auto &it : labelToIdLookup) {
@@ -153,6 +147,31 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 
     this->removeVector(id_to_delete);
     return 1;
+}
+
+template <typename DataType, typename DistType>
+std::unordered_map<idType, idType>
+BruteForceIndex_Single<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelType label) {
+
+    std::unordered_map<idType, idType> updated_ids;
+    // Find the id to delete.
+    auto deleted_label_id_pair = this->labelToIdLookup.find(label);
+    if (deleted_label_id_pair == this->labelToIdLookup.end()) {
+        // Nothing to delete.
+        return updated_ids;
+    }
+
+    // Get deleted vector id.
+    idType id_to_delete = deleted_label_id_pair->second;
+
+    // Remove the pair of the deleted vector.
+    labelToIdLookup.erase(label);
+
+    this->removeVector(id_to_delete);
+    if (id_to_delete != this->count) {
+        updated_ids[id_to_delete] = this->count;
+    }
+    return updated_ids;
 }
 
 template <typename DataType, typename DistType>
