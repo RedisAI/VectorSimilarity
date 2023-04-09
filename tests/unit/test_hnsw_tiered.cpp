@@ -1979,3 +1979,93 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
 
     delete index_ctx;
 }
+
+TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
+    size_t d = 4;
+    size_t M = 8;
+    size_t ef = 20;
+    size_t n = 1000;
+
+    // TODO: find a way to log the current lambda. (role/idx)
+    std::vector<std::function<bool(size_t)>> lambdas = {
+        [](size_t idx) { return 1; },            // 100% HNSW,   0% FLAT
+        [](size_t idx) { return 0; },            //   0% HNSW, 100% FLAT
+        [](size_t idx) { return idx % 2; },      //  50% HNSW,  50% FLAT
+        [](size_t idx) { return idx % 10; },     //  90% HNSW,  10% FLAT
+        [](size_t idx) { return !(idx % 10); },  //  10% HNSW,  90% FLAT
+        [](size_t idx) { return idx % 100; },    //  99% HNSW,   1% FLAT
+        [](size_t idx) { return !(idx % 100); }, //   1% HNSW,  99% FLAT
+        [](size_t idx) { return idx < 100; },    // first 100 vectors are in HNSW
+        [](size_t idx) { return idx >= 100; },   // first 100 vectors are in FLAT
+        [](size_t idx) { return idx < 900; },    // last 100 vectors are in FLAT
+        [](size_t idx) { return idx >= 900; },   // last 100 vectors are in HNSW
+    };
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    for (auto &decider : lambdas) {
+        size_t per_label = TypeParam::isMulti() ? 10 : 1;
+        size_t n_labels = n / per_label;
+        // Create TieredHNSW index instance with a mock queue.
+        HNSWParams hnsw_params = {
+            .type = TypeParam::get_index_type(),
+            .dim = d,
+            .metric = VecSimMetric_L2,
+            .multi = TypeParam::isMulti(),
+            .initialCapacity = n,
+            .efConstruction = ef,
+            .efRuntime = ef,
+        };
+        VecSimParams params = CreateParams(hnsw_params);
+        auto jobQ = JobQueue();
+        auto index_ctx = IndexExtCtx();
+        size_t memory_ctx = 0;
+        TieredIndexParams tiered_params = {
+            .jobQueue = &jobQ,
+            .jobQueueCtx = &index_ctx,
+            .submitCb = submit_callback,
+            .memoryCtx = &memory_ctx,
+            .UpdateMemCb = update_mem_callback,
+            .primaryIndexParams = &params,
+        };
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            TieredFactory::NewIndex(&tiered_params, allocator));
+        // Set the created tiered index in the index external context.
+        index_ctx.index_strong_ref.reset(tiered_index);
+        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+
+        auto *hnsw = tiered_index->index;
+        auto *flat = tiered_index->flatBuffer;
+
+        // For every i, add the vector (i,i,i,i) under the label i.
+        for (size_t i = 0; i < n; i++) {
+            auto cur = decider(i) ? hnsw : flat;
+            GenerateAndAddVector<TEST_DATA_T>(cur, d, i % n_labels, i);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+
+        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+        TEST_DATA_T query[d];
+        GenerateVector<TEST_DATA_T>(query, d, n);
+
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        size_t iteration_num = 0;
+
+        // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
+        // in every iteration. The results order should be sorted by their score (distance from
+        // the query vector), which means sorted from the largest id to the lowest.
+        size_t n_res = 5;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            std::vector<size_t> expected_ids(n_res);
+            for (size_t i = 0; i < n_res; i++) {
+                expected_ids[i] = (n - iteration_num * n_res - i - 1) % n_labels;
+            }
+            auto verify_res = [&](size_t id, double score, size_t index) {
+                ASSERT_TRUE(expected_ids[index] == id);
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            iteration_num++;
+        }
+        ASSERT_EQ(iteration_num, n_labels / n_res);
+        VecSimBatchIterator_Free(batchIterator);
+    }
+}
