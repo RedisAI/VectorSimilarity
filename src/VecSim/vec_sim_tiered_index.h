@@ -20,10 +20,6 @@ struct AsyncJob : public VecsimBaseObject {
         : VecsimBaseObject(allocator), jobType(type), Execute(callback), index(index_ref) {}
 };
 
-// Forward declaration of the batch iterator.
-template <typename DataType, typename DistType>
-class TieredIndex_BatchIterator;
-
 template <typename DataType, typename DistType>
 class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
@@ -47,7 +43,42 @@ protected:
         array_free(jobs);
     }
 
-    friend class TieredIndex_BatchIterator<DataType, DistType>;
+public:
+    class TieredIndex_BatchIterator : public VecSimBatchIterator {
+    private:
+        const VecSimTieredIndex<DataType, DistType> *index;
+        bool holding_main_lock;
+
+        VecSimQueryResult_List flat_results;
+        VecSimQueryResult_List main_results;
+
+        VecSimBatchIterator *flat_iterator;
+        VecSimBatchIterator *main_iterator;
+
+        // On single value indices, this set holds the IDs of the results that were returned from
+        // the flat buffer.
+        // On multi value indices, this set holds the IDs of all the results that were returned.
+        vecsim_stl::unordered_set<labelType> returned_results_set;
+
+    private:
+        template <bool isMultiValue>
+        inline VecSimQueryResult_List get_current_batch(size_t n_res);
+        inline void filter_irrelevant_results(VecSimQueryResult_List &);
+
+    public:
+        TieredIndex_BatchIterator(const void *query_vector,
+                                  const VecSimTieredIndex<DataType, DistType> *index,
+                                  VecSimQueryParams *queryParams,
+                                  std::shared_ptr<VecSimAllocator> allocator);
+
+        ~TieredIndex_BatchIterator();
+
+        VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
+
+        bool isDepleted() override;
+
+        void reset() override;
+    };
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,
@@ -67,8 +98,8 @@ public:
                                      VecSimQueryParams *queryParams) override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        return new (this->allocator) TieredIndex_BatchIterator<DataType, DistType>(
-            queryBlob, this, queryParams, this->allocator);
+        return new (this->allocator)
+            TieredIndex_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
 };
 
@@ -123,58 +154,25 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename DataType, typename DistType>
-class TieredIndex_BatchIterator : public VecSimBatchIterator {
-private:
-    const VecSimTieredIndex<DataType, DistType> *index;
-    bool holding_main_lock;
-
-    VecSimQueryResult_List flat_results;
-    VecSimQueryResult_List main_results;
-
-    VecSimBatchIterator *flat_iterator;
-    VecSimBatchIterator *main_iterator;
-
-    vecsim_stl::unordered_set<labelType> flat_results_set;
-
-private:
-    inline VecSimQueryResult_List get_current_batch(size_t n_res);
-    inline void filter_irrelevant_results();
-
-public:
-    TieredIndex_BatchIterator(const void *query_vector,
-                              const VecSimTieredIndex<DataType, DistType> *index,
-                              VecSimQueryParams *queryParams,
-                              std::shared_ptr<VecSimAllocator> allocator);
-
-    ~TieredIndex_BatchIterator();
-
-    VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
-
-    bool isDepleted() override;
-
-    void reset() override;
-};
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//  TieredIndex_BatchIterator                                                                     //
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /******************** Ctor / Dtor *****************/
 
 template <typename DataType, typename DistType>
-TieredIndex_BatchIterator<DataType, DistType>::TieredIndex_BatchIterator(
+VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::TieredIndex_BatchIterator(
     const void *query_vector, const VecSimTieredIndex<DataType, DistType> *index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
-      index(index), holding_main_lock(false),
+      index(index), holding_main_lock(false), flat_results({0}), main_results({0}),
       flat_iterator(this->index->flatBuffer->newBatchIterator(query_vector, queryParams)),
       main_iterator(this->index->index->newBatchIterator(query_vector, queryParams)),
-      flat_results_set(this->allocator) {}
+      returned_results_set(this->allocator) {}
 
 template <typename DataType, typename DistType>
-TieredIndex_BatchIterator<DataType, DistType>::~TieredIndex_BatchIterator() {
+VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::~TieredIndex_BatchIterator() {
     delete this->flat_iterator;
     delete this->main_iterator;
 
@@ -190,8 +188,10 @@ TieredIndex_BatchIterator<DataType, DistType>::~TieredIndex_BatchIterator() {
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-TieredIndex_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
-                                                              VecSimQueryResult_Order order) {
+VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults(
+    size_t n_res, VecSimQueryResult_Order order) {
+
+    const bool isMulti = this->index->index->isMultiValue();
 
     if (this->getResultsCount() == 0) {
         // First call to getNextResults. The call to the BF iterator will include calculating all
@@ -209,13 +209,26 @@ TieredIndex_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
         this->holding_main_lock = true;
         this->main_results = this->main_iterator->getNextResults(n_res, BY_SCORE);
     } else {
-        if (VecSimQueryResult_Len(this->flat_results) < n_res &&
-            !this->flat_iterator->isDepleted()) {
+        while (VecSimQueryResult_Len(this->flat_results) < n_res &&
+               !this->flat_iterator->isDepleted()) {
             auto tail = this->flat_iterator->getNextResults(
                 n_res - VecSimQueryResult_Len(this->flat_results), BY_SCORE);
             concat_results(this->flat_results, tail);
             VecSimQueryResult_Free(tail);
+
+            if (!isMulti) {
+                // On single-value indexes, duplicates will never appear in the main results before
+                // they appear in the flat results (at the same time or later if the approximation
+                // misses) so we don't need to try and filter the flat results (and recheck
+                // conditions).
+                break;
+            } else {
+                // On multi-value indexes, the flat results may contain results that are already
+                // returned from the main results. We need to filter them out.
+                filter_irrelevant_results(this->flat_results);
+            }
         }
+
         auto code = VecSim_QueryResult_OK;
         while (VecSimQueryResult_Len(this->main_results) < n_res &&
                !this->main_iterator->isDepleted() && code == VecSim_OK) {
@@ -225,7 +238,7 @@ TieredIndex_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
             // New batch may contain better results than the previous batch, so we need to merge
             this->main_results = merge_result_lists<false>(this->main_results, tail, n_res);
             this->main_results.code = code;
-            filter_irrelevant_results();
+            filter_irrelevant_results(this->main_results);
         }
     }
 
@@ -233,13 +246,19 @@ TieredIndex_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
         return {NULL, main_results.code};
     }
 
-    auto batch = get_current_batch(n_res);
+    VecSimQueryResult_List batch;
+    if (isMulti)
+        batch = get_current_batch<true>(n_res);
+    else
+        batch = get_current_batch<false>(n_res);
+
     if (order == BY_ID) {
         sort_results_by_id(batch);
     }
     size_t batch_len = VecSimQueryResult_Len(batch);
     this->updateResultsCount(batch_len);
-    if (batch_len < n_res) {
+    if (batch_len < n_res /* && this->holding_main_lock */) {
+        assert(this->holding_main_lock); // TODO: verify if this is always true
         this->index->mainIndexGuard.unlock_shared();
         this->holding_main_lock = false;
     }
@@ -247,13 +266,13 @@ TieredIndex_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
 }
 
 template <typename DataType, typename DistType>
-bool TieredIndex_BatchIterator<DataType, DistType>::isDepleted() {
+bool VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::isDepleted() {
     return this->flat_iterator->isDepleted() && VecSimQueryResult_Len(this->flat_results) == 0 &&
            this->main_iterator->isDepleted() && VecSimQueryResult_Len(this->main_results) == 0;
 }
 
 template <typename DataType, typename DistType>
-void TieredIndex_BatchIterator<DataType, DistType>::reset() {
+void VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::reset() {
     if (this->holding_main_lock) {
         this->index->mainIndexGuard.unlock_shared();
     }
@@ -262,14 +281,15 @@ void TieredIndex_BatchIterator<DataType, DistType>::reset() {
     this->main_iterator->reset();
     VecSimQueryResult_Free(this->flat_results);
     VecSimQueryResult_Free(this->main_results);
-    flat_results_set.clear();
+    returned_results_set.clear();
 }
 
 /****************** Helper Functions **************/
 
 template <typename DataType, typename DistType>
+template <bool isMultiValue>
 VecSimQueryResult_List
-TieredIndex_BatchIterator<DataType, DistType>::get_current_batch(size_t n_res) {
+VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::get_current_batch(size_t n_res) {
     // Set pointers
     auto bf_res = this->flat_results.results;
     auto main_res = this->main_results.results;
@@ -278,32 +298,49 @@ TieredIndex_BatchIterator<DataType, DistType>::get_current_batch(size_t n_res) {
 
     // Merge results
     VecSimQueryResult *batch_res;
-    if (this->index->index->isMultiValue()) {
+    if (isMultiValue) {
         batch_res = merge_results<true>(main_res, main_end, bf_res, bf_end, n_res);
     } else {
         batch_res = merge_results<false>(main_res, main_end, bf_res, bf_end, n_res);
     }
 
-    // Update set of results returned from FLAT index
-    for (auto it = this->flat_results.results; it != bf_res; ++it) {
-        this->flat_results_set.insert(it->id);
+    // If we're on a single-value index, update the set of results returned from the FLAT index
+    // before popping them.
+    if (!isMultiValue) {
+        for (auto it = this->flat_results.results; it != bf_res; ++it) {
+            this->returned_results_set.insert(it->id);
+        }
     }
 
     // Update results
-    array_pop_front_n(this->flat_results.results, bf_end - bf_res);
-    array_pop_front_n(this->main_results.results, main_end - main_res);
+    array_pop_front_n(this->flat_results.results, bf_res - this->flat_results.results);
+    array_pop_front_n(this->main_results.results, main_res - this->main_results.results);
+
+    // If we're on a multi-value index, update the set of results returned (from `batch_res`), and
+    // clean up the results
+    if (isMultiValue) {
+        // Update set of results returned
+        for (size_t i = 0; i < array_len(batch_res); ++i) {
+            this->returned_results_set.insert(batch_res[i].id);
+        }
+        // On multi-value indexes, one (or both) results lists may contain results that are already
+        // returned form the other list (with a different score). We need to filter them out.
+        filter_irrelevant_results(this->flat_results);
+        filter_irrelevant_results(this->main_results);
+    }
 
     // Return current batch
     return {batch_res, VecSim_QueryResult_OK};
 }
 
 template <typename DataType, typename DistType>
-void TieredIndex_BatchIterator<DataType, DistType>::filter_irrelevant_results() {
+void VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::filter_irrelevant_results(
+    VecSimQueryResult_List &rl) {
     // Filter out results that were already returned from the FLAT index
-    auto it = this->main_results.results;
-    auto end = it + VecSimQueryResult_Len(this->main_results);
-    // Skip results that not returned from the FLAT index
-    while (it != end && this->flat_results_set.count(it->id) == 0) {
+    auto it = rl.results;
+    auto end = it + VecSimQueryResult_Len(rl);
+    // Skip results that not returned yet
+    while (it != end && this->returned_results_set.count(it->id) == 0) {
         ++it;
     }
     // If none of the results were returned from the FLAT index, return
@@ -315,12 +352,12 @@ void TieredIndex_BatchIterator<DataType, DistType>::filter_irrelevant_results() 
     ++it;
     // "Append" all results that were not returned from the FLAT index
     while (it != end) {
-        if (this->flat_results_set.count(it->id) == 0) {
+        if (this->returned_results_set.count(it->id) == 0) {
             *cur_end = *it;
             ++cur_end;
         }
         ++it;
     }
     // Update number of results
-    array_hdr(this->main_results.results)->len = cur_end - this->main_results.results;
+    array_hdr(rl.results)->len = cur_end - rl.results;
 }
