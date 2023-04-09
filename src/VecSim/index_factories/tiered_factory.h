@@ -10,6 +10,10 @@
 #include "VecSim/memory/vecsim_malloc.h"
 
 namespace TieredFactory {
+namespace TieredHNSWFactory {
+VecSimIndex *NewIndex(const TieredHNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
+}
+
 VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator);
 
 // The size estimation is the sum of the buffer (brute force) and main index initial sizes

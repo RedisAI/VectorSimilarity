@@ -79,7 +79,7 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
         param.hnswParams.multi = false;
         break;
     // TODO: add memory test for tiered index
-    case VecSimAlgo_TIERED:
+    case VecSimAlgo_TIERED_HNSW:
         return NULL;
     }
 

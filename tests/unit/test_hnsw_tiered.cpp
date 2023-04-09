@@ -1765,7 +1765,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     size_t n = 1000;
-    for (size_t maxSwapJobs : {(int)n, 10, 1}) {
+    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
         HNSWParams params = {.type = TypeParam::get_index_type(),
                              .dim = dim,
                              .metric = VecSimMetric_L2,
@@ -1775,15 +1775,17 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
-        TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
-                                                .jobQueueCtx = &index_ctx,
-                                                .submitCb = submit_callback,
-                                                .memoryCtx = &memory_ctx,
-                                                .UpdateMemCb = update_mem_callback,
-                                                .primaryIndexParams = &hnsw_params,
-                                                .maxSwapJobs = maxSwapJobs};
+        TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                           .jobQueueCtx = &index_ctx,
+                                           .submitCb = submit_callback,
+                                           .memoryCtx = &memory_ctx,
+                                           .UpdateMemCb = update_mem_callback,
+                                           .primaryIndexParams = &hnsw_params};
+        TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params,
+                                               .maxSwapJobs = maxSwapJobs};
+
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+            TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
         // Set the created tiered index in the index external context.
         index_ctx.index_strong_ref.reset(tiered_index);
 
@@ -1853,7 +1855,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 16;
     size_t n = 1000;
-    for (size_t maxSwapJobs : {1000, 10, 1}) {
+    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
         for (size_t M : {2, 16}) {
             HNSWParams params = {.type = TypeParam::get_index_type(),
                                  .dim = dim,
@@ -1865,15 +1867,17 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             auto jobQ = JobQueue();
             auto index_ctx = IndexExtCtx();
             size_t memory_ctx = 0;
-            TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
-                                                    .jobQueueCtx = &index_ctx,
-                                                    .submitCb = submit_callback,
-                                                    .memoryCtx = &memory_ctx,
-                                                    .UpdateMemCb = update_mem_callback,
-                                                    .primaryIndexParams = &hnsw_params,
-                                                    .maxSwapJobs = maxSwapJobs};
+            TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                               .jobQueueCtx = &index_ctx,
+                                               .submitCb = submit_callback,
+                                               .memoryCtx = &memory_ctx,
+                                               .UpdateMemCb = update_mem_callback,
+                                               .primaryIndexParams = &hnsw_params};
+
+            TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params,
+                                                   .maxSwapJobs = maxSwapJobs};
             auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-                TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+                TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
             // Set the created tiered index in the index external context.
             index_ctx.index_strong_ref.reset(tiered_index);
 
@@ -1945,28 +1949,43 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     auto jobQ = JobQueue();
     auto index_ctx = IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
-                                            .jobQueueCtx = &index_ctx,
-                                            .submitCb = submit_callback,
-                                            .memoryCtx = &memory_ctx,
-                                            .UpdateMemCb = update_mem_callback,
-                                            .primaryIndexParams = &hnsw_params,
-                                            .maxSwapJobs = 0};
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                       .jobQueueCtx = &index_ctx,
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback,
+                                       .primaryIndexParams = &hnsw_params};
+
+    TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params, .maxSwapJobs = 0};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
 
     // Test initialization of the pendingSwapJobsThreshold value.
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
     delete tiered_index;
     tiered_hnsw_params.maxSwapJobs = MAX_PENDING_SWAP_JOBS_THRESHOLD + 1;
     tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
     delete tiered_index;
     tiered_hnsw_params.maxSwapJobs = 1;
     tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-        TieredFactory::NewIndex(&tiered_hnsw_params, allocator));
+        TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
+
+    // Call reserve for the unordered maps that are going to be used, since upon initialization it
+    // consumed 0 memory, but after insertion and deletion they will consume a minimal amount of
+    // memory (that is equivalent to the memory consumption upon reserving 0 buckets).
+    tiered_index->idToRepairJobs.reserve(0);
+    tiered_index->idToSwapJob.reserve(0);
+    TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
+                               tiered_index->getHNSWIndex())
+                               ->label_lookup_.reserve(0)
+                         : reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
+                               tiered_index->getHNSWIndex())
+                               ->label_lookup_.reserve(0);
+
+    size_t initial_mem = allocator->getAllocationSize();
 
     // Threshold is set to be >= 1: insert two vectors to HNSW index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
@@ -1996,6 +2015,42 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
     EXPECT_EQ(jobQ.size(), 0);
 
+    // Reserve manually 0 buckets in the hash tables so that memory would be as it was before we
+    // started inserting vectors.
+    tiered_index->idToRepairJobs.reserve(0);
+    tiered_index->idToSwapJob.reserve(0);
+    // Call this just to trigger an update of the memory context.
+    EXPECT_EQ(tiered_index->deleteVector(0), 0);
+
+    EXPECT_EQ(allocator->getAllocationSize(), initial_mem);
+    EXPECT_EQ(initial_mem, memory_ctx);
+
+    delete tiered_index;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                       .jobQueueCtx = &index_ctx,
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback,
+                                       .primaryIndexParams = &hnsw_params};
+
+    TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params, .maxSwapJobs = 1};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Insert 3 vectors, expect to have a fully connected graph.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
@@ -2050,4 +2105,12 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+
+    // Call delete again, this should only trigger the swap and removal of 1
+    // (which has already deleted)
+    EXPECT_EQ(tiered_index->deleteVector(1), 0);
+    EXPECT_EQ(tiered_index->indexSize(), 0);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+
+    delete tiered_index;
 }

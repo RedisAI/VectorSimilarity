@@ -106,7 +106,7 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                    const TieredIndexParams &tieredParams);
+                    const TieredHNSWParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -157,8 +157,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
     auto *repair_job = reinterpret_cast<HNSWRepairJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
     job_index->executeRepairJob(repair_job);
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
     delete repair_job;
+    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -271,7 +271,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
     // If swapJobs size is larger than a threshold, go over the swap jobs and execute every job
     // for which all of its pending repair jobs were executed (otherwise finish and return).
     ret = internal_ids.size();
-    if (idToSwapJob.size() <= this->pendingSwapJobsThreshold) {
+    if (idToSwapJob.size() < this->pendingSwapJobsThreshold) {
         return ret;
     }
 
@@ -448,17 +448,18 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                                                     const TieredIndexParams &tieredParams)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams),
+                                                     const TieredHNSWParams &tieredHNSWParams)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredHNSWParams.tieredIndexParams),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     // If the param for maxSwapJobs is 0 use the default value, if it exceeds the maximum allowed,
     // use the maximum value.
     this->pendingSwapJobsThreshold =
-        tieredParams.maxSwapJobs == 0 ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
-                                      : (tieredParams.maxSwapJobs > MAX_PENDING_SWAP_JOBS_THRESHOLD
-                                             ? MAX_PENDING_SWAP_JOBS_THRESHOLD
-                                             : tieredParams.maxSwapJobs);
+        tieredHNSWParams.maxSwapJobs == 0
+            ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
+            : (tieredHNSWParams.maxSwapJobs > MAX_PENDING_SWAP_JOBS_THRESHOLD
+                   ? MAX_PENDING_SWAP_JOBS_THRESHOLD
+                   : tieredHNSWParams.maxSwapJobs);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
