@@ -11,6 +11,13 @@
 #include "arr_cpp.h"
 #include <unordered_set>
 
+#define MAYBE_APPEND(cur_res)                                                                      \
+    if (!withSet || ids.insert(cur_res->id).second) {                                              \
+        array_append(results, *cur_res);                                                           \
+        limit--;                                                                                   \
+    }                                                                                              \
+    cur_res++;
+
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
 template <bool withSet>
 VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryResult *first_end,
@@ -29,17 +36,9 @@ VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryRes
             // In a single line, checks (only if a check is needed) if we already inserted the
             // current id to the merged results, append it to the merged results if we didn't, and
             // add it to the set.
-            if (!withSet || ids.insert(cur_second->id).second) {
-                array_append(results, *cur_second);
-                limit--;
-            }
-            cur_second++;
+            MAYBE_APPEND(cur_second);
         } else if (cmp < 0) {
-            if (!withSet || ids.insert(cur_first->id).second) {
-                array_append(results, *cur_first);
-                limit--;
-            }
-            cur_first++;
+            MAYBE_APPEND(cur_first);
         } else {
             // Even if `withSet` is true, we encountered an exact duplicate, so we know that this id
             // didn't appear before in both arrays, and it won't appear again in both arrays, so we
@@ -54,14 +53,14 @@ VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryRes
     // If we didn't exit the loop because of he limit, at least one of the arrays is empty.
     // We can try appending the rest of the other array.
     if (limit != 0) {
-        auto [cur, end] = cur_first == first_end ? std::make_pair(cur_second, second_end)
-                                                 : std::make_pair(cur_first, first_end);
-        while (limit && cur != end) {
-            if (!withSet || ids.find(cur->id) == ids.end()) {
-                array_append(results, *cur);
-                limit--;
+        if (cur_first == first_end) {
+            while (limit && cur_second != second_end) {
+                MAYBE_APPEND(cur_second);
             }
-            cur++;
+        } else {
+            while (limit && cur_first != first_end) {
+                MAYBE_APPEND(cur_first);
+            }
         }
     }
 
