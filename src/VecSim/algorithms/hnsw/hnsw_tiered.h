@@ -311,6 +311,22 @@ void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_
     }
 }
 
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_id, idType new_id) {
+    // Update the pending job id, due to a swap that was caused after the removal of new_id.
+    assert(new_id != INVALID_ID && prev_id != INVALID_ID);
+    labelType last_idx_label = this->flatBuffer->getLabelByInternalId(prev_id);
+    auto it = this->labelToInsertJobs.find(last_idx_label);
+    if (it != this->labelToInsertJobs.end()) {
+        // There is a pending job for the label of the swapped last id - update its id.
+        for (HNSWInsertJob *job_it : it->second) {
+            if (job_it->id == prev_id) {
+                job_it->id = new_id;
+            }
+        }
+    }
+}
+
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
