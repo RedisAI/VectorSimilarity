@@ -38,15 +38,15 @@ public:
      * @param blob binary representation of the vector. Blob size should match the index data type
      * and dimension.
      * @param label the label of the added vector.
-     * @param new_vec_id if this is not the main index (but a layer in a tiered index for example)
-     * we use a predefined internal id for this vector. Otherwise, if new_vec_id is -1 ,use a new
-     * fresh id.
+     * @param auxiliaryCtx if this is not the main index (but a layer in a tiered index for example)
+     * we pass a state of the index to be used internally. Otherwise, if auxiliaryCtx just perform
+     * a "vanilla" insertion of a new vector.
      * In addition, if id is not given, and this label already exists overwrite it. Otherwise,
      * it's the caller main index responsibility to validate that the new label and id are
      * appropriate.
      * @return the number of new vectors inserted (1 for new insertion, 0 for override).
      */
-    virtual int addVector(const void *blob, labelType label, idType new_vec_id = INVALID_ID) = 0;
+    virtual int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) = 0;
 
     /**
      * @brief Remove a vector from an index.
@@ -69,7 +69,7 @@ public:
     virtual double getDistanceFrom(labelType id, const void *blob) const = 0;
 
     /**
-     * @brief Return the number of vectors in the index using its SizeFn.
+     * @brief Return the number of vectors in the index (including ones that are marked as deleted).
      *
      * @return index size.
      */
@@ -88,7 +88,7 @@ public:
     virtual void increaseCapacity() = 0;
 
     /**
-     * @brief Return the number of unique labels in the index using its SizeFn.
+     * @brief Return the number of unique labels in the index (which are not deleted).
      *
      * @return index label count.
      */
