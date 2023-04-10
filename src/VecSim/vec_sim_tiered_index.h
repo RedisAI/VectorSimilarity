@@ -257,8 +257,7 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
     }
     size_t batch_len = VecSimQueryResult_Len(batch);
     this->updateResultsCount(batch_len);
-    if (batch_len < n_res /* && this->holding_main_lock */) {
-        assert(this->holding_main_lock); // TODO: verify if this is always true
+    if (batch_len < n_res && this->holding_main_lock) {
         this->index->mainIndexGuard.unlock_shared();
         this->holding_main_lock = false;
     }
@@ -281,6 +280,8 @@ void VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::reset() {
     this->main_iterator->reset();
     VecSimQueryResult_Free(this->flat_results);
     VecSimQueryResult_Free(this->main_results);
+    this->flat_results = {0};
+    this->main_results = {0};
     returned_results_set.clear();
 }
 
