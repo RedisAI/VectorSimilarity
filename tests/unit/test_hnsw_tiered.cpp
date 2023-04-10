@@ -2020,6 +2020,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
         }
         tiered_index->addVector(vector, i);
     }
+    EXPECT_EQ(tiered_index->indexLabelCount(), n);
 
     // TODO: add variations of swap jobs threshold to test
     size_t num_overwrites = 10000;
