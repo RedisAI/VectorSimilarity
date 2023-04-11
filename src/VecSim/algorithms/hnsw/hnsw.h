@@ -1116,8 +1116,8 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
-    // Swap label - this is relevant for inplace delete only, since when we mark vector as deleted
-    // we already remove its label.
+    // Swap label - this is relevant when the last element's label exists (it is not marked as
+    // deleted). For inplace delete, this is always the case.
     if (!has_marked_deleted || !isMarkedDeleted(cur_element_count)) {
         replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id,
                          cur_element_count);
@@ -1638,6 +1638,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     size_t element_top_level = element_levels_[internalId];
     for (size_t level = 0; level <= element_top_level; level++) {
         auto *incoming_edges = getIncomingEdgesPtr(internalId, level);
+        assert(!has_marked_deleted || incoming_edges->size() == 0);
         delete incoming_edges;
     }
 
@@ -1662,12 +1663,8 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         auto neighbours_count = getNodeNeighborsCount(neighbours);
         for (size_t i = 0; i < neighbours_count; i++) {
             idType neighbour_id = neighbours[i];
-            // If this neighbor was deleted and swapped, the new swapped vector under this id is not
-            // the original one, and might be in a different level. Hence, we can safely continue
-            // without looking at the incoming edges set.
-            if (element_levels_[neighbour_id] < level) {
-                continue;
-            }
+            // This should always succeed, since every outgoing edge should be unidirectional at
+            // this point (after all the repair jobs are done).
             auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
             removeIdFromList(*neighbour_incoming_edges, internalId);
         }
