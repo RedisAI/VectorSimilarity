@@ -32,6 +32,16 @@ private:
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
+    // Return all the labels in the index - this should be used for computing the number of distinct
+    // labels in a tiered index, and caller should hold the index data guard.
+    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        vecsim_stl::set<labelType> keys(this->allocator);
+        for (auto &it : label_lookup_) {
+            keys.insert(it.first);
+        }
+        return keys;
+    };
+
     template <bool Safe>
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
@@ -77,8 +87,7 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label,
-                  idType new_vec_id = INVALID_ID) override;
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing) const override;
@@ -149,8 +158,18 @@ template <typename DataType, typename DistType>
 void HNSWIndex_Multi<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
                                                            idType old_id) {
     assert(label_lookup_.find(label) != label_lookup_.end());
+    // *Non-trivial code here* - in every iteration we replace the internal id of the previous last
+    // id that has been swapped with the deleted id. Note that if the old and the new replaced ids
+    // both belong to the same label, then we are going to delete the new id later on as well, since
+    // we are currently iterating on this exact array of ids in 'deleteVector'. Hence, the relevant
+    // part of the vector that should be updated is the "tail" that comes after the position of
+    // old_id, while the "head" may contain old occurrences of old_id that are irrelevant for the
+    // future deletions. Therefore, we iterate from end to beginning. For example, assuming we are
+    // deleting a label that contains the only 3 ids that exist in the index. Hence, we would
+    // expect the following scenario w.r.t. the ids array:
+    // [|1, 0, 2] -> [1, |0, 1] -> [1, 0, |0] (where | marks the current position)
     auto &ids = label_lookup_.at(label);
-    for (size_t i = 0; i < ids.size(); i++) {
+    for (int i = ids.size() - 1; i >= 0; i--) {
         if (ids[i] == old_id) {
             ids[i] = new_id;
             return;
@@ -186,9 +205,9 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                   idType new_vec_id) {
+                                                   void *auxiliaryCtx) {
 
-    this->appendVector(vector_data, label, new_vec_id);
+    this->appendVector(vector_data, label, (AddVectorCtx *)auxiliaryCtx);
     return 1; // We always add the vector, no overrides in multi.
 }
 
@@ -213,6 +232,7 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
