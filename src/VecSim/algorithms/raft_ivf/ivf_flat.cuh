@@ -5,6 +5,7 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/algorithms/brute_force/bfs_batch_iterator.h"   // TODO: Temporary header to remove
+#include "ivf_index_interface.h"
 
 #include <raft/core/device_resources.hpp>
 #include <raft/neighbors/ivf_flat.cuh>
@@ -14,25 +15,7 @@
 #include <raft/neighbors/specializations.cuh>
 #endif
 
-raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm){
-    raft::distance::DistanceType result;
-    switch (vsm) {
-        case VecSimMetric::VecSimMetric_L2:
-            result = raft::distance::DistanceType::L2Expanded;
-            break;
-        case VecSimMetric_IP:
-            result = raft::distance::DistanceType::InnerProduct;
-            break;
-        case VecSimMetric_Cosine:
-            result = raft::distance::DistanceType::CosineExpanded;
-            break;
-        default:
-            throw std::runtime_error("Metric not supported");
-    }
-    return result;
-}
-
-class RaftIVFFlatIndex : public VecSimIndexAbstract<float> {
+class RaftIVFFlatIndex : public RaftIvfIndexInterface {
 public:
     using DataType = float;
     using DistType = float;
@@ -40,7 +23,7 @@ public:
 
     RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
-    int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true);
+    int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true) override;
     int deleteVector(labelType label) override { return 0;}
     double getDistanceFrom(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
@@ -57,13 +40,13 @@ public:
     inline size_t indexLabelCount() const override {
         return counts_; //TODO: Return unique counts
     }
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
-    virtual VecSimQueryResultBatch_List topKQueryBatch(const void *queryBlob, size_t k, VecSimQueryParams *queryParams);
-    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius, VecSimQueryParams *queryParams) override
+    VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
+    //VecSimQueryResultBatch_List topKQueryBatch(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius, VecSimQueryParams *queryParams) override
     {
         assert(!"RangeQuery not implemented");
     }
-    virtual VecSimIndexInfo info() const override
+    VecSimIndexInfo info() const override
     {
         VecSimIndexInfo info;
         info.algo = VecSimAlgo_RaftIVFFlat;
@@ -78,7 +61,7 @@ public:
         info.bfInfo.last_mode = this->last_mode;
         return info;
     }
-    virtual VecSimInfoIterator *infoIterator() const override
+    VecSimInfoIterator *infoIterator() const override
     {
         assert(!"infoIterator not implemented");
         size_t numberOfInfoFields = 12;
@@ -106,7 +89,7 @@ protected:
 };
 
 RaftIVFFlatIndex::RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, params->multi),
+    : RaftIvfIndexInterface(allocator, params->dim, params->type, params->metric, params->blockSize, params->multi),
       counts_(0)
 {
     //auto build_params = raft::neighbors::ivf_flat::index_params{};
@@ -138,6 +121,8 @@ int RaftIVFFlatIndex::addVector(const void *vector_data, labelType label, bool o
         raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
             std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
     }
+    res_.sync_stream();
+
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
     this->counts_ += 1;
@@ -160,6 +145,8 @@ int RaftIVFFlatIndex::addVectorBatch(const void *vector_data, labelType* labels,
         raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
             std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
     }
+    res_.sync_stream();
+
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
     this->counts_ += batch_size;
@@ -186,6 +173,8 @@ VecSimQueryResult_List RaftIVFFlatIndex::topKQuery(
     auto distances = array_new_len<float>(result_size, result_size);
     raft::copy(neighbors, neighbors_gpu.data_handle(), result_size, res_.get_stream());
     raft::copy(distances, distances_gpu.data_handle(), result_size, res_.get_stream());
+    res_.sync_stream();
+
     result_list.results = array_new_len<VecSimQueryResult>(k, k);
     for (size_t i = 0; i < k; ++i) {
         VecSimQueryResult_SetId(result_list.results[i], neighbors[i]);
@@ -197,6 +186,7 @@ VecSimQueryResult_List RaftIVFFlatIndex::topKQuery(
 }
 
 // Search for the k closest vectors to a given vector in the index.
+/*
 VecSimQueryResultBatch_List RaftIVFFlatIndex::topKQueryBatch(
     const void *queryBlob, size_t k, VecSimQueryParams *queryParams)
 {
@@ -215,7 +205,7 @@ VecSimQueryResultBatch_List RaftIVFFlatIndex::topKQueryBatch(
     auto distances = array_new_len<float>(result_size, result_size);
     raft::copy(neighbors, neighbors_gpu.data_handle(), result_size, res_.get_stream());
     raft::copy(distances, distances_gpu.data_handle(), result_size, res_.get_stream());
-    resultBatchList.nResults = queryParams->batchSize;
+    res_.sync_stream();
     resultBatchList.resultsList = array_new_len<VecSimQueryResult_List>(queryParams->batchSize, queryParams->batchSize);
     for (size_t queryId = 0; queryId < queryParams->batchSize; queryId++) {
         resultBatchList.resultsList[queryId].code = VecSim_QueryResult_OK;
@@ -229,3 +219,4 @@ VecSimQueryResultBatch_List RaftIVFFlatIndex::topKQueryBatch(
     array_free(distances);
     return resultBatchList;
 }
+*/

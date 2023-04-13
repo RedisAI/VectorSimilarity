@@ -2,6 +2,7 @@
 #include "VecSim/vec_sim_common.h"       // BFParams
 #include "VecSim/vec_sim_index.h"        // VecSimIndexAbstract
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
+#include "ivf_index_interface.h"
 
 #include "VecSim/algorithms/brute_force/bfs_batch_iterator.h"   // TODO: Temporary header to remove
 
@@ -13,15 +14,14 @@
 #include <raft/neighbors/specializations.cuh>
 #endif
 
-extern raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm);
-
-class RaftIVFPQIndex : public VecSimIndexAbstract<float> {
+class RaftIVFPQIndex : public RaftIvfIndexInterface {
 public:
     using DataType = float;
     using DistType = float;
     using raftIvfPQIndex = raft::neighbors::ivf_pq::index<std::int64_t>;
     RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
+    int addVectorBatch(const void *vector_data, labelType *labels, size_t batch_size, bool overwrite_allowed = true);
     int deleteVector(labelType label) override { 
         assert(!"deleteVector not implemented");
         return 0;
@@ -42,6 +42,7 @@ public:
         return counts_; //TODO: Return unique counts
     }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k, VecSimQueryParams *queryParams) override;
+    //virtual VecSimQueryResultBatch_List topKQueryBatch(const void *queryBlob, size_t k, VecSimQueryParams *queryParams);
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius, VecSimQueryParams *queryParams) override
     {
         assert(!"RangeQuery not implemented");
@@ -88,7 +89,7 @@ protected:
 };
 
 RaftIVFPQIndex::RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric, params->blockSize, params->multi),
+    : RaftIvfIndexInterface(allocator, params->dim, params->type, params->metric, params->blockSize, params->multi),
       counts_(0)
 {
     build_params_.metric = GetRaftDistanceType(params->metric);
@@ -148,10 +149,34 @@ int RaftIVFPQIndex::addVector(const void *vector_data, labelType label, bool ove
     } else {
         raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()), std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
     }
+    res_.sync_stream();
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
     this->counts_ += 1;
     return 1;
+}
+
+int RaftIVFPQIndex::addVectorBatch(const void *vector_data, labelType* labels, size_t batch_size, bool overwrite_allowed)
+{
+    auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, batch_size, this->dim);
+    auto label_original = std::vector<labelType>(labels, labels + batch_size);
+    auto label_converted = std::vector<std::int64_t>(label_original.begin(), label_original.end());
+    auto label_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, batch_size, 1);
+    raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
+    raft::copy(label_gpu.data_handle(), label_converted.data(), batch_size, res_.get_stream());
+
+    if (!pq_index_) {
+        pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
+            res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
+    } else {
+        raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
+            std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
+    }
+    res_.sync_stream();
+    // TODO: Verify that label exists already?
+    // TODO normalizeVector for cosine?
+    this->counts_ += batch_size;
+    return batch_size;
 }
 
 // Search for the k closest vectors to a given vector in the index.
@@ -174,6 +199,7 @@ VecSimQueryResult_List RaftIVFPQIndex::topKQuery(
     auto distances = array_new_len<float>(result_size, result_size);
     raft::copy(neighbors, neighbors_gpu.data_handle(), result_size, res_.get_stream());
     raft::copy(distances, distances_gpu.data_handle(), result_size, res_.get_stream());
+    res_.sync_stream();
     result_list.results = array_new_len<VecSimQueryResult>(k, k);
     for (size_t i = 0; i < k; ++i) {
         VecSimQueryResult_SetId(result_list.results[i], neighbors[i]);

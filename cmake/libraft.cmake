@@ -43,9 +43,9 @@ function(find_and_configure_raft)
             "RAFT_COMPILE_LIBRARY ${PKG_COMPILE_LIBRARY}"
             )
     if(raft_ADDED)
-        message(VERBOSE "CUML: Using RAFT located in ${raft_SOURCE_DIR}")
+        message(VERBOSE "VectorSimilarity: Using RAFT located in ${raft_SOURCE_DIR}")
     else()
-        message(VERBOSE "CUML: Using RAFT located in ${raft_DIR}")
+        message(VERBOSE "VectorSimilarity: Using RAFT located in ${raft_DIR}")
     endif()
 endfunction()
 

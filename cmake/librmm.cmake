@@ -16,8 +16,8 @@
 
 function(find_and_configure_rmm)
     include(${rapids-cmake-dir}/cpm/rmm.cmake)
-    rapids_cpm_rmm(BUILD_EXPORT_SET raft-exports
-                   INSTALL_EXPORT_SET  raft-exports)
+    rapids_cpm_rmm(BUILD_EXPORT_SET VectorSimilarity-exports
+                   INSTALL_EXPORT_SET  VectorSimilarity-exports)
 endfunction()
 
 find_and_configure_rmm()
