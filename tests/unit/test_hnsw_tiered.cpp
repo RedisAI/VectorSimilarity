@@ -1448,10 +1448,10 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
     };
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
-    auto index_ctx = IndexExtCtx();
+    auto index_ctx = new IndexExtCtx();
     size_t memory_ctx = 0;
     TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
-                                            .jobQueueCtx = &index_ctx,
+                                            .jobQueueCtx = index_ctx,
                                             .submitCb = submit_callback,
                                             .memoryCtx = &memory_ctx,
                                             .UpdateMemCb = update_mem_callback,
@@ -1459,6 +1459,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::NewIndex(&tiered_hnsw_params));
     auto allocator = tiered_index->getAllocator();
+    index_ctx->index_strong_ref.reset(tiered_index);
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
@@ -1501,6 +1503,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(jobQ.size(), 0);
+
+    delete index_ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
