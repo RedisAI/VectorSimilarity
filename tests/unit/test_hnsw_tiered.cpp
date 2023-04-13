@@ -1759,7 +1759,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
-
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     size_t n = 1000;
@@ -1770,16 +1769,18 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
                          .blockSize = 100};
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
-    auto index_ctx = IndexExtCtx();
+    auto index_ctx = new IndexExtCtx();
     size_t memory_ctx = 0;
     TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
-                                            .jobQueueCtx = &index_ctx,
+                                            .jobQueueCtx = index_ctx,
                                             .submitCb = submit_callback,
                                             .memoryCtx = &memory_ctx,
                                             .UpdateMemCb = update_mem_callback,
                                             .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::NewIndex(&tiered_hnsw_params));
+    auto allocator = tiered_index->getAllocator();
+    index_ctx->index_strong_ref.reset(tiered_index);
 
     size_t per_label = TypeParam::isMulti() ? 50 : 1;
     size_t n_labels = n / per_label;
@@ -1825,11 +1826,10 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
     for (auto job : tiered_index->swapJobs) {
         EXPECT_EQ(job->pending_repair_jobs_counter.load(), 0);
     }
-    VecSimIndex_Free(tiered_index);
+    delete index_ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
-
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 16;
     size_t n = 1000;
@@ -1842,16 +1842,19 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
                              .M = M};
         VecSimParams hnsw_params = CreateParams(params);
         auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
         TieredIndexParams tiered_hnsw_params = {.jobQueue = &jobQ,
-                                                .jobQueueCtx = &index_ctx,
+                                                .jobQueueCtx = index_ctx,
                                                 .submitCb = submit_callback,
                                                 .memoryCtx = &memory_ctx,
                                                 .UpdateMemCb = update_mem_callback,
                                                 .primaryIndexParams = &hnsw_params};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
             TieredFactory::NewIndex(&tiered_hnsw_params));
+        auto allocator = tiered_index->getAllocator();
+        index_ctx->index_strong_ref.reset(tiered_index);
+
 
         size_t per_label = TypeParam::isMulti() ? 5 : 1;
         size_t n_labels = n / per_label;
@@ -1897,6 +1900,6 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
         for (auto job : tiered_index->swapJobs) {
             EXPECT_EQ(job->pending_repair_jobs_counter.load(), 0);
         }
-        VecSimIndex_Free(tiered_index);
+        delete index_ctx;
     }
 }
