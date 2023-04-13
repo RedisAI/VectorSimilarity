@@ -17,22 +17,30 @@ NewIndex_ChooseMultiOrSingle(const BFParams *params,
 
     // check if single and return new bf_index
     if (params->multi)
-        return new (allocator)
+        return new (abstractInitParams.allocator)
             BruteForceIndex_Multi<DataType, DistType>(params, abstractInitParams);
     else
-        return new (allocator)
+        return new (abstractInitParams.allocator)
             BruteForceIndex_Single<DataType, DistType>(params, abstractInitParams);
 }
 
-VecSimIndex *NewIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+
     const BFParams *bfParams = &params->bfParams;
-    AbstractIndexInitParams abstractInitParams = {.allocator = allocator,
+    AbstractIndexInitParams abstractInitParams = {.allocator =
+                                                      VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,
                                                   .vecType = bfParams->type,
                                                   .metric = bfParams->metric,
                                                   .blockSize = bfParams->blockSize,
                                                   .multi = bfParams->multi,
                                                   .logCtx = params->logCtx};
+    return abstractInitParams;
+}
+
+VecSimIndex *NewIndex(const VecSimParams *params) {
+    const BFParams *bfParams = &params->bfParams;
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
     if (bfParams->type == VecSimType_FLOAT32) {
         return NewIndex_ChooseMultiOrSingle<float>(bfParams, abstractInitParams);
     } else if (bfParams->type == VecSimType_FLOAT64) {
@@ -41,6 +49,22 @@ VecSimIndex *NewIndex(const VecSimParams *params, std::shared_ptr<VecSimAllocato
 
     // If we got here something is wrong.
     return NULL;
+}
+
+VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams) {
+    if (bfparams->type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(bfparams, abstractInitParams);
+    } else if (bfparams->type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(bfparams, abstractInitParams);
+    }
+
+    // If we got here something is wrong.
+    return NULL;
+}
+
+VecSimIndex *NewIndex(const BFParams *bfparams) {
+    VecSimParams params = {.bfParams = *bfparams};
+    return NewIndex(&params);
 }
 
 template <typename DataType, typename DistType = DataType>

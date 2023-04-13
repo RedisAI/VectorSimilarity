@@ -7,13 +7,10 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
 #include "VecSim/query_result_struct.h"
-#include "VecSim/algorithms/brute_force/brute_force.h"
-#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/arr_cpp.h"
-#include "VecSim/index_factories/brute_force_factory.h"
-#include "VecSim/index_factories/hnsw_factory.h"
-#include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/index_factories/index_factory.h"
+#include "VecSim/vec_sim_index.h"
 #include <cassert>
 #include "memory.h"
 
@@ -21,8 +18,8 @@ extern "C" void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callba
     VecSimIndex::setTimeoutCallbackFunction(callback);
 }
 
-extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback, void *ctx) {
-    VecSimIndex::setLogCallbackFunction(ctx, callback);
+extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
+    VecSimIndex::setLogCallbackFunction(callback);
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
@@ -105,36 +102,11 @@ static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
 }
 
 extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
-    VecSimIndex *index = NULL;
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    try {
-        switch (params->algo) {
-        case VecSimAlgo_HNSWLIB:
-            index = HNSWFactory::NewIndex(params, allocator);
-            break;
-        case VecSimAlgo_BF:
-            index = BruteForceFactory::NewIndex(params, allocator);
-            break;
-        case VecSimAlgo_TIERED:
-            index = TieredFactory::NewIndex(&params->tieredParams, allocator);
-            break;
-        }
-    } catch (...) {
-        // Index will delete itself. For now, do nothing.
-    }
-    return index;
+    return VecSimFactory::NewIndex(params);
 }
 
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
-    switch (params->algo) {
-    case VecSimAlgo_HNSWLIB:
-        return HNSWFactory::EstimateInitialSize(&params->hnswParams);
-    case VecSimAlgo_BF:
-        return BruteForceFactory::EstimateInitialSize(&params->bfParams);
-    case VecSimAlgo_TIERED:
-        return TieredFactory::EstimateInitialSize(&params->tieredParams);
-    }
-    return -1;
+    return VecSimFactory::EstimateInitialSize(params);
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
@@ -159,15 +131,7 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
-    switch (params->algo) {
-    case VecSimAlgo_TIERED:
-        return TieredFactory::EstimateElementSize(&params->tieredParams);
-    case VecSimAlgo_HNSWLIB:
-        return HNSWFactory::EstimateElementSize(&params->hnswParams);
-    case VecSimAlgo_BF:
-        return BruteForceFactory::EstimateElementSize(&params->bfParams);
-    }
-    return -1;
+    return VecSimFactory::EstimateElementSize(params);
 }
 
 extern "C" void VecSim_Normalize(void *blob, size_t dim, VecSimType type) {

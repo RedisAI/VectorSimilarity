@@ -1493,9 +1493,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     : VecSimIndexAbstract<DistType>(abstractInitParams), VecSimIndexTombstone(),
       max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
-      element_levels_(max_elements_, allocator),
-      visited_nodes_handler_pool(pool_initial_size, max_elements_, allocator),
-      element_neighbors_locks_(max_elements_, allocator) {
+      element_levels_(max_elements_, this->allocator),
+      visited_nodes_handler_pool(pool_initial_size, max_elements_, this->allocator),
+      element_neighbors_locks_(max_elements_, this->allocator) {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > UINT16_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");

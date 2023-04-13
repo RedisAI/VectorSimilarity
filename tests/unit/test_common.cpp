@@ -425,9 +425,11 @@ void test_log_impl(void *ctx, const char *message) {
 TEST(CommonAPITest, testlog) {
     std::vector<std::string> log;
 
-    BFParams params = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
-    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
-    VecSim_SetLogCallbackFunction(test_log_impl, &log);
+    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
+    VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bfParams, .logCtx = &log};
+    auto *index =
+        dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
+    VecSim_SetLogCallbackFunction(test_log_impl);
 
     index->log("test log message no fmt");
     index->log("test log message %s %s", "with", "args");

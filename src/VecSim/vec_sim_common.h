@@ -125,7 +125,7 @@ struct VecSimParams {
         TieredIndexParams tieredParams;
     };
     void *logCtx; // External context that stores the index log.
-} VecSimParams;
+};
 
 /**
  * The specific job types in use (to be extended in the future by demand)
