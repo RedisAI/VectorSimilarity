@@ -264,6 +264,12 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
     return batch;
 }
 
+// DISCLAIMER: After the last batch, one of the iterators may report that it is not depleted,
+// while all of its remaining results were already returned from the other iterator.
+// (On single-value indexes, this can happen to the main iterator only, on multi-value
+//  indexes, this can happen to both iterators).
+// The next call to `getNextResults` will return an empty batch, and then the iterators will
+// correctly report that they are depleted.
 template <typename DataType, typename DistType>
 bool VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::isDepleted() {
     return this->flat_iterator->isDepleted() && VecSimQueryResult_Len(this->flat_results) == 0 &&
@@ -274,6 +280,7 @@ template <typename DataType, typename DistType>
 void VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::reset() {
     if (this->holding_main_lock) {
         this->index->mainIndexGuard.unlock_shared();
+        this->holding_main_lock = false;
     }
     this->resetResultsCount();
     this->flat_iterator->reset();

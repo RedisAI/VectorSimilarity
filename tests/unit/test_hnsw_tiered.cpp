@@ -2339,7 +2339,7 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
     }
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorSingleWithOverlaps) {
+TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
     size_t d = 4;
     size_t M = 8;
     size_t ef = 20;
@@ -2347,12 +2347,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorSingleWithOverlaps) {
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     for (auto &[decider_name, decider] : lambdas) {
+        size_t per_label = TypeParam::isMulti() ? 10 : 1;
+        size_t n_labels = n / per_label;
         // Create TieredHNSW index instance with a mock queue.
         HNSWParams hnsw_params = {
             .type = TypeParam::get_index_type(),
             .dim = d,
             .metric = VecSimMetric_L2,
-            .multi = false,
+            .multi = TypeParam::isMulti(),
             .initialCapacity = n,
             .efConstruction = ef,
             .efRuntime = ef,
@@ -2379,19 +2381,23 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorSingleWithOverlaps) {
         auto *flat = tiered_index->flatBuffer;
 
         // For every i, add the vector (i,i,i,i) under the label i.
+        size_t flat_count = 0;
         for (size_t i = 0; i < n; i++) {
             auto cur = decider(i, n) ? hnsw : flat;
-            GenerateAndAddVector<TEST_DATA_T>(cur, d, i, i);
-            // Add 10% of the vectors to the other index as well.
-            if (i % 10 == 0) {
-                auto other = cur == hnsw ? flat : hnsw;
-                GenerateAndAddVector<TEST_DATA_T>(other, d, i, i);
+            GenerateAndAddVector<TEST_DATA_T>(cur, d, i % n_labels, i);
+            if (cur == flat) {
+                flat_count++;
+                // Add 10% of the vectors in FLAT to HNSW as well.
+                if (flat_count % 10 == 0) {
+                    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, i % n_labels, i);
+                }
             }
         }
-        // The index size should be 110% of n.
-        ASSERT_NEAR(VecSimIndex_IndexSize(tiered_index), n * 1.1, 1) << decider_name;
-        // The number of unique labels should be n.
-        ASSERT_EQ(tiered_index->indexLabelCount(), n) << decider_name;
+        // The index size should be 100-110% of n.
+        ASSERT_LE(VecSimIndex_IndexSize(tiered_index), n * 1.1) << decider_name;
+        ASSERT_GE(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
+        // The number of unique labels should be n_labels.
+        ASSERT_EQ(tiered_index->indexLabelCount(), n_labels) << decider_name;
 
         // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
         TEST_DATA_T query[d];
@@ -2404,18 +2410,35 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorSingleWithOverlaps) {
         // in every iteration. The results order should be sorted by their score (distance from
         // the query vector), which means sorted from the largest id to the lowest.
         size_t n_res = 5;
+        size_t n_expected = n_res;
+        size_t excessive_iterations = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            std::vector<size_t> expected_ids(n_res);
-            for (size_t i = 0; i < n_res; i++) {
-                expected_ids[i] = n - iteration_num * n_res - i - 1;
+            if (iteration_num * n_res == n_labels) {
+                // in some cases, the batch iterator may report that he has more results to return,
+                // but its actually not true and the next call to `VecSimBatchIterator_Next` will
+                // return 0 results. This is safe because we don't guarantee how many results the
+                // batch iterator will return, and a similar scenario can happen when checking
+                // `VecSimBatchIterator_HasNext` on an empty index for the first time (before the
+                // first call to `VecSimBatchIterator_Next`). we check that this scenario doesn't
+                // happen more than once.
+                ASSERT_EQ(excessive_iterations, 0) << decider_name;
+                excessive_iterations = 1;
+                n_expected = 0;
+            }
+            std::vector<size_t> expected_ids(n_expected);
+            for (size_t i = 0; i < n_expected; i++) {
+                expected_ids[i] = (n - iteration_num * n_expected - i - 1) % n_labels;
             }
             auto verify_res = [&](size_t id, double score, size_t index) {
                 ASSERT_EQ(expected_ids[index], id) << decider_name;
             };
-            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, n_expected);
             iteration_num++;
         }
-        ASSERT_EQ(iteration_num, n / n_res) << decider_name;
+        ASSERT_EQ(iteration_num - excessive_iterations, n_labels / n_res)
+            << decider_name << "\nHad excessive iterations: " << (excessive_iterations != 0);
         VecSimBatchIterator_Free(batchIterator);
     }
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases) {}
