@@ -240,7 +240,7 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_id, idType new_id) {
     // Update the pending job id, due to a swap that was caused after the removal of new_id.
     assert(new_id != INVALID_ID && prev_id != INVALID_ID);
-    labelType last_idx_label = this->flatBuffer->getLabelByInternalId(prev_id);
+    labelType last_idx_label = this->frontendIndex->getLabelByInternalId(prev_id);
     auto it = this->labelToInsertJobs.find(last_idx_label);
     if (it != this->labelToInsertJobs.end()) {
         // There is a pending job for the label of the swapped last id - update its id.
@@ -306,7 +306,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, &state);
+    hnsw_index->addVector(this->frontendIndex->getDataByInternalId(job->id), job->label, &state);
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
     }
@@ -335,10 +335,10 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             labelToInsertJobs.erase(job->label);
         }
         // Remove the vector from the flat buffer.
-        int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
-        if (deleted && job->id != this->flatBuffer->indexSize()) {
+        int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
+        if (deleted && job->id != this->frontendIndex->indexSize()) {
             // If the vector removal caused a swap with the last id, update the relevant insert job.
-            this->updateInsertJobInternalId(this->flatBuffer->indexSize(), job->id);
+            this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id);
         }
     }
     this->flatIndexGuard.unlock();
@@ -420,7 +420,7 @@ template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     this->flatIndexGuard.lock_shared();
     this->getHNSWIndex()->lockIndexDataGuard();
-    size_t res = this->index->indexSize() + this->flatBuffer->indexSize();
+    size_t res = this->backendIndex->indexSize() + this->frontendIndex->indexSize();
     this->getHNSWIndex()->unlockIndexDataGuard();
     this->flatIndexGuard.unlock_shared();
     return res;
@@ -436,7 +436,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     // Compute the union of both labels set in both tiers of the index.
     this->flatIndexGuard.lock();
     this->mainIndexGuard.lock();
-    auto flat_labels = this->flatBuffer->getLabelsSet();
+    auto flat_labels = this->frontendIndex->getLabelsSet();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
     std::vector<labelType> output;
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
@@ -454,8 +454,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
         this->frontendIndex->increaseCapacity();
     }
-    idType new_flat_id = this->flatBuffer->indexSize();
-    this->flatBuffer->addVector(blob, label);
+    idType new_flat_id = this->frontendIndex->indexSize();
+    this->frontendIndex->addVector(blob, label);
     AsyncJob *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
@@ -481,11 +481,11 @@ template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     int num_deleted_vectors = 0;
     this->flatIndexGuard.lock_shared();
-    if (this->flatBuffer->isLabelExists(label)) {
+    if (this->frontendIndex->isLabelExists(label)) {
         this->flatIndexGuard.unlock_shared();
         this->flatIndexGuard.lock();
         // Check again if the label exists, as it may have been removed while we released the lock.
-        if (this->flatBuffer->isLabelExists(label)) {
+        if (this->frontendIndex->isLabelExists(label)) {
             // Invalidate the pending insert job(s) into HNSW associated with this label
             auto &insert_jobs = this->labelToInsertJobs.at(label);
             for (auto *job : insert_jobs) {
@@ -498,7 +498,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             // Every delete may cause a swap of the deleted id with the last id, and we return a
             // mapping from id to the original id that resides in this id after the deletion(s) (see
             // an example in this function implementation in MULTI index).
-            auto updated_ids = this->flatBuffer->deleteVectorAndGetUpdatedIds(label);
+            auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
             for (auto &it : updated_ids) {
                 this->updateInsertJobInternalId(it.second, it.first);
             }
