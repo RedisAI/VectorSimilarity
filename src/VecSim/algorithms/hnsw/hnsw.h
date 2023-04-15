@@ -17,6 +17,9 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/tombstone_interface.h"
+//#include "VecSim/algorithms/hnsw/lock_handler.h"
+
+#define DEBUG
 
 #ifdef BUILD_TESTS
 #include "hnsw_serialization_utils.h"
@@ -115,6 +118,7 @@ protected:
 
     mutable std::shared_mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
+    inline thread_local static std::vector<idType> locks_held;
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
@@ -169,15 +173,13 @@ protected:
     void revisitNeighborConnections(size_t level, idType new_node_id,
                                     const std::pair<DistType, idType> &neighbor_data,
                                     idType *new_node_neighbors_list,
-                                    idType *neighbor_neighbors_list,
-                                    std::unique_lock<std::mutex> &node_lock,
-                                    std::unique_lock<std::mutex> &neighbor_lock);
+                                    idType *neighbor_neighbors_list);
     inline idType mutuallyConnectNewElement(idType new_node_id,
                                             candidatesMaxHeap<DistType> &top_candidates,
                                             size_t level);
     void mutuallyUpdateForRepairedNode(idType node_id, size_t level,
                                        vecsim_stl::vector<idType> &neighbors_to_remove,
-                                       vecsim_stl::vector<idType> &nodes_to_update,
+                                       std::vector<idType> &nodes_to_update,
                                        vecsim_stl::vector<idType> &chosen_neighbors,
                                        size_t max_M_cur);
 
@@ -210,6 +212,10 @@ protected:
 
     template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
+
+    void acquireLocks(std::vector<idType> elements_ids) const;
+
+    void releaseLocks(std::vector<idType> elements_ids) const;
 
 public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
@@ -582,7 +588,8 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     tag_t *elements_tags, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
-    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    //    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    acquireLocks(std::vector<idType>({curNodeId}));
     idType *node_links = getNodeNeighborsAtLevel(curNodeId, layer);
     linkListSize links_num = getNodeNeighborsCount(node_links);
 
@@ -623,6 +630,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
     __builtin_prefetch(getNodeNeighborsAtLevel(candidate_set.top().second, layer));
+    releaseLocks(std::vector<idType>({curNodeId}));
 
     return lowerBound;
 }
@@ -634,7 +642,8 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     tag_t *elements_tags, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, double radius) const {
 
-    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    //    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    acquireLocks(std::vector<idType>({curNodeId}));
     idType *node_links = getNodeNeighborsAtLevel(curNodeId, layer);
     linkListSize links_num = getNodeNeighborsCount(node_links);
 
@@ -671,6 +680,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     // Pre-fetch the neighbours list of the top candidate (the one that is going
     // to be processed in the next iteration) into memory cache, to improve performance.
     __builtin_prefetch(getNodeNeighborsAtLevel(candidate_set.top().second, layer));
+    releaseLocks(std::vector<idType>({curNodeId}));
 }
 
 template <typename DataType, typename DistType>
@@ -763,8 +773,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
-    idType *new_node_neighbors_list, idType *neighbor_neighbors_list,
-    std::unique_lock<std::mutex> &node_lock, std::unique_lock<std::mutex> &neighbor_lock) {
+    idType *new_node_neighbors_list, idType *neighbor_neighbors_list) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
@@ -813,18 +822,21 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     // Acquire all relevant locks for making the updates for the selected neighbor - all its removed
     // neighbors, along with the neighbors itself and the cur node.
     // but first, we release the node and neighbors lock to avoid deadlocks.
-    node_lock.unlock();
-    neighbor_lock.unlock();
+    //    node_lock.unlock();
+    //    neighbor_lock.unlock();
+    releaseLocks(std::vector<idType>({new_node_id, selected_neighbor}));
 
     nodes_to_update.push_back(selected_neighbor);
     nodes_to_update.push_back(new_node_id);
-
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
-    size_t nodes_to_update_count = nodes_to_update.size();
-    std::unique_lock<std::mutex> locks[nodes_to_update_count];
-    for (size_t i = 0; i < nodes_to_update_count; i++) {
-        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
-    }
+
+    //    std::sort(nodes_to_update.begin(), nodes_to_update.end());
+    //    size_t nodes_to_update_count = nodes_to_update.size();
+    //    std::unique_lock<std::mutex> locks[nodes_to_update_count];
+    //    for (size_t i = 0; i < nodes_to_update_count; i++) {
+    //        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
+    //    }
+    acquireLocks(nodes_to_update);
 
     auto *neighbour_incoming_edges = getIncomingEdgesPtr(selected_neighbor, level);
     size_t neighbor_neighbors_count = getNodeNeighborsCount(neighbor_neighbors_list);
@@ -877,6 +889,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     }
     // Done updating the neighbor's neighbors.
     setNodeNeighborsCount(neighbor_neighbors_list, neighbour_neighbours_idx);
+    releaseLocks(nodes_to_update);
 }
 
 template <typename DataType, typename DistType>
@@ -912,18 +925,21 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     for (auto &neighbor_data : selected_neighbors) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
-        std::unique_lock<std::mutex> node_lock;
-        std::unique_lock<std::mutex> neighbor_lock;
-        idType lower_id = (new_node_id < selected_neighbor) ? new_node_id : selected_neighbor;
-        if (lower_id == new_node_id) {
-            node_lock = std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
-            neighbor_lock =
-                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
-        } else {
-            neighbor_lock =
-                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
-            node_lock = std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
-        }
+        //        std::unique_lock<std::mutex> node_lock;
+        //        std::unique_lock<std::mutex> neighbor_lock;
+        //        idType lower_id = (new_node_id < selected_neighbor) ? new_node_id :
+        //        selected_neighbor; if (lower_id == new_node_id) {
+        //            node_lock =
+        //            std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
+        //            neighbor_lock =
+        //                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
+        //        } else {
+        //            neighbor_lock =
+        //                std::unique_lock<std::mutex>(element_neighbors_locks_[selected_neighbor]);
+        //            node_lock =
+        //            std::unique_lock<std::mutex>(element_neighbors_locks_[new_node_id]);
+        //        }
+        acquireLocks(std::vector<idType>({new_node_id, selected_neighbor}));
 
         // get the updated count - this may change between iterations due to releasing the lock.
         linkListSize cur_node_neighbors_count = getNodeNeighborsCount(new_node_neighbors_list);
@@ -936,11 +952,13 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
         if (cur_node_neighbors_count == max_M_cur) {
             // The new node cannot add more neighbors
+            releaseLocks(std::vector<idType>({new_node_id, selected_neighbor}));
             break;
         }
 
         // If one of the two nodes has already deleted - skip the operation.
         if (isMarkedDeleted(new_node_id) || isMarkedDeleted(selected_neighbor)) {
+            releaseLocks(std::vector<idType>({new_node_id, selected_neighbor}));
             continue;
         }
 
@@ -979,6 +997,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             setNodeNeighborsCount(new_node_neighbors_list, cur_node_neighbors_count + 1);
             neighbor_neighbors_list[neighbor_neighbors_count] = new_node_id;
             setNodeNeighborsCount(neighbor_neighbors_list, neighbor_neighbors_count + 1);
+
+            releaseLocks(std::vector<idType>({new_node_id, selected_neighbor}));
             continue;
         }
 
@@ -986,7 +1006,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // We collect all the existing neighbors and the new node as candidates, and mutually update
         // the neighbor's neighbors.
         revisitNeighborConnections(level, new_node_id, neighbor_data, new_node_neighbors_list,
-                                   neighbor_neighbors_list, node_lock, neighbor_lock);
+                                   neighbor_neighbors_list);
     }
     return next_closest_entry_point;
 }
@@ -1088,7 +1108,9 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         idType candidate_in_process = INVALID_ID;
         {
             // Go over the entry point's neighbors at the top level.
-            std::unique_lock<std::mutex> lock(this->element_neighbors_locks_[entrypoint_node_]);
+            //            std::unique_lock<std::mutex>
+            //            lock(this->element_neighbors_locks_[entrypoint_node_]);
+            acquireLocks(std::vector<idType>({entrypoint_node_}));
             idType *top_level_list = getNodeNeighborsAtLevel(old_entry, max_level_);
             auto neighbors_count = getNodeNeighborsCount(top_level_list);
             // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
@@ -1096,6 +1118,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             for (size_t i = 0; i < neighbors_count; i++) {
                 if (!isMarkedDeleted(top_level_list[i])) {
                     if (!isInProcess(top_level_list[i])) {
+                        releaseLocks(std::vector<idType>({entrypoint_node_}));
                         entrypoint_node_ = top_level_list[i];
                         return;
                     } else {
@@ -1105,6 +1128,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
                     }
                 }
             }
+            releaseLocks(std::vector<idType>({entrypoint_node_}));
         }
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
@@ -1236,6 +1260,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
     // Don't allow choosing a deleted node as an entry point upon searching for neighbors
     // candidates (that is, we're NOT running a query, but inserting a new vector).
     idType bestNonDeletedCand = bestCand;
+    idType prevBestCand = bestCand;
 
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
@@ -1245,7 +1270,8 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
         }
 
         changed = false;
-        std::unique_lock<std::mutex> lock(element_neighbors_locks_[bestCand]);
+        //        std::unique_lock<std::mutex> lock(element_neighbors_locks_[bestCand]);
+        acquireLocks(std::vector<idType>({bestCand}));
         idType *node_links = getNodeNeighborsAtNonBaseLevel(bestCand, level);
         linkListSize links_count = getNodeNeighborsCount(node_links);
 
@@ -1257,6 +1283,9 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             }
             DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
             if (d < curDist) {
+                if (!changed) {
+                    prevBestCand = bestCand;
+                }
                 curDist = d;
                 bestCand = candidate;
                 changed = true;
@@ -1268,6 +1297,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
                 }
             }
         }
+        releaseLocks(std::vector<idType>({changed ? prevBestCand : bestCand}));
     } while (changed);
     if (!running_query) {
         bestCand = bestNonDeletedCand;
@@ -1283,17 +1313,22 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
     for (size_t level = 0; level <= node_top_level; level++) {
         // Save the node neighbor's in the current level while holding its neighbors lock.
         std::vector<idType> neighbors_copy;
-        std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
+        acquireLocks(std::vector<idType>({node_id}));
+        //        std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
         auto *neighbours = getNodeNeighborsAtLevel(node_id, level);
         unsigned short neighbours_count = getNodeNeighborsCount(neighbours);
         // Store the deleted element's neighbours.
         neighbors_copy.assign(neighbours, neighbours + neighbours_count);
-        element_lock.unlock();
+        releaseLocks(std::vector<idType>({node_id}));
+
+        //        element_lock.unlock();
 
         // Go over the neighbours and collect tho ones that also points back to the removed node.
         for (auto neighbour_id : neighbors_copy) {
             // Hold the neighbor's lock while we are going over its neighbors.
-            std::unique_lock<std::mutex> neighbor_lock(element_neighbors_locks_[neighbour_id]);
+            //            std::unique_lock<std::mutex>
+            //            neighbor_lock(element_neighbors_locks_[neighbour_id]);
+            acquireLocks(std::vector<idType>({neighbour_id}));
             auto *neighbour_neighbours = getNodeNeighborsAtLevel(neighbour_id, level);
             unsigned short neighbour_neighbours_count = getNodeNeighborsCount(neighbour_neighbours);
             for (size_t j = 0; j < neighbour_neighbours_count; j++) {
@@ -1303,15 +1338,18 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
                     break;
                 }
             }
+            releaseLocks(std::vector<idType>({neighbour_id}));
         }
 
         // Next, collect the rest of incoming edges (the ones that are not bidirectional) in the
         // current level to repair them.
-        element_lock.lock();
+        //        element_lock.lock();
+        acquireLocks(std::vector<idType>({node_id}));
         auto *incoming_edges = getIncomingEdgesPtr(node_id, level);
         for (auto incoming_edge : *incoming_edges) {
             incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
         }
+        releaseLocks(std::vector<idType>({node_id}));
     }
     return incoming_neighbors;
 }
@@ -1344,7 +1382,7 @@ void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements)
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     idType node_id, size_t level, vecsim_stl::vector<idType> &neighbors_to_remove,
-    vecsim_stl::vector<idType> &nodes_to_update, vecsim_stl::vector<idType> &chosen_neighbors,
+    std::vector<idType> &nodes_to_update, vecsim_stl::vector<idType> &chosen_neighbors,
     size_t max_M_cur) {
     // Sort the nodes to remove set for fast lookup.
     std::sort(neighbors_to_remove.begin(), neighbors_to_remove.end());
@@ -1353,11 +1391,12 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     // (to avoid deadlocks)
     nodes_to_update.push_back(node_id);
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
-    size_t nodes_to_update_count = nodes_to_update.size();
-    std::unique_lock<std::mutex> locks[nodes_to_update_count];
-    for (size_t i = 0; i < nodes_to_update_count; i++) {
-        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
-    }
+    //    size_t nodes_to_update_count = nodes_to_update.size();
+    //    std::unique_lock<std::mutex> locks[nodes_to_update_count];
+    //    for (size_t i = 0; i < nodes_to_update_count; i++) {
+    //        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
+    //    }
+    acquireLocks(nodes_to_update);
 
     idType *node_neighbors = getNodeNeighborsAtLevel(node_id, level);
     linkListSize node_neighbors_count = getNodeNeighborsCount(node_neighbors);
@@ -1433,6 +1472,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     }
     // Done updating the node's neighbors.
     setNodeNeighborsCount(node_neighbors, node_neighbors_idx);
+    releaseLocks(nodes_to_update);
 }
 
 template <typename DataType, typename DistType>
@@ -1452,7 +1492,8 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
     {
-        std::unique_lock<std::mutex> node_lock(element_neighbors_locks_[node_id]);
+        //        std::unique_lock<std::mutex> node_lock(element_neighbors_locks_[node_id]);
+        acquireLocks(std::vector<idType>({node_id}));
         idType *node_neighbors = getNodeNeighborsAtLevel(node_id, level);
         linkListSize node_neighbors_count = getNodeNeighborsCount(node_neighbors);
         for (size_t j = 0; j < node_neighbors_count; j++) {
@@ -1468,6 +1509,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                                                          this->dim),
                                          node_neighbors[j]);
         }
+        releaseLocks(std::vector<idType>({node_id}));
     }
     // If there are not deleted neighbors at that point the repair job has already been made by
     // another parallel job, and there is no need to repair the node anymore.
@@ -1478,7 +1520,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // Hold 3 sets of nodes - all the original neighbors at that point to later (potentially)
     // update, subset of these which are the chosen neighbors nodes, and a subset of the original
     // neighbors that are going to be removed.
-    vecsim_stl::vector<idType> nodes_to_update(this->allocator);
+    std::vector<idType> nodes_to_update;
     vecsim_stl::vector<idType> chosen_neighbors(this->allocator);
     vecsim_stl::vector<idType> neighbors_to_remove(this->allocator);
 
@@ -1487,8 +1529,9 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         nodes_to_update.push_back(deleted_neighbor_id);
         neighbors_to_remove.push_back(deleted_neighbor_id);
 
-        std::unique_lock<std::mutex> neighbor_lock(
-            this->element_neighbors_locks_[deleted_neighbor_id]);
+        //        std::unique_lock<std::mutex> neighbor_lock(
+        //            this->element_neighbors_locks_[deleted_neighbor_id]);
+        acquireLocks(std::vector<idType>({deleted_neighbor_id}));
         idType *neighbor_neighbours = getNodeNeighborsAtLevel(deleted_neighbor_id, level);
         linkListSize neighbor_neighbours_count = getNodeNeighborsCount(neighbor_neighbours);
 
@@ -1506,6 +1549,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                                 getDataByInternalId(neighbor_neighbours[j]), this->dim),
                 neighbor_neighbours[j]);
         }
+        releaseLocks(std::vector<idType>({deleted_neighbor_id}));
     }
 
     // Copy the original candidates, and run the heuristics. Afterwards, neighbors_candidates will
@@ -1784,6 +1828,51 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
     removeAndSwap<false>(element_internal_id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::acquireLocks(std::vector<idType> elements_ids) const {
+    std::sort(elements_ids.begin(), elements_ids.end());
+#ifdef DEBUG
+    if (!locks_held.empty()) {
+        throw std::runtime_error("Thread is already holding some elements locks before it tries"
+                                 "to acquire new locks");
+    }
+    for (idType element : elements_ids) {
+        if (std::binary_search(locks_held.begin(), locks_held.end(), element)) {
+            throw std::runtime_error(std::string(
+                "Element " + std::to_string(element) +
+                " appears multiple times in the element list to lock, deadlock is expected"));
+        }
+        locks_held.push_back(element);
+    }
+#endif
+    for (idType element : elements_ids) {
+        lockNodeLinks(element);
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::releaseLocks(std::vector<idType> elements_ids) const {
+#ifdef DEBUG
+    for (idType element : elements_ids) {
+        auto it = std::find(locks_held.begin(), locks_held.end(), element);
+        if (it == locks_held.end()) {
+            throw std::runtime_error(
+                std::string("Element " + std::to_string(element) +
+                            " was not held by the thread upon trying to release its lock"));
+        }
+        locks_held.erase(it);
+    }
+    if (!locks_held.empty()) {
+        throw std::runtime_error(
+            "There are additional locks held except for the ones that are about"
+            " to be released");
+    }
+#endif
+    for (idType element : elements_ids) {
+        unlockNodeLinks(element);
+    }
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
@@ -2398,6 +2487,9 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
         res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
 }
+
+// template<> thread_local std::vector<idType> HNSWIndex<float, float>::locks_held;
+// template<> thread_local std::vector<idType> HNSWIndex<double, double>::locks_held;
 
 #ifdef BUILD_TESTS
 #include "hnsw_serializer.h"
