@@ -47,7 +47,7 @@ public:
     class TieredIndex_BatchIterator : public VecSimBatchIterator {
     private:
         const VecSimTieredIndex<DataType, DistType> *index;
-        bool holding_main_lock;
+        VecSimQueryParams *queryParams;
 
         VecSimQueryResult_List flat_results;
         VecSimQueryResult_List main_results;
@@ -66,7 +66,7 @@ public:
         inline void filter_irrelevant_results(VecSimQueryResult_List &);
 
     public:
-        TieredIndex_BatchIterator(const void *query_vector,
+        TieredIndex_BatchIterator(void *query_vector,
                                   const VecSimTieredIndex<DataType, DistType> *index,
                                   VecSimQueryParams *queryParams,
                                   std::shared_ptr<VecSimAllocator> allocator);
@@ -98,8 +98,11 @@ public:
                                      VecSimQueryParams *queryParams) override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
+        size_t blobSize = this->index->getDim() * sizeof(DataType);
+        void *queryBlobCopy = this->allocator->allocate(blobSize);
+        memcpy(queryBlobCopy, queryBlob, blobSize);
         return new (this->allocator)
-            TieredIndex_BatchIterator(queryBlob, this, queryParams, this->allocator);
+            TieredIndex_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
     }
 };
 
@@ -160,28 +163,39 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 
 /******************** Ctor / Dtor *****************/
 
+#define DEPLETED ((VecSimBatchIterator *)1)
+
 template <typename DataType, typename DistType>
 VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::TieredIndex_BatchIterator(
-    const void *query_vector, const VecSimTieredIndex<DataType, DistType> *index,
+    void *query_vector, const VecSimTieredIndex<DataType, DistType> *index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
+    : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
-      index(index), holding_main_lock(false), flat_results({0}), main_results({0}),
+      index(index), flat_results({0}), main_results({0}),
       flat_iterator(this->index->flatBuffer->newBatchIterator(query_vector, queryParams)),
-      main_iterator(this->index->index->newBatchIterator(query_vector, queryParams)),
-      returned_results_set(this->allocator) {}
+      main_iterator(nullptr), returned_results_set(this->allocator) {
+    if (queryParams) {
+        this->queryParams = (VecSimQueryParams *)this->allocator->allocate(sizeof(VecSimQueryParams));
+        *this->queryParams = *queryParams;
+    } else {
+        this->queryParams = nullptr;
+    }
+}
 
 template <typename DataType, typename DistType>
 VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::~TieredIndex_BatchIterator() {
     delete this->flat_iterator;
-    delete this->main_iterator;
+
+    if (this->main_iterator && this->main_iterator != DEPLETED) {
+        delete this->main_iterator;
+        this->index->mainIndexGuard.unlock_shared();
+    }
+
+    delete this->queryParams;
 
     VecSimQueryResult_Free(this->flat_results);
     VecSimQueryResult_Free(this->main_results);
 
-    if (this->holding_main_lock) {
-        this->index->mainIndexGuard.unlock_shared();
-    }
 }
 
 /******************** Implementation **************/
@@ -197,7 +211,7 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
         // First call to getNextResults. The call to the BF iterator will include calculating all
         // the distances and access the BF index. We take the lock on this call.
         this->index->flatIndexGuard.lock_shared();
-        this->flat_results = this->flat_iterator->getNextResults(n_res, BY_SCORE);
+        this->flat_results = this->flat_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         this->index->flatIndexGuard.unlock_shared();
         // This is also the only time `getNextResults` on the BF iterator can fail.
         if (VecSim_OK != flat_results.code) {
@@ -206,13 +220,18 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->index->mainIndexGuard.lock_shared();
-        this->holding_main_lock = true;
-        this->main_results = this->main_iterator->getNextResults(n_res, BY_SCORE);
+        this->main_iterator = this->index->index->newBatchIterator(getQueryBlob(), queryParams);
+        this->main_results = this->main_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
+        if (this->main_iterator->isDepleted()) {
+            delete this->main_iterator;
+            this->main_iterator = DEPLETED;
+            this->index->mainIndexGuard.unlock_shared();
+        }
     } else {
         while (VecSimQueryResult_Len(this->flat_results) < n_res &&
                !this->flat_iterator->isDepleted()) {
             auto tail = this->flat_iterator->getNextResults(
-                n_res - VecSimQueryResult_Len(this->flat_results), BY_SCORE);
+                n_res - VecSimQueryResult_Len(this->flat_results), BY_SCORE_THEN_ID);
             concat_results(this->flat_results, tail);
             VecSimQueryResult_Free(tail);
 
@@ -224,21 +243,26 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
                 break;
             } else {
                 // On multi-value indexes, the flat results may contain results that are already
-                // returned from the main results. We need to filter them out.
+                // returned from the main index. We need to filter them out.
                 filter_irrelevant_results(this->flat_results);
             }
         }
 
         auto code = VecSim_QueryResult_OK;
         while (VecSimQueryResult_Len(this->main_results) < n_res &&
-               !this->main_iterator->isDepleted() && code == VecSim_OK) {
+               this->main_iterator != DEPLETED && code == VecSim_OK) {
             auto tail = this->main_iterator->getNextResults(
-                n_res - VecSimQueryResult_Len(this->main_results), BY_SCORE);
+                n_res - VecSimQueryResult_Len(this->main_results), BY_SCORE_THEN_ID);
             code = tail.code; // Set the main_results code to the last `getNextResults` code.
             // New batch may contain better results than the previous batch, so we need to merge
             this->main_results = merge_result_lists<false>(this->main_results, tail, n_res);
             this->main_results.code = code;
             filter_irrelevant_results(this->main_results);
+            if (this->main_iterator->isDepleted()) {
+                delete this->main_iterator;
+                this->main_iterator = DEPLETED;
+                this->index->mainIndexGuard.unlock_shared();
+            }
         }
     }
 
@@ -257,10 +281,7 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
     }
     size_t batch_len = VecSimQueryResult_Len(batch);
     this->updateResultsCount(batch_len);
-    if (batch_len < n_res && this->holding_main_lock) {
-        this->index->mainIndexGuard.unlock_shared();
-        this->holding_main_lock = false;
-    }
+
     return batch;
 }
 
@@ -272,19 +293,19 @@ VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::getNextResults
 // correctly report that they are depleted.
 template <typename DataType, typename DistType>
 bool VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::isDepleted() {
-    return this->flat_iterator->isDepleted() && VecSimQueryResult_Len(this->flat_results) == 0 &&
-           this->main_iterator->isDepleted() && VecSimQueryResult_Len(this->main_results) == 0;
+    return VecSimQueryResult_Len(this->flat_results) == 0 && this->flat_iterator->isDepleted() &&
+           VecSimQueryResult_Len(this->main_results) == 0 && this->main_iterator == DEPLETED;
 }
 
 template <typename DataType, typename DistType>
 void VecSimTieredIndex<DataType, DistType>::TieredIndex_BatchIterator::reset() {
-    if (this->holding_main_lock) {
+    if (this->main_iterator && this->main_iterator != DEPLETED) {
+        delete this->main_iterator;
         this->index->mainIndexGuard.unlock_shared();
-        this->holding_main_lock = false;
     }
     this->resetResultsCount();
     this->flat_iterator->reset();
-    this->main_iterator->reset();
+    this->main_iterator = nullptr;
     VecSimQueryResult_Free(this->flat_results);
     VecSimQueryResult_Free(this->main_results);
     this->flat_results = {0};
