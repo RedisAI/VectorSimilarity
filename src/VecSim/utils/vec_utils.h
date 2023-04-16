@@ -81,6 +81,8 @@ void sort_results_by_id(VecSimQueryResult_List results);
 
 void sort_results_by_score(VecSimQueryResult_List results);
 
+void sort_results_by_score_then_id(VecSimQueryResult_List results);
+
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 
 VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
