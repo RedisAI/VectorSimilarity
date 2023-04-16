@@ -1809,8 +1809,9 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         }
         // While a thread is ingesting a vector into HNSW, a vector may appear in both indexes
         // (hence it will be counted twice in the index size calculation).
-        EXPECT_GE(tiered_index->indexSize(), n);
-        EXPECT_LE(tiered_index->indexSize(), n + THREAD_POOL_SIZE);
+        size_t index_size = tiered_index->indexSize();
+        EXPECT_GE(index_size, n);
+        EXPECT_LE(index_size, n + THREAD_POOL_SIZE);
         EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
         for (size_t i = 0; i < n_labels; i++) {
             // Every vector associated with the label may appear in flat/HNSW index or in both if
@@ -1829,7 +1830,6 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         // Verify that we have no pending jobs.
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
         EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
-        EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->idToSwapJob.size());
         for (auto &it : tiered_index->idToSwapJob) {
             EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
         }
@@ -1921,7 +1921,6 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             // Verify that we have no pending jobs.
             EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
             EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
-            EXPECT_EQ(tiered_index->idToSwapJob.size(), tiered_index->idToSwapJob.size());
             for (auto &it : tiered_index->idToSwapJob) {
                 EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
             }
@@ -1987,12 +1986,11 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
 
     size_t initial_mem = allocator->getAllocationSize();
 
-    // Threshold is set to be >= 1: insert two vectors to HNSW index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 1, 1);
     EXPECT_EQ(tiered_index->indexLabelCount(), 2);
     EXPECT_EQ(tiered_index->indexSize(), 2);
-    // Delete both vectors
+    // Delete both vectors.
     EXPECT_EQ(tiered_index->deleteVector(0), 1);
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
@@ -2006,8 +2004,9 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     jobQ.pop();
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
-    // Insert another vector and remove it. expect it to have no neighbors. Then execute the
-    // repair jobs.
+    // Insert another vector and remove it. expect it to have no neighbors.
+    // Threshold for is set to be >= 1, so now we expect that all the deleted vectors (which has no
+    // pending repair jobs) will be swapped.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->index, dim, 2, 2);
     EXPECT_EQ(tiered_index->deleteVector(2), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
@@ -2026,6 +2025,9 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(initial_mem, memory_ctx);
 
     delete tiered_index;
+    // VecSimAllocator::allocation_header_size = size_t, this should be the only memory that we
+    // account for at this point.
+    EXPECT_EQ(allocator->getAllocationSize(), sizeof(size_t));
 }
 
 TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
@@ -2060,19 +2062,21 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(jobQ.size(), 2);
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
+    EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // Delete 2, expect to create two repair job pending from 0 an 1. Also, expect that swap
+    // Delete 2, expect to create two repair job pending from 0 and 1. Also, expect that swap
     // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
-    // pending repair job for the "new" 0 - since we invalidate the repair job from the "old" 0.
+    // pending repair job for the "new" 0 - for deleting the old 1->2, while the second job for
+    // deleting the old 0->2 is invalid and reduced from the pending repair jobs counter.
     EXPECT_EQ(tiered_index->deleteVector(2), 1);
     EXPECT_EQ(tiered_index->indexSize(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
 
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
     EXPECT_EQ(jobQ.size(), 2);
-    // The first repair job should remove 1->0.
+    // The first repair job should remove 1->0 (originally was 1->2).
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, 1);
     ASSERT_EQ(

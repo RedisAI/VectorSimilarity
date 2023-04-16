@@ -120,7 +120,7 @@ typedef struct {
 // A struct that contains HNSW tiered index params.
 typedef struct {
     TieredIndexParams tieredIndexParams;
-    size_t maxSwapJobs; // The maximum number of swap jobs to accumulate before applying
+    size_t maxSwapJobs; // The minimum number of swap jobs to accumulate before applying
                         // all the ready swap jobs in a batch.
 } TieredHNSWParams;
 

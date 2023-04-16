@@ -1671,8 +1671,8 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     }
 
     if (has_marked_deleted) {
-        // If index is allowing mark vectors as deleted (as in tiered HNSW), the id to remove cannot
-        // be the entry point, as it should have been replaced upon marking it as deleted.
+        // If the index allows marking vectors as deleted (as in tiered HNSW), the id to remove
+        // cannot be the entry point, as it should have been replaced upon marking it as deleted.
         assert(entrypoint_node_ != internalId);
     } else if (internalId == entrypoint_node_) {
         assert(element_top_level == max_level_);
