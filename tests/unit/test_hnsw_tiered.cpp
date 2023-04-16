@@ -2441,4 +2441,116 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
     }
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases) {}
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases) {
+    size_t d = 4;
+
+    TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *tiered_index;
+    VecSimIndex *hnsw, *flat;
+    TEST_DATA_T query[d];
+    VecSimBatchIterator *iterator;
+    VecSimQueryResult_List batch;
+
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = true,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+    auto jobQ = JobQueue();
+    auto index_ctx = IndexExtCtx();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &jobQ,
+        .jobQueueCtx = &index_ctx,
+        .submitCb = submit_callback,
+        .memoryCtx = &memory_ctx,
+        .UpdateMemCb = update_mem_callback,
+        .primaryIndexParams = &params,
+    };
+    auto L2 = [&](size_t element) { return element * element * d; };
+    auto newIndex = [&]() {
+        auto *index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            TieredFactory::NewIndex(&tiered_params, allocator));
+        index_ctx.index_strong_ref.reset(index);
+        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
+        return index;
+    };
+
+    // first batch contains duplicates with different scores.
+    tiered_index = newIndex();
+    hnsw = tiered_index->index;
+    flat = tiered_index->flatBuffer;
+
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 2);
+
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 1, 3);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 0, 4);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 3, 5);
+
+    ASSERT_EQ(tiered_index->indexLabelCount(), 4);
+
+    GenerateVector<TEST_DATA_T>(query, d, 0);
+    iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 3);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 2), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 2), L2(2));
+    VecSimQueryResult_Free(batch);
+
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 1);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(5));
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
+    VecSimQueryResult_Free(batch);
+
+    // second batch contains duplicates (different scores) from the first batch.
+    tiered_index = newIndex();
+    hnsw = tiered_index->index;
+    flat = tiered_index->flatBuffer;
+
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 3, 3);
+
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 0);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 3, 1);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 2);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 3);
+
+    ASSERT_EQ(tiered_index->indexLabelCount(), 4);
+
+    iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(0));
+    VecSimQueryResult_Free(batch);
+
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
+    VecSimQueryResult_Free(batch);
+}
