@@ -49,12 +49,12 @@ size_t EstimateInitialSize(const VecSimParams *params) {
 
 size_t EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
-    case VecSimAlgo_TIERED:
-        return TieredFactory::EstimateElementSize(&params->tieredParams);
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->bfParams);
+    case VecSimAlgo_TIERED:
+        return TieredFactory::EstimateElementSize(&params->tieredParams);
     }
     return -1;
 }

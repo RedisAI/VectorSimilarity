@@ -417,13 +417,22 @@ TEST_F(SerializerTest, HNSWSerialzer) {
                              "Cannot load index: bad algorithm type");
 }
 
+struct logCtx {
+public:
+    std::vector<std::string> logBuffer;
+    std::string prefix;
+};
+
 void test_log_impl(void *ctx, const char *message) {
-    std::vector<std::string> *log = (std::vector<std::string> *)ctx;
-    log->push_back(message);
+    logCtx *log = (logCtx *)ctx;
+    std::string msg = log->prefix + message;
+    log->logBuffer.push_back(msg);
 }
 
 TEST(CommonAPITest, testlog) {
-    std::vector<std::string> log;
+
+    logCtx log;
+    log.prefix = "test log prefix: ";
 
     BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
     VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bfParams, .logCtx = &log};
@@ -434,9 +443,9 @@ TEST(CommonAPITest, testlog) {
     index->log("test log message no fmt");
     index->log("test log message %s %s", "with", "args");
 
-    ASSERT_EQ(log.size(), 2);
-    ASSERT_EQ(log[0], "test log message no fmt");
-    ASSERT_EQ(log[1], "test log message with args");
+    ASSERT_EQ(log.logBuffer.size(), 2);
+    ASSERT_EQ(log.logBuffer[0], "test log prefix: test log message no fmt");
+    ASSERT_EQ(log.logBuffer[1], "test log prefix: test log message with args");
 
     VecSimIndex_Free(index);
 }

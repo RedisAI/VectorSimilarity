@@ -822,7 +822,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
     EXPECT_EQ(jobQ.size(), 0);
 
     // Cleanup.
-    thread_pool.clear();
     delete index_ctx;
 }
 
@@ -1287,8 +1286,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::NewIndex(&tiered_hnsw_params));
 
-    auto hnsw_index = tiered_index->frontendIndex;
-    auto flat_index = tiered_index->backendIndex;
+    auto hnsw_index = tiered_index->backendIndex;
+    auto flat_index = tiered_index->frontendIndex;
 
     TEST_DATA_T vec1[dim];
     GenerateVector<TEST_DATA_T>(vec1, dim, 1);

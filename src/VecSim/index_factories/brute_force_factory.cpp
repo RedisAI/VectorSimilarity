@@ -41,14 +41,7 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params)
 VecSimIndex *NewIndex(const VecSimParams *params) {
     const BFParams *bfParams = &params->bfParams;
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
-    if (bfParams->type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(bfParams, abstractInitParams);
-    } else if (bfParams->type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(bfParams, abstractInitParams);
-    }
-
-    // If we got here something is wrong.
-    return NULL;
+    return NewIndex(bfParams, NewAbstractInitParams(params));
 }
 
 VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &abstractInitParams) {
