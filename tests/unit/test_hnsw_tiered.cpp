@@ -2479,6 +2479,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
         return index;
     };
 
+    // TEST 1:
     // first batch contains duplicates with different scores.
     tiered_index = newIndex();
     hnsw = tiered_index->index;
@@ -2497,6 +2498,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     GenerateVector<TEST_DATA_T>(query, d, 0);
     iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
 
+    // batch size is 3 (the size of each index). Internally the tiered batch iterator will have to
+    // handle the duplicates with different scores.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(batch), 3);
@@ -2508,6 +2511,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 2), L2(2));
     VecSimQueryResult_Free(batch);
 
+    // we have 1 more label in the index. we expect the tiered batch iterator to return it only and
+    // filter out the duplicates.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(batch), 1);
@@ -2516,6 +2521,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
     VecSimQueryResult_Free(batch);
 
+    // TEST 2:
     // second batch contains duplicates (different scores) from the first batch.
     tiered_index = newIndex();
     hnsw = tiered_index->index;
@@ -2535,6 +2541,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
 
     iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
 
+    // ask for 2 results. The internal batch iterators will return 2 results: hnsw - [0, 1], flat -
+    // [2, 3] so there are no duplicates.
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
@@ -2544,6 +2552,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(0));
     VecSimQueryResult_Free(batch);
 
+    // first batch contained 1 result from each index, so there is one leftover from each iterator.
+    // Asking for 3 results will return additional 2 results from each iterator and the tiered batch
+    // iterator will have to handle the duplicates that each iterator returned (both labels that
+    // were returned in the first batch and duplicates in the current batch).
     ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
     batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
