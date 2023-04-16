@@ -67,6 +67,12 @@ struct AddVectorCtx {
     int currMaxLevel;
 };
 
+#define FLAT_LOCK             0
+#define MAIN_HNSW_LOCK        1
+#define HNSW_GLOBAL_DATA_LOCK 2
+#define ID_TO_REPAIR_LOOKUP   3
+#define NUM_LOCKS             4
+
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
                   public VecSimIndexTombstone
@@ -118,7 +124,8 @@ protected:
 
     mutable std::shared_mutex index_data_guard_;
     mutable vecsim_stl::vector<std::mutex> element_neighbors_locks_;
-    inline thread_local static std::vector<idType> locks_held;
+    inline thread_local static std::vector<idType> element_locks_held;
+    inline thread_local static std::array<bool, NUM_LOCKS> global_locks_held;
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
@@ -221,6 +228,10 @@ public:
     HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
+
+    void acquireGlobalLock(int lock) const;
+
+    void releaseGlobalLock(int lock) const;
 
     inline void setEf(size_t ef);
     inline size_t getEf() const;
@@ -509,11 +520,13 @@ void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::lockIndexDataGuard() const {
+    acquireGlobalLock(HNSW_GLOBAL_DATA_LOCK);
     index_data_guard_.lock();
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
+    releaseGlobalLock(HNSW_GLOBAL_DATA_LOCK);
     index_data_guard_.unlock();
 }
 
@@ -1831,20 +1844,49 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 }
 
 template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::acquireGlobalLock(int lock) const {
+#ifdef DEBUG
+    if (!element_locks_held.empty()) {
+        throw std::runtime_error("Thread is trying to acquire global lock " + std::to_string(lock) +
+                                 " while elements lock are held");
+    }
+    for (size_t i = lock; i < NUM_LOCKS; i++) {
+        if (global_locks_held[i] == true) {
+            throw std::runtime_error("Thread is trying to acquire global lock " +
+                                     std::to_string(lock) + " while global lock " +
+                                     std::to_string(i) + " is held");
+        }
+    }
+    global_locks_held[lock] = true;
+#endif
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::releaseGlobalLock(int lock) const {
+#ifdef DEBUG
+    if (global_locks_held[lock] == false) {
+        throw std::runtime_error("Thread is trying to release global lock " + std::to_string(lock) +
+                                 " which is not held");
+    }
+    global_locks_held[lock] = false;
+#endif
+}
+
+template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::acquireLocks(std::vector<idType> elements_ids) const {
     std::sort(elements_ids.begin(), elements_ids.end());
 #ifdef DEBUG
-    if (!locks_held.empty()) {
+    if (!element_locks_held.empty()) {
         throw std::runtime_error("Thread is already holding some elements locks before it tries"
-                                 "to acquire new locks");
+                                 " to acquire new locks");
     }
     for (idType element : elements_ids) {
-        if (std::binary_search(locks_held.begin(), locks_held.end(), element)) {
+        if (std::binary_search(element_locks_held.begin(), element_locks_held.end(), element)) {
             throw std::runtime_error(std::string(
                 "Element " + std::to_string(element) +
                 " appears multiple times in the element list to lock, deadlock is expected"));
         }
-        locks_held.push_back(element);
+        element_locks_held.push_back(element);
     }
 #endif
     for (idType element : elements_ids) {
@@ -1856,15 +1898,15 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::releaseLocks(std::vector<idType> elements_ids) const {
 #ifdef DEBUG
     for (idType element : elements_ids) {
-        auto it = std::find(locks_held.begin(), locks_held.end(), element);
-        if (it == locks_held.end()) {
+        auto it = std::find(element_locks_held.begin(), element_locks_held.end(), element);
+        if (it == element_locks_held.end()) {
             throw std::runtime_error(
                 std::string("Element " + std::to_string(element) +
                             " was not held by the thread upon trying to release its lock"));
         }
-        locks_held.erase(it);
+        element_locks_held.erase(it);
     }
-    if (!locks_held.empty()) {
+    if (!element_locks_held.empty()) {
         throw std::runtime_error(
             "There are additional locks held except for the ones that are about"
             " to be released");
@@ -2001,8 +2043,12 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
 
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::safeGetEntryPointCopy() const {
-    std::shared_lock<std::shared_mutex> lock(index_data_guard_);
-    return entrypoint_node_;
+    acquireGlobalLock(HNSW_GLOBAL_DATA_LOCK);
+    index_data_guard_.lock_shared();
+    idType ep = entrypoint_node_;
+    releaseGlobalLock(HNSW_GLOBAL_DATA_LOCK);
+    index_data_guard_.unlock_shared();
+    return ep;
 }
 
 template <typename DataType, typename DistType>

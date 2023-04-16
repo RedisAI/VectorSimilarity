@@ -229,6 +229,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         auto incoming_edges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id, ids_top_level[i]);
 
         // Protect the id->repair_jobs lookup while we update it with the new jobs.
+        this->getHNSWIndex()->acquireGlobalLock(ID_TO_REPAIR_LOOKUP);
         this->idToRepairJobsGuard.lock();
         for (pair<idType, ushort> &node : incoming_edges) {
             bool repair_job_exists = false;
@@ -259,6 +260,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
             }
         }
         swap_job->setRepairJobsNum(incoming_edges.size());
+        this->getHNSWIndex()->releaseGlobalLock(ID_TO_REPAIR_LOOKUP);
         this->idToRepairJobsGuard.unlock();
 
         this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
@@ -276,7 +278,9 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
     }
 
     // Execute swap jobs - acquire hnsw write lock.
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.unlock_shared();
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock();
 
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
@@ -290,7 +294,9 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
     for (idType id : idsToRemove) {
         idToSwapJob.erase(id);
     }
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.unlock();
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock_shared();
     return ret;
 }
@@ -318,22 +324,27 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     // have been invalidate before it is executed (TODO in the future).
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
     // Note that accessing the job fields should occur with flat index guard held (here and later).
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock_shared();
     if (job->id == INVALID_JOB_ID) {
         // Job has been invalidated in the meantime.
+        this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
         this->flatIndexGuard.unlock_shared();
         return;
     }
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
     AddVectorCtx state = {0};
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
+        this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
         this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();
+        this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
         // Check if resizing is still required (another thread might have done it in the meantime
@@ -357,6 +368,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
+        this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
         this->mainIndexGuard.unlock();
     } else {
         // Do the same as above except for changing the capacity, but with *shared* lock held:
@@ -372,12 +384,15 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
+        this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
         this->mainIndexGuard.unlock_shared();
     }
 
     // Remove the vector and the insert job from the flat buffer.
+    this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.unlock_shared();
 
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock();
     // The job might have been invalidated due to overwrite in the meantime. In this case,
     // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
@@ -400,15 +415,18 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             this->updateInsertJobInternalId(this->flatBuffer->indexSize(), job->id);
         }
     }
+    this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.unlock();
 }
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // Lock the HNSW shared lock before accessing its internals.
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock_shared();
     if (job->node_id == INVALID_JOB_ID) {
         // The current node has already been removed and disposed.
+        this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
         this->mainIndexGuard.unlock_shared();
         return;
     }
@@ -418,6 +436,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // it after executing the repair job, we might have see that there is a pending repair job for
     // this node id upon deleting another neighbor of this node, and we may avoid creating another
     // repair job even though *it has already been executed*.
+    this->getHNSWIndex()->acquireGlobalLock(ID_TO_REPAIR_LOOKUP);
     this->idToRepairJobsGuard.lock();
     auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
     assert(repair_jobs.size() > 0);
@@ -436,10 +455,12 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     for (auto &it : job->associatedSwapJobs) {
         it->atomicDecreasePendingJobsNum();
     }
+    this->getHNSWIndex()->releaseGlobalLock(ID_TO_REPAIR_LOOKUP);
     this->idToRepairJobsGuard.unlock();
 
     hnsw_index->repairNodeConnections(job->node_id, job->level);
 
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.unlock_shared();
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
@@ -485,10 +506,16 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock_shared();
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
+    this->mainIndexGuard.lock_shared();
     this->getHNSWIndex()->lockIndexDataGuard();
     size_t res = this->index->indexSize() + this->flatBuffer->indexSize();
     this->getHNSWIndex()->unlockIndexDataGuard();
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
+    this->mainIndexGuard.unlock_shared();
+    this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.unlock_shared();
     return res;
 }
@@ -501,14 +528,18 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     // Compute the union of both labels set in both tiers of the index.
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock();
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock();
     auto flat_labels = this->flatBuffer->getLabelsSet();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
     std::vector<labelType> output;
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
                    std::back_inserter(output));
+    this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.unlock();
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.unlock();
     return output.size();
 }
@@ -517,6 +548,7 @@ template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
                                                    void *auxiliaryCtx) {
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock();
     if (this->flatBuffer->indexCapacity() == this->flatBuffer->indexSize()) {
         this->flatBuffer->increaseCapacity();
@@ -536,6 +568,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                                                          this->allocator);
         this->labelToInsertJobs.insert({label, new_jobs_vec});
     }
+    this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.unlock();
 
     // Insert job to the queue and signal the workers updater
@@ -547,9 +580,12 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     int num_deleted_vectors = 0;
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock_shared();
     if (this->flatBuffer->isLabelExists(label)) {
+        this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
         this->flatIndexGuard.unlock_shared();
+        this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
         this->flatIndexGuard.lock();
         // Check again if the label exists, as it may have been removed while we released the lock.
         if (this->flatBuffer->isLabelExists(label)) {
@@ -570,16 +606,20 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
                 this->updateInsertJobInternalId(it.second, it.first);
             }
         }
+        this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
         this->flatIndexGuard.unlock();
     } else {
+        this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
         this->flatIndexGuard.unlock_shared();
     }
 
     // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
     // Note that we may remove the same vector that has been removed from the flat index, if it was
     // being ingested at that time.
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock_shared();
     num_deleted_vectors += this->deleteLabelFromHNSW(label);
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.unlock_shared();
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return num_deleted_vectors;
@@ -606,8 +646,10 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
                                                             const void *blob) const {
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
+    this->getHNSWIndex()->acquireGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.lock_shared();
     auto flat_dist = this->flatBuffer->getDistanceFrom(label, blob);
+    this->getHNSWIndex()->releaseGlobalLock(FLAT_LOCK);
     this->flatIndexGuard.unlock_shared();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
@@ -619,9 +661,11 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
     }
 
     // Try to get the distance from the Main index.
+    this->getHNSWIndex()->acquireGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.lock_shared();
     auto hnsw = getHNSWIndex();
     auto hnsw_dist = hnsw->safeGetDistanceFrom(label, blob);
+    this->getHNSWIndex()->releaseGlobalLock(MAIN_HNSW_LOCK);
     this->mainIndexGuard.unlock_shared();
 
     // Return the minimum distance that is not NaN.
