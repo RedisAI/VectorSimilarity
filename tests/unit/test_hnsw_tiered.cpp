@@ -2566,3 +2566,106 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
     VecSimQueryResult_Free(batch);
 }
+
+TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
+    size_t dim = 4;
+    size_t ef = 500;
+    size_t n = 2000;
+    size_t n_res_min = 3;  // minimum number of results to return per batch
+    size_t n_res_max = 15; // maximum number of results to return per batch
+    bool isMulti = TypeParam::isMulti();
+
+    size_t per_label = isMulti ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .efRuntime = ef,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+
+    std::atomic_int successful_searches(0);
+    auto parallel_10_batches = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        const size_t res_per_batch = search_job->k;
+        const size_t dim = search_job->dim;
+        const auto query = search_job->query;
+
+        size_t iteration = 0;
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            TEST_DATA_T element = *(TEST_DATA_T *)query;
+            res_index += iteration * res_per_batch;
+            ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
+            ASSERT_EQ(score, dim * (id - element) * (id - element));
+        };
+
+        // Run 10 batches of search.
+        auto tiered_iterator = VecSimBatchIterator_New(search_job->index, query, nullptr);
+        do {
+            runBatchIteratorSearchTest(tiered_iterator, res_per_batch, verify_res);
+        } while (++iteration < 10 && VecSimBatchIterator_HasNext(tiered_iterator));
+
+        VecSimBatchIterator_Free(tiered_iterator);
+        search_job->successful_searches++;
+
+        delete search_job;
+    };
+
+    // Fill the job queue with insert and batch-search jobs, while filling the flat index, before
+    // initializing the thread pool.
+    for (size_t i = 0; i < n; i++) {
+        // Insert a vector to the flat index and add a job to insert it to the main index.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+
+        // Add a search job.
+        size_t cur_res_per_batch = i % (n_res_max - n_res_min) + n_res_min;
+        size_t n_res = cur_res_per_batch * 10;
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        // make sure there are `n_res / 2` vectors in the index in each "side" of the query vector.
+        GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - n_res)) + (n_res / 2));
+        auto search_job =
+            new (allocator) SearchJobMock(allocator, parallel_10_batches, tiered_index, query,
+                                          cur_res_per_batch, n, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    EXPECT_EQ(tiered_index->indexSize(), n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
+    for (auto &it : tiered_index->labelToInsertJobs) {
+        EXPECT_EQ(it.second.size(), per_label);
+    }
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // All the vectors are already in the tiered index, so we expect to find the expected
+    // results from the get-go.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(jobQ.size(), 0);
+
+    // Cleanup.
+    delete index_ctx;
+}
