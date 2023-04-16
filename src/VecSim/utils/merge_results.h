@@ -86,10 +86,10 @@ VecSimQueryResult_List merge_result_lists(VecSimQueryResult_List first,
 }
 
 static inline void concat_results(VecSimQueryResult_List &first, VecSimQueryResult_List &second) {
-    VecSimQueryResult *dst = first.results;
-    VecSimQueryResult *src = second.results;
+    auto &dst = first.results;
+    auto &src = second.results;
 
     dst = array_ensure_cap(dst, array_len(dst) + array_len(src));
-    memcpy(dst + array_len(dst), src, array_len(src) * sizeof(VecSimQueryResult));
+    memcpy(dst + array_len(dst), src, array_len(src) * sizeof(*src));
     array_hdr(dst)->len += array_len(src);
 }
