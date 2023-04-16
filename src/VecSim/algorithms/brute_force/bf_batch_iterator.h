@@ -64,6 +64,8 @@ BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
     VecSimQueryResult_List rl = this->selectBasedSearch(n_res);
     if (order == BY_SCORE) {
         sort_results_by_score(rl);
+    } else if (order == BY_SCORE_THEN_ID) {
+        sort_results_by_score_then_id(rl);
     }
     return rl;
 }
@@ -174,8 +176,6 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
 BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryResult_Order order) {
-    assert((order == BY_ID || order == BY_SCORE) &&
-           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     // Only in the first iteration we need to compute all the scores
     if (this->scores.empty()) {
         assert(getResultsCount() == 0);
