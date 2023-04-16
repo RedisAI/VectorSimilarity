@@ -947,34 +947,6 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // if the neighbor's neighbors list has the capacity to add the new node, make the update
         // and finish.
         if (neighbor_neighbors_count < max_M_cur) {
-            if (std::find(new_node_neighbors_list,
-                          new_node_neighbors_list + cur_node_neighbors_count, selected_neighbor) !=
-                new_node_neighbors_list + cur_node_neighbors_count) {
-                std::cout << "selected neighbors already exists in the new node's neighbors"
-                          << std::endl;
-                std::cout << "new node: " << new_node_id << " and selected neighbor is "
-                          << selected_neighbor << " in level " << level << std::endl;
-                std::cout << "new node is marked deleted: " << isMarkedDeleted(new_node_id)
-                          << std::endl;
-                std::cout << "selected neighbor is marked deleted: "
-                          << isMarkedDeleted(selected_neighbor) << std::endl;
-                std::cout << "selected neighbor in process: " << isInProcess(selected_neighbor)
-                          << std::endl;
-            }
-            if (std::find(neighbor_neighbors_list,
-                          neighbor_neighbors_list + neighbor_neighbors_count,
-                          new_node_id) != neighbor_neighbors_list + neighbor_neighbors_count) {
-                std::cout << "new node already exists in the selected neighbor neighbors"
-                          << std::endl;
-                std::cout << "new node: " << new_node_id << " and selected neighbor is "
-                          << selected_neighbor << " in level " << level << std::endl;
-                std::cout << "new node is marked deleted: " << isMarkedDeleted(new_node_id)
-                          << std::endl;
-                std::cout << "selected neighbor is marked deleted: "
-                          << isMarkedDeleted(selected_neighbor) << std::endl;
-                std::cout << "selected neighbor in process: " << isInProcess(selected_neighbor)
-                          << std::endl;
-            }
             new_node_neighbors_list[cur_node_neighbors_count] = selected_neighbor;
             setNodeNeighborsCount(new_node_neighbors_list, cur_node_neighbors_count + 1);
             neighbor_neighbors_list[neighbor_neighbors_count] = new_node_id;
