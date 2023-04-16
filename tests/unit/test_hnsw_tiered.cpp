@@ -1855,7 +1855,6 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
         auto allocator = tiered_index->getAllocator();
         index_ctx->index_strong_ref.reset(tiered_index);
 
-
         size_t per_label = TypeParam::isMulti() ? 5 : 1;
         size_t n_labels = n / per_label;
 
