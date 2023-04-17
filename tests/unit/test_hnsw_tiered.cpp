@@ -2005,7 +2005,12 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
     size_t n = 1000;
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto &[decider_name, decider] : lambdas) {
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
         size_t per_label = TypeParam::isMulti() ? 10 : 1;
         size_t n_labels = n / per_label;
         // Create TieredHNSW index instance with a mock queue.
@@ -2080,7 +2085,12 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
     size_t n = 1000;
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto &[decider_name, decider] : lambdas) {
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
         size_t per_label = TypeParam::isMulti() ? 10 : 1;
         size_t n_labels = n / per_label;
         // Create TieredHNSW index instance with a mock queue.
@@ -2160,7 +2170,12 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
     size_t n = 1000;
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto &[decider_name, decider] : lambdas) {
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
         size_t per_label = TypeParam::isMulti() ? 10 : 1;
         size_t n_labels = n / per_label;
         // Create TieredHNSW index instance with a mock queue.
@@ -2231,7 +2246,12 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
     size_t n = 1000;
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto &[decider_name, decider] : lambdas) {
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
         size_t per_label = TypeParam::isMulti() ? 10 : 1;
         size_t n_labels = n / per_label;
         // Create TieredHNSW index instance with a mock queue.
@@ -2348,7 +2368,12 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
     size_t n = 1000;
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    for (auto &[decider_name, decider] : lambdas) {
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
         size_t per_label = TypeParam::isMulti() ? 10 : 1;
         size_t n_labels = n / per_label;
         // Create TieredHNSW index instance with a mock queue.
