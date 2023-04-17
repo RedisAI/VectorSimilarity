@@ -505,6 +505,8 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
     }
 }
 
+//#pragma GCC push_options
+//#pragma GCC optimize ("O0")
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
     elementFlags *flags = getElementFlags(internalId);
@@ -516,11 +518,12 @@ bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
     elementFlags *flags = getElementFlags(internalId);
     return *flags & IN_PROCESS;
 }
+//#pragma GCC pop_options
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess2(idType internalId) const {
     elementFlags *flags = getElementFlags(internalId);
-    asm volatile("" ::: "memory");
+    //    __asm__ volatile("" ::: "memory");
     return *flags & IN_PROCESS;
 }
 
@@ -1154,7 +1157,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
-        idType candidate_in_process = INVALID_ID;
+        volatile idType candidate_in_process = INVALID_ID;
         {
             // Go over the entry point's neighbors at the top level.
             //            std::unique_lock<std::mutex>
@@ -1199,7 +1202,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         // are done being processed (this should happen in very rare cases...)
         if (candidate_in_process != INVALID_ID) {
             size_t counter = 0;
-            while (isInProcess2(candidate_in_process)) {
+            while (isInProcess(candidate_in_process)) {
                 counter++;
                 if (counter > 1000000000) {
                     std::cout << "candidate in process is deleted: "
