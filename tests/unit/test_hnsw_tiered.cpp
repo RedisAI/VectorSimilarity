@@ -3,6 +3,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include <string>
+#include <array>
 
 #include "test_utils.h"
 
@@ -1983,19 +1984,19 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
 
 // A set of lambdas that determine whether a vector should be inserted to the
 // HNSW index (returns true) or to the flat index (returns false).
-std::vector<std::pair<std::string, std::function<bool(size_t, size_t)>>> lambdas = {
-    {"100% HNSW,   0% FLAT         ", [](size_t idx, size_t n) { return 1; }},
-    {"  0% HNSW, 100% FLAT         ", [](size_t idx, size_t n) { return 0; }},
-    {" 50% HNSW,  50% FLAT         ", [](size_t idx, size_t n) { return idx % 2; }},
-    {" 90% HNSW,  10% FLAT         ", [](size_t idx, size_t n) { return idx % 10; }},
-    {" 10% HNSW,  90% FLAT         ", [](size_t idx, size_t n) { return !(idx % 10); }},
-    {" 99% HNSW,   1% FLAT         ", [](size_t idx, size_t n) { return idx % 100; }},
-    {"  1% HNSW,  99% FLAT         ", [](size_t idx, size_t n) { return !(idx % 100); }},
-    {"first 10% vectors are in HNSW", [](size_t idx, size_t n) { return idx < (n / 10); }},
-    {"first 10% vectors are in FLAT", [](size_t idx, size_t n) { return idx >= (n / 10); }},
-    {" last 10% vectors are in FLAT", [](size_t idx, size_t n) { return idx < (9 * n / 10); }},
-    {" last 10% vectors are in HNSW", [](size_t idx, size_t n) { return idx >= (9 * n / 10); }},
-};
+inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)>, 11> lambdas = {{
+    {"100% HNSW,   0% FLAT ", [](size_t idx, size_t n) -> bool { return 1; }},
+    {" 50% HNSW,  50% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 2; }},
+    {"  0% HNSW, 100% FLAT ", [](size_t idx, size_t n) -> bool { return 0; }},
+    {" 90% HNSW,  10% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 10; }},
+    {" 10% HNSW,  90% FLAT ", [](size_t idx, size_t n) -> bool { return !(idx % 10); }},
+    {" 99% HNSW,   1% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 100; }},
+    {"  1% HNSW,  99% FLAT ", [](size_t idx, size_t n) -> bool { return !(idx % 100); }},
+    {"first 10% are in HNSW", [](size_t idx, size_t n) -> bool { return idx < (n / 10); }},
+    {"first 10% are in FLAT", [](size_t idx, size_t n) -> bool { return idx >= (n / 10); }},
+    {" last 10% are in FLAT", [](size_t idx, size_t n) -> bool { return idx < (9 * n / 10); }},
+    {" last 10% are in HNSW", [](size_t idx, size_t n) -> bool { return idx >= (9 * n / 10); }},
+}};
 
 TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
     size_t d = 4;
@@ -2125,6 +2126,7 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
         GenerateVector<TEST_DATA_T>(query, d, n);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        ASSERT_NO_FATAL_FAILURE(VecSimBatchIterator_Reset(batchIterator));
 
         // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet,
         // in every iteration. Run this flow for 3 times, and reset the iterator.
@@ -2520,6 +2522,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(5));
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
     VecSimQueryResult_Free(batch);
+    // TEST 1 clean up.
+    VecSimBatchIterator_Free(iterator);
 
     // TEST 2:
     // second batch contains duplicates (different scores) from the first batch.
@@ -2565,6 +2569,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
     ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
     VecSimQueryResult_Free(batch);
+    // TEST 2 clean up.
+    VecSimBatchIterator_Free(iterator);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {

@@ -692,7 +692,8 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
 
 /******************** Ctor / Dtor *****************/
 
-#define DEPLETED ((VecSimBatchIterator *)1)
+#define UNINITIALIZED ((VecSimBatchIterator *)0)
+#define DEPLETED      ((VecSimBatchIterator *)1)
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchIterator(
@@ -702,7 +703,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
                           std::move(allocator)),
       index(index), flat_results({0}), hnsw_results({0}),
       flat_iterator(this->index->frontendIndex->newBatchIterator(query_vector, queryParams)),
-      hnsw_iterator(nullptr), returned_results_set(this->allocator) {
+      hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator) {
     if (queryParams) {
         this->queryParams =
             (VecSimQueryParams *)this->allocator->allocate(sizeof(VecSimQueryParams));
@@ -716,12 +717,12 @@ template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::~TieredHNSW_BatchIterator() {
     delete this->flat_iterator;
 
-    if (this->hnsw_iterator && this->hnsw_iterator != DEPLETED) {
+    if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
         this->index->mainIndexGuard.unlock_shared();
     }
 
-    delete this->queryParams;
+    this->allocator->free_allocation(this->queryParams);
 
     VecSimQueryResult_Free(this->flat_results);
     VecSimQueryResult_Free(this->hnsw_results);
@@ -736,7 +737,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
 
     const bool isMulti = this->index->backendIndex->isMultiValue();
 
-    if (this->getResultsCount() == 0) {
+    if (this->hnsw_iterator == UNINITIALIZED) {
         // First call to getNextResults. The call to the BF iterator will include calculating all
         // the distances and access the BF index. We take the lock on this call.
         this->index->flatIndexGuard.lock_shared();
@@ -828,13 +829,13 @@ bool TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::isDepleted()
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
-    if (this->hnsw_iterator && this->hnsw_iterator != DEPLETED) {
+    if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
         this->index->mainIndexGuard.unlock_shared();
     }
     this->resetResultsCount();
     this->flat_iterator->reset();
-    this->hnsw_iterator = nullptr;
+    this->hnsw_iterator = UNINITIALIZED;
     VecSimQueryResult_Free(this->flat_results);
     VecSimQueryResult_Free(this->hnsw_results);
     this->flat_results = {0};
