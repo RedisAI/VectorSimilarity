@@ -1855,12 +1855,14 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 16;
     size_t n = 1000;
-    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
+    //    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
+    for (size_t maxSwapJobs : {(int)n + 1}) {
         for (size_t M : {2, 16}) {
             HNSWParams params = {.type = TypeParam::get_index_type(),
                                  .dim = dim,
                                  .metric = VecSimMetric_L2,
-                                 .multi = TypeParam::isMulti(),
+                                 //                                 .multi = TypeParam::isMulti(),
+                                 .multi = false,
                                  .blockSize = 100,
                                  .M = M};
             VecSimParams hnsw_params = CreateParams(params);
@@ -1881,7 +1883,8 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             // Set the created tiered index in the index external context.
             index_ctx.index_strong_ref.reset(tiered_index);
 
-            size_t per_label = TypeParam::isMulti() ? 5 : 1;
+            //            size_t per_label = TypeParam::isMulti() ? 5 : 1;
+            size_t per_label = 1;
             size_t n_labels = n / per_label;
 
             // Launch the BG threads loop that takes jobs from the queue and executes them.

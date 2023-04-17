@@ -273,6 +273,7 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
     inline bool isInProcess(idType internalId) const;
+    inline bool isInProcess2(idType internalId) const;
     inline void markInProcess(idType internalId);
     inline void unmarkInProcess(idType internalId);
     void increaseCapacity() override;
@@ -488,8 +489,18 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
             // Internally, we hold and release the entrypoint neighbors lock.
             replaceEntryPoint();
         }
-        elementFlags *flags = getElementFlags(internalId);
-        *flags |= DELETE_MARK;
+
+        bool ret = false;
+        do {
+            elementFlags flags = *(getElementFlags(internalId));
+            elementFlags updated_flags = flags | DELETE_MARK;
+            ret = __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0,
+                                            0, 0);
+            if (!ret) {
+                std::cout << "is marked deleted: " << isMarkedDeleted(internalId) << std::endl;
+                std::cout << "is in process: " << isInProcess(internalId) << std::endl;
+            }
+        } while (!ret);
         this->num_marked_deleted++;
     }
 }
@@ -507,15 +518,40 @@ bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
+bool HNSWIndex<DataType, DistType>::isInProcess2(idType internalId) const {
     elementFlags *flags = getElementFlags(internalId);
-    *flags |= IN_PROCESS;
+    asm volatile("" ::: "memory");
+    return *flags & IN_PROCESS;
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
+    bool ret = false;
+    do {
+        elementFlags flags = *(getElementFlags(internalId));
+        elementFlags updated_flags = flags | IN_PROCESS;
+        ret =
+            __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0, 0, 0);
+        if (!ret) {
+            std::cout << "is marked deleted: " << isMarkedDeleted(internalId) << std::endl;
+            std::cout << "is in process: " << isInProcess(internalId) << std::endl;
+        }
+    } while (!ret);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
-    elementFlags *flags = getElementFlags(internalId);
-    *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
+    bool ret = false;
+    do {
+        elementFlags flags = *(getElementFlags(internalId));
+        elementFlags updated_flags = flags & ~IN_PROCESS; // reset the IN_PROCESS flag.
+        ret =
+            __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0, 0, 0);
+        if (!ret) {
+            std::cout << "is marked deleted: " << isMarkedDeleted(internalId) << std::endl;
+            std::cout << "is in process: " << isInProcess(internalId) << std::endl;
+        }
+    } while (!ret);
 }
 
 template <typename DataType, typename DistType>
@@ -1162,8 +1198,17 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         // If we only found candidates which are in process at this level, do busy wait until they
         // are done being processed (this should happen in very rare cases...)
         if (candidate_in_process != INVALID_ID) {
-            while (isInProcess(candidate_in_process))
-                ;
+            size_t counter = 0;
+            while (isInProcess2(candidate_in_process)) {
+                counter++;
+                if (counter > 1000000000) {
+                    std::cout << "candidate in process is deleted: "
+                              << isMarkedDeleted(candidate_in_process) << std::endl;
+                    std::cout << "candidate in process is in process: "
+                              << isInProcess(candidate_in_process) << std::endl;
+                    throw std::runtime_error("in INF loop");
+                }
+            }
             entrypoint_node_ = candidate_in_process;
             return;
         }
