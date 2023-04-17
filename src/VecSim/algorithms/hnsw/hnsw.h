@@ -1300,8 +1300,11 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         // current level to repair them.
         element_lock.lock();
         auto *incoming_edges = getIncomingEdgesPtr(node_id, level);
-        for (auto incoming_edge : *incoming_edges) {
-            incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
+        // alon: temp solution
+        if (incoming_edges) {
+            for (auto incoming_edge : *incoming_edges) {
+                incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
+            }
         }
     }
     return incoming_neighbors;

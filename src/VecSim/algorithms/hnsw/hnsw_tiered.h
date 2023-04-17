@@ -265,6 +265,10 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.unlock_shared();
         return;
     }
+    //alon: temp solution
+    DataType vec_copy[this->frontendIndex->getDim()];
+    memcpy(vec_copy, this->frontendIndex->getDataByInternalId(job->id), this->frontendIndex->getDim() * sizeof(DataType));
+
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
     AddVectorCtx state = {0};
@@ -285,6 +289,8 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             hnsw_index->increaseCapacity();
         }
         state = hnsw_index->storeNewElement(job->label);
+        this->flatIndexGuard.unlock_shared();
+
         // If we're still holding the index data guard, we cannot take the main index lock for
         // shared ownership as it may cause deadlocks, so we insert the vector with the current
         // exclusive lock held. Otherwise, we can release the exclusive lock and take the shared
@@ -300,13 +306,15 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         // higher than the current one, hold the lock through the entire insertion to ensure that
         // graph scans will not occur, as they will try access the entry point's neighbors.
         state = hnsw_index->storeNewElement(job->label);
+        this->flatIndexGuard.unlock_shared();
+
         if (state.elementMaxLevel <= state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-    hnsw_index->addVector(this->frontendIndex->getDataByInternalId(job->id), job->label, &state);
+    hnsw_index->addVector(vec_copy, job->label, &state);
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
     }
@@ -317,8 +325,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     }
 
     // Remove the vector and the insert job from the flat buffer.
-    this->flatIndexGuard.unlock_shared();
-
     this->flatIndexGuard.lock();
     // The job might have been invalidated due to overwrite in the meantime. In this case,
     // it was already deleted and the job has been evicted. Otherwise, we need to do it now.

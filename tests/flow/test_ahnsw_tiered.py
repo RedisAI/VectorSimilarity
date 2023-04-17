@@ -23,7 +23,7 @@ def test_create_new_index():
     tiered_hnsw_params = TIERED_HNSWParams()
     tiered_hnsw_params.i = 0
     index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
-    x = input("meow")
+    X = input("now")
     print(index.index_size())
     print("meow")
     
