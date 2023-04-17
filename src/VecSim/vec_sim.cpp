@@ -111,8 +111,9 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
         case VecSimAlgo_BF:
             index = BruteForceFactory::NewIndex(&params->bfParams, allocator);
             break;
-        case VecSimAlgo_TIERED:
-            index = TieredFactory::NewIndex(&params->tieredParams, allocator);
+        case VecSimAlgo_TIERED_HNSW:
+            index =
+                TieredFactory::TieredHNSWFactory::NewIndex(&params->tieredHNSWParams, allocator);
             break;
         }
     } catch (...) {
@@ -127,7 +128,7 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
         return HNSWFactory::EstimateInitialSize(&params->hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->bfParams);
-    case VecSimAlgo_TIERED:
+    case VecSimAlgo_TIERED_HNSW:
         return TieredFactory::EstimateInitialSize(&params->tieredParams);
     }
     return -1;
@@ -156,7 +157,7 @@ extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, con
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
-    case VecSimAlgo_TIERED:
+    case VecSimAlgo_TIERED_HNSW:
         return TieredFactory::EstimateElementSize(&params->tieredParams);
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateElementSize(&params->hnswParams);
