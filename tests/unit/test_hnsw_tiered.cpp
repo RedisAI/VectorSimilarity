@@ -2315,7 +2315,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
 
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, &query_params);
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(tiered_index, query, &query_params);
 
         // Try to get results even though there are no vectors in the index.
         VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
