@@ -2004,6 +2004,21 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
     size_t ef = 20;
     size_t n = 1000;
 
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
@@ -2011,19 +2026,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        size_t per_label = TypeParam::isMulti() ? 10 : 1;
-        size_t n_labels = n / per_label;
-        // Create TieredHNSW index instance with a mock queue.
-        HNSWParams hnsw_params = {
-            .type = TypeParam::get_index_type(),
-            .dim = d,
-            .metric = VecSimMetric_L2,
-            .multi = TypeParam::isMulti(),
-            .initialCapacity = n,
-            .efConstruction = ef,
-            .efRuntime = ef,
-        };
-        VecSimParams params = CreateParams(hnsw_params);
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
@@ -2084,6 +2086,21 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
     size_t ef = 20;
     size_t n = 1000;
 
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
@@ -2091,19 +2108,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        size_t per_label = TypeParam::isMulti() ? 10 : 1;
-        size_t n_labels = n / per_label;
-        // Create TieredHNSW index instance with a mock queue.
-        HNSWParams hnsw_params = {
-            .type = TypeParam::get_index_type(),
-            .dim = d,
-            .metric = VecSimMetric_L2,
-            .multi = TypeParam::isMulti(),
-            .initialCapacity = n,
-            .efConstruction = ef,
-            .efRuntime = ef,
-        };
-        VecSimParams params = CreateParams(hnsw_params);
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
@@ -2159,6 +2163,24 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
             ASSERT_EQ(iteration_num, n_labels / n_res) << decider_name;
             VecSimBatchIterator_Reset(batchIterator);
         }
+
+        // Try resetting the iterator before it is depleted.
+        n_res = 10;
+        for (size_t take = 0; take < re_runs; take++) {
+            size_t iteration_num = 0;
+            do {
+                ASSERT_TRUE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
+                std::vector<size_t> expected_ids(n_res);
+                for (size_t i = 0; i < n_res; i++) {
+                    expected_ids[i] = (n - iteration_num * n_res - i - 1) % n_labels;
+                }
+                auto verify_res = [&](size_t id, double score, size_t index) {
+                    ASSERT_EQ(expected_ids[index], id) << decider_name;
+                };
+                runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
+            } while (5 > iteration_num++);
+            VecSimBatchIterator_Reset(batchIterator);
+        }
         VecSimBatchIterator_Free(batchIterator);
     }
 }
@@ -2169,6 +2191,21 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
     size_t ef = 20;
     size_t n = 1000;
 
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
@@ -2176,19 +2213,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        size_t per_label = TypeParam::isMulti() ? 10 : 1;
-        size_t n_labels = n / per_label;
-        // Create TieredHNSW index instance with a mock queue.
-        HNSWParams hnsw_params = {
-            .type = TypeParam::get_index_type(),
-            .dim = d,
-            .metric = VecSimMetric_L2,
-            .multi = TypeParam::isMulti(),
-            .initialCapacity = n,
-            .efConstruction = ef,
-            .efRuntime = ef,
-        };
-        VecSimParams params = CreateParams(hnsw_params);
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
@@ -2245,6 +2269,21 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
     size_t ef = 1000;
     size_t n = 1000;
 
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+    VecSimQueryParams query_params = {.hnswRuntimeParams = {.efRuntime = ef}};
+
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
@@ -2252,19 +2291,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        size_t per_label = TypeParam::isMulti() ? 10 : 1;
-        size_t n_labels = n / per_label;
-        // Create TieredHNSW index instance with a mock queue.
-        HNSWParams hnsw_params = {
-            .type = TypeParam::get_index_type(),
-            .dim = d,
-            .metric = VecSimMetric_L2,
-            .multi = TypeParam::isMulti(),
-            .initialCapacity = n,
-            .efConstruction = ef,
-            .efRuntime = ef,
-        };
-        VecSimParams params = CreateParams(hnsw_params);
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
@@ -2289,7 +2315,7 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
 
-        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, &query_params);
 
         // Try to get results even though there are no vectors in the index.
         VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
@@ -2316,7 +2342,7 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
             }
         }
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
-        batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        batchIterator = VecSimBatchIterator_New(tiered_index, query, &query_params);
 
         // Try to get 0 results.
         res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
@@ -2367,6 +2393,21 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
     size_t ef = 20;
     size_t n = 1000;
 
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
@@ -2374,19 +2415,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        size_t per_label = TypeParam::isMulti() ? 10 : 1;
-        size_t n_labels = n / per_label;
-        // Create TieredHNSW index instance with a mock queue.
-        HNSWParams hnsw_params = {
-            .type = TypeParam::get_index_type(),
-            .dim = d,
-            .metric = VecSimMetric_L2,
-            .multi = TypeParam::isMulti(),
-            .initialCapacity = n,
-            .efConstruction = ef,
-            .efRuntime = ef,
-        };
-        VecSimParams params = CreateParams(hnsw_params);
         auto jobQ = JobQueue();
         auto index_ctx = IndexExtCtx();
         size_t memory_ctx = 0;
