@@ -2282,7 +2282,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         .efConstruction = ef,
     };
     VecSimParams params = CreateParams(hnsw_params);
-    VecSimQueryParams query_params = {.hnswRuntimeParams = {.efRuntime = ef}};
+    HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+    VecSimQueryParams query_params = CreateQueryParams(hnswRuntimeParams);
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
