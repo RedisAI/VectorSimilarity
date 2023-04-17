@@ -265,9 +265,10 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.unlock_shared();
         return;
     }
-    //alon: temp solution
+    // alon: temp solution
     DataType vec_copy[this->frontendIndex->getDim()];
-    memcpy(vec_copy, this->frontendIndex->getDataByInternalId(job->id), this->frontendIndex->getDim() * sizeof(DataType));
+    memcpy(vec_copy, this->frontendIndex->getDataByInternalId(job->id),
+           this->frontendIndex->getDim() * sizeof(DataType));
 
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
