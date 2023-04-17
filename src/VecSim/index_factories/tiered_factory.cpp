@@ -59,8 +59,8 @@ VecSimIndex *NewIndex(const TieredHNSWParams *params, std::shared_ptr<VecSimAllo
 VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // Tiered index that contains HNSW index as primary index
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        // Create the specific tiered HNSW params with the default maxSwapJobs value.
-        TieredHNSWParams hnsw_params = {.tieredIndexParams = *params, .maxSwapJobs = 0};
+        // Create the specific tiered HNSW params with the default swapJobThreshold value.
+        TieredHNSWParams hnsw_params = {.tieredIndexParams = *params, .swapJobThreshold = 0};
         VecSimType type = params->primaryIndexParams->hnswParams.type;
         if (type == VecSimType_FLOAT32) {
             return TieredHNSWFactory::NewIndex<float>(&hnsw_params, allocator);

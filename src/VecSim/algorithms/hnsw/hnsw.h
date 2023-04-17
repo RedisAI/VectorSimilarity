@@ -1647,6 +1647,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         // cannot be the entry point, as it should have been replaced upon marking it as deleted.
         assert(entrypoint_node_ != internalId);
     } else if (internalId == entrypoint_node_) {
+        // For inplace delete, we replace entry point now.
         assert(element_top_level == max_level_);
         replaceEntryPoint();
     }

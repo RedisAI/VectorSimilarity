@@ -1782,7 +1782,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
                                            .UpdateMemCb = update_mem_callback,
                                            .primaryIndexParams = &hnsw_params};
         TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params,
-                                               .maxSwapJobs = maxSwapJobs};
+                                               .swapJobThreshold = maxSwapJobs};
 
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
             TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
@@ -1875,7 +1875,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
                                                .primaryIndexParams = &hnsw_params};
 
             TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params,
-                                                   .maxSwapJobs = maxSwapJobs};
+                                                   .swapJobThreshold = maxSwapJobs};
             auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
                 TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
             // Set the created tiered index in the index external context.
@@ -1955,19 +1955,20 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
                                        .UpdateMemCb = update_mem_callback,
                                        .primaryIndexParams = &hnsw_params};
 
-    TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params, .maxSwapJobs = 0};
+    TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params,
+                                           .swapJobThreshold = 0};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
 
     // Test initialization of the pendingSwapJobsThreshold value.
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
     delete tiered_index;
-    tiered_hnsw_params.maxSwapJobs = MAX_PENDING_SWAP_JOBS_THRESHOLD + 1;
+    tiered_hnsw_params.swapJobThreshold = MAX_PENDING_SWAP_JOBS_THRESHOLD + 1;
     tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
     delete tiered_index;
-    tiered_hnsw_params.maxSwapJobs = 1;
+    tiered_hnsw_params.swapJobThreshold = 1;
     tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
@@ -2004,6 +2005,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     jobQ.pop();
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
+    EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
     // Insert another vector and remove it. expect it to have no neighbors.
     // Threshold for is set to be >= 1, so now we expect that all the deleted vectors (which has no
     // pending repair jobs) will be swapped.
@@ -2050,7 +2052,8 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
                                        .UpdateMemCb = update_mem_callback,
                                        .primaryIndexParams = &hnsw_params};
 
-    TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params, .maxSwapJobs = 1};
+    TieredHNSWParams tiered_hnsw_params = {.tieredIndexParams = tiered_params,
+                                           .swapJobThreshold = 1};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::TieredHNSWFactory::NewIndex(&tiered_hnsw_params, allocator));
     // Insert 3 vectors, expect to have a fully connected graph.
@@ -2060,9 +2063,11 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     // Delete 0, expect to have two repair jobs pending for 1 and 2 and execute it.
     EXPECT_EQ(tiered_index->deleteVector(0), 1);
     EXPECT_EQ(jobQ.size(), 2);
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);

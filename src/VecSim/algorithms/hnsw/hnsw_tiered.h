@@ -194,8 +194,9 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
         idToRepairJobs.insert({job->deleted_id, idToRepairJobs.at(prev_last_id)});
         idToRepairJobs.erase(prev_last_id);
     }
-    // Update the swap jobs.
-    if (idToSwapJob.find(prev_last_id) != idToSwapJob.end() && prev_last_id != job->deleted_id &&
+    // Update the swap jobs if the last id also needs a swap, otherwise just collect to deleted id
+    // to be removed from the swap jobs.
+    if (prev_last_id != job->deleted_id && idToSwapJob.find(prev_last_id) != idToSwapJob.end() &&
         std::find(idsToRemove.begin(), idsToRemove.end(), prev_last_id) == idsToRemove.end()) {
         // Update the curr_last_id pending swap job id after the removal that renamed curr_last_id
         // with the deleted id.
@@ -454,12 +455,12 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredHNSWParams.tieredIndexParams),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
-    // If the param for maxSwapJobs is 0 use the default value, if it exceeds the maximum allowed,
-    // use the maximum value.
+    // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
+    // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
-        tieredHNSWParams.maxSwapJobs == 0
+        tieredHNSWParams.swapJobThreshold == 0
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
-            : std::min(tieredHNSWParams.maxSwapJobs, MAX_PENDING_SWAP_JOBS_THRESHOLD);
+            : std::min(tieredHNSWParams.swapJobThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
