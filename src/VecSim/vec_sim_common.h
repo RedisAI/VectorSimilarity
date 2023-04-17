@@ -106,6 +106,10 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+typedef struct {
+    int i;
+} TIERED_HNSWParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;             // External queue that holds the jobs.
@@ -115,6 +119,9 @@ typedef struct {
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
+    union {
+        TIERED_HNSWParams hnsw_tieredParams;
+    };
 } TieredIndexParams;
 
 struct VecSimParams {

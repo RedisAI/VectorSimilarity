@@ -16,8 +16,11 @@
 #include <thread>
 #include <VecSim/algorithms/hnsw/hnsw_single.h>
 #include <VecSim/algorithms/brute_force/brute_force_single.h>
+#include "tiered_index_mock.h"
 
 namespace py = pybind11;
+using namespace tiered_index_mock;
+
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
@@ -204,7 +207,9 @@ public:
         }
     }
 
-    virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
+   // virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
+  virtual  ~PyVecSimIndex() {std::cout<<"dtor vecsim"<<std::endl;}
+
 };
 
 class PyHNSWLibIndex : public PyVecSimIndex {
@@ -372,6 +377,72 @@ public:
     }
 };
 
+class PyTIEREDIndex : public PyVecSimIndex {
+protected:
+    JobQueue jobQueue;             // External queue that holds the jobs.
+    IndexExtCtx jobQueueCtx;          // External context to be sent to the submit callback.
+    SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
+    size_t memoryCtx;            // External context that stores the index memory consumption.
+    UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
+                                // with a given memory (number).
+    bool run_thread;
+    TieredIndexParams TieredIndexParams_Init() {
+        TieredIndexParams ret = { .jobQueue = &this->jobQueue,
+        .jobQueueCtx = &this->jobQueueCtx,
+        .submitCb = this->submitCb,
+        .memoryCtx = &this->memoryCtx,
+        .UpdateMemCb = this->UpdateMemCb,
+        };
+
+        return ret;   
+    }
+public:
+    explicit PyTIEREDIndex()
+        : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback), run_thread(true) {
+        // create default std::queue<RefManagedJob>
+        // default std::shared_ptr<VecSimIndex>
+        std::cout<<"pool size = "<<THREAD_POOL_SIZE<<std::endl;
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool.emplace_back(thread_main_loop, std::ref(this->jobQueue), std::ref(run_thread));
+        }
+    }
+
+    virtual ~PyTIEREDIndex() = 0;
+
+    void WaitForIndex() {
+        thread_pool_join(jobQueue, run_thread);
+    }
+};
+PyTIEREDIndex::~PyTIEREDIndex() {
+    std::cout<<"dtor tierd"<<std::endl;
+}
+class PyTIERED_HNSWIndex : public PyTIEREDIndex {
+
+public:
+    explicit PyTIERED_HNSWIndex(const HNSWParams &hnsw_params, const TIERED_HNSWParams &tiered_hnsw_params) {
+
+        // Create primaryIndexParams and specific params for hnsw tiered index.
+        VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+
+        // create TieredIndexParams
+        TieredIndexParams tiered_params = TieredIndexParams_Init();
+
+        tiered_params.primaryIndexParams = &primary_index_params;
+        tiered_params.hnsw_tieredParams = tiered_hnsw_params;
+
+        // create VecSimParams for TieredIndexParams
+        VecSimParams params = {.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
+
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        // Set the created tiered index in the index external context.
+        this->jobQueueCtx.index_strong_ref = this->index;
+    }
+
+    size_t HNSWLabelCount() {
+        return this->index->info().hnswInfo.indexLabelCount;
+    }
+};
+
 class PyBFIndex : public PyVecSimIndex {
 public:
     explicit PyBFIndex(const BFParams &bf_params) {
@@ -424,6 +495,10 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("multi", &BFParams::multi)
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
+        
+    py::class_<TIERED_HNSWParams>(m, "TIERED_HNSWParams")
+        .def(py::init())
+        .def_readwrite("i", &TIERED_HNSWParams::i);
 
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
@@ -471,6 +546,17 @@ PYBIND11_MODULE(VecSim, m) {
         .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
+
+    py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex");
+
+    py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
+        .def(py::init(
+                 [](const HNSWParams &hnsw_params, const TIERED_HNSWParams &tiered_hnsw_params) {
+                     return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
+                 }),
+             py::arg("hnsw_params"),  py::arg("tiered_hnsw_params"))
+        .def("hnsw_label_count",&PyTIERED_HNSWIndex::HNSWLabelCount)
+        .def("wait_for_index",&PyTIERED_HNSWIndex::WaitForIndex);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
