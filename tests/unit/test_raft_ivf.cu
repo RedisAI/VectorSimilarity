@@ -96,7 +96,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_vector_add_test) {
     VecSimIndex_Free(index);
 }
 
-TYPED_TEST(RaftIvfTest, RaftIVFFlat_blob_sanity_test) {
+TYPED_TEST(RaftIvfTest, RaftIVFFlat_add_sanity_test) {
     size_t dim = 4;
 
     RaftIVFFlatParams params = createDefaultFlatParams(dim);
@@ -220,15 +220,15 @@ TYPED_TEST(RaftIvfTest, RaftIVFFlat_batch_add_test) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
 
     TEST_DATA_T search_vector[dim] = {6, 6, 6, 6};
-    resultQuery = index->topKQuery(search_vector, 1, &queryParams);
+    resultQuery = index->topKQuery(search_vector, 2, &queryParams);
     sort_results_by_score(resultQuery);
     it = VecSimQueryResult_List_GetIterator(resultQuery);
     VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
-    ASSERT_EQ(currentResult->id, 0); // TEST
+    ASSERT_EQ(currentResult->id, 2);
     ASSERT_EQ(currentResult->score, 16);
-    //currentResult = VecSimQueryResult_IteratorNext(it);
-    //ASSERT_EQ(currentResult->id, 3);
-    //ASSERT_EQ(currentResult->score, dim * 3);
+    currentResult = VecSimQueryResult_IteratorNext(it);
+    ASSERT_EQ(currentResult->id, 3);
+    ASSERT_EQ(currentResult->score, 36);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
     VecSimQueryResult_Free(resultQuery);
     VecSimQueryResult_IteratorFree(it);
@@ -269,10 +269,10 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_batch_add_test) {
     it = VecSimQueryResult_List_GetIterator(resultQuery);
     VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
     ASSERT_EQ(currentResult->id, 2);
-    ASSERT_EQ(currentResult->score, dim * 2);
+    ASSERT_EQ(currentResult->score, 16);
     currentResult = VecSimQueryResult_IteratorNext(it);
     ASSERT_EQ(currentResult->id, 3);
-    ASSERT_EQ(currentResult->score, dim * 3);
+    ASSERT_EQ(currentResult->score, 36);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
     VecSimQueryResult_Free(resultQuery);
     VecSimQueryResult_IteratorFree(it);

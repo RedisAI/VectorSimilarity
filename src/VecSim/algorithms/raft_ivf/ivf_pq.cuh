@@ -140,9 +140,10 @@ int RaftIVFPQIndex::addVector(const void *vector_data, labelType label, bool ove
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
     auto label_converted = static_cast<std::int64_t>(label);
     auto label_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, 1, 1);
-    raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
-    raft::copy(label_gpu.data_handle(), &label_converted, 1, res_.get_stream());
-
+    RAFT_CUDA_TRY(cudaMemcpyAsync(vector_data_gpu.data_handle(), (DataType*)vector_data,
+                                  this->dim * sizeof(float), cudaMemcpyDefault, res_.get_stream()));
+    RAFT_CUDA_TRY(cudaMemcpyAsync(label_gpu.data_handle(), &label_converted,
+                                  sizeof(std::int64_t), cudaMemcpyDefault, res_.get_stream()));
     if (!pq_index_) {
         pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
             res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
@@ -162,8 +163,10 @@ int RaftIVFPQIndex::addVectorBatch(const void *vector_data, labelType* labels, s
     auto label_original = std::vector<labelType>(labels, labels + batch_size);
     auto label_converted = std::vector<std::int64_t>(label_original.begin(), label_original.end());
     auto label_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, batch_size, 1);
-    raft::copy(vector_data_gpu.data_handle(), (DataType*)vector_data, this->dim, res_.get_stream());
-    raft::copy(label_gpu.data_handle(), label_converted.data(), batch_size, res_.get_stream());
+    RAFT_CUDA_TRY(cudaMemcpyAsync(vector_data_gpu.data_handle(), (DataType*)vector_data,
+                                  this->dim * batch_size * sizeof(float), cudaMemcpyDefault, res_.get_stream()));
+    RAFT_CUDA_TRY(cudaMemcpyAsync(label_gpu.data_handle(), label_converted.data(),
+                                  batch_size * sizeof(std::int64_t), cudaMemcpyDefault, res_.get_stream()));
 
     if (!pq_index_) {
         pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
@@ -191,14 +194,17 @@ VecSimQueryResult_List RaftIVFPQIndex::topKQuery(
     auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, queryParams->batchSize, this->dim);
     auto neighbors_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(res_, queryParams->batchSize, k);
     auto distances_gpu = raft::make_device_matrix<float, std::int64_t>(res_, queryParams->batchSize, k);
-    raft::copy(vector_data_gpu.data_handle(), (const DataType*)queryBlob, this->dim * queryParams->batchSize, res_.get_stream());
+    RAFT_CUDA_TRY(cudaMemcpyAsync(vector_data_gpu.data_handle(), (const DataType*)queryBlob,
+                                  this->dim * queryParams->batchSize * sizeof(float), cudaMemcpyDefault, res_.get_stream()));
     raft::neighbors::ivf_pq::search(res_, search_params_, *pq_index_, raft::make_const_mdspan(vector_data_gpu.view()), neighbors_gpu.view(), distances_gpu.view());
 
     auto result_size = queryParams->batchSize * k;
     auto neighbors = array_new_len<std::int64_t>(result_size, result_size);
     auto distances = array_new_len<float>(result_size, result_size);
-    raft::copy(neighbors, neighbors_gpu.data_handle(), result_size, res_.get_stream());
-    raft::copy(distances, distances_gpu.data_handle(), result_size, res_.get_stream());
+    RAFT_CUDA_TRY(cudaMemcpyAsync(neighbors, neighbors_gpu.data_handle(),
+                                  result_size * sizeof(std::int64_t), cudaMemcpyDefault, res_.get_stream()));
+    RAFT_CUDA_TRY(cudaMemcpyAsync(distances, distances_gpu.data_handle(),
+                                  result_size * sizeof(float), cudaMemcpyDefault, res_.get_stream()));
     res_.sync_stream();
     result_list.results = array_new_len<VecSimQueryResult>(k, k);
     for (size_t i = 0; i < k; ++i) {
