@@ -25,9 +25,16 @@ VecSimIndex *NewIndex(VecSimParams *params) {
             index = BruteForceFactory::NewIndex(params);
             break;
         }
-        case VecSimAlgo_TIERED:
-            index = TieredFactory::NewIndex(&params->tieredParams);
-            break;
+        case VecSimAlgo_TIERED: {
+            switch (params->tieredParams.primaryIndexParams->algo) {
+            case VecSimAlgo_HNSWLIB: {
+                index = TieredFactory::TieredHNSWFactory::NewIndex(&params->tieredParams);
+                break;
+            }
+            default:
+                index = TieredFactory::NewIndex(&params->tieredParams);
+            }
+        }
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.
