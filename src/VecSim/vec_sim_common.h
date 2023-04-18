@@ -35,7 +35,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED_HNSW } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -106,6 +106,12 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+// A struct that contains HNSW tiered index specific params.
+typedef struct {
+    size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
+                             // all the ready swap jobs in a batch.
+} TieredHNSWParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;             // External queue that holds the jobs.
@@ -115,14 +121,10 @@ typedef struct {
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
+    union {
+        TieredHNSWParams tieredHnswParams;
+    };
 } TieredIndexParams;
-
-// A struct that contains HNSW tiered index params.
-typedef struct {
-    TieredIndexParams tieredIndexParams;
-    size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
-                             // all the ready swap jobs in a batch.
-} TieredHNSWParams;
 
 struct VecSimParams {
     VecSimAlgo algo; // Algorithm to use.
@@ -130,7 +132,6 @@ struct VecSimParams {
         HNSWParams hnswParams;
         BFParams bfParams;
         TieredIndexParams tieredParams;
-        TieredHNSWParams tieredHNSWParams;
     };
 };
 

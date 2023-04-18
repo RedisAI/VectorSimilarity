@@ -23,7 +23,7 @@ typedef struct VecSimIndexInterface VecSimIndex;
  * algorithm-related params).
  * @return A pointer to the created index.
  */
-VecSimIndex *VecSimIndex_New(const VecSimParams *params);
+VecSimIndex *VecSimIndex_New(VecSimParams *params);
 
 /**
  * @brief Estimates the size of an empty index according to the parameters.

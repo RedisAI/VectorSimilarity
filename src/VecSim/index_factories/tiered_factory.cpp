@@ -14,10 +14,10 @@ namespace TieredFactory {
 
 namespace TieredHNSWFactory {
 template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *NewIndex(const TieredHNSWParams *params,
+inline VecSimIndex *NewIndex(const TieredIndexParams *params,
                              std::shared_ptr<VecSimAllocator> allocator) {
     // Extract hnsw index params
-    HNSWParams *hnsw_params = &params->tieredIndexParams.primaryIndexParams->hnswParams;
+    HNSWParams *hnsw_params = &params->primaryIndexParams->hnswParams;
     // initialize hnsw index
     auto *hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
         HNSWFactory::NewIndex(hnsw_params, allocator));
@@ -44,9 +44,9 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
     return est;
 }
 
-VecSimIndex *NewIndex(const TieredHNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // Tiered index that contains HNSW index as primary index
-    VecSimType type = params->tieredIndexParams.primaryIndexParams->hnswParams.type;
+    VecSimType type = params->primaryIndexParams->hnswParams.type;
     if (type == VecSimType_FLOAT32) {
         return TieredHNSWFactory::NewIndex<float>(params, allocator);
     } else if (type == VecSimType_FLOAT64) {
@@ -56,16 +56,18 @@ VecSimIndex *NewIndex(const TieredHNSWParams *params, std::shared_ptr<VecSimAllo
 }
 } // namespace TieredHNSWFactory
 
-VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator) {
     // Tiered index that contains HNSW index as primary index
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         // Create the specific tiered HNSW params with the default swapJobThreshold value.
-        TieredHNSWParams hnsw_params = {.tieredIndexParams = *params, .swapJobThreshold = 0};
+        TieredHNSWParams tiered_hnsw_params = {.swapJobThreshold = 0};
+        params->tieredHnswParams = tiered_hnsw_params;
         VecSimType type = params->primaryIndexParams->hnswParams.type;
         if (type == VecSimType_FLOAT32) {
-            return TieredHNSWFactory::NewIndex<float>(&hnsw_params, allocator);
+            return TieredHNSWFactory::NewIndex<float>((const TieredIndexParams *)params, allocator);
         } else if (type == VecSimType_FLOAT64) {
-            return TieredHNSWFactory::NewIndex<double>(&hnsw_params, allocator);
+            return TieredHNSWFactory::NewIndex<double>((const TieredIndexParams *)params,
+                                                       allocator);
         }
     }
     return nullptr; // Invalid algorithm or type.

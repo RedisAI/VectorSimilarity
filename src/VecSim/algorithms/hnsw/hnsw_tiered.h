@@ -113,7 +113,7 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                    const TieredHNSWParams &tieredParams);
+                    const TieredIndexParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -451,16 +451,17 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
-                                                     const TieredHNSWParams &tieredHNSWParams)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredHNSWParams.tieredIndexParams),
+                                                     const TieredIndexParams &tieredHNSWParams)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredHNSWParams),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
-        tieredHNSWParams.swapJobThreshold == 0
+        tieredHNSWParams.tieredHnswParams.swapJobThreshold == 0
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
-            : std::min(tieredHNSWParams.swapJobThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
+            : std::min(tieredHNSWParams.tieredHnswParams.swapJobThreshold,
+                       MAX_PENDING_SWAP_JOBS_THRESHOLD);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
