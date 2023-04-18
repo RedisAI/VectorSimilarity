@@ -471,8 +471,15 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
             // Internally, we hold and release the entrypoint neighbors lock.
             replaceEntryPoint();
         }
-        elementFlags *flags = getElementFlags(internalId);
-        *flags |= DELETE_MARK;
+        // Atomically set the deletion mark flag (note that other parallel threads may set the flags
+        // at the same time (for changing the IN_PROCESS flag).
+        bool ret = false;
+        do {
+            elementFlags flags = *(getElementFlags(internalId));
+            elementFlags updated_flags = flags | DELETE_MARK;
+            ret = __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0,
+                                            0, 0);
+        } while (!ret);
         this->num_marked_deleted++;
     }
 }
@@ -491,14 +498,29 @@ bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
-    elementFlags *flags = getElementFlags(internalId);
-    *flags |= IN_PROCESS;
+    // Atomically set the IN_PROCESS mark flag. Even though other threads shouldn't modify the flags
+    // at that time (we're holding index global data guard, so this element cannot be marked as
+    // deleted in parallel), we do it for safety.
+    bool ret = false;
+    do {
+        elementFlags flags = *(getElementFlags(internalId));
+        elementFlags updated_flags = flags | IN_PROCESS;
+        ret =
+            __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0, 0, 0);
+    } while (!ret);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
-    elementFlags *flags = getElementFlags(internalId);
-    *flags &= ~IN_PROCESS; // reset the IN_PROCESS flag.
+    // Atomically unset the IN_PROCESS mark flag (note that other parallel threads may set the flags
+    // at the same time (for marking the element with MARK_DELETE flag).
+    bool ret = false;
+    do {
+        elementFlags flags = *(getElementFlags(internalId));
+        elementFlags updated_flags = flags & ~IN_PROCESS; // reset the IN_PROCESS flag.
+        ret =
+            __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0, 0, 0);
+    } while (!ret);
 }
 
 template <typename DataType, typename DistType>
@@ -1057,7 +1079,12 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
     idType old_entry = entrypoint_node_;
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
     while (old_entry == entrypoint_node_) {
-        idType candidate_in_process = INVALID_ID;
+        // Use volatile for this variable, so that in case we would have to busy wait for this
+        // element to finish its indexing, the compiler will not use optimizations. Otherwise,
+        // the compiler might evaluate 'isInProcess(candidate_in_process)' once instead of calling
+        // it multiple times in a busy wait manner, and we'll run into an infinite loop if the
+        // candidate is in process when we reach the loop.
+        volatile idType candidate_in_process = INVALID_ID;
         {
             // Go over the entry point's neighbors at the top level.
             std::unique_lock<std::mutex> lock(this->element_neighbors_locks_[entrypoint_node_]);
@@ -1095,7 +1122,9 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             }
         }
         // If we only found candidates which are in process at this level, do busy wait until they
-        // are done being processed (this should happen in very rare cases...)
+        // are done being processed (this should happen in very rare cases...). Since
+        // candidate_in_process was declared volatile, we can be sure that isInProcess is called in
+        // every iteration.
         if (candidate_in_process != INVALID_ID) {
             while (isInProcess(candidate_in_process))
                 ;
