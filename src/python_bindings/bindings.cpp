@@ -386,6 +386,8 @@ protected:
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
     bool run_thread;
+    size_t execution_counter
+
     TieredIndexParams TieredIndexParams_Init() {
         TieredIndexParams ret = { .jobQueue = &this->jobQueue,
         .jobQueueCtx = &this->jobQueueCtx,
@@ -401,19 +403,21 @@ public:
         : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback), run_thread(true) {
         // create default std::queue<RefManagedJob>
         // default std::shared_ptr<VecSimIndex>
-        std::cout<<"pool size = "<<THREAD_POOL_SIZE<<std::endl;
+        std::cout<<"pool size = "<< THREAD_POOL_SIZE<<std::endl;
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(this->jobQueue), std::ref(run_thread));
+            thread_pool.emplace_back(thread_main_loop, std::ref(this->jobQueue), std::ref(run_thread), std::ref(threadsStatus[i]));
         }
     }
 
     virtual ~PyTIEREDIndex() = 0;
 
     void WaitForIndex() {
-        thread_pool_join(jobQueue, run_thread);
+       wait_all_jobs(jobQueue);
     }
 };
 PyTIEREDIndex::~PyTIEREDIndex() {
+    thread_pool_terminate(jobQueue, run_thread);
+
     std::cout<<"dtor tierd"<<std::endl;
 }
 class PyTIERED_HNSWIndex : public PyTIEREDIndex {

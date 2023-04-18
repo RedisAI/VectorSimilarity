@@ -53,9 +53,11 @@ extern std::vector<std::thread> thread_pool;
 extern std::mutex queue_guard;
 extern std::condition_variable queue_cond;
 
-void thread_main_loop(JobQueue &jobQ, bool &run_thread);
+enum ExecutionStatus {IN_PROCESS = 0, DONE_CURR_EXECUTION = 1};
 
-void thread_pool_join(JobQueue &jobQ, bool &run_thread);
+void thread_main_loop(JobQueue &jobQ, bool &run_thread, ExecutionStatus &execution_status);
+
+void thread_pool_terminate(JobQueue &jobQ, bool &run_thread);
 
 
 
@@ -96,7 +98,7 @@ int update_mem_callback(void *mem_ctx, size_t mem) {
 // Main loop for background worker threads that execute the jobs form the job queue.
 // run_thread uses as a signal to the thread that indicates whether it should keep running or
 // stop and terminate the thread.
-void thread_main_loop(JobQueue &jobQ, bool &run_thread) {
+void thread_main_loop(JobQueue &jobQ, bool &run_thread, ExecutionStatus &execution_status) {
     while (run_thread) {
         std::unique_lock<std::mutex> lock(queue_guard);
         // Wake up and acquire the lock (atomically) ONLY if the job queue is not empty at that
@@ -106,15 +108,29 @@ void thread_main_loop(JobQueue &jobQ, bool &run_thread) {
             return;
         auto managed_job = jobQ.front();
         jobQ.pop();
+        execution_status = IN_PROCESS;
         lock.unlock();
         // Upgrade the index weak reference to a strong ref while we run the job over the index.
         if (auto temp_ref = managed_job.index_weak_ref.lock()) {
             managed_job.job->Execute(managed_job.job);
+            execution_status = DONE_CURR_EXECUTION;
         }
     }
 }
+void wait_all_jobs(JobQueue &jobQ) {
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::unique_lock<std::mutex> lock(queue_guard);
+        if (jobQ.empty()) {
+            // check every 10 ms that all threads are done
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            
 
-void thread_pool_join(JobQueue &jobQ, bool &run_thread) {
+            break;
+        }
+    }
+}
+void thread_pool_terminate(JobQueue &jobQ, bool &run_thread) {
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
