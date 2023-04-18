@@ -12,10 +12,12 @@
 #include "VecSim/vec_sim.h"              //typedef VecSimIndex
 #include "VecSim/vec_sim_common.h"       // HNSWParams
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
+#include "VecSim/vec_sim_index.h"
 
 namespace HNSWFactory {
 
-VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewIndex(const VecSimParams *params);
+VecSimIndex *NewIndex(const HNSWParams *params);
 size_t EstimateInitialSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params);
 

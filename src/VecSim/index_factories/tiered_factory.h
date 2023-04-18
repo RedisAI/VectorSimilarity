@@ -8,13 +8,14 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/memory/vecsim_malloc.h"
+#include "VecSim/vec_sim_index.h"
 
 namespace TieredFactory {
 namespace TieredHNSWFactory {
-VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewIndex(const TieredIndexParams *params);
 }
 
-VecSimIndex *NewIndex(TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewIndex(TieredIndexParams *params);
 
 // The size estimation is the sum of the buffer (brute force) and main index initial sizes
 // estimations, plus the tiered index class size. Note it does not include the size of internal

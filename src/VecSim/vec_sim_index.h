@@ -18,6 +18,27 @@
 using spaces::dist_func_t;
 
 /**
+ * @brief Struct for initializing an abstract index class.
+ *
+ * @param allocator The allocator to use for the index.
+ * @param dim The dimension of the vectors in the index.
+ * @param vecType The type of the vectors in the index.
+ * @param metric The metric to use in the index.
+ * @param blockSize The block size to use in the index.
+ * @param multi Determines if the index should multi-index or not.
+ * @param logCtx The context to use for logging.
+ */
+struct AbstractIndexInitParams {
+    std::shared_ptr<VecSimAllocator> allocator;
+    size_t dim;
+    VecSimType vecType;
+    VecSimMetric metric;
+    size_t blockSize;
+    bool multi;
+    void *logCtx;
+};
+
+/**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
  */
@@ -33,17 +54,18 @@ protected:
         dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
     VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;            // Determines if the index should multi-index or not.
+    void *logCallbackCtx;    // Context for the log callback.
 
 public:
     /**
      * @brief Construct a new Vec Sim Index object
      *
      */
-    VecSimIndexAbstract(std::shared_ptr<VecSimAllocator> allocator, size_t dim, VecSimType vecType,
-                        VecSimMetric metric, size_t blockSize, bool multi)
-        : VecSimIndexInterface(allocator), dim(dim), vecType(vecType), metric(metric),
-          blockSize(blockSize ? blockSize : DEFAULT_BLOCK_SIZE), last_mode(EMPTY_MODE),
-          isMulti(multi) {
+    VecSimIndexAbstract(const AbstractIndexInitParams &params)
+        : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
+          metric(params.metric),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
+          last_mode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         spaces::SetDistFunc(metric, dim, &dist_func);
     }
@@ -60,4 +82,20 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
+
+    void log(const char *fmt, ...) const {
+        if (VecSimIndexInterface::logCallback) {
+            // Format the message and call the callback
+            va_list args;
+            va_start(args, fmt);
+            int len = vsnprintf(NULL, 0, fmt, args);
+            va_end(args);
+            char *buf = new char[len + 1];
+            va_start(args, fmt);
+            vsnprintf(buf, len + 1, fmt, args);
+            va_end(args);
+            logCallback(this->logCallbackCtx, buf);
+            delete[] buf;
+        }
+    }
 };

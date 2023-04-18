@@ -20,6 +20,7 @@
 #include <limits>
 #include <cmath>
 #include <random>
+#include <cstdarg>
 
 template <typename index_type_t>
 class CommonIndexTest : public ::testing::Test {};
@@ -414,4 +415,37 @@ TEST_F(SerializerTest, HNSWSerialzer) {
 
     ASSERT_EXCEPTION_MESSAGE(HNSWFactory::NewIndex(this->file_name), std::runtime_error,
                              "Cannot load index: bad algorithm type");
+}
+
+struct logCtx {
+public:
+    std::vector<std::string> logBuffer;
+    std::string prefix;
+};
+
+void test_log_impl(void *ctx, const char *message) {
+    logCtx *log = (logCtx *)ctx;
+    std::string msg = log->prefix + message;
+    log->logBuffer.push_back(msg);
+}
+
+TEST(CommonAPITest, testlog) {
+
+    logCtx log;
+    log.prefix = "test log prefix: ";
+
+    BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
+    VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bfParams, .logCtx = &log};
+    auto *index =
+        dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
+    VecSim_SetLogCallbackFunction(test_log_impl);
+
+    index->log("test log message no fmt");
+    index->log("test log message %s %s", "with", "args");
+
+    ASSERT_EQ(log.logBuffer.size(), 2);
+    ASSERT_EQ(log.logBuffer[0], "test log prefix: test log message no fmt");
+    ASSERT_EQ(log.logBuffer[1], "test log prefix: test log message with args");
+
+    VecSimIndex_Free(index);
 }

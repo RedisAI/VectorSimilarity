@@ -14,16 +14,32 @@ namespace TieredFactory {
 
 namespace TieredHNSWFactory {
 template <typename DataType, typename DistType = DataType>
-inline VecSimIndex *NewIndex(const TieredIndexParams *params,
-                             std::shared_ptr<VecSimAllocator> allocator) {
-    // Extract hnsw index params
-    HNSWParams *hnsw_params = &params->primaryIndexParams->hnswParams;
+inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
+
     // initialize hnsw index
     auto *hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
-        HNSWFactory::NewIndex(hnsw_params, allocator));
+        HNSWFactory::NewIndex(params->primaryIndexParams));
+    // initialize brute force index
+
+    BFParams bf_params = {.type = params->primaryIndexParams->hnswParams.type,
+                          .dim = params->primaryIndexParams->hnswParams.dim,
+                          .metric = params->primaryIndexParams->hnswParams.metric,
+                          .multi = params->primaryIndexParams->hnswParams.multi,
+                          .blockSize = params->primaryIndexParams->hnswParams.blockSize};
+
+    AbstractIndexInitParams abstractInitParams = {.allocator = hnsw_index->getAllocator(),
+                                                  .dim = bf_params.dim,
+                                                  .vecType = bf_params.type,
+                                                  .metric = bf_params.metric,
+                                                  .blockSize = bf_params.blockSize,
+                                                  .multi = bf_params.multi,
+                                                  .logCtx = params->primaryIndexParams->logCtx};
+    auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
+        BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
     // Create new tieredhnsw index
-    return new (allocator) TieredHNSWIndex<DataType, DistType>(hnsw_index, *params);
+    return new (hnsw_index->getAllocator())
+        TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params);
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_params_output) {
@@ -44,19 +60,19 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
     return est;
 }
 
-VecSimIndex *NewIndex(const TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(const TieredIndexParams *params) {
     // Tiered index that contains HNSW index as primary index
     VecSimType type = params->primaryIndexParams->hnswParams.type;
     if (type == VecSimType_FLOAT32) {
-        return TieredHNSWFactory::NewIndex<float>(params, allocator);
+        return TieredHNSWFactory::NewIndex<float>(params);
     } else if (type == VecSimType_FLOAT64) {
-        return TieredHNSWFactory::NewIndex<double>(params, allocator);
+        return TieredHNSWFactory::NewIndex<double>(params);
     }
     return nullptr; // Invalid type.
 }
 } // namespace TieredHNSWFactory
 
-VecSimIndex *NewIndex(TieredIndexParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+VecSimIndex *NewIndex(TieredIndexParams *params) {
     // Tiered index that contains HNSW index as primary index
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         // Create the specific tiered HNSW params with the default swapJobThreshold value.
@@ -64,10 +80,9 @@ VecSimIndex *NewIndex(TieredIndexParams *params, std::shared_ptr<VecSimAllocator
         params->tieredHnswParams = tiered_hnsw_params;
         VecSimType type = params->primaryIndexParams->hnswParams.type;
         if (type == VecSimType_FLOAT32) {
-            return TieredHNSWFactory::NewIndex<float>((const TieredIndexParams *)params, allocator);
+            return TieredHNSWFactory::NewIndex<float>((const TieredIndexParams *)params);
         } else if (type == VecSimType_FLOAT64) {
-            return TieredHNSWFactory::NewIndex<double>((const TieredIndexParams *)params,
-                                                       allocator);
+            return TieredHNSWFactory::NewIndex<double>((const TieredIndexParams *)params);
         }
     }
     return nullptr; // Invalid algorithm or type.
