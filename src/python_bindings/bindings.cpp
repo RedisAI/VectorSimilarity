@@ -140,7 +140,7 @@ protected:
 public:
     PyVecSimIndex() = default;
 
-    explicit PyVecSimIndex(const VecSimParams &params) {
+    explicit PyVecSimIndex(VecSimParams &params) {
         index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 
@@ -247,7 +247,7 @@ private:
     }
 
 public:
-    explicit PyHNSWLibIndex(const HNSWParams &hnsw_params) {
+    explicit PyHNSWLibIndex(HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
@@ -374,7 +374,7 @@ public:
 
 class PyBFIndex : public PyVecSimIndex {
 public:
-    explicit PyBFIndex(const BFParams &bf_params) {
+    explicit PyBFIndex(BFParams &bf_params) {
         VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bf_params};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
@@ -442,7 +442,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("epsilon", &HNSWRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
-        .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
+        .def(py::init([](VecSimParams &params) { return new PyVecSimIndex(params); }),
              py::arg("params"))
         .def("add_vector", &PyVecSimIndex::addVector)
         .def("delete_vector", &PyVecSimIndex::deleteVector)
@@ -456,9 +456,9 @@ PYBIND11_MODULE(VecSim, m) {
         .def("get_vector", &PyVecSimIndex::getVector);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
-        .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
+        .def(py::init([](HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        .def(py::init([](const std::string &location, const HNSWParams *params) {
+        .def(py::init([](const std::string &location, HNSWParams *params) {
                  return new PyHNSWLibIndex(location, params);
              }),
              py::arg("location"), py::arg("params") = nullptr)
@@ -473,8 +473,7 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
-        .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
-             py::arg("params"));
+        .def(py::init([](BFParams &params) { return new PyBFIndex(params); }), py::arg("params"));
 
     py::class_<PyBatchIterator>(m, "BatchIterator")
         .def("has_next", &PyBatchIterator::hasNext)
