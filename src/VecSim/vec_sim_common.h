@@ -124,6 +124,7 @@ struct VecSimParams {
         BFParams bfParams;
         TieredIndexParams tieredParams;
     };
+    void *logCtx; // External context that stores the index log.
 };
 
 /**
@@ -242,6 +243,13 @@ typedef struct {
  * @return the function should return a non-zero value on timeout
  */
 typedef int (*timeoutCallbackFunction)(void *ctx);
+
+/**
+ * @brief A struct to pass 3rd party logging function to Vecsimlib.
+ * @param ctx some generic context to pass to the function
+ * @param message the message to log
+ */
+typedef void (*logCallbackFunction)(void *ctx, const char *message);
 
 typedef enum {
     VecSim_QueryResult_OK = VecSim_OK,

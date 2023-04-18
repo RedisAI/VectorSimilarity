@@ -18,6 +18,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/brute_force_factory.cpp
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
+    index_factories/index_factory.cpp
     algorithms/brute_force/vector_block.cpp
     algorithms/hnsw/visited_nodes_handler.cpp
     vec_sim.cpp

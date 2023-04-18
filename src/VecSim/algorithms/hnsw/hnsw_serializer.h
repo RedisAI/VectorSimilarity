@@ -2,14 +2,13 @@
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator,
-                                         EncodingVersion version)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
-                                    params->blockSize, params->multi),
-      Serializer(version), max_elements_(params->initialCapacity), epsilon_(params->epsilon),
-      element_levels_(max_elements_, allocator),
-      visited_nodes_handler_pool(1, max_elements_, allocator),
-      element_neighbors_locks_(max_elements_, allocator) {
+                                         const AbstractIndexInitParams &abstractInitParams,
+                                         Serializer::EncodingVersion version)
+    : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
+      max_elements_(params->initialCapacity), epsilon_(params->epsilon),
+      element_levels_(max_elements_, this->allocator),
+      visited_nodes_handler_pool(1, max_elements_, this->allocator),
+      element_neighbors_locks_(max_elements_, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();

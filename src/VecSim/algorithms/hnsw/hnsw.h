@@ -207,7 +207,7 @@ protected:
     inline bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);
 
 public:
-    HNSWIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+    HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
 
@@ -1559,15 +1559,14 @@ HNSWIndex<DataType, DistType>::removeIdFromList(vecsim_stl::vector<idType> &elem
 } HNSWParams; */
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator,
+                                         const AbstractIndexInitParams &abstractInitParams,
                                          size_t random_seed, size_t pool_initial_size)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
-                                    params->blockSize, params->multi),
-      VecSimIndexTombstone(), max_elements_(params->initialCapacity),
+    : VecSimIndexAbstract<DistType>(abstractInitParams), VecSimIndexTombstone(),
+      max_elements_(params->initialCapacity),
       data_size_(VecSimType_sizeof(params->type) * this->dim),
-      element_levels_(max_elements_, allocator),
-      visited_nodes_handler_pool(pool_initial_size, max_elements_, allocator),
-      element_neighbors_locks_(max_elements_, allocator) {
+      element_levels_(max_elements_, this->allocator),
+      visited_nodes_handler_pool(pool_initial_size, max_elements_, this->allocator),
+      element_neighbors_locks_(max_elements_, this->allocator) {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > UINT16_MAX / 2)
         throw std::runtime_error("HNSW index parameter M is too large: argument overflow");

@@ -13,23 +13,46 @@ namespace HNSWFactory {
 
 template <typename DataType, typename DistType = DataType>
 inline HNSWIndex<DataType, DistType> *
-NewIndex_ChooseMultiOrSingle(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
+                             const AbstractIndexInitParams &abstractInitParams) {
     // check if single and return new hnsw_index
     if (params->multi)
-        return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
+        return new (abstractInitParams.allocator)
+            HNSWIndex_Multi<DataType, DistType>(params, abstractInitParams);
     else
-        return new (allocator) HNSWIndex_Single<DataType, DistType>(params, allocator);
+        return new (abstractInitParams.allocator)
+            HNSWIndex_Single<DataType, DistType>(params, abstractInitParams);
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
-    if (params->type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
-    } else if (params->type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(params, allocator);
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+    const HNSWParams *hnswParams = &params->hnswParams;
+    AbstractIndexInitParams abstractInitParams = {.allocator =
+                                                      VecSimAllocator::newVecsimAllocator(),
+                                                  .dim = hnswParams->dim,
+                                                  .vecType = hnswParams->type,
+                                                  .metric = hnswParams->metric,
+                                                  .blockSize = hnswParams->blockSize,
+                                                  .multi = hnswParams->multi,
+                                                  .logCtx = params->logCtx};
+    return abstractInitParams;
+}
+
+VecSimIndex *NewIndex(const VecSimParams *params) {
+    const HNSWParams *hnswParams = &params->hnswParams;
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    if (hnswParams->type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams);
+    } else if (hnswParams->type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams);
     }
 
     // If we got here something is wrong.
     return NULL;
+}
+
+VecSimIndex *NewIndex(const HNSWParams *params) {
+    VecSimParams vecSimParams = {.hnswParams = *params};
+    return NewIndex(&vecSimParams);
 }
 
 template <typename DataType, typename DistType = DataType>
@@ -145,16 +168,16 @@ size_t EstimateElementSize(const HNSWParams *params) {
 
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
-                                                 std::shared_ptr<VecSimAllocator> allocator,
+                                                 const AbstractIndexInitParams &abstractInitParams,
                                                  Serializer::EncodingVersion version) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
-        index =
-            new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator, version);
+        index = new (abstractInitParams.allocator)
+            HNSWIndex_Multi<DataType, DistType>(input, params, abstractInitParams, version);
     else
-        index =
-            new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
+        index = new (abstractInitParams.allocator)
+            HNSWIndex_Single<DataType, DistType>(input, params, abstractInitParams, version);
 
     index->restoreGraph(input);
 
@@ -214,12 +237,12 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
     }
     Serializer::readBinaryPOD(input, params.initialCapacity);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
+    VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version);
     } else if (params.type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
+        return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version);
     } else {
         throw std::runtime_error("Cannot load index: bad index data type");
     }

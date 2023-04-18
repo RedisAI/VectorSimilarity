@@ -104,6 +104,7 @@ private:
 
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
+                    BruteForceIndex<DataType, DistType> *bf_index,
                     const TieredIndexParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
@@ -120,19 +121,19 @@ public:
     // TODO: Implement the actual methods instead of these temporary ones.
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override {
-        return this->index->rangeQuery(queryBlob, radius, queryParams);
+        return this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
     }
-    VecSimIndexInfo info() const override { return this->index->info(); }
-    VecSimInfoIterator *infoIterator() const override { return this->index->infoIterator(); }
+    VecSimIndexInfo info() const override { return this->backendIndex->info(); }
+    VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        return this->index->newBatchIterator(queryBlob, queryParams);
+        return this->backendIndex->newBatchIterator(queryBlob, queryParams);
     }
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
-        return this->index->preferAdHocSearch(subsetSize, k, initial_check);
+        return this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
-        return this->index->setLastSearchMode(mode);
+        return this->backendIndex->setLastSearchMode(mode);
     }
 };
 
@@ -161,7 +162,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
-    return reinterpret_cast<HNSWIndex<DataType, DistType> *>(this->index);
+    return reinterpret_cast<HNSWIndex<DataType, DistType> *>(this->backendIndex);
 }
 
 template <typename DataType, typename DistType>
@@ -239,7 +240,7 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_id, idType new_id) {
     // Update the pending job id, due to a swap that was caused after the removal of new_id.
     assert(new_id != INVALID_ID && prev_id != INVALID_ID);
-    labelType last_idx_label = this->flatBuffer->getLabelByInternalId(prev_id);
+    labelType last_idx_label = this->frontendIndex->getLabelByInternalId(prev_id);
     auto it = this->labelToInsertJobs.find(last_idx_label);
     if (it != this->labelToInsertJobs.end()) {
         // There is a pending job for the label of the swapped last id - update its id.
@@ -305,7 +306,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     }
 
     // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-    hnsw_index->addVector(this->flatBuffer->getDataByInternalId(job->id), job->label, &state);
+    hnsw_index->addVector(this->frontendIndex->getDataByInternalId(job->id), job->label, &state);
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
     }
@@ -334,10 +335,10 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             labelToInsertJobs.erase(job->label);
         }
         // Remove the vector from the flat buffer.
-        int deleted = this->flatBuffer->deleteVectorById(job->label, job->id);
-        if (deleted && job->id != this->flatBuffer->indexSize()) {
+        int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
+        if (deleted && job->id != this->frontendIndex->indexSize()) {
             // If the vector removal caused a swap with the last id, update the relevant insert job.
-            this->updateInsertJobInternalId(this->flatBuffer->indexSize(), job->id);
+            this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id);
         }
     }
     this->flatIndexGuard.unlock();
@@ -387,10 +388,11 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
+                                                     BruteForceIndex<DataType, DistType> *bf_index,
                                                      const TieredIndexParams &tieredParams)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, tieredParams), swapJobs(this->allocator),
-      labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
-      idToSwapJob(this->allocator) {
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tieredParams),
+      swapJobs(this->allocator), labelToInsertJobs(this->allocator),
+      idToRepairJobs(this->allocator), idToSwapJob(this->allocator) {
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
@@ -418,7 +420,7 @@ template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     this->flatIndexGuard.lock_shared();
     this->getHNSWIndex()->lockIndexDataGuard();
-    size_t res = this->index->indexSize() + this->flatBuffer->indexSize();
+    size_t res = this->backendIndex->indexSize() + this->frontendIndex->indexSize();
     this->getHNSWIndex()->unlockIndexDataGuard();
     this->flatIndexGuard.unlock_shared();
     return res;
@@ -426,7 +428,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
-    return this->index->indexCapacity() + this->flatBuffer->indexCapacity();
+    return this->backendIndex->indexCapacity() + this->frontendIndex->indexCapacity();
 }
 
 template <typename DataType, typename DistType>
@@ -434,7 +436,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     // Compute the union of both labels set in both tiers of the index.
     this->flatIndexGuard.lock();
     this->mainIndexGuard.lock();
-    auto flat_labels = this->flatBuffer->getLabelsSet();
+    auto flat_labels = this->frontendIndex->getLabelsSet();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
     std::vector<labelType> output;
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
@@ -449,18 +451,18 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                                                    void *auxiliaryCtx) {
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
     this->flatIndexGuard.lock();
-    if (this->flatBuffer->indexCapacity() == this->flatBuffer->indexSize()) {
-        this->flatBuffer->increaseCapacity();
+    if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
+        this->frontendIndex->increaseCapacity();
     }
-    idType new_flat_id = this->flatBuffer->indexSize();
-    this->flatBuffer->addVector(blob, label);
+    idType new_flat_id = this->frontendIndex->indexSize();
+    this->frontendIndex->addVector(blob, label);
     AsyncJob *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
     if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
         // There's already a pending insert job for this label, add another one (without overwrite,
         // only possible in multi index)
-        assert(this->index->isMultiValue());
+        assert(this->backendIndex->isMultiValue());
         this->labelToInsertJobs.at(label).push_back((HNSWInsertJob *)new_insert_job);
     } else {
         vecsim_stl::vector<HNSWInsertJob *> new_jobs_vec(1, (HNSWInsertJob *)new_insert_job,
@@ -479,11 +481,11 @@ template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     int num_deleted_vectors = 0;
     this->flatIndexGuard.lock_shared();
-    if (this->flatBuffer->isLabelExists(label)) {
+    if (this->frontendIndex->isLabelExists(label)) {
         this->flatIndexGuard.unlock_shared();
         this->flatIndexGuard.lock();
         // Check again if the label exists, as it may have been removed while we released the lock.
-        if (this->flatBuffer->isLabelExists(label)) {
+        if (this->frontendIndex->isLabelExists(label)) {
             // Invalidate the pending insert job(s) into HNSW associated with this label
             auto &insert_jobs = this->labelToInsertJobs.at(label);
             for (auto *job : insert_jobs) {
@@ -496,7 +498,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             // Every delete may cause a swap of the deleted id with the last id, and we return a
             // mapping from id to the original id that resides in this id after the deletion(s) (see
             // an example in this function implementation in MULTI index).
-            auto updated_ids = this->flatBuffer->deleteVectorAndGetUpdatedIds(label);
+            auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
             for (auto &it : updated_ids) {
                 this->updateInsertJobInternalId(it.second, it.first);
             }
@@ -538,12 +540,12 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
     this->flatIndexGuard.lock_shared();
-    auto flat_dist = this->flatBuffer->getDistanceFrom(label, blob);
+    auto flat_dist = this->frontendIndex->getDistanceFrom(label, blob);
     this->flatIndexGuard.unlock_shared();
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
     // to avoid checking the index type on every query.
-    if (!this->index->isMultiValue() && !std::isnan(flat_dist)) {
+    if (!this->backendIndex->isMultiValue() && !std::isnan(flat_dist)) {
         // If the index is single value, and we got a valid distance from the flat buffer,
         // we can return the distance without querying the Main index.
         return flat_dist;

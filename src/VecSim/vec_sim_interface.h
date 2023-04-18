@@ -12,6 +12,7 @@
 
 #include <stddef.h>
 #include <stdexcept>
+#include <cstdarg>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
@@ -178,5 +179,10 @@ public:
     static timeoutCallbackFunction timeoutCallback;
     inline static void setTimeoutCallbackFunction(timeoutCallbackFunction callback) {
         VecSimIndexInterface::timeoutCallback = callback;
+    }
+
+    static logCallbackFunction logCallback;
+    inline static void setLogCallbackFunction(logCallbackFunction callback) {
+        VecSimIndexInterface::logCallback = callback;
     }
 };
