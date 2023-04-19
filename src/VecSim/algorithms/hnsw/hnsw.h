@@ -189,6 +189,8 @@ protected:
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
     inline void resizeIndexInternal(size_t new_max_elements);
+
+    template <bool has_marked_deleted>
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
 
     // Protected internal function that implements generic single vector insertion.
@@ -196,7 +198,7 @@ protected:
                       AddVectorCtx *auxiliaryCtx = nullptr);
 
     // Protected internal function that implements generic single vector deletion.
-    void removeVector(idType id);
+    void removeVectorInPlace(idType id);
 
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
                               DistType dist, idType id) const;
@@ -205,6 +207,9 @@ protected:
     // Helper method that swaps the last element in the ids list with the given one (equivalent to
     // removing the given element id from the list).
     inline bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);
+
+    template <bool has_marked_deleted>
+    void removeAndSwap(idType internalId);
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
@@ -255,7 +260,7 @@ public:
     inline void unmarkInProcess(idType internalId);
     void increaseCapacity() override;
     AddVectorCtx storeNewElement(labelType label);
-
+    void removeAndSwapDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     inline size_t getElementTopLevel(idType internalId);
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id,
@@ -1138,17 +1143,22 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
 }
 
 template <typename DataType, typename DistType>
+template <bool has_marked_deleted>
 void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_internal_id) {
-    // swap label
-    replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id, cur_element_count);
+    // Swap label - this is relevant when the last element's label exists (it is not marked as
+    // deleted). For inplace delete, this is always the case.
+    if (!has_marked_deleted || !isMarkedDeleted(cur_element_count)) {
+        replaceIdOfLabel(getExternalLabel(cur_element_count), element_internal_id,
+                         cur_element_count);
+    }
 
-    // swap neighbours
+    // Swap neighbours
     size_t last_element_top_level = element_levels_[cur_element_count];
     for (size_t level = 0; level <= last_element_top_level; level++) {
         idType *neighbours = getNodeNeighborsAtLevel(cur_element_count, level);
         linkListSize neighbours_count = getNodeNeighborsCount(neighbours);
 
-        // go over the neighbours that also points back to the last element whose is going to
+        // Go over the neighbours that also points back to the last element whose is going to
         // change, and update the id.
         for (size_t i = 0; i < neighbours_count; i++) {
             idType neighbour_id = neighbours[i];
@@ -1165,7 +1175,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
                 }
             }
 
-            // if this edge is uni-directional, we should update the id in the neighbor's
+            // If this edge is uni-directional, we should update the id in the neighbor's
             // incoming edges.
             if (!bidirectional_edge) {
                 auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
@@ -1175,7 +1185,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             }
         }
 
-        // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
+        // Next, go over the rest of incoming edges (the ones that are not bidirectional) and make
         // updates.
         auto *incoming_edges = getIncomingEdgesPtr(cur_element_count, level);
         for (auto incoming_edge : *incoming_edges) {
@@ -1191,18 +1201,18 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
         }
     }
 
-    // swap the last_id level 0 data, and invalidate the deleted id's data
+    // Swap the last_id level 0 data, and invalidate the deleted id's data.
     memcpy(data_level0_memory_ + element_internal_id * size_data_per_element_ + offsetLevel0_,
            data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_,
            size_data_per_element_);
     memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
            size_data_per_element_);
 
-    // swap pointer of higher levels links
+    // Swap pointer of higher levels links.
     linkLists_[element_internal_id] = linkLists_[cur_element_count];
     linkLists_[cur_element_count] = nullptr;
 
-    // swap top element level
+    // Swap top element level.
     element_levels_[element_internal_id] = element_levels_[cur_element_count];
     element_levels_[cur_element_count] = HNSW_INVALID_LEVEL;
 
@@ -1649,82 +1659,60 @@ void HNSWIndex<DataType, DistType>::increaseCapacity() {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_id) {
+template <bool has_marked_deleted>
+void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
-    vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
-
-    // go over levels and repair connections
-    size_t element_top_level = element_levels_[element_internal_id];
+    // Delete the incoming edges sets for this element at every level.
+    size_t element_top_level = element_levels_[internalId];
     for (size_t level = 0; level <= element_top_level; level++) {
-        idType *neighbours = getNodeNeighborsAtLevel(element_internal_id, level);
-        linkListSize neighbours_count = getNodeNeighborsCount(neighbours);
-        // reset the neighbours' bitmap for the current level.
-        neighbours_bitmap.assign(cur_element_count, false);
-        // store the deleted element's neighbours set in a bitmap for fast access.
-        for (size_t j = 0; j < neighbours_count; j++) {
-            neighbours_bitmap[neighbours[j]] = true;
-        }
-        // go over the neighbours that also points back to the removed point and make a local
-        // repair.
-        for (size_t i = 0; i < neighbours_count; i++) {
-            idType neighbour_id = neighbours[i];
-            idType *neighbour_neighbours = getNodeNeighborsAtLevel(neighbour_id, level);
-            linkListSize neighbour_neighbours_count = getNodeNeighborsCount(neighbour_neighbours);
-
-            bool bidirectional_edge = false;
-            for (size_t j = 0; j < neighbour_neighbours_count; j++) {
-                // if the edge is bidirectional, do repair for this neighbor
-                if (neighbour_neighbours[j] == element_internal_id) {
-                    bidirectional_edge = true;
-                    repairConnectionsForDeletion(element_internal_id, neighbour_id, neighbours,
-                                                 neighbour_neighbours, level, neighbours_bitmap);
-                    break;
-                }
-            }
-
-            // if this edge is uni-directional, we should remove the element from the neighbor's
-            // incoming edges.
-            if (!bidirectional_edge) {
-                auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
-                // This should always return true (remove should succeed).
-                removeIdFromList(*neighbour_incoming_edges, element_internal_id);
-            }
-        }
-
-        // next, go over the rest of incoming edges (the ones that are not bidirectional) and make
-        // repairs.
-        auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
-        for (auto incoming_edge : *incoming_edges) {
-            idType *incoming_node_neighbours = getNodeNeighborsAtLevel(incoming_edge, level);
-            repairConnectionsForDeletion(element_internal_id, incoming_edge, neighbours,
-                                         incoming_node_neighbours, level, neighbours_bitmap);
-        }
+        auto *incoming_edges = getIncomingEdgesPtr(internalId, level);
+        assert(!has_marked_deleted || incoming_edges->size() == 0);
         delete incoming_edges;
     }
 
-    // replace the entry point with another one, if we are deleting the current entry point.
-    if (element_internal_id == entrypoint_node_) {
+    if (has_marked_deleted) {
+        // If the index allows marking vectors as deleted (as in tiered HNSW), the id to remove
+        // cannot be the entry point, as it should have been replaced upon marking it as deleted.
+        assert(entrypoint_node_ != internalId);
+    } else if (internalId == entrypoint_node_) {
+        // For inplace delete, we replace entry point now.
         assert(element_top_level == max_level_);
         replaceEntryPoint();
     }
 
-    // We can say now that the element was deleted
+    // We can say now that the element has removed completely from index.
     --cur_element_count;
+    if (has_marked_deleted) {
+        --num_marked_deleted;
+    }
+
+    // Remove the deleted id form the relevant incoming edges sets in which it appears.
+    for (size_t level = 0; level <= element_top_level; level++) {
+        auto *neighbours = getNodeNeighborsAtLevel(internalId, level);
+        auto neighbours_count = getNodeNeighborsCount(neighbours);
+        for (size_t i = 0; i < neighbours_count; i++) {
+            idType neighbour_id = neighbours[i];
+            // This should always succeed, since every outgoing edge should be unidirectional at
+            // this point (after all the repair jobs are done).
+            auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+            removeIdFromList(*neighbour_incoming_edges, internalId);
+        }
+    }
 
     // Swap the last id with the deleted one, and invalidate the last id data.
-    if (element_levels_[element_internal_id] > 0) {
-        this->allocator->free_allocation(linkLists_[element_internal_id]);
-        linkLists_[element_internal_id] = nullptr;
+    if (element_levels_[internalId] > 0) {
+        this->allocator->free_allocation(linkLists_[internalId]);
+        linkLists_[internalId] = nullptr;
     }
-    if (cur_element_count == element_internal_id) {
-        // we're deleting the last internal id, just invalidate data without swapping.
+    if (cur_element_count == internalId) {
+        // We're deleting the last internal id, just invalidate data without swapping.
         memset(data_level0_memory_ + cur_element_count * size_data_per_element_ + offsetLevel0_, 0,
                size_data_per_element_);
     } else {
-        SwapLastIdWithDeletedId(element_internal_id);
+        SwapLastIdWithDeletedId<has_marked_deleted>(internalId);
     }
 
-    // If we need to free a complete block & there is a least one block between the
+    // If we need to free a complete block and there is at least one block between the
     // capacity and the size.
     if (cur_element_count % this->blockSize == 0 &&
         cur_element_count + this->blockSize <= max_elements_) {
@@ -1735,6 +1723,68 @@ void HNSWIndex<DataType, DistType>::removeVector(const idType element_internal_i
         // Remove one block from the capacity.
         this->resizeIndexInternal(max_elements_ - this->blockSize - extra_space_to_free);
     }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeAndSwapDeletedElement(idType internalId) {
+    removeAndSwap<true>(internalId);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_internal_id) {
+
+    vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
+
+    // Go over the element's nodes at every level and repair the effected connections.
+    size_t element_top_level = element_levels_[element_internal_id];
+    for (size_t level = 0; level <= element_top_level; level++) {
+        idType *neighbours = getNodeNeighborsAtLevel(element_internal_id, level);
+        linkListSize neighbours_count = getNodeNeighborsCount(neighbours);
+        // Reset the neighbours' bitmap for the current level.
+        neighbours_bitmap.assign(cur_element_count, false);
+        // Store the deleted element's neighbours set in a bitmap for fast access.
+        for (size_t j = 0; j < neighbours_count; j++) {
+            neighbours_bitmap[neighbours[j]] = true;
+        }
+        // Go over the neighbours that also points back to the removed point and make a local
+        // repair.
+        for (size_t i = 0; i < neighbours_count; i++) {
+            idType neighbour_id = neighbours[i];
+            idType *neighbour_neighbours = getNodeNeighborsAtLevel(neighbour_id, level);
+            linkListSize neighbour_neighbours_count = getNodeNeighborsCount(neighbour_neighbours);
+
+            bool bidirectional_edge = false;
+            for (size_t j = 0; j < neighbour_neighbours_count; j++) {
+                // If the edge is bidirectional, do repair for this neighbor.
+                if (neighbour_neighbours[j] == element_internal_id) {
+                    bidirectional_edge = true;
+                    repairConnectionsForDeletion(element_internal_id, neighbour_id, neighbours,
+                                                 neighbour_neighbours, level, neighbours_bitmap);
+                    break;
+                }
+            }
+
+            // If this edge is uni-directional, we should remove the element from the neighbor's
+            // incoming edges.
+            if (!bidirectional_edge) {
+                auto *neighbour_incoming_edges = getIncomingEdgesPtr(neighbour_id, level);
+                // This should always return true (remove should succeed).
+                removeIdFromList(*neighbour_incoming_edges, element_internal_id);
+            }
+        }
+
+        // Next, go over the rest of incoming edges (the ones that are not bidirectional) and make
+        // repairs.
+        auto *incoming_edges = getIncomingEdgesPtr(element_internal_id, level);
+        for (auto incoming_edge : *incoming_edges) {
+            idType *incoming_node_neighbours = getNodeNeighborsAtLevel(incoming_edge, level);
+            repairConnectionsForDeletion(element_internal_id, incoming_edge, neighbours,
+                                         incoming_node_neighbours, level, neighbours_bitmap);
+        }
+    }
+    // Finally, remove the element from the index and make a swap with the last internal id to
+    // avoid fragmentation and reclaim memory when needed.
+    removeAndSwap<false>(element_internal_id);
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded

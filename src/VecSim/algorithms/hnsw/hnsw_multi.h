@@ -196,7 +196,7 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
         return ret;
     }
     for (idType id : ids->second) {
-        this->removeVector(id);
+        this->removeVectorInPlace(id);
         ret++;
     }
     label_lookup_.erase(ids);

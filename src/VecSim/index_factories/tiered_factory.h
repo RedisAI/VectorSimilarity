@@ -11,6 +11,7 @@
 #include "VecSim/vec_sim_index.h"
 
 namespace TieredFactory {
+
 VecSimIndex *NewIndex(const TieredIndexParams *params);
 
 // The size estimation is the sum of the buffer (brute force) and main index initial sizes
