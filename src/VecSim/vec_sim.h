@@ -53,17 +53,17 @@ void VecSimIndex_Free(VecSimIndex *index);
  * @param blob binary representation of the vector. Blob size should match the index data type and
  * dimension.
  * @param id the id of the added vector
- * @return always returns true
+ * @return the current size of the index after the removal (in bytes)
  */
-int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
+size_t VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
 
 /**
  * @brief Remove a vector from an index.
  * @param index the index from which the vector is removed.
  * @param id the id of the removed vector
- * @return always returns true
+ * @return the current size of the index after the removal (in bytes)
  */
-int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
+size_t VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
 
 /**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that

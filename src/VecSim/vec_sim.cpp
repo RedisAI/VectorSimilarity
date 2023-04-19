@@ -111,21 +111,17 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     return VecSimFactory::EstimateInitialSize(params);
 }
 
-extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    int64_t before = index->getAllocationSize();
+extern "C" size_t VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
     if (index->indexSize() == index->indexCapacity()) {
         index->increaseCapacity();
     }
     index->addVectorWrapper(blob, id);
-    int64_t after = index->getAllocationSize();
-    return after - before;
+    return index->getAllocationSize();
 }
 
-extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
-    int64_t before = index->getAllocationSize();
+extern "C" size_t VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
     index->deleteVector(id);
-    int64_t after = index->getAllocationSize();
-    return after - before;
+    return index->getAllocationSize();
 }
 
 extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob) {
