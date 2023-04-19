@@ -11,6 +11,7 @@ extern "C" {
 #endif
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 // Common definitions
 #define INVALID_ID    UINT_MAX
