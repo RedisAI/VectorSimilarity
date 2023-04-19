@@ -469,9 +469,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
-        tiered_index_params.tieredHnswParams.swapJobThreshold == 0
+        tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold == 0
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
-            : std::min(tiered_index_params.tieredHnswParams.swapJobThreshold,
+            : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
