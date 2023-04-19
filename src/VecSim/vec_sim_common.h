@@ -123,7 +123,7 @@ typedef struct {
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
-    };
+    } specificParams;
 } TieredIndexParams;
 
 struct VecSimParams {

@@ -26,15 +26,14 @@ protected:
                                                            JobQueue *jobQ, IndexExtCtx *ctx,
                                                            size_t *memory_ctx,
                                                            size_t swap_job_threshold = 0) {
-        // Use the default 0 value for this configuration unless specified otherwise.
-        TieredHNSWParams tiered_hnsw_Params = {.swapJobThreshold = swap_job_threshold};
-        TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                           .jobQueueCtx = ctx,
-                                           .submitCb = submit_callback,
-                                           .memoryCtx = memory_ctx,
-                                           .UpdateMemCb = update_mem_callback,
-                                           .primaryIndexParams = &hnsw_params,
-                                           .tieredHnswParams = tiered_hnsw_Params};
+        TieredIndexParams tiered_params = {
+            .jobQueue = jobQ,
+            .jobQueueCtx = ctx,
+            .submitCb = submit_callback,
+            .memoryCtx = memory_ctx,
+            .UpdateMemCb = update_mem_callback,
+            .primaryIndexParams = &hnsw_params,
+            .specificParams = {TieredHNSWParams{.swapJobThreshold = swap_job_threshold}}};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(
             TieredFactory::NewIndex(&tiered_params));
 
