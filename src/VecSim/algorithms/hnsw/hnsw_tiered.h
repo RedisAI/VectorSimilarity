@@ -167,7 +167,7 @@ public:
                     BruteForceIndex<DataType, DistType> *bf_index,
                     const TieredIndexParams &tieredParams,
                     std::shared_ptr<VecSimAllocator> allocator);
-    virtual ~TieredHNSWIndex();
+    virtual ~TieredHNSWIndex() = default;
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
@@ -534,26 +534,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
-}
-
-template <typename DataType, typename DistType>
-TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
-    // Delete all the pending insert jobs.
-    for (auto &jobs : this->labelToInsertJobs) {
-        for (auto *job : jobs.second) {
-            delete job;
-        }
-    }
-    // Delete all the pending repair jobs.
-    for (auto &jobs : this->idToRepairJobs) {
-        for (auto *job : jobs.second) {
-            delete job;
-        }
-    }
-    // Delete all the pending swap jobs.
-    for (auto &it : this->idToSwapJob) {
-        delete it.second;
-    }
 }
 
 template <typename DataType, typename DistType>
