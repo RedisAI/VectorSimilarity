@@ -21,8 +21,8 @@ struct AsyncJob : public VecsimBaseObject {
 template <typename DataType, typename DistType>
 class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
-    BruteForceIndex<DataType, DistType> *flatBuffer;
-    VecSimIndexAbstract<DistType> *index;
+    VecSimIndexAbstract<DistType> *backendIndex;
+    BruteForceIndex<DataType, DistType> *frontendIndex;
 
     void *jobQueue;
     void *jobQueueCtx; // External context to be sent to the submit callback.
@@ -42,21 +42,17 @@ protected:
     }
 
 public:
-    VecSimTieredIndex(VecSimIndexAbstract<DistType> *index_, TieredIndexParams tieredParams)
-        : VecSimIndexInterface(index_->getAllocator()), index(index_),
-          jobQueue(tieredParams.jobQueue), jobQueueCtx(tieredParams.jobQueueCtx),
-          SubmitJobsToQueue(tieredParams.submitCb), memoryCtx(tieredParams.memoryCtx),
-          UpdateIndexMemory(tieredParams.UpdateMemCb) {
-        BFParams bf_params = {.type = index_->getType(),
-                              .dim = index_->getDim(),
-                              .metric = index_->getMetric(),
-                              .multi = index_->isMultiValue()};
-        flatBuffer = static_cast<BruteForceIndex<DataType, DistType> *>(
-            BruteForceFactory::NewIndex(&bf_params, index->getAllocator()));
-    }
-    ~VecSimTieredIndex() {
-        VecSimIndex_Free(index);
-        VecSimIndex_Free(flatBuffer);
+    VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,
+                      BruteForceIndex<DataType, DistType> *frontendIndex_,
+                      TieredIndexParams tieredParams)
+        : VecSimIndexInterface(backendIndex_->getAllocator()), backendIndex(backendIndex_),
+          frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
+          jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
+          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {}
+
+    virtual ~VecSimTieredIndex() {
+        VecSimIndex_Free(backendIndex);
+        VecSimIndex_Free(frontendIndex);
     }
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
@@ -70,19 +66,19 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
-    if (this->flatBuffer->indexSize() == 0) {
+    if (this->frontendIndex->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
         this->flatIndexGuard.unlock_shared();
 
         // Simply query the main index and return the results while holding the lock.
         this->mainIndexGuard.lock_shared();
-        auto res = this->index->topKQuery(queryBlob, k, queryParams);
+        auto res = this->backendIndex->topKQuery(queryBlob, k, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         return res;
     } else {
         // No luck... first query the flat buffer and release the lock.
-        auto flat_results = this->flatBuffer->topKQuery(queryBlob, k, queryParams);
+        auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
         this->flatIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
@@ -93,7 +89,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 
         // Lock the main index and query it.
         this->mainIndexGuard.lock_shared();
-        auto main_results = this->index->topKQuery(queryBlob, k, queryParams);
+        auto main_results = this->backendIndex->topKQuery(queryBlob, k, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
@@ -106,7 +102,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         }
 
         // Merge the results and return, avoiding duplicates.
-        if (this->index->isMultiValue()) {
+        if (this->backendIndex->isMultiValue()) {
             return merge_results<true>(main_results, flat_results, k);
         } else {
             return merge_results<false>(main_results, flat_results, k);

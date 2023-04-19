@@ -17,7 +17,8 @@ protected:
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
 
 public:
-    BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    BruteForceIndex_Single(const BFParams *params,
+                           const AbstractIndexInitParams &abstractInitParams);
     ~BruteForceIndex_Single();
 
     int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -100,8 +101,9 @@ protected:
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(
-    const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdLookup(allocator) {}
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
+    : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
+      labelToIdLookup(this->allocator) {}
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}

@@ -106,6 +106,12 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+// A struct that contains HNSW tiered index specific params.
+typedef struct {
+    size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
+                             // all the ready swap jobs in a batch.
+} TieredHNSWParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;             // External queue that holds the jobs.
@@ -115,6 +121,9 @@ typedef struct {
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
+    union {
+        TieredHNSWParams tieredHnswParams;
+    } specificParams;
 } TieredIndexParams;
 
 struct VecSimParams {
@@ -124,6 +133,7 @@ struct VecSimParams {
         BFParams bfParams;
         TieredIndexParams tieredParams;
     };
+    void *logCtx; // External context that stores the index log.
 };
 
 /**
@@ -242,6 +252,13 @@ typedef struct {
  * @return the function should return a non-zero value on timeout
  */
 typedef int (*timeoutCallbackFunction)(void *ctx);
+
+/**
+ * @brief A struct to pass 3rd party logging function to Vecsimlib.
+ * @param ctx some generic context to pass to the function
+ * @param message the message to log
+ */
+typedef void (*logCallbackFunction)(void *ctx, const char *message);
 
 typedef enum {
     VecSim_QueryResult_OK = VecSim_OK,

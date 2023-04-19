@@ -22,7 +22,7 @@ The serialized indices files that are used for micro-benchmarking and running an
 `tests/benchmark/data/hnsw_indices.txt`.  
 To download all the required files, run from the repository root directory:
 ```sh
-wget -q -i tests/benchmark/data/hnsw_indices_all/hnsw_indices_all.txt -P tests/benchmark/data
+wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt -P tests/benchmark/data
 ```
 To run all test sets, call the following commands from the project root dir:
 ```sh

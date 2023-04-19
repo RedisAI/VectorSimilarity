@@ -29,17 +29,17 @@ private:
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:
-    HNSWIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+    HNSWIndex_Single(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                      size_t random_seed = 100, size_t initial_pool_size = 1)
-        : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
-          label_lookup_(this->max_elements_, allocator) {}
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
+          label_lookup_(this->max_elements_, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
-                     std::shared_ptr<VecSimAllocator> allocator,
+                     const AbstractIndexInitParams &abstractInitParams,
                      Serializer::EncodingVersion version)
-        : HNSWIndex<DataType, DistType>(input, params, allocator, version),
-          label_lookup_(this->max_elements_, allocator) {}
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
+          label_lookup_(this->max_elements_, this->allocator) {}
 
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -149,7 +149,7 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
     }
     idType element_internal_id = label_lookup_[label];
     label_lookup_.erase(label);
-    this->removeVector(element_internal_id);
+    this->removeVectorInPlace(element_internal_id);
     return 1;
 }
 
