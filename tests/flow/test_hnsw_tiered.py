@@ -9,9 +9,10 @@ import time
 from common import *
 import hnswlib
 
+
+
+# TODO: Test 1M vectors of 786 dim insertion
 def test_create_new_index():
-    print("hello")
-    #create index
     dim = 16
     num_elements = 100000
     space = 'cosine'
@@ -23,10 +24,6 @@ def test_create_new_index():
     tiered_hnsw_params = TIERED_HNSWParams()
     tiered_hnsw_params.i = 0
     index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
-    X = input("now")
-    print(index.index_size())
-    print("meow")
-    
     hnsw_index =  create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
     data = np.float32(np.random.random((num_elements, dim)))
     print(f"label count = {index.hnsw_label_count()}")
@@ -51,3 +48,4 @@ def test_create_new_index():
     #search
     #compare with hnsw
 
+#test_create_new_index()
