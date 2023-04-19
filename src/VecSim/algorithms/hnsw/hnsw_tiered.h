@@ -202,7 +202,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
-    delete insert_job;
     job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
@@ -211,7 +210,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
     auto *repair_job = reinterpret_cast<HNSWRepairJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
     job_index->executeRepairJob(repair_job);
-    delete repair_job;
     job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
@@ -253,7 +251,6 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
     } else {
         idsToRemove.push_back(job->deleted_id);
     }
-    delete job;
 }
 
 template <typename DataType, typename DistType>
