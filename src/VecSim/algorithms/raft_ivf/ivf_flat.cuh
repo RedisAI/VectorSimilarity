@@ -24,6 +24,7 @@ public:
     RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int addVectorBatch(const void *vector_data, labelType* label, size_t batch_size, bool overwrite_allowed = true) override;
+    int addVectorBatchGpuBuffer(const void *vector_data, std::int64_t* label, size_t batch_size, bool overwrite_allowed = true) override;
     int deleteVector(labelType label) override { return 0;}
     double getDistanceFrom(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
@@ -152,6 +153,24 @@ int RaftIVFFlatIndex::addVectorBatch(const void *vector_data, labelType* labels,
     }
     res_.sync_stream();
 
+    // TODO: Verify that label exists already?
+    // TODO normalizeVector for cosine?
+    this->counts_ += batch_size;
+    return batch_size;
+}
+
+int RaftIVFFlatIndex::addVectorBatchGpuBuffer(const void *vector_data, std::int64_t* labels, size_t batch_size, bool overwrite_allowed)
+{
+    auto vector_data_gpu = raft::make_device_matrix_view<const DataType, std::int64_t>((const DataType*)vector_data, batch_size, this->dim);
+    auto label_gpu = raft::make_device_vector_view<const std::int64_t, std::int64_t>(labels, batch_size);
+
+    if (!flat_index_) {
+        flat_index_ = std::make_unique<raftIvfFlatIndex>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
+            res_, build_params_, vector_data_gpu));
+    } else {
+        raft::neighbors::ivf_flat::extend(res_, vector_data_gpu, std::make_optional(label_gpu), flat_index_.get());
+    }
+    res_.sync_stream();
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
     this->counts_ += batch_size;

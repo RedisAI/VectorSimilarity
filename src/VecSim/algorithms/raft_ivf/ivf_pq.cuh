@@ -22,6 +22,7 @@ public:
     RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int addVectorBatch(const void *vector_data, labelType *labels, size_t batch_size, bool overwrite_allowed = true);
+    int addVectorBatchGpuBuffer(const void *vector_data, std::int64_t* label, size_t batch_size, bool overwrite_allowed = true) override;
     int deleteVector(labelType label) override { 
         assert(!"deleteVector not implemented");
         return 0;
@@ -174,6 +175,24 @@ int RaftIVFPQIndex::addVectorBatch(const void *vector_data, labelType* labels, s
     } else {
         raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
             std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
+    }
+    res_.sync_stream();
+    // TODO: Verify that label exists already?
+    // TODO normalizeVector for cosine?
+    this->counts_ += batch_size;
+    return batch_size;
+}
+
+int RaftIVFPQIndex::addVectorBatchGpuBuffer(const void *vector_data, std::int64_t* labels, size_t batch_size, bool overwrite_allowed)
+{
+    auto vector_data_gpu = raft::make_device_matrix_view<const DataType, std::int64_t>((const DataType*)vector_data, batch_size, this->dim);
+    auto label_gpu = raft::make_device_matrix_view<const std::int64_t, std::int64_t>(labels, batch_size, 1);
+
+    if (!pq_index_) {
+        pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
+            res_, build_params_, vector_data_gpu));
+    } else {
+        raft::neighbors::ivf_pq::extend(res_, vector_data_gpu, std::make_optional(label_gpu), pq_index_.get());
     }
     res_.sync_stream();
     // TODO: Verify that label exists already?

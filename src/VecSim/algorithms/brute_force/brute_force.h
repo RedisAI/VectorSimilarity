@@ -55,6 +55,7 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
+    inline vecsim_stl::vector<labelType> getLabels() const { return idToLabelMapping; }
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     virtual ~BruteForceIndex();
 
