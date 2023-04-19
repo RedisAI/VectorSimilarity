@@ -473,13 +473,7 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         }
         // Atomically set the deletion mark flag (note that other parallel threads may set the flags
         // at the same time (for changing the IN_PROCESS flag).
-        bool ret = false;
-        do {
-            elementFlags flags = *(getElementFlags(internalId));
-            elementFlags updated_flags = flags | DELETE_MARK;
-            ret = __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0,
-                                            0, 0);
-        } while (!ret);
+        __atomic_fetch_or(getElementFlags(internalId), DELETE_MARK, 0);
         this->num_marked_deleted++;
     }
 }
@@ -501,26 +495,14 @@ void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
     // Atomically set the IN_PROCESS mark flag. Even though other threads shouldn't modify the flags
     // at that time (we're holding index global data guard, so this element cannot be marked as
     // deleted in parallel), we do it for safety.
-    bool ret = false;
-    do {
-        elementFlags flags = *(getElementFlags(internalId));
-        elementFlags updated_flags = flags | IN_PROCESS;
-        ret =
-            __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0, 0, 0);
-    } while (!ret);
+    __atomic_fetch_or(getElementFlags(internalId), IN_PROCESS, 0);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
     // Atomically unset the IN_PROCESS mark flag (note that other parallel threads may set the flags
     // at the same time (for marking the element with MARK_DELETE flag).
-    bool ret = false;
-    do {
-        elementFlags flags = *(getElementFlags(internalId));
-        elementFlags updated_flags = flags & ~IN_PROCESS; // reset the IN_PROCESS flag.
-        ret =
-            __atomic_compare_exchange(getElementFlags(internalId), &flags, &updated_flags, 0, 0, 0);
-    } while (!ret);
+    __atomic_fetch_and(getElementFlags(internalId), ~IN_PROCESS, 0);
 }
 
 template <typename DataType, typename DistType>
@@ -1310,6 +1292,14 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         // current level to repair them.
         element_lock.lock();
         auto *incoming_edges = getIncomingEdgesPtr(node_id, level);
+        // Note that the deleted element might be in the process of indexing into the graph in the
+        // meantime (in async mode). Since the incoming_edges lists in every level are allocated
+        // while the element is being indexed into that level (in lazy mode), we may find ourselves
+        // in a situation where the incoming edges was not allocated yet in this level (but we do
+        // guarantee that the pointer is NULL in that case). In which case, we just continue. We
+        // also validate that we won't add new edges to a deleted node later on.
+        if (!incoming_edges)
+            continue;
         for (auto incoming_edge : *incoming_edges) {
             incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
         }
@@ -1402,9 +1392,9 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     for (auto chosen_id : chosen_neighbors) {
         if (node_neighbors_idx == max_M_cur) {
             // Cannot add more new neighbors, we reached the capacity.
-            // TODO: move this message to a log.
-            std::cout << "couldn't add all the chosen new nodes upon updating " << node_id
-                      << std::endl;
+            this->log("Couldn't add all the chosen new nodes upon updating %u, as we reached the"
+                      " maximum number of neighbors per node",
+                      node_id);
             break;
         }
         // We don't add new neighbors for deleted nodes - if node_id is deleted we can finish.
@@ -1808,6 +1798,20 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label) {
     markInProcess(state.newElementId);
     setVectorId(label, state.newElementId);
     element_levels_[state.newElementId] = state.elementMaxLevel;
+    // Allocate memory for the links in higher levels and initialize this memory to zeros. The
+    // reason for doing it here is that we might mark this vector as deleted BEFORE we finish its
+    // indexing. In that case, we will collect the incoming edges to this element in every level,
+    // and try to access its link lists in higher levels. Therefore, we allocate it here and
+    // initialize it with zeros, (otherwise we might crash...)
+    if (state.elementMaxLevel > 0) {
+        linkLists_[state.newElementId] =
+            (char *)this->allocator->callocate(size_links_per_element_ * state.elementMaxLevel);
+        if (linkLists_[state.newElementId] == nullptr) {
+            this->log(
+                "Error - allocating memory for links in higher level failed due to low memory");
+            throw std::runtime_error("VecSim index low memory error");
+        }
+    }
 
     state.currMaxLevel = (int)max_level_;
     state.currEntryPoint = entrypoint_node_;
@@ -1854,14 +1858,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         vector_data = normalized_blob;
     }
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
-    if (element_max_level > 0) {
-        linkLists_[new_element_id] =
-            (char *)this->allocator->allocate(size_links_per_element_ * element_max_level);
-        if (linkLists_[new_element_id] == nullptr) {
-            throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
-        }
-        memset(linkLists_[new_element_id], 0, size_links_per_element_ * element_max_level);
-    }
 
     // Start scanning the graph from the current entry point.
     idType curr_element = prev_entry_point;
