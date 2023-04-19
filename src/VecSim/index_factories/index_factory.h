@@ -10,7 +10,7 @@
 #include "VecSim/memory/vecsim_malloc.h"
 
 namespace VecSimFactory {
-VecSimIndex *NewIndex(VecSimParams *params);
+VecSimIndex *NewIndex(const VecSimParams *params);
 size_t EstimateInitialSize(const VecSimParams *params);
 size_t EstimateElementSize(const VecSimParams *params);
 }; // namespace VecSimFactory

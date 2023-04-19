@@ -37,7 +37,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
-    // Create new tieredhnsw index
+    // Create new tiered hnsw index
     return new (hnsw_index->getAllocator())
         TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params);
 }
@@ -72,17 +72,14 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
 }
 } // namespace TieredHNSWFactory
 
-VecSimIndex *NewIndex(TieredIndexParams *params) {
+VecSimIndex *NewIndex(const TieredIndexParams *params) {
     // Tiered index that contains HNSW index as primary index
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        // Create the specific tiered HNSW params with the default swapJobThreshold value.
-        TieredHNSWParams tiered_hnsw_params = {.swapJobThreshold = 0};
-        params->tieredHnswParams = tiered_hnsw_params;
         VecSimType type = params->primaryIndexParams->hnswParams.type;
         if (type == VecSimType_FLOAT32) {
-            return TieredHNSWFactory::NewIndex<float>((const TieredIndexParams *)params);
+            return TieredHNSWFactory::NewIndex<float>(params);
         } else if (type == VecSimType_FLOAT64) {
-            return TieredHNSWFactory::NewIndex<double>((const TieredIndexParams *)params);
+            return TieredHNSWFactory::NewIndex<double>(params);
         }
     }
     return nullptr; // Invalid algorithm or type.

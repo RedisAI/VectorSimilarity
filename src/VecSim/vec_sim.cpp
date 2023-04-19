@@ -101,7 +101,7 @@ static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
     return VecSimParamResolver_OK;
 }
 
-extern "C" VecSimIndex *VecSimIndex_New(VecSimParams *params) {
+extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
     return VecSimFactory::NewIndex(params);
 }
 

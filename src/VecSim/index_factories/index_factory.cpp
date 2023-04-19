@@ -11,7 +11,7 @@
 #include "VecSim/vec_sim_index.h"
 
 namespace VecSimFactory {
-VecSimIndex *NewIndex(VecSimParams *params) {
+VecSimIndex *NewIndex(const VecSimParams *params) {
     VecSimIndex *index = NULL;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
@@ -26,14 +26,8 @@ VecSimIndex *NewIndex(VecSimParams *params) {
             break;
         }
         case VecSimAlgo_TIERED: {
-            switch (params->tieredParams.primaryIndexParams->algo) {
-            case VecSimAlgo_HNSWLIB: {
-                index = TieredFactory::TieredHNSWFactory::NewIndex(&params->tieredParams);
-                break;
-            }
-            default:
-                index = TieredFactory::NewIndex(&params->tieredParams);
-            }
+            index = TieredFactory::NewIndex(&params->tieredParams);
+            break;
         }
         }
     } catch (...) {

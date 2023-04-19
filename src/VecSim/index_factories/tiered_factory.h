@@ -11,11 +11,8 @@
 #include "VecSim/vec_sim_index.h"
 
 namespace TieredFactory {
-namespace TieredHNSWFactory {
-VecSimIndex *NewIndex(const TieredIndexParams *params);
-}
 
-VecSimIndex *NewIndex(TieredIndexParams *params);
+VecSimIndex *NewIndex(const TieredIndexParams *params);
 
 // The size estimation is the sum of the buffer (brute force) and main index initial sizes
 // estimations, plus the tiered index class size. Note it does not include the size of internal
