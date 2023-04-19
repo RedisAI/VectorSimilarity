@@ -296,7 +296,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
     for (size_t i = 0; i < internal_ids.size(); i++) {
         idType id = internal_ids[i];
-        vecsim_stl::vector<HNSWRepairJob *> repair_jobs(this->allocator);
+        vecsim_stl::vector<AsyncJob *> repair_jobs(this->allocator);
         auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
 
         // Go over all the deleted element links in every level and create repair jobs.
@@ -336,8 +336,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         swap_job->setRepairJobsNum(incoming_edges.size());
         this->idToRepairJobsGuard.unlock();
 
-        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
-                                this->jobQueueCtx);
+        this->submitJobs(repair_jobs);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
         // node id is changed due to swap job).
         assert(idToSwapJob.find(id) == idToSwapJob.end());

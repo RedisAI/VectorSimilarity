@@ -20,6 +20,8 @@ struct AsyncJob : public VecsimBaseObject {
         : VecsimBaseObject(allocator), jobType(type), Execute(callback), index(index_ref) {}
 };
 
+static void AsyncJobDestructor(AsyncJob *job) { delete job; }
+
 // All read operations (including KNN, range, batch iterators and get-distance-from) are guaranteed
 // to consider all vectors that were added to the index before the query was submitted. The results
 // may include vectors that were added after the query was submitted, with no guarantees.
@@ -42,10 +44,20 @@ protected:
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
-        auto **jobs = array_new<AsyncJob *>(1);
-        jobs = array_append(jobs, job);
-        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)jobs, 1, this->jobQueueCtx);
-        array_free(jobs);
+        auto destructor = AsyncJobDestructor;
+        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, &job, &job->Execute, &destructor,
+                                1);
+    }
+
+    void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) {
+        vecsim_stl::vector<JobCallback> callbacks(jobs.size(), this->allocator);
+        vecsim_stl::vector<JobCallback> destructors(jobs.size(), this->allocator);
+        for (size_t i = 0; i < jobs.size(); i++) {
+            callbacks[i] = jobs[i]->Execute;
+            destructors[i] = AsyncJobDestructor;
+        }
+        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
+                                destructors.data(), jobs.size());
     }
 
 public:
