@@ -1024,7 +1024,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 1);
 
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
-    delete tiered_index;
+    delete index_ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
