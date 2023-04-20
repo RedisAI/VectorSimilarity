@@ -207,8 +207,7 @@ public:
         }
     }
 
-   // virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
-  virtual  ~PyVecSimIndex() {std::cout<<"dtor vecsim"<<std::endl;}
+   virtual ~PyVecSimIndex() = default; // Delete function was given to the shared pointer object
 
 };
 
@@ -398,12 +397,13 @@ protected:
 
         return ret;   
     }
+
 public:
     explicit PyTIEREDIndex()
         : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback), run_thread(true) {
         // create default std::queue<RefManagedJob>
         // default std::shared_ptr<VecSimIndex>
-        std::cout<<"pool size = "<< THREAD_POOL_SIZE<<std::endl;
+        std::cout<< "pool size = " << THREAD_POOL_SIZE << std::endl;
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
             ThreadParams params(run_thread, executions_status, i, jobQueue);
             thread_pool.emplace_back(thread_main_loop, params);
@@ -424,17 +424,27 @@ public:
                         break;
 
                     }
+                    std::cout << " count == " << executions_status.count()<< std::endl;
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 }
 
             }
+            size_t labels = this->index->info().hnswInfo.indexLabelCount;
+            if(labels % 10000 == 0 ) {
+                std::cout << " indexed approx == " << labels<< std::endl;
+
+            }
+
+
         }
+    }
+
+    size_t GetThreadsNum() {
+        return THREAD_POOL_SIZE;
     }
 };
 PyTIEREDIndex::~PyTIEREDIndex() {
     thread_pool_terminate(jobQueue, run_thread);
-
-    std::cout<<"dtor tierd"<<std::endl;
 }
 class PyTIERED_HNSWIndex : public PyTIEREDIndex {
 
@@ -567,7 +577,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
 
-    py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex");
+    py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex")
+        .def("wait_for_index",&PyTIERED_HNSWIndex::WaitForIndex);
 
     py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
         .def(py::init(
@@ -576,7 +587,7 @@ PYBIND11_MODULE(VecSim, m) {
                  }),
              py::arg("hnsw_params"),  py::arg("tiered_hnsw_params"))
         .def("hnsw_label_count",&PyTIERED_HNSWIndex::HNSWLabelCount)
-        .def("wait_for_index",&PyTIERED_HNSWIndex::WaitForIndex);
+        .def("get_threads_num",&PyTIERED_HNSWIndex::GetThreadsNum);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

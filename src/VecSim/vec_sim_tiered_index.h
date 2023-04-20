@@ -59,11 +59,19 @@ public:
                                      VecSimQueryParams *queryParams) override;
 };
 
+#ifdef BUILD_TESTS
+#include <iostream>
+#endif
+
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) {
     this->flatIndexGuard.lock_shared();
+#ifdef BUILD_TESTS
+        std::cout<<"flat buffer size "<< this->frontendIndex->indexSize() <<std::endl;
+
+#endif
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
