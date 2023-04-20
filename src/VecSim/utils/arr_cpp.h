@@ -63,6 +63,14 @@ T *array_append(T *arr, T val) {
 }
 
 template <typename T>
+T *array_concat(T *arr, T *other) {
+    arr = array_ensure_cap(arr, array_len(arr) + array_len(other));
+    memcpy(arr + array_len(arr), other, array_len(other) * sizeof(T));
+    array_hdr(arr)->len += array_len(other);
+    return arr;
+}
+
+template <typename T>
 size_t array_len(T *arr) {
     return arr ? array_hdr(arr)->len : 0;
 }
@@ -80,4 +88,12 @@ void array_pop_front_n(T *arr, size_t n) {
     array_hdr_t<T> *arr_hdr = array_hdr(arr);
     arr_hdr->len -= MIN(n, arr_hdr->len);
     memmove(arr, arr + n, arr_hdr->len * sizeof(T));
+}
+
+#define array_pop_back(arr) array_pop_back_n(arr, 1)
+
+template <typename T>
+void array_pop_back_n(T *arr, size_t n) {
+    array_hdr_t<T> *arr_hdr = array_hdr(arr);
+    arr_hdr->len -= MIN(n, arr_hdr->len);
 }

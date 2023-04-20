@@ -930,6 +930,6 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrel
         }
         ++it;
     }
-    // Update number of results
-    array_hdr(rl.results)->len = cur_end - rl.results;
+    // Update number of results (pop the tail)
+    array_pop_back_n(rl.results, end - cur_end);
 }
