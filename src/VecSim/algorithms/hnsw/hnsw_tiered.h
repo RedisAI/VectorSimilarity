@@ -125,11 +125,18 @@ public:
         // On single value indices, this set holds the IDs of the results that were returned from
         // the flat buffer.
         // On multi value indices, this set holds the IDs of all the results that were returned.
+        // The difference between the two cases is that on multi value indices, the same ID can
+        // appear in both indexes and results with different scores, and therefore we can't tell in
+        // advance when we expect a possibility of a duplicate.
+        // On single value indices, a duplicate may appear at the same batch (and we will handle it
+        // when merging the results) Or it may appear in a different batches, first from the flat
+        // buffer and then from the HNSW, in the cases where a better result if found later in HNSW
+        // because of the approximate nature of the algorithm.
         vecsim_stl::unordered_set<labelType> returned_results_set;
 
     private:
         template <bool isMultiValue>
-        inline VecSimQueryResult_List get_current_batch(size_t n_res);
+        inline VecSimQueryResult_List compute_current_batch(size_t n_res);
         inline void filter_irrelevant_results(VecSimQueryResult_List &);
 
     public:
@@ -692,6 +699,8 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
 
 /******************** Ctor / Dtor *****************/
 
+// Defining spacial values for the hnsw_iterator field, to indicate if the iterator is uninitialized
+// or depleted when we don't have a valid iterator.
 #define UNINITIALIZED ((VecSimBatchIterator *)0)
 #define DEPLETED      ((VecSimBatchIterator *)1)
 
@@ -704,6 +713,8 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
       index(index), flat_results({0}), hnsw_results({0}),
       flat_iterator(this->index->frontendIndex->newBatchIterator(query_vector, queryParams)),
       hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator) {
+    // Save a copy of the query params to initialize the HNSW iterator with (on first batch and
+    // first batch after reset).
     if (queryParams) {
         this->queryParams =
             (VecSimQueryParams *)this->allocator->allocate(sizeof(VecSimQueryParams));
@@ -784,7 +795,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
             auto tail = this->hnsw_iterator->getNextResults(
                 n_res - VecSimQueryResult_Len(this->hnsw_results), BY_SCORE_THEN_ID);
             code = tail.code; // Set the hnsw_results code to the last `getNextResults` code.
-            // New batch may contain better results than the previous batch, so we need to merge
+            // New batch may contain better results than the previous batch, so we need to merge.
+            // We don't expect duplications (hence the <false>), as the iterator guarantees that
+            // no result is returned twice.
             this->hnsw_results = merge_result_lists<false>(this->hnsw_results, tail, n_res);
             this->hnsw_results.code = code;
             filter_irrelevant_results(this->hnsw_results);
@@ -802,9 +815,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
 
     VecSimQueryResult_List batch;
     if (isMulti)
-        batch = get_current_batch<true>(n_res);
+        batch = compute_current_batch<true>(n_res);
     else
-        batch = get_current_batch<false>(n_res);
+        batch = compute_current_batch<false>(n_res);
 
     if (order == BY_ID) {
         sort_results_by_id(batch);
@@ -848,7 +861,7 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
 template <typename DataType, typename DistType>
 template <bool isMultiValue>
 VecSimQueryResult_List
-TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::get_current_batch(size_t n_res) {
+TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::compute_current_batch(size_t n_res) {
     // Set pointers
     auto bf_res = this->flat_results.results;
     auto hnsw_res = this->hnsw_results.results;
@@ -863,11 +876,16 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::get_current_batch
         batch_res = merge_results<false>(hnsw_res, hnsw_end, bf_res, bf_end, n_res);
     }
 
-    // If we're on a single-value index, update the set of results returned from the FLAT index
-    // before popping them.
     if (!isMultiValue) {
+        // If we're on a single-value index, update the set of results returned from the FLAT index
+        // before popping them.
         for (auto it = this->flat_results.results; it != bf_res; ++it) {
             this->returned_results_set.insert(it->id);
+        }
+    } else {
+        // If we're on a multi-value index, update the set of results returned (from `batch_res`)
+        for (size_t i = 0; i < array_len(batch_res); ++i) {
+            this->returned_results_set.insert(batch_res[i].id);
         }
     }
 
@@ -875,15 +893,10 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::get_current_batch
     array_pop_front_n(this->flat_results.results, bf_res - this->flat_results.results);
     array_pop_front_n(this->hnsw_results.results, hnsw_res - this->hnsw_results.results);
 
-    // If we're on a multi-value index, update the set of results returned (from `batch_res`), and
     // clean up the results
+    // On multi-value indexes, one (or both) results lists may contain results that are already
+    // returned form the other list (with a different score). We need to filter them out.
     if (isMultiValue) {
-        // Update set of results returned
-        for (size_t i = 0; i < array_len(batch_res); ++i) {
-            this->returned_results_set.insert(batch_res[i].id);
-        }
-        // On multi-value indexes, one (or both) results lists may contain results that are already
-        // returned form the other list (with a different score). We need to filter them out.
         filter_irrelevant_results(this->flat_results);
         filter_irrelevant_results(this->hnsw_results);
     }
@@ -895,14 +908,14 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::get_current_batch
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrelevant_results(
     VecSimQueryResult_List &rl) {
-    // Filter out results that were already returned from the FLAT index
+    // Filter out results that were already returned.
     auto it = rl.results;
     auto end = it + VecSimQueryResult_Len(rl);
     // Skip results that not returned yet
     while (it != end && this->returned_results_set.count(it->id) == 0) {
         ++it;
     }
-    // If none of the results were returned from the FLAT index, return
+    // If none of the results were returned, return
     if (it == end) {
         return;
     }

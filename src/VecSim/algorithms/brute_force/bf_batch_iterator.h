@@ -23,7 +23,8 @@ template <typename DataType, typename DistType>
 class BF_BatchIterator : public VecSimBatchIterator {
 protected:
     const BruteForceIndex<DataType, DistType> *index;
-    size_t index_label_count;
+    size_t index_label_count; // number of labels in the index when calculating the scores,
+                              // which is the only time we access the index.
     vecsim_stl::vector<pair<DistType, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.

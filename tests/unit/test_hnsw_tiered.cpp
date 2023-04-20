@@ -2233,7 +2233,7 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
         auto *hnsw = tiered_index->index;
         auto *flat = tiered_index->flatBuffer;
 
-        // For every i, add the vector (i,i,i,i) under the label i.
+        // For every i, add the vector (i,i,i,i) under the label `n_labels - (i % n_labels)`.
         for (size_t i = 0; i < n; i++) {
             auto cur = decider(i, n) ? hnsw : flat;
             GenerateAndAddVector<TEST_DATA_T>(cur, d, n_labels - (i % n_labels), i);
@@ -2312,7 +2312,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         auto *hnsw = tiered_index->index;
         auto *flat = tiered_index->flatBuffer;
 
-        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
         TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
 
@@ -2327,7 +2326,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
 
         // Insert one label and query again. The internal id will be 0.
         for (size_t j = 0; j < per_label; j++) {
-            GenerateAndAddVector<TEST_DATA_T>(decider(n, n) ? hnsw : flat, d, n_labels, n - j);
+            GenerateAndAddVector<TEST_DATA_T>(decider(n_labels, n) ? hnsw : flat, d, n_labels,
+                                              n - j);
         }
         VecSimBatchIterator_Reset(batchIterator);
         res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);

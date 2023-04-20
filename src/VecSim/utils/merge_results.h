@@ -11,12 +11,17 @@
 #include "arr_cpp.h"
 #include <unordered_set>
 
+// This pattern is used multiple times so moved to a macro.
+// Append the current result to the merged results, after verifying that it did not added yet (if
+// verification is needed). Also update the set, limit and the current result.
 #define MAYBE_APPEND(cur_res)                                                                      \
-    if (!withSet || ids.insert(cur_res->id).second) {                                              \
-        array_append(results, *cur_res);                                                           \
-        limit--;                                                                                   \
-    }                                                                                              \
-    cur_res++;
+    do {                                                                                           \
+        if (!withSet || ids.insert(cur_res->id).second) {                                          \
+            array_append(results, *cur_res);                                                       \
+            limit--;                                                                               \
+        }                                                                                          \
+        cur_res++;                                                                                 \
+    } while (0)
 
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
 template <bool withSet>
@@ -50,7 +55,7 @@ VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryRes
         }
     }
 
-    // If we didn't exit the loop because of he limit, at least one of the arrays is empty.
+    // If we didn't exit the loop because of the limit, at least one of the arrays is empty.
     // We can try appending the rest of the other array.
     if (limit != 0) {
         if (cur_first == first_end) {
