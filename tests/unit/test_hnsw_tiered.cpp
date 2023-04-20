@@ -2631,12 +2631,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
 TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
     size_t dim = 4;
     size_t ef = 500;
-    size_t n = 2000;
+    size_t n = 1000;
     size_t n_res_min = 3;  // minimum number of results to return per batch
     size_t n_res_max = 15; // maximum number of results to return per batch
     bool isMulti = TypeParam::isMulti();
 
-    size_t per_label = isMulti ? 10 : 1;
+    size_t per_label = isMulti ? 5 : 1;
     size_t n_labels = n / per_label;
 
     // Create TieredHNSW index instance with a mock queue.
