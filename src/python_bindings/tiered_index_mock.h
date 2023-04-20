@@ -14,7 +14,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "pybind11/pybind11.h"
 
-
 namespace tiered_index_mock {
 
 typedef struct RefManagedJob {
@@ -43,10 +42,8 @@ int update_mem_callback(void *mem_ctx, size_t mem);
 
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;
-    ~IndexExtCtx() {std::cout<<"ctx dtor"<<std::endl;}
+    ~IndexExtCtx() { std::cout << "ctx dtor" << std::endl; }
 } IndexExtCtx;
-
-
 
 static const size_t MAX_POOL_SIZE = 16;
 static const size_t THREAD_POOL_SIZE = MIN(MAX_POOL_SIZE, std::thread::hardware_concurrency());
@@ -62,19 +59,21 @@ public:
     std::bitset<MAX_POOL_SIZE> &executions_status;
     const unsigned int thread_index;
     JobQueue &jobQ;
-    ThreadParams(bool &run_thread, std::bitset<MAX_POOL_SIZE> &executions_status, const unsigned int thread_index, JobQueue &jobQ):
-    run_thread(run_thread), executions_status(executions_status), thread_index(thread_index), jobQ(jobQ) {}
-    
-    ThreadParams(const ThreadParams& other) = default;
+    ThreadParams(bool &run_thread, std::bitset<MAX_POOL_SIZE> &executions_status,
+                 const unsigned int thread_index, JobQueue &jobQ)
+        : run_thread(run_thread), executions_status(executions_status), thread_index(thread_index),
+          jobQ(jobQ) {}
+
+    ThreadParams(const ThreadParams &other) = default;
 };
 
-
-void inline MarkExecuteInProcess(std::bitset<MAX_POOL_SIZE>& executions_status, size_t thread_index) {
+void inline MarkExecuteInProcess(std::bitset<MAX_POOL_SIZE> &executions_status,
+                                 size_t thread_index) {
     executions_status.set(thread_index);
 }
 
-void inline MarkExecuteDone(std::bitset<MAX_POOL_SIZE>& executions_status, size_t thread_index) {
-   executions_status.reset(thread_index);
+void inline MarkExecuteDone(std::bitset<MAX_POOL_SIZE> &executions_status, size_t thread_index) {
+    executions_status.reset(thread_index);
 }
 void thread_main_loop(ThreadParams params) {
     while (params.run_thread) {
@@ -106,8 +105,7 @@ std::mutex queue_guard;
 std::condition_variable queue_cond;
 std::vector<std::thread> thread_pool;
 
-int submit_callback(void *job_queue, AsyncJob **jobs, size_t len,
-                                       void *index_ctx) {
+int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx) {
     {
         std::unique_lock<std::mutex> lock(queue_guard);
         for (size_t i = 0; i < len; i++) {
@@ -135,7 +133,6 @@ int update_mem_callback(void *mem_ctx, size_t mem) {
 // run_thread uses as a signal to the thread that indicates whether it should keep running or
 // stop and terminate the thread.
 
-
 void thread_pool_terminate(JobQueue &jobQ, bool &run_thread) {
     // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
     while (true) {
@@ -153,4 +150,3 @@ void thread_pool_terminate(JobQueue &jobQ, bool &run_thread) {
     thread_pool.clear();
 }
 } // namespace tiered_index_mock
-

@@ -39,3 +39,4 @@ def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200,
     hnsw_params.multi = is_multi
 
     return HNSWIndex(hnsw_params)
+

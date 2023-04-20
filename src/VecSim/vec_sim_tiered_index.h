@@ -69,7 +69,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
                                                  VecSimQueryParams *queryParams) {
     this->flatIndexGuard.lock_shared();
 #ifdef BUILD_TESTS
-        std::cout<<"flat buffer size "<< this->frontendIndex->indexSize() <<std::endl;
+    std::cout << "flat buffer size " << this->frontendIndex->indexSize() << std::endl;
 
 #endif
 
