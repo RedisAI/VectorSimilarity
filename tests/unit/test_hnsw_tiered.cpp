@@ -2019,7 +2019,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
     };
     VecSimParams params = CreateParams(hnsw_params);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
         // manually deconstruct the pair to avoid the clang error
@@ -2027,24 +2026,13 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         auto &decider = lambda.second;
 
         auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-            .primaryIndexParams = &params,
-        };
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << decider_name;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
 
-        auto *hnsw = tiered_index->index;
-        auto *flat = tiered_index->flatBuffer;
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
 
         // For every i, add the vector (i,i,i,i) under the label i.
         for (size_t i = 0; i < n; i++) {
@@ -2077,6 +2065,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         }
         ASSERT_EQ(iteration_num, n_labels / n_res) << decider_name;
         VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
     }
 }
 
@@ -2101,7 +2092,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
     };
     VecSimParams params = CreateParams(hnsw_params);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
         // manually deconstruct the pair to avoid the clang error
@@ -2109,24 +2099,13 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
         auto &decider = lambda.second;
 
         auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-            .primaryIndexParams = &params,
-        };
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << decider_name;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
 
-        auto *hnsw = tiered_index->index;
-        auto *flat = tiered_index->flatBuffer;
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
 
         // For every i, add the vector (i,i,i,i) under the label i.
         for (size_t i = 0; i < n; i++) {
@@ -2182,6 +2161,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
             VecSimBatchIterator_Reset(batchIterator);
         }
         VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
     }
 }
 
@@ -2206,7 +2188,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
     };
     VecSimParams params = CreateParams(hnsw_params);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
         // manually deconstruct the pair to avoid the clang error
@@ -2214,24 +2195,13 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
         auto &decider = lambda.second;
 
         auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-            .primaryIndexParams = &params,
-        };
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << decider_name;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
 
-        auto *hnsw = tiered_index->index;
-        auto *flat = tiered_index->flatBuffer;
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
 
         // For every i, add the vector (i,i,i,i) under the label `n_labels - (i % n_labels)`.
         for (size_t i = 0; i < n; i++) {
@@ -2260,6 +2230,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
 
         ASSERT_EQ(iteration_num, n_labels) << decider_name;
         VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
     }
 }
 
@@ -2285,7 +2258,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     VecSimQueryParams query_params = CreateQueryParams(hnswRuntimeParams);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
         // manually deconstruct the pair to avoid the clang error
@@ -2293,24 +2265,13 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         auto &decider = lambda.second;
 
         auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-            .primaryIndexParams = &params,
-        };
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << decider_name;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
 
-        auto *hnsw = tiered_index->index;
-        auto *flat = tiered_index->flatBuffer;
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
 
         TEST_DATA_T query[d];
         GenerateVector<TEST_DATA_T>(query, d, n);
@@ -2386,6 +2347,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         VecSimQueryResult_Free(res);
 
         VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
     }
 }
 
@@ -2410,7 +2374,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
     };
     VecSimParams params = CreateParams(hnsw_params);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
     for (auto &lambda : lambdas) {
         // manually deconstruct the pair to avoid the clang error
@@ -2418,24 +2381,13 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         auto &decider = lambda.second;
 
         auto jobQ = JobQueue();
-        auto index_ctx = IndexExtCtx();
+        auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
-        TieredIndexParams tiered_params = {
-            .jobQueue = &jobQ,
-            .jobQueueCtx = &index_ctx,
-            .submitCb = submit_callback,
-            .memoryCtx = &memory_ctx,
-            .UpdateMemCb = update_mem_callback,
-            .primaryIndexParams = &params,
-        };
-        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_params, allocator));
-        // Set the created tiered index in the index external context.
-        index_ctx.index_strong_ref.reset(tiered_index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1) << decider_name;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
 
-        auto *hnsw = tiered_index->index;
-        auto *flat = tiered_index->flatBuffer;
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
 
         // For every i, add the vector (i,i,i,i) under the label i.
         size_t flat_count = 0;
@@ -2495,19 +2447,22 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         ASSERT_EQ(iteration_num - excessive_iterations, n_labels / n_res)
             << decider_name << "\nHad excessive iterations: " << (excessive_iterations != 0);
         VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
     }
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases) {
     size_t d = 4;
 
+    std::shared_ptr<VecSimAllocator> allocator;
     TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *tiered_index;
     VecSimIndex *hnsw, *flat;
     TEST_DATA_T query[d];
     VecSimBatchIterator *iterator;
     VecSimQueryResult_List batch;
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams hnsw_params = {
         .type = TypeParam::get_index_type(),
@@ -2517,30 +2472,17 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     };
     VecSimParams params = CreateParams(hnsw_params);
     auto jobQ = JobQueue();
-    auto index_ctx = IndexExtCtx();
+    auto index_ctx = new IndexExtCtx();
     size_t memory_ctx = 0;
-    TieredIndexParams tiered_params = {
-        .jobQueue = &jobQ,
-        .jobQueueCtx = &index_ctx,
-        .submitCb = submit_callback,
-        .memoryCtx = &memory_ctx,
-        .UpdateMemCb = update_mem_callback,
-        .primaryIndexParams = &params,
-    };
+
     auto L2 = [&](size_t element) { return element * element * d; };
-    auto newIndex = [&]() {
-        auto *index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
-            TieredFactory::NewIndex(&tiered_params, allocator));
-        index_ctx.index_strong_ref.reset(index);
-        EXPECT_EQ(index_ctx.index_strong_ref.use_count(), 1);
-        return index;
-    };
 
     // TEST 1:
     // first batch contains duplicates with different scores.
-    tiered_index = newIndex();
-    hnsw = tiered_index->index;
-    flat = tiered_index->flatBuffer;
+    tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+    allocator = tiered_index->getAllocator();
+    hnsw = tiered_index->backendIndex;
+    flat = tiered_index->frontendIndex;
 
     GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 1);
@@ -2579,12 +2521,15 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     VecSimQueryResult_Free(batch);
     // TEST 1 clean up.
     VecSimBatchIterator_Free(iterator);
+    delete index_ctx;
 
     // TEST 2:
     // second batch contains duplicates (different scores) from the first batch.
-    tiered_index = newIndex();
-    hnsw = tiered_index->index;
-    flat = tiered_index->flatBuffer;
+    index_ctx = new IndexExtCtx();
+    tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+    allocator = tiered_index->getAllocator();
+    hnsw = tiered_index->backendIndex;
+    flat = tiered_index->frontendIndex;
 
     GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 1, 1);
@@ -2626,6 +2571,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     VecSimQueryResult_Free(batch);
     // TEST 2 clean up.
     VecSimBatchIterator_Free(iterator);
+
+    delete index_ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
@@ -2654,7 +2601,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
     std::atomic_int successful_searches(0);
     auto parallel_10_batches = [](AsyncJob *job) {

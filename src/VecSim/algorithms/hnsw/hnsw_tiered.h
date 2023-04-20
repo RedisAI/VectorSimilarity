@@ -761,7 +761,8 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->index->mainIndexGuard.lock_shared();
-        this->hnsw_iterator = this->index->backendIndex->newBatchIterator(getQueryBlob(), queryParams);
+        this->hnsw_iterator =
+            this->index->backendIndex->newBatchIterator(getQueryBlob(), queryParams);
         this->hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         if (this->hnsw_iterator->isDepleted()) {
             delete this->hnsw_iterator;
