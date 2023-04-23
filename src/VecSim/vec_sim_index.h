@@ -88,6 +88,16 @@ public:
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getDataSize() const { return data_size; }
 
+    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                              VecSimQueryParams *queryParams) = 0;
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                      VecSimQueryParams *queryParams,
+                                      VecSimQueryResult_Order order) override {
+        auto results = rangeQuery(queryBlob, radius, queryParams);
+        sort_results(results, order);
+        return results;
+    }
+
     void log(const char *fmt, ...) const {
         if (VecSimIndexInterface::logCallback) {
             // Format the message and call the callback

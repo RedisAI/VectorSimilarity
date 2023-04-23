@@ -92,9 +92,11 @@ VecSimQueryResult_List merge_result_lists(VecSimQueryResult_List first,
     return mergedResults;
 }
 
+// Concatenate the results of two queries into the results of the first query, consuming the second.
 static inline void concat_results(VecSimQueryResult_List &first, VecSimQueryResult_List &second) {
     auto &dst = first.results;
     auto &src = second.results;
 
     dst = array_concat(dst, src);
+    VecSimQueryResult_Free(second);
 }

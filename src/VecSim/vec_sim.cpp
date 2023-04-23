@@ -221,14 +221,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, con
     if (radius < 0) {
         throw std::runtime_error("radius must be non-negative");
     }
-    VecSimQueryResult_List results = index->rangeQueryWrapper(queryBlob, radius, queryParams);
-
-    if (order == BY_SCORE) {
-        sort_results_by_score(results);
-    } else {
-        sort_results_by_id(results);
-    }
-    return results;
+    return index->rangeQueryWrapper(queryBlob, radius, queryParams, order);
 }
 
 extern "C" void VecSimIndex_Free(VecSimIndex *index) {

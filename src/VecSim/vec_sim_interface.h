@@ -138,7 +138,8 @@ public:
      * blob.
      */
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams) = 0;
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryResult_Order order) = 0;
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -153,7 +154,9 @@ public:
      * VecSimQueryResult_Iterator.
      */
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) = 0;
+                                              VecSimQueryParams *queryParams,
+                                              VecSimQueryResult_Order order) = 0;
+
     /**
      * @brief Return index information.
      *
