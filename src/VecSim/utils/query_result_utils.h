@@ -101,7 +101,6 @@ static inline void concat_results(VecSimQueryResult_List &first, VecSimQueryResu
     VecSimQueryResult_Free(second);
 }
 
-
 // Sorts the results by id and removes duplicates.
 // Assumes that a result can appear at most twice in the results list.
 // @returns the number of unique results. This should be set to be the new length of the results
