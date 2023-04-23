@@ -72,6 +72,9 @@ typedef enum {
 
 typedef struct AsyncJob AsyncJob; // forward declaration.
 
+// Write async/sync mode
+typedef enum { VecSim_WriteAsync, VecSim_WriteInPlace } VecSimWriteMode;
+
 /**
  * Callback signatures for asynchronous tiered index.
  */
@@ -121,6 +124,7 @@ typedef struct {
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
+    VecSimWriteMode writeInPlaceMode;  // insert/delete vectors in place / using async jobs.
     union {
         TieredHNSWParams tieredHnswParams;
     } specificParams;

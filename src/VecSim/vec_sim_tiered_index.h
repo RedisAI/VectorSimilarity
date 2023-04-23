@@ -34,6 +34,8 @@ protected:
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
 
+    VecSimWriteMode syncMode;
+
     void submitSingleJob(AsyncJob *job) {
         auto **jobs = array_new<AsyncJob *>(1);
         jobs = array_append(jobs, job);
@@ -48,7 +50,8 @@ public:
         : VecSimIndexInterface(backendIndex_->getAllocator()), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {}
+          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb),
+          syncMode(tieredParams.writeInPlaceMode) {}
 
     virtual ~VecSimTieredIndex() {
         VecSimIndex_Free(backendIndex);
@@ -57,6 +60,10 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+
+    void setWriteMode(VecSimWriteMode mode) override {
+        this->syncMode = mode;
+    }
 };
 
 template <typename DataType, typename DistType>

@@ -205,6 +205,8 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
  */
 void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
 
+void VecSimIndex_SetInPlaceWriteMode(VecSimIndex *index, VecSimWriteMode mode);
+
 #ifdef __cplusplus
 }
 #endif

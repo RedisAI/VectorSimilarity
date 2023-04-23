@@ -185,4 +185,6 @@ public:
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
     }
+
+    virtual void setWriteMode(VecSimWriteMode mode) = 0;
 };

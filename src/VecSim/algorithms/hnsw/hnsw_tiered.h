@@ -529,6 +529,63 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
                                                    void *auxiliaryCtx) {
+
+    if (this->syncMode == VecSim_WriteInPlace) { // or buffer limit exceeds threshold - todo
+        AddVectorCtx state = {0};
+        auto *hnsw_index = this->getHNSWIndex();
+        this->mainIndexGuard.lock_shared();
+        hnsw_index->lockIndexDataGuard();
+        // Check if resizing is needed for HNSW index (requires write lock).
+        if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+            // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
+            this->mainIndexGuard.unlock_shared();
+            hnsw_index->unlockIndexDataGuard();
+            this->mainIndexGuard.lock();
+            hnsw_index->lockIndexDataGuard();
+            // Check if resizing is still required (another thread might have done it in the meantime
+            // while we release the shared lock).
+            if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+                hnsw_index->increaseCapacity();
+            }
+            // Hold the index data lock while we store the new element. If the new node's max level is
+            // higher than the current one, hold the lock through the entire insertion to ensure that
+            // graph scans will not occur, as they will try access the entry point's neighbors.
+            state = hnsw_index->storeNewElement(label);
+
+            // If we're still holding the index data guard, we cannot take the main index lock for
+            // shared ownership as it may cause deadlocks, and we also cannot release the main index
+            // lock between, since we cannot allow swap jobs to happen, as they will make the
+            // saved state invalid. Hence, we insert the vector with the current exclusive lock held.
+            if (state.elementMaxLevel <= state.currMaxLevel) {
+                hnsw_index->unlockIndexDataGuard();
+            }
+            // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
+            hnsw_index->addVector(blob, label, &state);
+            if (state.elementMaxLevel > state.currMaxLevel) {
+                hnsw_index->unlockIndexDataGuard();
+            }
+            this->mainIndexGuard.unlock();
+        } else {
+            // Do the same as above except for changing the capacity, but with *shared* lock held:
+            // Hold the index data lock while we store the new element. If the new node's max level is
+            // higher than the current one, hold the lock through the entire insertion to ensure that
+            // graph scans will not occur, as they will try access the entry point's neighbors.
+            state = hnsw_index->storeNewElement(label);
+
+            if (state.elementMaxLevel <= state.currMaxLevel) {
+                hnsw_index->unlockIndexDataGuard();
+            }
+            // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
+            hnsw_index->addVector(blob, label, &state);
+            if (state.elementMaxLevel > state.currMaxLevel) {
+                hnsw_index->unlockIndexDataGuard();
+            }
+            this->mainIndexGuard.unlock_shared();
+        }
+        this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
+        return 1;
+    }
+
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
     this->flatIndexGuard.lock();
     if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
@@ -591,13 +648,19 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
     // Note that we may remove the same vector that has been removed from the flat index, if it was
     // being ingested at that time.
-    this->mainIndexGuard.lock_shared();
-    num_deleted_vectors += this->deleteLabelFromHNSW(label);
-    this->mainIndexGuard.unlock_shared();
-
-    // Apply ready swap jobs if number of deleted vectors reached the threshold
-    // (under exclusive lock of the main index guard).
-    this->executeReadySwapJobs();
+    if (this->syncMode == VecSim_WriteAsync) {
+        this->mainIndexGuard.lock_shared();
+        num_deleted_vectors += this->deleteLabelFromHNSW(label);
+        this->mainIndexGuard.unlock_shared();
+        // Apply ready swap jobs if number of deleted vectors reached the threshold
+        // (under exclusive lock of the main index guard).
+        this->executeReadySwapJobs();
+    } else {
+        // delete in place.
+        this->mainIndexGuard.lock();
+        num_deleted_vectors += this->backendIndex->deleteVector(label);
+        this->mainIndexGuard.unlock();
+    }
 
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return num_deleted_vectors;
