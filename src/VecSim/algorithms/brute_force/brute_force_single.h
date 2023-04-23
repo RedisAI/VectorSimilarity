@@ -21,7 +21,8 @@ public:
                            const AbstractIndexInitParams &abstractInitParams);
     ~BruteForceIndex_Single();
 
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVectorImp(const void *vector_data, labelType label,
+                     void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
@@ -109,15 +110,8 @@ template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
-int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                          void *auxiliaryCtx) {
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
+int BruteForceIndex_Single<DataType, DistType>::addVectorImp(const void *vector_data,
+                                                             labelType label, void *auxiliaryCtx) {
 
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.

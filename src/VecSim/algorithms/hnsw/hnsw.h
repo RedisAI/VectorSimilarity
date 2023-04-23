@@ -273,6 +273,12 @@ public:
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
+    virtual const void *processBlob(const void *blob) override {
+        return processBlobImp<DataType>(blob);
+    }
+    virtual void returnProcessBlob(const void *processed_blob) override {
+        return returnProcessBlobImp<DataType>(processed_blob);
+    }
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
@@ -1851,12 +1857,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
     // Initialisation of the vector data and its label.
     setExternalLabel(new_element_id, label);
-    DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
 
     // Start scanning the graph from the current entry point.

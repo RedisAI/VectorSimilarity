@@ -6,6 +6,7 @@
 
 #pragma once
 #include "vec_sim_common.h"
+#include "vec_sim.h"
 #include "query_results.h"
 #include "VecSim/memory/vecsim_base.h"
 #include "info_iterator_struct.h"
@@ -47,7 +48,29 @@ public:
      * appropriate.
      * @return the number of new vectors inserted (1 for new insertion, 0 for override).
      */
-    virtual int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) = 0;
+    virtual int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr);
+
+    /**
+     * @brief A function to be implemented by the inherting index and called by addVector.
+     * @param blob is a processed vector (for example, if the distance metric is cosine,
+     * blob is already *normalized* )
+     * It is assumed the the index savws its own copy of the blob.
+     */
+    virtual int addVectorImp(const void *blob, labelType label, void *auxiliaryCtx = nullptr) = 0;
+
+    /**
+     * @brief This functions gets a blob, and if required, *allocates its own copy* of it,
+     * and performs operations before sending it to addVectorImp
+     * Returns the blob to be added to index. It is assumed that the index copies the blob.
+     * NOTE: It is the caller responsability to call returnProcessBlob() after adding the vector to
+     * the index is done, to free resources.
+     */
+    virtual const void *processBlob(const void *blob) = 0;
+
+    /**
+     * @brief A function to free resources used to generate the processed blob.
+     */
+    virtual void returnProcessBlob(const void *processed_blob) = 0;
 
     /**
      * @brief Remove a vector from an index.

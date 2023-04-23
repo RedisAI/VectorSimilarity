@@ -57,6 +57,14 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+
+private:
+    const void *processBlob(const void *blob) override {
+        return this->backendIndex->processBlob(blob);
+    }
+    void returnProcessBlob(const void *processed_blob) override {
+        this->backendIndex->returnProcessBlob(processed_blob);
+    }
 };
 
 template <typename DataType, typename DistType>

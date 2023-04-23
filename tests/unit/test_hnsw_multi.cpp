@@ -51,7 +51,7 @@ TYPED_TEST(HNSWMultiTest, vector_add_multiple_test) {
         for (size_t i = 0; i < dim; i++) {
             a[i] = (TEST_DATA_T)i * j + i;
         }
-        ASSERT_EQ(this->CastToHNSW_Multi(index)->addVector(a, 46), 1);
+        ASSERT_EQ(this->CastToHNSW_Multi(index)->addVectorImp(a, 46), 1);
     }
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), rep);

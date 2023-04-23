@@ -5,6 +5,7 @@
  */
 
 #include "VecSim/vec_sim_interface.h"
+#include "VecSim/utils/vec_utils.h"
 #include <cstdarg>
 #include <iostream>
 
@@ -13,3 +14,10 @@ void Vecsim_Log(void *ctx, const char *message) { std::cout << message << std::e
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
+
+int VecSimIndexInterface::addVector(const void *blob, labelType label, void *auxiliaryCtx) {
+    const void *processed_blob = processBlob(blob);
+    int ret = addVectorImp(processed_blob, label, auxiliaryCtx);
+    returnProcessBlob(processed_blob);
+    return ret;
+}

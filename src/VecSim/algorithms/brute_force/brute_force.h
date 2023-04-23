@@ -113,6 +113,13 @@ protected:
     virtual inline VecSimBatchIterator *
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
 
+private:
+    virtual const void *processBlob(const void *blob) override {
+        return processBlobImp<DataType>(blob);
+    }
+    virtual void returnProcessBlob(const void *processed_blob) override {
+        return returnProcessBlobImp<DataType>(processed_blob);
+    }
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
 #endif

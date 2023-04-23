@@ -68,7 +68,8 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVectorImp(const void *vector_data, labelType label,
+                     void *auxiliaryCtx = nullptr) override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing = false) const override;
@@ -154,8 +155,8 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                    void *auxiliaryCtx) {
+int HNSWIndex_Single<DataType, DistType>::addVectorImp(const void *vector_data,
+                                                       const labelType label, void *auxiliaryCtx) {
 
     // Checking if an element with the given label already exists.
     bool label_exists = false;
