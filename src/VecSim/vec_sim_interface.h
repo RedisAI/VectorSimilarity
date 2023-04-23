@@ -186,6 +186,12 @@ public:
         VecSimIndexInterface::logCallback = callback;
     }
 
+    /**
+     * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
+     * background jobs, or insert/delete inplace.
+     *
+     * @param mode VecSimWriteMode to mode to write in.
+     */
     static VecSimWriteMode asyncWriteMode;
     inline static void setWriteMode(VecSimWriteMode mode) {
         VecSimIndexInterface::asyncWriteMode = mode;

@@ -205,7 +205,13 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
  */
 void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
 
-void VecSimIndex_SetInPlaceWriteMode(VecSimIndex *index, VecSimWriteMode mode);
+/**
+ * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
+ * background jobs, or insert/delete inplace.
+ *
+ * @param mode VecSimWriteMode to mode to write in.
+ */
+void VecSim_SetInPlaceWriteMode(VecSimWriteMode mode);
 
 #ifdef __cplusplus
 }

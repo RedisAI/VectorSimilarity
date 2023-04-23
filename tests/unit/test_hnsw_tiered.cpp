@@ -1983,3 +1983,121 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
 
     delete index_ctx;
 }
+
+TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSim_SetInPlaceWriteMode(VecSim_WriteInPlace);
+    // Validate that the vector was inserted directly to the HNSW index.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+
+    // Validate that the vector is removed in place.
+    tiered_index->deleteVector(0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 16;
+    size_t n = 1000;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .M = 32};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    VecSim_SetInPlaceWriteMode(VecSim_WriteAsync);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    // Create and insert vectors one by one async.
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+    size_t n_labels = n / per_label;
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
+    }
+
+    // Insert another n more vectors IN-PLACE, while the previous vectors are still being indexed.
+    VecSim_SetInPlaceWriteMode(VecSim_WriteInPlace);
+    EXPECT_LT(tiered_index->backendIndex->indexSize(), n);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
+    }
+    thread_pool_join(jobQ, run_thread);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2*n);
+
+    // Now delete the last n inserted vectors of the index using async jobs.
+    VecSim_SetInPlaceWriteMode(VecSim_WriteAsync);
+    run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+    for (size_t i = 0; i < n_labels; i++) {
+        VecSimIndex_DeleteVector(tiered_index, n_labels + i);
+    }
+    // At this point, repair jobs should be executed in the background.
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
+
+    // Insert INPLACE another n vector (instead of the ones that were deleted)
+    VecSim_SetInPlaceWriteMode(VecSim_WriteInPlace);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
+        // Run a query and see that we only receive ids with label < n_labels+i (the label that we
+        // just inserted), and the first result should be this vector.
+        auto ver_res = [&](size_t label, double score, size_t index) {
+            if (index == 0) {
+                ASSERT_EQ(label, i % n_labels + n_labels);
+                ASSERT_DOUBLE_EQ(score, 0);
+            }
+            ASSERT_LE(label, i + n_labels);
+        };
+        runTopKSearchTest(tiered_index, vector, 10, ver_res);
+    }
+
+    thread_pool_join(jobQ, run_thread);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 2*n_labels);
+
+    delete index_ctx;
+}

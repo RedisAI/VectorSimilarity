@@ -22,7 +22,7 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
     VecSimIndex::setLogCallbackFunction(callback);
 }
 
-extern "C" void VecSimIndex_SetInPlaceWriteMode(VecSimIndex *index, VecSimWriteMode mode) {
+extern "C" void VecSim_SetInPlaceWriteMode(VecSimWriteMode mode) {
     VecSimIndex::setWriteMode(mode);
 }
 
