@@ -100,3 +100,41 @@ static inline void concat_results(VecSimQueryResult_List &first, VecSimQueryResu
     dst = array_concat(dst, src);
     VecSimQueryResult_Free(second);
 }
+
+
+// Sorts the results by id and removes duplicates.
+// Assumes that a result can appear at most twice in the results list.
+// @returns the number of unique results. This should be set to be the new length of the results
+template <bool IsMulti>
+void filter_results_by_id(VecSimQueryResult_List results) {
+    if (VecSimQueryResult_Len(results) < 2) {
+        return;
+    }
+    sort_results_by_id(results);
+
+    size_t i, cur_end;
+    for (i = 0, cur_end = 0; i < VecSimQueryResult_Len(results) - 1; i++, cur_end++) {
+        const VecSimQueryResult *cur_res = results.results + i;
+        const VecSimQueryResult *next_res = cur_res + 1;
+        if (VecSimQueryResult_GetId(cur_res) == VecSimQueryResult_GetId(next_res)) {
+            if (IsMulti) {
+                // On multi value index, scores might be different and we want to keep the lower
+                // score.
+                if (VecSimQueryResult_GetScore(cur_res) < VecSimQueryResult_GetScore(next_res)) {
+                    results.results[cur_end] = *cur_res;
+                } else {
+                    results.results[cur_end] = *next_res;
+                }
+            } else {
+                // On single value index, scores are the same so we can keep any of the results.
+                results.results[cur_end] = *cur_res;
+            }
+            // Assuming every id can appear at most twice, we can skip the next comparison between
+            // the current and the next result.
+            i++;
+        } else {
+            results.results[cur_end] = *cur_res;
+        }
+    }
+    array_pop_back_n(results.results, i - cur_end);
+}

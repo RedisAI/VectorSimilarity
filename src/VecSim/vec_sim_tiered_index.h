@@ -3,7 +3,7 @@
 #include "vec_sim_index.h"
 #include "algorithms/brute_force/brute_force.h"
 #include "VecSim/batch_iterator.h"
-#include "VecSim/utils/merge_results.h"
+#include "VecSim/utils/query_result_utils.h"
 
 #include <shared_mutex>
 
@@ -209,13 +209,11 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             }
         } else {
             concat_results(main_results, flat_results);
-            size_t new_len;
             if (this->backendIndex->isMultiValue()) {
-                new_len = filter_results_by_id<true>(main_results);
+                filter_results_by_id<true>(main_results);
             } else {
-                new_len = filter_results_by_id<false>(main_results);
+                filter_results_by_id<false>(main_results);
             }
-            array_pop_back_n(main_results.results, VecSimQueryResult_Len(main_results) - new_len);
             return main_results;
         }
     }
