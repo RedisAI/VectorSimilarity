@@ -381,7 +381,20 @@ public:
     }
 };
 
+template <typename DistType>
+struct KNNLogCtx {
+    VecSimIndexAbstract<DistType> *flat_index;
+    size_t curr_flat_size;
+    KNNLogCtx() : flat_index(nullptr), curr_flat_size(0) {}
+};
+
 class PyTIEREDIndex : public PyVecSimIndex {
+private:
+    VecSimIndexAbstract<float> *getFlatBuffer() {
+        return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
+            ->getFlatbufferIndex();
+    }
+
 protected:
     JobQueue jobQueue;          // External queue that holds the jobs.
     IndexExtCtx jobQueueCtx;    // External context to be sent to the submit callback.
@@ -391,6 +404,8 @@ protected:
                                 // with a given memory (number).
     bool run_thread;
     std::bitset<MAX_POOL_SIZE> executions_status;
+
+    KNNLogCtx<float> knnLogCtx;
 
     TieredIndexParams TieredIndexParams_Init() {
         TieredIndexParams ret = {
@@ -408,6 +423,7 @@ public:
     explicit PyTIEREDIndex()
         : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback),
           run_thread(true) {
+
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
             ThreadParams params(run_thread, executions_status, i, jobQueue);
             thread_pool.emplace_back(thread_main_loop, params);
@@ -434,11 +450,34 @@ public:
     }
 
     size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
+
+    static void log_flat_buffer_size(void *ctx, const char *msg) {
+        auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
+        knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexSize();
+
+        std::cout << "messaage is = " << msg
+                  << "log is count buffer = " << knnLogCtx->curr_flat_size << std::endl;
+    }
+    void SetKNNLogCtx() {
+        knnLogCtx.flat_index = getFlatBuffer();
+        knnLogCtx.curr_flat_size = 0;
+        knnLogCtx.flat_index->setLogCtx(&knnLogCtx);
+        this->index->setLogCallbackFunction(log_flat_buffer_size);
+    }
+
+    size_t getFlatIndexSize(const char *mode) {
+        if (!strcmp(mode, "insert_and_knn")) {
+            return knnLogCtx.curr_flat_size;
+        }
+
+        return getFlatBuffer()->indexSize();
+    }
+
+    void ResetKNNLogCtx() { this->index->resetLogCallbackFunction(); }
 };
 
 PyTIEREDIndex::~PyTIEREDIndex() { thread_pool_terminate(jobQueue, run_thread); }
 class PyTIERED_HNSWIndex : public PyTIEREDIndex {
-
 public:
     explicit PyTIERED_HNSWIndex(const HNSWParams &hnsw_params,
                                 const TIERED_HNSWParams &tiered_hnsw_params) {
@@ -459,7 +498,6 @@ public:
         // Set the created tiered index in the index external context.
         this->jobQueueCtx.index_strong_ref = this->index;
     }
-
     size_t HNSWLabelCount() { return this->index->info().hnswInfo.indexLabelCount; }
 };
 
@@ -571,7 +609,9 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
 
     py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex")
-        .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10);
+        .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
+        .def("get_curr_bf_size", &PyTIERED_HNSWIndex::getFlatIndexSize, py::arg("mode"))
+        .def("start_knn_log", &PyTIERED_HNSWIndex::SetKNNLogCtx);
 
     py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
         .def(py::init(

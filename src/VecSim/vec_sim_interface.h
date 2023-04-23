@@ -185,4 +185,7 @@ public:
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
     }
+#ifdef BUILD_TESTS
+    static void resetLogCallbackFunction();
+#endif
 };

@@ -57,6 +57,9 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+#ifdef BUILD_TESTS
+    inline VecSimIndexAbstract<DistType> *getFlatbufferIndex() { return this->backendIndex; }
+#endif
 };
 
 #ifdef BUILD_TESTS
@@ -69,8 +72,8 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
                                                  VecSimQueryParams *queryParams) {
     this->flatIndexGuard.lock_shared();
 #ifdef BUILD_TESTS
-    std::cout << "flat buffer size " << this->frontendIndex->indexSize() << std::endl;
-
+    size_t num = this->getFlatbufferIndex()->indexSize();
+    this->getFlatbufferIndex()->log(std::to_string(num).c_str());
 #endif
 
     // If the flat buffer is empty, we can simply query the main index.

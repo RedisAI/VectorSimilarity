@@ -9,8 +9,20 @@ import time
 from common import *
 import hnswlib
 import h5py
+from urllib.request import urlretrieve
 import pickle
 
+def download(src, dst):
+    if not os.path.exists(dst):
+        print('downloading %s -> %s...' % (src, dst))
+        urlretrieve(src, dst)
+
+# Download dataset from s3, save the file locally
+def get_data_set(dataset_name):
+    hdf5_filename = os.path.join('%s.hdf5' % dataset_name)
+    url = 'https://s3.amazonaws.com/benchmarks.redislabs/vecsim/dbpedia/dbpedia-768.hdf5'
+    download(url, hdf5_filename)
+    return h5py.File(hdf5_filename, 'r')
 
 def load_data(dataset_name):
     data = 0
@@ -21,13 +33,12 @@ def load_data(dataset_name):
         data = np.load(np_data_file_path, allow_pickle = True)
         print(f"yay! loaded ")
     except:
-        hdf5_filename = os.path.join('%s.hdf5' % dataset_name)
-        dataset = h5py.File(hdf5_filename, 'r')
+        dataset = get_data_set(dataset_name)
         data = np.array(dataset['train'])
         np.save(np_data_file_path, data)
         print(f"yay! generated")
     
-    return data    
+    return data   
 
 def load_queries(dataset_name):
     queries = 0
@@ -44,74 +55,139 @@ def load_queries(dataset_name):
         print(f"yay! generated ")
     
     return queries    
-  
-
-def create_dbpedia(hnsw_params, tiered_hnsw_params, data):
+class DBPediaIndexCtx:
+    def __init__(self, data_size = 0, M = 32, ef_c = 512, ef_r = 10):
+        self.M = M
+        self.efConstruction = ef_c
+        self.efRuntime = ef_r 
+        
+        data = load_data("dbpedia-768")
+        self.num_elements = data_size if data_size != 0 else data.shape[0]
+        
+        print(self.num_elements)
+        self.data = data[:self.num_elements]
+        self.dim = len(self.data[0])
+        self.metric = VecSimMetric_Cosine
+        self.type = VecSimType_FLOAT32
+        
+        self.hnsw_params = create_hnsw_params(self.dim, self.num_elements, self.metric, self.type, ef_c, M, ef_r)
+        self.tiered_hnsw_params = TIERED_HNSWParams()
+        self.tiered_hnsw_params.i = 0  
+        
+        self.tiered_index = TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
+        
+    def init_and_populate_flat_index(self):
+        bfparams = BFParams()
+        bfparams.initialCapacity = self.num_elements
+        bfparams.dim =self.dim
+        bfparams.type =self.type
+        bfparams.metric =self.metric
+        self.flat_index = BFIndex(bfparams)
+        
+        for i, vector in enumerate(self.data):
+            self.flat_index.add_vector(vector, i)
+        
+        return self.flat_index
     
-    index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
+    def init_and_populate_hnsw_index(self):
+        hnsw_index = HNSWIndex(self.hnsw_params)
+        
+        for i, vector in enumerate(self.data):
+            hnsw_index.add_vector(vector, i)
+        self.hnsw_index = hnsw_index
+        return hnsw_index
+    
+    
+        
+def create_dbpedia():
+    
+    indices_ctx = DBPediaIndexCtx()
+    index = indices_ctx.tiered_index
+    num_elements = indices_ctx.num_elements 
     
     threads_num = index.get_threads_num()
-    num_elements = data.shape[0]
+    data = indices_ctx.data
+    
+    # Measure insertion to tiered index
     
     print(f"Insert {num_elements} vectors to tiered index")
-    dur = 0
+    start = time.time()
     for i, vector in enumerate(data):
-        start = time.time()
         index.add_vector(vector, i)
-        dur += time.time() - start
-        if(i % 10000 == 0):
-            print(f"inserted {i} elements to the flat buffer\n")
     index.wait_for_index()
+    dur = time.time() - start
     
     print(f"Insert {num_elements} vectors to tiered index took {dur} s")
     
-    hnsw_index = HNSWIndex(hnsw_params)
+    # Measure total memory of the tiered index 
+    print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} bytes")
+    
+    # Measure insertion to parallel index
+    
+    hnsw_parallel_index = HNSWIndex(indices_ctx.hnsw_params)
+    print(f"Insert {num_elements} vectors to parallel hnsw index")
+    start = time.time()
+    hnsw_parallel_index.add_vector_parallel(data, np.array(range(num_elements)), num_threads=threads_num)
+    dur = time.time() - start
+    print(f"Insert {num_elements} vectors to parallel hnsw index took {dur} s")   
+    
+    
+    hnsw_index = HNSWIndex(indices_ctx.hnsw_params)
     print(f"Insert {num_elements} vectors to hnsw index")
     start = time.time()
     for i, vector in enumerate(data):
         hnsw_index.add_vector(vector, i)
     dur = time.time() - start
     
+    print(f"total memory of hnsw index = {hnsw_index.index_memory()} bytes")
     print(f"Insert {num_elements} vectors to hnsw index took {dur} s")   
-
-    hnsw_parallel_index = HNSWIndex(hnsw_params)
-    print(f"Insert {num_elements} vectors to parallel hnsw index")
-    start = time.time()
-    hnsw_parallel_index.add_vector_parallel(data, np.array(range(num_elements)), num_threads=threads_num)
-    dur = time.time() - start
     
-    print(f"Insert {num_elements} vectors to parallel hnsw index took {dur} s")   
 
-def search_insert_dbpedia(hnsw_params, tiered_hnsw_params, bf_index, data):
-    index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
 
-    num_elements = data.shape[0]
-
-    test = 100000
-    data = data[:test]
-     #Add all the vectors in the train set into the flat.
-    for i, vector in enumerate(data):
-        bf_index.add_vector(vector, i)
+def search_insert_dbpedia():
+   
+    indices_ctx = DBPediaIndexCtx()
+    index = indices_ctx.tiered_index
+    num_elements = indices_ctx.num_elements
+    
+    data = indices_ctx.data
     
     queries = load_queries("dbpedia-768")
     
-    start = time.time()
+    # Start background insertion the vectors into the tired index
+    index_start = time.time()
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
-    dur = time.time() - start
     
     correct = 0
     bf_total_time = 0
     hnsw_total_time = 0
-    num_queries = 1
     k = 10
+    query_index = 0
+    
+    index.start_knn_log()
+    hnsw_size_vs_query_time = []
     while index.hnsw_label_count() < num_elements:
         start = time.time()
-        tiered_labels, tiered_distances = index.knn_query(queries[0], k)
+        tiered_labels, tiered_distances = index.knn_query(queries[query_index], k)
         dur = time.time() - start
-        time.sleep(0.5)
-        print(f"search took{dur}")
+        hnsw_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
+        hnsw_size_vs_query_time.append((hnsw_curr_size, dur))
+        print(hnsw_curr_size)
+        time.sleep(1)
+        query_index += 1
+        print(f"search took {dur}")
+    
+    index_dur = time.time() - index_start
+    print(f"search + indexing took  {index_dur} s")
+    print(f"total memory of tiered index = {index.index_memory()} bytes")
+
+     #Add all the vectors in the train set into the flat.
+    bf_index = indices_ctx.init_and_populate_flat_index()
+
         
+    num_queries = queries.shape[0]
+    num_queries = 100
     # Measure recall and times
     for target_vector in queries[:num_queries]:
         start = time.time()
@@ -128,236 +204,59 @@ def search_insert_dbpedia(hnsw_params, tiered_hnsw_params, bf_index, data):
     print("BF query per seconds: ", num_queries/bf_total_time)
     print("tiered query per seconds: ", num_queries/hnsw_total_time)   
 
-def test_insert_search():
-    dim = 16
+def sanity_test():
     num_elements = 10000
-    M = 16
-    efConstruction = 100
-    efRuntime = 10
-
-    hnsw_params = create_hnsw_params(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    tiered_hnsw_params = TIERED_HNSWParams()
-    tiered_hnsw_params.i = 0
-    index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
-    threads_num = index.get_threads_num()
+    k = num_elements
     
-    #insert vector
-    start = time.time()
-    for i, vector in enumerate(data):
+    indices_ctx = DBPediaIndexCtx(data_size = num_elements)
+    index = indices_ctx.tiered_index    
+    
+    #add vectors to the tiered index one by one
+    for i, vector in enumerate(indices_ctx.data):
         index.add_vector(vector, i)
-    dur = time.time() - start
+        index.wait_for_index(5)
     
-    #query
-    #get label count
-    #measure search time
+    print(f"done indexing, label count = {index.hnsw_label_count()}")
+    
+    # create hnsw inedx
+    hnsw_index = indices_ctx.init_and_populate_hnsw_index()
+    
+    queries = load_queries("dbpedia-768")
+    #search knn in tiered
+    tiered_labels, tiered_dist = index.knn_query(queries[0], k)
+    #search knn in hnsw
+    hnsw_labels, hnsw_dist = hnsw_index.knn_query(queries[0], k)
+    
+    #compare
+    for i, hnsw_res_label in enumerate(hnsw_labels[0]):
+        tiered_res_label = tiered_labels[0][i]
+        if(hnsw_res_label != tiered_res_label):
+            print(f"mismatched in pos {i}")
+            print(f"hnsw_label is {hnsw_res_label}")
+            print(f"tiered_label is {tiered_res_label}")
+            
+            hnsw_label_to_query_dist_hnsw = hnsw_index.get_distance_from(hnsw_res_label, queries[0])
+            hnsw_label_to_query_dist_tiered = index.get_distance_from(hnsw_res_label, queries[0])
+            print(f"distance from {hnsw_res_label} query in hnsw is {hnsw_label_to_query_dist_hnsw}")
+            print(f"distance from {hnsw_res_label} query in tiered is {hnsw_label_to_query_dist_tiered}")
+            hnsw_label_to_query_dist_hnsw = hnsw_index.get_distance_from(hnsw_res_label, queries[0])
+            hnsw_label_to_query_dist_tiered = index.get_distance_from(hnsw_res_label, queries[0])
+            print(f"distance from {hnsw_res_label} query in tiered is {hnsw_label_to_query_dist_tiered}")
+            print(f"distance from {hnsw_res_label} query in hnsw is {hnsw_label_to_query_dist_hnsw}\n")
         
-def test_create_new_index():
-    dim = 16
-    num_elements = 10000
-    M = 16
-    efConstruction = 100
-    efRuntime = 10
+        #if the label is not the same
+            #get the disteance with get_distance()
 
-    hnsw_params = create_hnsw_params(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    tiered_hnsw_params = TIERED_HNSWParams()
-    tiered_hnsw_params.i = 0
-    index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
-    threads_num = index.get_threads_num()
-    
-    hnsw_index =  create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    parallel_index =  create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    data = np.float32(np.random.random((num_elements, dim)))
-    print(f"label count = {index.hnsw_label_count()}")
-    
-    start = time.time()
-    for i, vector in enumerate(data):
-        index.add_vector(vector, i)
-    index.wait_for_index()
-    dur = time.time() - start
-    
-    
-    print(f"indexing tiered took{dur}")
-    print(f"label count = {index.hnsw_label_count()}")
-    
-    start = time.time()
-    parallel_index.add_vector_parallel(data, np.array(range(num_elements)), num_threads=threads_num)
-
-    dur = time.time() - start
-    print(f"parallel label count = {parallel_index.index_size()}")
-    
-    
-    print(f"indexing parallel_index took{dur}")
-    start = time.time()
-    for i, vector in enumerate(data):
-        hnsw_index.add_vector(vector, i)
-    dur = time.time() - start
-    
-    print(index.index_size())
-    print(f"indexing hnsw took{dur}")
-    #add
-    #search
-    k = 10
-    # query_data = np.float32(np.random.random((1, dim)))
-
-    
-    # tiered_labels, tiered_distances = index.knn_query(query_data, k)
-    # hnsw_labels, hnsw_distances = hnsw_index.knn_query(query_data, k)
-    # assert_allclose(tiered_labels, hnsw_labels, rtol=1e-5, atol=0)
-    # assert_allclose(tiered_distances, hnsw_distances, rtol=1e-5, atol=0)
-    # print(f"tiered labels = {tiered_labels}")
-    # print(f"hnsw labels = {hnsw_labels}")
-    # print(f"tiered dist = {tiered_distances}")
-    # print(f"hnsw dist = {hnsw_distances}")
-    
-    num_queries = 1000
-    query_data = np.float32(np.random.random((num_queries, dim)))  
-    start = time.time()
-    for i, query in enumerate(query_data):
-        hnsw_labels, hnsw_distances = hnsw_index.knn_query(query, k)
-    total_search_time_hnsw = time.time() - start
-    
-    print(f"search hnsw took {total_search_time_hnsw}")
-    
-    start = time.time()
-    parallel_labels, parallel_distances = hnsw_index.knn_parallel(query_data, k, num_threads=threads_num)
-    total_search_time_parallel = time.time() - start
-    
-    print(f"search in parallel took {total_search_time_parallel}")
-    
-    
-    start = time.time()
-    for i, query in enumerate(query_data):
-        tiered_labels, tiered_distances = index.knn_query(query, k)
-    total_search_time_tiered = time.time() - start
-    
-    print(f"search tiered took {total_search_time_tiered}")
-    
-    # assert_allclose(tiered_labels, hnsw_labels, rtol=1e-5, atol=0)
-    # assert_allclose(parallel_labels, hnsw_labels, rtol=1e-5, atol=0)
-    
-    # assert_allclose(tiered_distances, hnsw_distances, rtol=1e-5, atol=0)
-    # assert_allclose(parallel_distances, hnsw_distances, rtol=1e-5, atol=0)
-    
-    # print(f"tiered labels = {tiered_labels}")
-    # print(f"hnsw labels = {hnsw_labels}")
-    # print(f"parallel labels = {parallel_labels}")
-    # print(f"tiered dist = {tiered_distances}")
-    # print(f"hnsw dist = {hnsw_distances}")
-    # print(f"hnsw dist = {parallel_distances}")
-    
-    #compare with hnsw
-def test_serach():
-    dim = 16
-    num_elements = 100000
-    M = 16
-    efConstruction = 100
-    efRuntime = 10
-
-    hnsw_params = create_hnsw_params(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    tiered_hnsw_params = TIERED_HNSWParams()
-    tiered_hnsw_params.i = 0
-    index = TIERED_HNSWIndex(hnsw_params, tiered_hnsw_params)
-    threads_num = index.get_threads_num()
-    
-    hnsw_index =  create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    hnsw_index2 =  create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    parallel_index =  create_hnsw_index(dim, num_elements, VecSimMetric_Cosine, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    data = np.float32(np.random.random((num_elements, dim)))
-    print(f"label count = {index.hnsw_label_count()}")
-    
-    start = time.time()
-    for i, vector in enumerate(data):
-        index.add_vector(vector, i)
-    #    index.wait_for_index()
-    dur = time.time() - start
-    
-    k = 10
-    num_queries = 100
-    query_data = np.float32(np.random.random((1, dim)))
-    
-    while index.hnsw_label_count() < num_elements:
-        start = time.time()
-        tiered_labels, tiered_distances = index.knn_query(query_data, k)
-        dur = time.time() - start
-        time.sleep(0.05)
-        print(f"isearch took{dur}")
-        
-    start = time.time()
-    tiered_labels, tiered_distances = index.knn_query(query_data, k)
-    dur = time.time() - start
-    print(f"isearch took{dur}")   
-    
-    
-    print(f"label count = {index.hnsw_label_count()}")
-    
-    start = time.time()
-    parallel_index.add_vector_parallel(data, np.array(range(num_elements)), num_threads=threads_num)
-
-    dur = time.time() - start
-    print(f"parallel label count = {parallel_index.index_size()}")
-    
-    
-    print(f"indexing parallel_index took{dur}")
-    start = time.time()
-    for i, vector in enumerate(data):
-        hnsw_index.add_vector(vector, i)
-    dur = time.time() - start
-    
-    print(hnsw_index.index_size())
-    print(f"indexing hnsw took{dur}")
-
-    #create tiered
-    #insert one by one (call wait for index after each insertion)
-    
-    #create hnsw
-    #create parallel
-    
-  
-    
-    hnsw_labels, hnsw_distances = hnsw_index.knn_query(query_data, k)
-    hnsw_labels2, hnsw_distances2 = hnsw_index2.knn_query(query_data, k)
-    for i, label in enumerate(hnsw_labels[0]):
-      if label != tiered_labels[0][i]:
-        print(f"pos = {i}")
-        print(f"label hnsw= {label}")
-        print(f"dist hnsw= {hnsw_distances[0][i]}")
-        
-        print(f"label tiers= {tiered_labels[0][i]}")
-        print(f"label tiers= {tiered_distances[0][i]}")
-        
-    print(np.array_equal(hnsw_labels[0], tiered_labels[0]))
-    # assert_allclose(parallel_labels, hnsw_labels, rtol=1e-5, atol=0)
-    
-    # assert_allclose(tiered_distances, hnsw_distances, rtol=1e-5, atol=0)
-    # assert_allclose(parallel_distances, hnsw_distances, rtol=1e-5, atol=0)
-#כמה וקטורים שנארו לי לאנדקס כפונקציה של כמה זמן לקח השאילתה
- 
 def test_main():
-    data = load_data("dbpedia-768")
-    
-    M = 64
-    efConstruction = 512
-    efRuntime = 10 
-    dim = len(data[0])
-    print(f"dim = {dim}")
-    num_elements = data.shape[0]
-    print(f"num_elements = {num_elements}")
-    
-    metric = VecSimMetric_Cosine
-    hnsw_params = create_hnsw_params(dim, num_elements, metric, VecSimType_FLOAT32, efConstruction, M, efRuntime)
-    tiered_hnsw_params = TIERED_HNSWParams()
-    tiered_hnsw_params.i = 0        
-    
+
     print("Test creation")
-    create_dbpedia(hnsw_params,tiered_hnsw_params, data)
+    #create_dbpedia()
     
     ("Test search")
-    bfparams = BFParams()
-    bfparams.initialCapacity = num_elements
-    bfparams.dim = dim
-    bfparams.type = VecSimType_FLOAT32
-    bfparams.metric = metric
-    bf_index = BFIndex(bfparams)
-   # search_insert_dbpedia(hnsw_params,tiered_hnsw_params, bf_index, data)
+    search_insert_dbpedia()
+   
+    sanity_test()
     
-test_main()   
+#test_main()   
+
+
