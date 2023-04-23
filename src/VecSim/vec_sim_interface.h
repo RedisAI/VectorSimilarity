@@ -186,5 +186,8 @@ public:
         VecSimIndexInterface::logCallback = callback;
     }
 
-    virtual void setWriteMode(VecSimWriteMode mode) = 0;
+    static VecSimWriteMode asyncWriteMode;
+    inline static void setWriteMode(VecSimWriteMode mode) {
+        VecSimIndexInterface::asyncWriteMode = mode;
+    }
 };

@@ -273,9 +273,6 @@ public:
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
-    // Do nothing - relevant for tiered index only.
-    void setWriteMode(VecSimWriteMode mode) override {}
-
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function

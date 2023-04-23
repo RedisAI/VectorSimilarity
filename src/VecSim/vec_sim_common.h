@@ -123,8 +123,9 @@ typedef struct {
     void *memoryCtx;            // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
+    size_t flatBufferLimit;     // Maximum size allowed for the flat buffer. If flat buffer is full, use
+                                      // in-place insertion.
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
-    VecSimWriteMode writeInPlaceMode;  // insert/delete vectors in place / using async jobs.
     union {
         TieredHNSWParams tieredHnswParams;
     } specificParams;

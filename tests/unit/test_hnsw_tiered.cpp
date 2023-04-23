@@ -25,13 +25,15 @@ protected:
     TieredHNSWIndex<data_t, dist_t> *CreateTieredHNSWIndex(VecSimParams &hnsw_params,
                                                            JobQueue *jobQ, IndexExtCtx *ctx,
                                                            size_t *memory_ctx,
-                                                           size_t swap_job_threshold = 0) {
+                                                           size_t swap_job_threshold = 0,
+                                                           size_t flat_buffer_limit = SIZE_MAX) {
         TieredIndexParams tiered_params = {
             .jobQueue = jobQ,
             .jobQueueCtx = ctx,
             .submitCb = submit_callback,
             .memoryCtx = memory_ctx,
             .UpdateMemCb = update_mem_callback,
+            .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &hnsw_params,
             .specificParams = {TieredHNSWParams{.swapJobThreshold = swap_job_threshold}}};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(
@@ -144,6 +146,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
                                        .submitCb = submit_callback,
                                        .memoryCtx = &memory_ctx,
                                        .UpdateMemCb = update_mem_callback,
+                                       .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &vecsim_hnsw_params};
     VecSimParams params = CreateParams(tiered_params);
     auto *index = VecSimIndex_New(&params);
@@ -219,6 +222,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                                        .submitCb = submit_callback,
                                        .memoryCtx = &memory_ctx,
                                        .UpdateMemCb = update_mem_callback,
+                                       .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::NewIndex(&tiered_params));

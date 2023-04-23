@@ -23,7 +23,7 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
 }
 
 extern "C" void VecSimIndex_SetInPlaceWriteMode(VecSimIndex *index, VecSimWriteMode mode) {
-    index->setWriteMode(mode);
+    VecSimIndex::setWriteMode(mode);
 }
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,

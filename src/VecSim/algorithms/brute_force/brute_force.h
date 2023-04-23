@@ -69,8 +69,6 @@ public:
     // Return a set of all labels that are stored in the index (helper for computing label count
     // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
     virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
-    // Do nothing - relevant for tiered index only.
-    void setWriteMode(VecSimWriteMode mode) override {}
 
     virtual ~BruteForceIndex();
 #ifdef BUILD_TESTS
