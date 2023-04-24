@@ -25,9 +25,10 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             index = BruteForceFactory::NewIndex(params);
             break;
         }
-        case VecSimAlgo_TIERED:
+        case VecSimAlgo_TIERED: {
             index = TieredFactory::NewIndex(&params->tieredParams);
             break;
+        }
         }
     } catch (...) {
         // Index will delete itself. For now, do nothing.

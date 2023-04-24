@@ -106,9 +106,11 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+// A struct that contains HNSW tiered index specific params.
 typedef struct {
-    int i;
-} TIERED_HNSWParams;
+    size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
+                             // all the ready swap jobs in a batch.
+} TieredHNSWParams;
 
 // A struct that contains the common tiered index params.
 typedef struct {
@@ -120,8 +122,8 @@ typedef struct {
                                 // with a given memory (number).
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
-        TIERED_HNSWParams hnsw_tieredParams;
-    };
+        TieredHNSWParams tieredHnswParams;
+    } specificParams;
 } TieredIndexParams;
 
 struct VecSimParams {

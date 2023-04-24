@@ -37,7 +37,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
-    // Create new tieredhnsw index
+    // Create new tiered hnsw index
     return new (hnsw_index->getAllocator())
         TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params);
 }
@@ -59,6 +59,17 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
 
     return est;
 }
+
+VecSimIndex *NewIndex(const TieredIndexParams *params) {
+    // Tiered index that contains HNSW index as primary index
+    VecSimType type = params->primaryIndexParams->hnswParams.type;
+    if (type == VecSimType_FLOAT32) {
+        return TieredHNSWFactory::NewIndex<float>(params);
+    } else if (type == VecSimType_FLOAT64) {
+        return TieredHNSWFactory::NewIndex<double>(params);
+    }
+    return nullptr; // Invalid type.
+}
 } // namespace TieredHNSWFactory
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
@@ -73,7 +84,6 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
     }
     return nullptr; // Invalid algorithm or type.
 }
-
 size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     size_t est = 0;
