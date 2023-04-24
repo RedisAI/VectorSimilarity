@@ -2029,9 +2029,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
     ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    // Swap job should be executed for the overwritten vector since limit is 1 and we are calling swap job execution prior to insert jobs
-```suggestion
-    // Swap job should be executed for the overwritten vector.
+    // Swap job should be executed for the overwritten vector since limit is 1, and we are calling
+    // swap job execution prior to insert jobs.
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
