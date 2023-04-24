@@ -55,6 +55,12 @@ def load_queries(dataset_name):
         print(f"yay! generated ")
     
     return queries    
+
+def create_tiered_hnsw_params(swap_job_threshold = 1024):
+    tiered_hnsw_params = HNSWParams()
+    tiered_hnsw_params.swapJobThreshold  = swap_job_threshold
+    return tiered_hnsw_params   
+
 class DBPediaIndexCtx:
     def __init__(self, data_size = 0, M = 32, ef_c = 512, ef_r = 10):
         self.M = M
@@ -71,8 +77,7 @@ class DBPediaIndexCtx:
         self.type = VecSimType_FLOAT32
         
         self.hnsw_params = create_hnsw_params(self.dim, self.num_elements, self.metric, self.type, ef_c, M, ef_r)
-        self.tiered_hnsw_params = TIERED_HNSWParams()
-        self.tiered_hnsw_params.i = 0  
+        self.tiered_hnsw_params = create_tiered_hnsw_params()
         
         self.tiered_index = TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
         
@@ -145,65 +150,63 @@ def create_dbpedia():
 
 
 def search_insert_dbpedia():
-   
     indices_ctx = DBPediaIndexCtx()
     index = indices_ctx.tiered_index
-    num_elements = indices_ctx.num_elements
     
+    num_elements = indices_ctx.num_elements
     data = indices_ctx.data
     
     queries = load_queries("dbpedia-768")
     
-    # Start background insertion the vectors into the tired index
+    # Add vectors into the flat index.
+    bf_index = indices_ctx.init_and_populate_flat_index()
+    
+    # Start background insertion in the tiered index
     index_start = time.time()
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
     
     correct = 0
-    bf_total_time = 0
     hnsw_total_time = 0
     k = 10
     query_index = 0
     
+    # config the index log to knn mode to get access to the bf index size during the query.
     index.start_knn_log()
+    
+    # run knn query every 1 s 
     hnsw_size_vs_query_time = []
     while index.hnsw_label_count() < num_elements:
         start = time.time()
-        tiered_labels, tiered_distances = index.knn_query(queries[query_index], k)
+        tiered_labels, _ = index.knn_query(queries[query_index], k)
         dur = time.time() - start
+        print(f"search took {dur}")
+        
+        # for each run get the current hnsw size and the query time
         hnsw_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
         hnsw_size_vs_query_time.append((hnsw_curr_size, dur))
-        print(hnsw_curr_size)
+        
+        # run the query also in the bf index to get the grund truth results
+        bf_labels, _ = bf_index.knn_query(queries[query_index], k)
+        correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
         time.sleep(1)
         query_index += 1
-        print(f"search took {dur}")
     
     index_dur = time.time() - index_start
-    print(f"search + indexing took  {index_dur} s")
+    print(f"search + indexing took {index_dur} s")
     print(f"total memory of tiered index = {index.index_memory()} bytes")
-
-     #Add all the vectors in the train set into the flat.
-    bf_index = indices_ctx.init_and_populate_flat_index()
-
         
     num_queries = queries.shape[0]
-    num_queries = 100
-    # Measure recall and times
-    for target_vector in queries[:num_queries]:
-        start = time.time()
-        tiered_labels, tiered_distances = index.knn_query(target_vector, k)
-        hnsw_total_time += (time.time() - start)
-        start = time.time()
-        bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
-        bf_total_time += (time.time() - start)
-        correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
     
-     # Measure recall
+    # Measure recall
     recall = float(correct)/(k*num_queries)
     print("Average recall is:", recall)
-    print("BF query per seconds: ", num_queries/bf_total_time)
     print("tiered query per seconds: ", num_queries/hnsw_total_time)   
 
+# In this test we insert the vectors one by one to the tiered index (call wait_for_index after each add vector)
+# We expect to get the same index as if we were inserting the vector to the sync hnsw index.
+# To check that, we perform a knn query with k = vectors number and compare the results' labels
+# to pass the test all the labels should be the same.
 def sanity_test():
     num_elements = 10000
     k = num_elements
@@ -214,7 +217,7 @@ def sanity_test():
     #add vectors to the tiered index one by one
     for i, vector in enumerate(indices_ctx.data):
         index.add_vector(vector, i)
-        index.wait_for_index(5)
+        index.wait_for_index(1)
     
     print(f"done indexing, label count = {index.hnsw_label_count()}")
     
@@ -230,22 +233,7 @@ def sanity_test():
     #compare
     for i, hnsw_res_label in enumerate(hnsw_labels[0]):
         tiered_res_label = tiered_labels[0][i]
-        if(hnsw_res_label != tiered_res_label):
-            print(f"mismatched in pos {i}")
-            print(f"hnsw_label is {hnsw_res_label}")
-            print(f"tiered_label is {tiered_res_label}")
-            
-            hnsw_label_to_query_dist_hnsw = hnsw_index.get_distance_from(hnsw_res_label, queries[0])
-            hnsw_label_to_query_dist_tiered = index.get_distance_from(hnsw_res_label, queries[0])
-            print(f"distance from {hnsw_res_label} query in hnsw is {hnsw_label_to_query_dist_hnsw}")
-            print(f"distance from {hnsw_res_label} query in tiered is {hnsw_label_to_query_dist_tiered}")
-            hnsw_label_to_query_dist_hnsw = hnsw_index.get_distance_from(hnsw_res_label, queries[0])
-            hnsw_label_to_query_dist_tiered = index.get_distance_from(hnsw_res_label, queries[0])
-            print(f"distance from {hnsw_res_label} query in tiered is {hnsw_label_to_query_dist_tiered}")
-            print(f"distance from {hnsw_res_label} query in hnsw is {hnsw_label_to_query_dist_hnsw}\n")
-        
-        #if the label is not the same
-            #get the disteance with get_distance()
+
 
 def test_main():
 

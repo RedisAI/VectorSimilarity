@@ -480,7 +480,7 @@ PyTIEREDIndex::~PyTIEREDIndex() { thread_pool_terminate(jobQueue, run_thread); }
 class PyTIERED_HNSWIndex : public PyTIEREDIndex {
 public:
     explicit PyTIERED_HNSWIndex(const HNSWParams &hnsw_params,
-                                const TIERED_HNSWParams &tiered_hnsw_params) {
+                                const TieredHNSWParams &tiered_hnsw_params) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
         VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
@@ -489,7 +489,7 @@ public:
         TieredIndexParams tiered_params = TieredIndexParams_Init();
 
         tiered_params.primaryIndexParams = &primary_index_params;
-        tiered_params.hnsw_tieredParams = tiered_hnsw_params;
+        tiered_params.specificParams.tieredHnswParams = tiered_hnsw_params;
 
         // create VecSimParams for TieredIndexParams
         VecSimParams params = {.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
@@ -554,9 +554,9 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
-    py::class_<TIERED_HNSWParams>(m, "TIERED_HNSWParams")
+    py::class_<TieredHNSWParams>(m, "TieredHNSWParams")
         .def(py::init())
-        .def_readwrite("i", &TIERED_HNSWParams::i);
+        .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold);
 
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
@@ -615,7 +615,7 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
         .def(py::init(
-                 [](const HNSWParams &hnsw_params, const TIERED_HNSWParams &tiered_hnsw_params) {
+                 [](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params) {
                      return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
                  }),
              py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
