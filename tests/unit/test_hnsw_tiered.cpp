@@ -2053,49 +2053,52 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams hnsw_params = CreateParams(params);
-    auto jobQ = JobQueue();
-    auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
+    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
-    auto allocator = tiered_index->getAllocator();
+        auto *tiered_index =
+            this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, maxSwapJobs);
+        auto allocator = tiered_index->getAllocator();
 
-    // Launch the BG threads loop that takes jobs from the queue and executes them.
-    bool run_thread = true;
-    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
-    }
-
-    // Insert vectors and overwrite them multiple times while thread run in the background.
-    std::srand(10); // create pseudo random generator with any arbitrary seed.
-    for (size_t i = 0; i < n; i++) {
-        TEST_DATA_T vector[dim];
-        for (size_t j = 0; j < dim; j++) {
-            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        // Launch the BG threads loop that takes jobs from the queue and executes them.
+        bool run_thread = true;
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
         }
-        tiered_index->addVector(vector, i);
-    }
-    EXPECT_EQ(tiered_index->indexLabelCount(), n);
 
-    // TODO: add variations of swap jobs threshold to test
-    size_t num_overwrites = 10000;
-    for (size_t i = 0; i < num_overwrites; i++) {
-        size_t label_to_overwrite = std::rand() % n;
-        TEST_DATA_T vector[dim];
-        for (size_t j = 0; j < dim; j++) {
-            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        // Insert vectors and overwrite them multiple times while thread run in the background.
+        std::srand(10); // create pseudo random generator with any arbitrary seed.
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            tiered_index->addVector(vector, i);
         }
-        EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), n);
+
+        size_t num_overwrites = 10000;
+        for (size_t i = 0; i < num_overwrites; i++) {
+            size_t label_to_overwrite = std::rand() % n;
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
+        }
+
+        thread_pool_join(jobQ, run_thread);
+
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
+                  n);
+        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), n);
+        auto report = tiered_index->getHNSWIndex()->checkIntegrity();
+        EXPECT_EQ(report.connections_to_repair, 0);
+        EXPECT_EQ(report.valid_state, true);
+
+        delete index_ctx;
     }
-
-    thread_pool_join(jobQ, run_thread);
-
-    EXPECT_EQ(tiered_index->indexSize() - tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
-    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    EXPECT_EQ(tiered_index->indexLabelCount(), n);
-    auto report = tiered_index->getHNSWIndex()->checkIntegrity();
-    EXPECT_EQ(report.connections_to_repair, 0);
-    EXPECT_EQ(report.valid_state, true);
-
-    delete index_ctx;
 }

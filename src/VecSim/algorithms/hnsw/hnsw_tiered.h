@@ -1,5 +1,6 @@
 #pragma once
 
+#include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
@@ -318,8 +319,6 @@ void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
-    // Note: this method had not been tested with yet overwriting scenarios, where job may
-    // have been invalidate before it is executed (TODO in the future).
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
     // Note that accessing the job fields should occur with flat index guard held (here and later).
     this->flatIndexGuard.lock_shared();
@@ -531,20 +530,26 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                                                    void *auxiliaryCtx) {
     int ret = 1;
     this->flatIndexGuard.lock();
+    idType new_flat_id = this->frontendIndex->indexSize();
     if (this->frontendIndex->isLabelExists(label) && !this->backendIndex->isMultiValue()) {
         // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
-        this->frontendIndex->deleteVector(label);
         auto *old_job = this->labelToInsertJobs.at(label).at(0);
         old_job->id = INVALID_JOB_ID;
         this->labelToInsertJobs.erase(label);
         ret = 0;
-    }
-
-    if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
+        // We are going to update the internal id that currently holds the vector associated with
+        // the given label.
+        new_flat_id =
+            dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
+                ->getIdOfLabel(label);
+        // If we are adding a new element (rather than updating an exiting one) we may need to
+        // increase index capacity.
+    } else if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
         this->frontendIndex->increaseCapacity();
     }
-    idType new_flat_id = this->frontendIndex->indexSize();
+    // If this label already exists, this will do overwrite.
     this->frontendIndex->addVector(blob, label);
+
     AsyncJob *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
