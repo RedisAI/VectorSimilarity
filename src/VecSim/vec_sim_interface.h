@@ -46,7 +46,7 @@ public:
      * @brief Add a vector blob and its id to the index.
      *
      * @param blob binary representation of the vector. Blob size should match the index data type
-     * and dimension.  It is assumed that the queryBlob has been already processed
+     * and dimension. It is assumed that the queryBlob has been already processed
      *  (for example, if the distance metric is cosine, the blob is already *normalized*)
      * @param label the label of the added vector.
      * @param auxiliaryCtx if this is not the main index (but a layer in a tiered index for example)
