@@ -1267,8 +1267,6 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         // Save the node neighbor's in the current level while holding its neighbors lock.
         std::vector<idType> neighbors_copy;
         std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
-        if (!linkLists_[node_id] && level > 0)
-            break;
         auto *neighbours = getNodeNeighborsAtLevel(node_id, level);
         unsigned short neighbours_count = getNodeNeighborsCount(neighbours);
         // Store the deleted element's neighbours.
@@ -1279,8 +1277,6 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         for (auto neighbour_id : neighbors_copy) {
             // Hold the neighbor's lock while we are going over its neighbors.
             std::unique_lock<std::mutex> neighbor_lock(element_neighbors_locks_[neighbour_id]);
-            if (!linkLists_[neighbour_id] && level > 0)
-                continue;
             auto *neighbour_neighbours = getNodeNeighborsAtLevel(neighbour_id, level);
             unsigned short neighbour_neighbours_count = getNodeNeighborsCount(neighbour_neighbours);
             for (size_t j = 0; j < neighbour_neighbours_count; j++) {
