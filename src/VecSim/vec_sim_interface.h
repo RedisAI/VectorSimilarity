@@ -59,20 +59,6 @@ public:
     virtual int addVectorImp(const void *blob, labelType label, void *auxiliaryCtx = nullptr) = 0;
 
     /**
-     * @brief This functions gets a blob, and if required, *allocates its own copy* of it,
-     * and performs operations before sending it to the index
-     * Returns the blob to be used by the index.
-     * NOTE: It is the caller responsibility to call returnProcessedBlob() after the the processed
-     * vector is no longer needed to free resources.
-     */
-    virtual const void *processBlob(const void *blob) = 0;
-
-    /**
-     * @brief A function to free resources used to generate the processed blob.
-     */
-    virtual void returnProcessedBlob(const void *processed_blob) = 0;
-
-    /**
      * @brief Remove a vector from an index.
      *
      * @param label the label of the vector to remove
@@ -158,7 +144,7 @@ public:
      * @param blob is a processed vector (for example, if the distance metric is cosine,
      * blob is already *normalized* )
      */
-    virtual VecSimQueryResult_List rangeQueryImp(const void *queryBlob, size_t k,
+    virtual VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
                                                  VecSimQueryParams *queryParams) = 0;
     /**
      * @brief Return index information.
@@ -221,4 +207,18 @@ public:
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
     }
+
+    /**
+     * @brief This functions gets a blob, and if required, *allocates its own copy* of it,
+     * and performs operations before sending it to the index
+     * Returns the blob to be used by the index.
+     * NOTE: It is the caller responsibility to call returnProcessedBlob() after the the processed
+     * vector is no longer needed to free resources.
+     */
+    virtual const void *processBlob(const void *blob) = 0;
+
+    /**
+     * @brief A function to free resources used to generate the processed blob.
+     */
+    virtual void returnProcessedBlob(const void *processed_blob) = 0;
 };

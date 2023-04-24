@@ -46,8 +46,8 @@ public:
     }
     virtual VecSimQueryResult_List topKQueryImp(const void *queryBlob, size_t k,
                                                 VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
-                                         VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
+                                                 VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
