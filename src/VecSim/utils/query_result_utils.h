@@ -33,7 +33,8 @@ template <bool withSet>
 VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryResult *first_end,
                                  VecSimQueryResult *&second, const VecSimQueryResult *second_end,
                                  size_t limit) {
-    VecSimQueryResult *results = array_new<VecSimQueryResult>(limit);
+    VecSimQueryResult *results = array_new<VecSimQueryResult>(
+        std::min(limit, (size_t)(first_end - first) + (size_t)(second_end - second)));
     // Will hold the ids of the results we've already added to the merged results.
     // Will be used only if withSet is true.
     std::unordered_set<size_t> ids;
@@ -134,6 +135,12 @@ void filter_results_by_id(VecSimQueryResult_List results) {
         } else {
             results.results[cur_end] = *cur_res;
         }
+    }
+    // If the last result is unique, we need to add it to the results.
+    if (i == VecSimQueryResult_Len(results) - 1) {
+        results.results[cur_end] = results.results[i];
+        // Logically, we should increment cur_end and i here, but we don't need to because it won't
+        // affect the rest of the function.
     }
     array_pop_back_n(results.results, i - cur_end);
 }

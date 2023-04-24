@@ -3061,3 +3061,187 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
 
     delete index_ctx;
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
+    size_t dim = 4;
+    size_t k = 11;
+
+    size_t n = k * 3;
+    // `range` for querying the "edges" of the index and get k results.
+    double range = dim * (k - 0.5) * (k - 0.5); // L2 distance.
+    // `half_range` for querying a point in the "middle" of the index and get k results around it.
+    double half_range = dim * (k - 0.5) * (k - 0.5) / 4; // L2 distance.
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .epsilon = 0.5,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t cur_memory_usage, memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+
+    auto hnsw_index = tiered_index->backendIndex;
+    auto flat_index = tiered_index->frontendIndex;
+
+    TEST_DATA_T query_0[dim];
+    GenerateVector<TEST_DATA_T>(query_0, dim, 0);
+    TEST_DATA_T query_1mid[dim];
+    GenerateVector<TEST_DATA_T>(query_1mid, dim, n / 3);
+    TEST_DATA_T query_2mid[dim];
+    GenerateVector<TEST_DATA_T>(query_2mid, dim, n * 2 / 3);
+    TEST_DATA_T query_n[dim];
+    GenerateVector<TEST_DATA_T>(query_n, dim, n - 1);
+
+    // Search for vectors when the index is empty.
+    runRangeQueryTest(tiered_index, query_0, range, nullptr, 0);
+
+    // Define the verification functions.
+    auto ver_res_0 = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, index);
+        ASSERT_DOUBLE_EQ(score, dim * id * id);
+    };
+
+    auto ver_res_1mid_by_score = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - query_1mid[0])), (index + 1) / 2);
+        ASSERT_DOUBLE_EQ(score, dim * pow((index + 1) / 2, 2));
+    };
+
+    auto ver_res_2mid_by_score = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(std::abs(int(id - query_2mid[0])), (index + 1) / 2);
+        ASSERT_DOUBLE_EQ(score, dim * pow((index + 1) / 2, 2));
+    };
+
+    auto ver_res_1mid_by_id = [&](size_t id, double score, size_t index) {
+        auto el_delta = std::abs(int(id - query_1mid[0]));
+        ASSERT_DOUBLE_EQ(score, dim * el_delta * el_delta);
+    };
+
+    auto ver_res_2mid_by_id = [&](size_t id, double score, size_t index) {
+        auto el_delta = std::abs(int(id - query_2mid[0]));
+        ASSERT_DOUBLE_EQ(score, dim * el_delta * el_delta);
+    };
+
+    auto ver_res_n = [&](size_t id, double score, size_t index) {
+        ASSERT_EQ(id, n - 1 - index);
+        ASSERT_DOUBLE_EQ(score, dim * index * index);
+    };
+
+    // Insert n/2 vectors to the main index.
+    for (size_t i = 0; i < (n + 1) / 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), (n + 1) / 2);
+    ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize());
+
+    // Search for `range` with the flat index empty.
+    cur_memory_usage = allocator->getAllocationSize();
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
+    // Insert n/2 vectors to the flat index.
+    for (size_t i = (n + 1) / 2; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
+
+    cur_memory_usage = allocator->getAllocationSize();
+    // Search for `range` so all the vectors will be from the flat index.
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+    // Search for `range` so all the vectors will be from the main index.
+    runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
+    // Search for `range` so some of the results will be from the main and some from the flat index.
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
+    // Add some overlapping vectors to the main and flat index.
+    // adding directly to the underlying indexes to avoid jobs logic.
+    // The main index will have vectors 0 - 2n/3 and the flat index will have vectors n/3 - n
+    for (size_t i = n / 3; i < n / 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+    }
+    for (size_t i = n / 2; i < n * 2 / 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+    }
+
+    cur_memory_usage = allocator->getAllocationSize();
+    // Search for `range` so all the vectors will be from the main index.
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+    // Search for `range` so all the vectors will be from the flat index.
+    runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
+    // Search for `range` so some of the results will be from the main and some from the flat index.
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
+    // // // // // // // // // // // //
+    // Check behavior upon timeout.  //
+    // // // // // // // // // // // //
+
+    VecSimQueryResult_List res;
+    // Add a vector to the HNSW index so there will be a reason to query it.
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
+
+    // Set timeout callback to always return 1 (will fail while querying the flat buffer).
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    res = VecSimIndex_RangeQuery(tiered_index, query_0, range, nullptr, BY_ID);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(res);
+
+    // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
+    // Brute-force index checks for timeout after each vector.
+    size_t checks_in_flat = flat_index->indexSize();
+    VecSimQueryParams qparams = {.timeoutCtx = &checks_in_flat};
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) {
+        auto count = static_cast<size_t *>(ctx);
+        if (*count == 0) {
+            return 1;
+        }
+        (*count)--;
+        return 0;
+    });
+    res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_SCORE);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(res);
+    // Make sure we didn't get the timeout in the flat index.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_SCORE);
+    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
+    VecSimQueryResult_Free(res);
+
+    // Check again with BY_ID.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_ID);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(res);
+    // Make sure we didn't get the timeout in the flat index.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_ID);
+    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
+    VecSimQueryResult_Free(res);
+
+    // Clean up.
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
+    delete index_ctx;
+}

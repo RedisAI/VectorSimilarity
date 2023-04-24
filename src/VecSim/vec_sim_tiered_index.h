@@ -170,6 +170,8 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         auto res = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
         this->mainIndexGuard.unlock_shared();
 
+        // We could have passed the order to the main index, but we can sort them here after
+        // unlocking it instead.
         sort_results(res, order);
         return res;
     } else {
@@ -177,9 +179,9 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
         this->flatIndexGuard.unlock_shared();
 
-        // If the query failed (currently only on timeout), return the error code.
+        // If the query failed (currently only on timeout), return the error code and the partial
+        // results.
         if (flat_results.code != VecSim_QueryResult_OK) {
-            assert(flat_results.results == nullptr);
             return flat_results;
         }
 
@@ -188,26 +190,29 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         auto main_results = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
         this->mainIndexGuard.unlock_shared();
 
-        // If the query failed (currently only on timeout), return the error code.
-        if (main_results.code != VecSim_QueryResult_OK) {
-            // Free the flat results.
-            VecSimQueryResult_Free(flat_results);
-
-            assert(main_results.results == nullptr);
-            return main_results;
-        }
-
         // Merge the results and return, avoiding duplicates.
+        // At this point, the return code of the FLAT index is OK, and the return code of the MAIN
+        // index is either OK or TIMEOUT. Make sure to return the return code of the MAIN index.
         if (BY_SCORE == order) {
             sort_results_by_score_then_id(main_results);
             sort_results_by_score_then_id(flat_results);
 
+            // Keep the return code of the main index.
+            auto code = main_results.code;
+
+            // Merge the sorted results with no limit (all the results are valid).
+            VecSimQueryResult_List ret;
             if (this->backendIndex->isMultiValue()) {
-                return merge_result_lists<true>(main_results, flat_results, -1);
+                ret = merge_result_lists<true>(main_results, flat_results, -1);
             } else {
-                return merge_result_lists<false>(main_results, flat_results, -1);
+                ret = merge_result_lists<false>(main_results, flat_results, -1);
             }
-        } else {
+            // Restore the return code and return.
+            ret.code = code;
+            return ret;
+
+        } else { // BY_ID
+            // Notice that we don't modify the return code of the main index in any step.
             concat_results(main_results, flat_results);
             if (this->backendIndex->isMultiValue()) {
                 filter_results_by_id<true>(main_results);
