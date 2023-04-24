@@ -192,6 +192,13 @@ void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
  */
 void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 
+/**
+ * @brief Allow 3rd party log callback to be used for logging.
+ *
+ * @param callback logCallbackFunction function. should get void* and return void.
+ */
+void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
+
 #ifdef __cplusplus
 }
 #endif

@@ -11,7 +11,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vecsim_results_container.h"
-#include "VecSim/algorithms/brute_force/brute_force_factory.h"
+#include "VecSim/index_factories/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"
@@ -33,7 +33,7 @@ protected:
     idType count;
 
 public:
-    BruteForceIndex(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -59,6 +59,17 @@ public:
     inline const labelType getLabelByInternalId(idType internal_id) const {
         return idToLabelMapping[internal_id];
     }
+    // Remove a specific vector that is stored under a label from the index by its internal id.
+    virtual int deleteVectorById(labelType label, idType id) = 0;
+    // Remove a vector and return a map between internal ids and the original internal ids that they
+    // hold AFTER the removals and swaps.
+    virtual std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) = 0;
+    // Check if a certain label exists in the index.
+    virtual inline bool isLabelExists(labelType label) = 0;
+    // Return a set of all labels that are stored in the index (helper for computing label count
+    // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
+    virtual inline vecsim_stl::set<labelType> getLabelsSet() const = 0;
+
     virtual ~BruteForceIndex();
 #ifdef BUILD_TESTS
     /**
@@ -71,7 +82,6 @@ public:
      */
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
-    virtual int deleteVectorById(labelType label, idType id) = 0;
 #endif
 
 protected:
@@ -112,11 +122,10 @@ protected:
 
 /******************** Ctor / Dtor **************/
 template <typename DataType, typename DistType>
-BruteForceIndex<DataType, DistType>::BruteForceIndex(const BFParams *params,
-                                                     std::shared_ptr<VecSimAllocator> allocator)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
-                                    params->blockSize, params->multi),
-      idToLabelMapping(allocator), vectorBlocks(allocator), count(0) {
+BruteForceIndex<DataType, DistType>::BruteForceIndex(
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
+    : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
+      vectorBlocks(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     this->idToLabelMapping.resize(params->initialCapacity);
 }
@@ -176,6 +185,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
     // If we are *not* trying to remove the last vector, update mapping and move
     // the data of the last vector in the index in place of the deleted vector.
     if (id_to_delete != last_idx) {
+        assert(id_to_delete < last_idx);
         // Update idToLabelMapping.
         // Put the label of the last_id in the deleted_id.
         setVectorLabel(id_to_delete, last_idx_label);

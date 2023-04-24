@@ -23,22 +23,23 @@ private:
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
     inline void setVectorId(labelType label, idType id) override { label_lookup_[label] = id; }
     inline void resizeLabelLookup(size_t new_max_elements) override;
+    inline vecsim_stl::set<labelType> getLabelsSet() const override;
 
     template <bool Safe>
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:
-    HNSWIndex_Single(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+    HNSWIndex_Single(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                      size_t random_seed = 100, size_t initial_pool_size = 1)
-        : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
-          label_lookup_(this->max_elements_, allocator) {}
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
+          label_lookup_(this->max_elements_, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
-                     std::shared_ptr<VecSimAllocator> allocator,
+                     const AbstractIndexInitParams &abstractInitParams,
                      Serializer::EncodingVersion version)
-        : HNSWIndex<DataType, DistType>(input, params, allocator, version),
-          label_lookup_(this->max_elements_, allocator) {}
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
+          label_lookup_(this->max_elements_, this->allocator) {}
 
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -67,8 +68,7 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label,
-                  idType new_vec_id = INVALID_ID) override;
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing = false) const override;
@@ -93,6 +93,17 @@ size_t HNSWIndex_Single<DataType, DistType>::indexLabelCount() const {
 /**
  * helper functions
  */
+
+// Return all the labels in the index - this should be used for computing the number of distinct
+// labels in a tiered index, and caller should hold the index data guard.
+template <typename DataType, typename DistType>
+inline vecsim_stl::set<labelType> HNSWIndex_Single<DataType, DistType>::getLabelsSet() const {
+    vecsim_stl::set<labelType> keys(this->allocator);
+    for (auto &it : label_lookup_) {
+        keys.insert(it.first);
+    }
+    return keys;
+};
 
 template <typename DataType, typename DistType>
 template <bool Safe>
@@ -138,27 +149,26 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
     }
     idType element_internal_id = label_lookup_[label];
     label_lookup_.erase(label);
-    this->removeVector(element_internal_id);
+    this->removeVectorInPlace(element_internal_id);
     return 1;
 }
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                    idType new_vec_id) {
+                                                    void *auxiliaryCtx) {
 
     // Checking if an element with the given label already exists.
     bool label_exists = false;
     // Note that is it the caller responsibility to ensure that this label doesn't exist in the
-    // index and increase the element count before calling this, if new_vec_id is *not*
-    // INVALID_ID.
-    if (new_vec_id == INVALID_ID) {
+    // index and increase the element count before calling this, if auxiliaryCtx is *not* NULL.
+    if (auxiliaryCtx == nullptr) {
         if (label_lookup_.find(label) != label_lookup_.end()) {
             label_exists = true;
-            // Remove the vector in place if override allowed (in non-async scenario)
+            // Remove the vector in place if override allowed (in non-async scenario).
             deleteVector(label);
         }
     }
-    this->appendVector(vector_data, label, new_vec_id);
+    this->appendVector(vector_data, label, (AddVectorCtx *)auxiliaryCtx);
     // Return the delta in the index size due to the insertion.
     return label_exists ? 0 : 1;
 }

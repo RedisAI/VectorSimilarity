@@ -17,11 +17,11 @@ protected:
     vecsim_stl::unordered_map<labelType, idType> labelToIdLookup;
 
 public:
-    BruteForceIndex_Single(const BFParams *params, std::shared_ptr<VecSimAllocator> allocator);
+    BruteForceIndex_Single(const BFParams *params,
+                           const AbstractIndexInitParams &abstractInitParams);
     ~BruteForceIndex_Single();
 
-    int addVector(const void *vector_data, labelType label,
-                  idType new_vec_id = INVALID_ID) override;
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
@@ -33,6 +33,7 @@ public:
     }
 
     inline size_t indexLabelCount() const override { return this->count; }
+    std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) override;
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -65,6 +66,19 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
+    inline bool isLabelExists(labelType label) override {
+        return labelToIdLookup.find(label) != labelToIdLookup.end();
+    }
+    // Return a set of all labels that are stored in the index (helper for computing label count
+    // without duplicates in tiered index). Caller should hold the flat buffer lock for read.
+    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        vecsim_stl::set<labelType> keys(this->allocator);
+        for (auto &it : labelToIdLookup) {
+            keys.insert(it.first);
+        }
+        return keys;
+    };
+
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
     getNewMaxPriorityQueue() override {
         return new (this->allocator)
@@ -87,15 +101,16 @@ protected:
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::BruteForceIndex_Single(
-    const BFParams *params, std::shared_ptr<VecSimAllocator> allocator)
-    : BruteForceIndex<DataType, DistType>(params, allocator), labelToIdLookup(allocator) {}
+    const BFParams *params, const AbstractIndexInitParams &abstractInitParams)
+    : BruteForceIndex<DataType, DistType>(params, abstractInitParams),
+      labelToIdLookup(this->allocator) {}
 
 template <typename DataType, typename DistType>
 BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 
 template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
-                                                          idType new_vec_id) {
+                                                          void *auxiliaryCtx) {
 
     DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
     if (this->metric == VecSimMetric_Cosine) {
@@ -134,6 +149,31 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 
     this->removeVector(id_to_delete);
     return 1;
+}
+
+template <typename DataType, typename DistType>
+std::unordered_map<idType, idType>
+BruteForceIndex_Single<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelType label) {
+
+    std::unordered_map<idType, idType> updated_ids;
+    // Find the id to delete.
+    auto deleted_label_id_pair = this->labelToIdLookup.find(label);
+    if (deleted_label_id_pair == this->labelToIdLookup.end()) {
+        // Nothing to delete.
+        return updated_ids;
+    }
+
+    // Get deleted vector id.
+    idType id_to_delete = deleted_label_id_pair->second;
+
+    // Remove the pair of the deleted vector.
+    labelToIdLookup.erase(label);
+
+    this->removeVector(id_to_delete);
+    if (id_to_delete != this->count) {
+        updated_ids[id_to_delete] = this->count;
+    }
+    return updated_ids;
 }
 
 template <typename DataType, typename DistType>

@@ -35,7 +35,7 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB } VecSimAlgo;
+typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -83,6 +83,7 @@ typedef void (*JobCallback)(AsyncJob *);
  * @brief Index initialization parameters.
  *
  */
+typedef struct VecSimParams VecSimParams;
 typedef struct {
     VecSimType type;     // Datatype to index.
     size_t dim;          // Vector's dimension.
@@ -105,6 +106,12 @@ typedef struct {
     size_t blockSize;
 } BFParams;
 
+// A struct that contains HNSW tiered index specific params.
+typedef struct {
+    size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
+                             // all the ready swap jobs in a batch.
+} TieredHNSWParams;
+
 // A struct that contains the common tiered index params.
 typedef struct {
     void *jobQueue;             // External queue that holds the jobs.
@@ -113,21 +120,21 @@ typedef struct {
     void *memoryCtx;            // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
+    VecSimParams *primaryIndexParams; // Parameters to initialize the index.
+    union {
+        TieredHNSWParams tieredHnswParams;
+    } specificParams;
 } TieredIndexParams;
 
-typedef struct {
-    HNSWParams hnswParams;
-    TieredIndexParams tieredParams;
-} TieredHNSWParams;
-
-typedef struct {
+struct VecSimParams {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
         BFParams bfParams;
-        TieredHNSWParams tieredHNSWParams;
+        TieredIndexParams tieredParams;
     };
-} VecSimParams;
+    void *logCtx; // External context that stores the index log.
+};
 
 /**
  * The specific job types in use (to be extended in the future by demand)
@@ -245,6 +252,13 @@ typedef struct {
  * @return the function should return a non-zero value on timeout
  */
 typedef int (*timeoutCallbackFunction)(void *ctx);
+
+/**
+ * @brief A struct to pass 3rd party logging function to Vecsimlib.
+ * @param ctx some generic context to pass to the function
+ * @param message the message to log
+ */
+typedef void (*logCallbackFunction)(void *ctx, const char *message);
 
 typedef enum {
     VecSim_QueryResult_OK = VecSim_OK,

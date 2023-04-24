@@ -6,36 +6,58 @@
 
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
-#include "hnsw_tiered.h"
 
 namespace HNSWFactory {
 
 template <typename DataType, typename DistType = DataType>
 inline HNSWIndex<DataType, DistType> *
-NewIndex_ChooseMultiOrSingle(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
+NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
+                             const AbstractIndexInitParams &abstractInitParams) {
     // check if single and return new hnsw_index
     if (params->multi)
-        return new (allocator) HNSWIndex_Multi<DataType, DistType>(params, allocator);
+        return new (abstractInitParams.allocator)
+            HNSWIndex_Multi<DataType, DistType>(params, abstractInitParams);
     else
-        return new (allocator) HNSWIndex_Single<DataType, DistType>(params, allocator);
+        return new (abstractInitParams.allocator)
+            HNSWIndex_Single<DataType, DistType>(params, abstractInitParams);
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator) {
-    if (params->type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(params, allocator);
-    } else if (params->type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(params, allocator);
+static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
+    const HNSWParams *hnswParams = &params->hnswParams;
+    AbstractIndexInitParams abstractInitParams = {.allocator =
+                                                      VecSimAllocator::newVecsimAllocator(),
+                                                  .dim = hnswParams->dim,
+                                                  .vecType = hnswParams->type,
+                                                  .metric = hnswParams->metric,
+                                                  .blockSize = hnswParams->blockSize,
+                                                  .multi = hnswParams->multi,
+                                                  .logCtx = params->logCtx};
+    return abstractInitParams;
+}
+
+VecSimIndex *NewIndex(const VecSimParams *params) {
+    const HNSWParams *hnswParams = &params->hnswParams;
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
+    if (hnswParams->type == VecSimType_FLOAT32) {
+        return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams);
+    } else if (hnswParams->type == VecSimType_FLOAT64) {
+        return NewIndex_ChooseMultiOrSingle<double>(hnswParams, abstractInitParams);
     }
 
     // If we got here something is wrong.
     return NULL;
 }
 
+VecSimIndex *NewIndex(const HNSWParams *params) {
+    VecSimParams vecSimParams = {.hnswParams = *params};
+    return NewIndex(&vecSimParams);
+}
+
 template <typename DataType, typename DistType = DataType>
 inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
-    // check if single and return new bf_index
+    // check if single or multi and return the size of the matching class struct.
     if (is_multi)
         return sizeof(HNSWIndex_Multi<DataType, DistType>);
     else
@@ -45,7 +67,9 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 size_t EstimateInitialSize(const HNSWParams *params) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
 
-    size_t est = sizeof(VecSimAllocator) + sizeof(size_t);
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
+    size_t est = sizeof(VecSimAllocator) + allocations_overhead;
     if (params->type == VecSimType_FLOAT32) {
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT64) {
@@ -53,37 +77,41 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     }
 
     // Account for the visited nodes pool (assume that it holds one pointer to a handler).
-    est += sizeof(VisitedNodesHandler) + sizeof(size_t);
+    est += sizeof(VisitedNodesHandler) + allocations_overhead;
     // The visited nodes pool inner vector buffer (contains one pointer).
-    est += sizeof(void *) + sizeof(size_t);
-    est += sizeof(tag_t) * params->initialCapacity + sizeof(size_t); // visited nodes array
+    est += sizeof(void *) + allocations_overhead;
+    est += sizeof(tag_t) * params->initialCapacity + allocations_overhead; // visited nodes array
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (params->initialCapacity) {
-        est += sizeof(size_t) * params->initialCapacity + sizeof(size_t); // element level
+        est += sizeof(size_t) * params->initialCapacity + allocations_overhead; // element level
         est += sizeof(size_t) * params->initialCapacity +
-               sizeof(size_t); // Labels lookup hash table buckets.
-        est += sizeof(std::mutex) * params->initialCapacity + sizeof(size_t); // lock per vector
+               allocations_overhead; // Labels lookup hash table buckets.
+        est +=
+            sizeof(std::mutex) * params->initialCapacity + allocations_overhead; // lock per vector
     }
 
     // Explicit allocation calls - always allocate a header.
-    est += sizeof(void *) * params->initialCapacity + sizeof(size_t); // link lists (for levels > 0)
+    est += sizeof(void *) * params->initialCapacity +
+           allocations_overhead; // link lists (for levels > 0)
 
     size_t size_links_level0 =
         sizeof(elementFlags) + sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *);
     size_t size_total_data_per_element =
         size_links_level0 + params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
-    est += params->initialCapacity * size_total_data_per_element + sizeof(size_t);
+    est += params->initialCapacity * size_total_data_per_element + allocations_overhead;
 
     return est;
 }
 
 size_t EstimateElementSize(const HNSWParams *params) {
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
     size_t size_links_level0 = sizeof(linkListSize) + M * 2 * sizeof(idType) + sizeof(void *) +
-                               sizeof(vecsim_stl::vector<idType>);
+                               sizeof(vecsim_stl::vector<idType>) + allocations_overhead;
     size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *) +
-                                     sizeof(vecsim_stl::vector<idType>);
+                                     sizeof(vecsim_stl::vector<idType>) + allocations_overhead;
     // The Expectancy for the random variable which is the number of levels per element equals
     // 1/ln(M). Since the max_level is rounded to the "floor" integer, the actual average number
     // of levels is lower (intuitively, we "loose" a level every time the random generated number
@@ -97,19 +125,27 @@ size_t EstimateElementSize(const HNSWParams *params) {
                                          sizeof(labelType);
 
     size_t size_label_lookup_node;
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
     if (params->multi) {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map,
-        // and a new element to the vector in the map. These two allocations both results in a new
-        // allocation and therefore another VecSimAllocator::allocation_header_size.
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>::value_type) +
-            sizeof(size_t) + sizeof(vecsim_stl::vector<idType>::value_type) + sizeof(size_t);
+        auto dummy_lookup =
+            vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>(1, allocator);
+        size_t memory_before = allocator->getAllocationSize();
+        // For each new insertion (of a new label), we add a new node to the label_lookup_ map.
+        dummy_lookup.emplace(0, vecsim_stl::vector<idType>{allocator});
+        // In addition, a new element to the vector in the map.
+        dummy_lookup.at(0).push_back(0);
+        size_t memory_after = allocator->getAllocationSize();
+        // size_t memory_before = allocator->getAllocationSize();
+
+        size_label_lookup_node = memory_after - memory_before;
     } else {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
-        // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
-        // plus an internal pointer
-        size_label_lookup_node = sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) +
-                                 sizeof(size_t) + sizeof(size_t);
+        auto dummy_lookup = vecsim_stl::unordered_map<size_t, unsigned int>(1, allocator);
+        size_t memory_before = allocator->getAllocationSize();
+        // For each new insertion (of a new label), we add a new node to the label_lookup_ map.
+        dummy_lookup.insert({1, 1}); // Insert a dummy {key, value} element pair.
+        size_t memory_after = allocator->getAllocationSize();
+        size_label_lookup_node = memory_after - memory_before;
     }
 
     // 1 entry in visited nodes + 1 entry in element levels + (approximately) 1 bucket in labels
@@ -128,35 +164,20 @@ size_t EstimateElementSize(const HNSWParams *params) {
     return size_meta_data + size_total_data_per_element + size_lock;
 }
 
-VecSimIndex *NewTieredIndex(const TieredHNSWParams *params,
-                            std::shared_ptr<VecSimAllocator> allocator) {
-    if (params->hnswParams.type == VecSimType_FLOAT32) {
-        auto *hnsw_index =
-            NewIndex_ChooseMultiOrSingle<float, float>(&params->hnswParams, allocator);
-        return new (allocator) TieredHNSWIndex<float, float>(hnsw_index, params->tieredParams);
-    } else if (params->hnswParams.type == VecSimType_FLOAT64) {
-        auto *hnsw_index =
-            NewIndex_ChooseMultiOrSingle<double, double>(&params->hnswParams, allocator);
-        return new (allocator) TieredHNSWIndex<double, double>(hnsw_index, params->tieredParams);
-    } else {
-        return nullptr; // Invalid type
-    }
-}
-
 #ifdef BUILD_TESTS
 
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
-                                                 std::shared_ptr<VecSimAllocator> allocator,
+                                                 const AbstractIndexInitParams &abstractInitParams,
                                                  Serializer::EncodingVersion version) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
-        index =
-            new (allocator) HNSWIndex_Multi<DataType, DistType>(input, params, allocator, version);
+        index = new (abstractInitParams.allocator)
+            HNSWIndex_Multi<DataType, DistType>(input, params, abstractInitParams, version);
     else
-        index =
-            new (allocator) HNSWIndex_Single<DataType, DistType>(input, params, allocator, version);
+        index = new (abstractInitParams.allocator)
+            HNSWIndex_Single<DataType, DistType>(input, params, abstractInitParams, version);
 
     index->restoreGraph(input);
 
@@ -216,12 +237,12 @@ VecSimIndex *NewIndex(const std::string &location, const HNSWParams *v1_params) 
     }
     Serializer::readBinaryPOD(input, params.initialCapacity);
 
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
+    VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
+    AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, allocator, version);
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version);
     } else if (params.type == VecSimType_FLOAT64) {
-        return NewIndex_ChooseMultiOrSingle<double>(input, &params, allocator, version);
+        return NewIndex_ChooseMultiOrSingle<double>(input, &params, abstractInitParams, version);
     } else {
         throw std::runtime_error("Cannot load index: bad index data type");
     }

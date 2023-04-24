@@ -12,9 +12,9 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "test_utils.h"
 #include "VecSim/utils/serializer.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 
-const size_t vecsimAllocationOverhead = sizeof(size_t);
+const size_t vecsimAllocationOverhead = VecSimAllocator::getAllocationOverheadSize();
 
 const size_t hashTableNodeSize = getLabelsLookupNodeSize();
 
@@ -88,9 +88,6 @@ class IndexAllocatorTest : public ::testing::Test {};
 TYPED_TEST_SUITE(IndexAllocatorTest, DataTypeSet);
 
 TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
-    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     // Create only the minimal struct.
     size_t dim = 128;
     BFParams params = {.type = TypeParam::get_index_type(),
@@ -98,10 +95,11 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
                        .metric = VecSimMetric_IP,
                        .initialCapacity = 0,
                        .blockSize = 1};
-
+    auto *bfIndex = dynamic_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
+        BruteForceFactory::NewIndex(&params));
+    auto allocator = bfIndex->getAllocator();
     TEST_DATA_T vec[128] = {};
-    BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *bfIndex =
-        new (allocator) BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
+    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
     expectedAllocationSize +=
         sizeof(BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
@@ -200,9 +198,6 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
 }
 
 TYPED_TEST(IndexAllocatorTest, test_hnsw) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
-    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     size_t d = 128;
 
     // Build with default args
@@ -212,8 +207,11 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
                          .initialCapacity = 0};
 
     TEST_DATA_T vec[128] = {};
-    HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *hnswIndex =
-        new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
+    auto *hnswIndex =
+        dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
+    auto allocator = hnswIndex->getAllocator();
+    uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
+
     expectedAllocationSize +=
         sizeof(HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
@@ -250,7 +248,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 }
 
 TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
     size_t d = 2;
 
     // Build index, use small M to simplify the scenario.
@@ -260,7 +258,8 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
                          .initialCapacity = 10,
                          .M = 2};
     auto *hnswIndex =
-        new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
+        dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
+    auto allocator = hnswIndex->getAllocator();
 
     // Add a "dummy" vector - labels_lookup hash table will allocate initial size of buckets here.
     GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, 0, 0.0);
@@ -333,7 +332,6 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
 }
 
 TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     size_t d = 128;
 
     VecSimType type = TypeParam::get_index_type();
@@ -341,8 +339,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Build HNSW index with default args and initial capacity of zero.
     HNSWParams params = {.type = type, .dim = d, .metric = VecSimMetric_L2, .initialCapacity = 0};
     auto *hnswIndex =
-        new (allocator) HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>(&params, allocator);
-
+        dynamic_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&params));
+    auto allocator = hnswIndex->getAllocator();
     ASSERT_EQ(hnswIndex->indexCapacity(), 0);
     size_t initial_memory_size = allocator->getAllocationSize();
     // labels_lookup and element_levels containers are not allocated at all in some platforms,

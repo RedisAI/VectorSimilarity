@@ -51,6 +51,8 @@ public:
 
     static void setMemoryFunctions(VecSimMemoryFunctions memFunctions);
 
+    static size_t getAllocationOverheadSize() { return allocation_header_size; }
+
 private:
     // Retrive the original requested allocation size. Required for remalloc.
     inline size_t getPointerAllocationSize(void *p) { return *(((size_t *)p) - 1); }
