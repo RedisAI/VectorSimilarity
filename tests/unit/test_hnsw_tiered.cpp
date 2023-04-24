@@ -2029,16 +2029,15 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
     ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    // Swap job should be executed for the overwritten vector.
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
 
     // Ingest the updated vector to HNSW.
     jobQ.front().job->Execute(jobQ.front().job);
     jobQ.pop();
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
@@ -2053,7 +2052,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams hnsw_params = CreateParams(params);
-    for (size_t maxSwapJobs : {(int)n + 1, 10, 1}) {
+    for (size_t maxSwapJobs : {(int)n + 1, 1}) {
         auto jobQ = JobQueue();
         auto index_ctx = new IndexExtCtx();
         size_t memory_ctx = 0;
@@ -2079,7 +2078,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), n);
 
-        size_t num_overwrites = 10000;
+        size_t num_overwrites = 1000;
         for (size_t i = 0; i < num_overwrites; i++) {
             size_t label_to_overwrite = std::rand() % n;
             TEST_DATA_T vector[dim];

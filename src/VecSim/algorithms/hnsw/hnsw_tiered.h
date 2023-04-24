@@ -531,7 +531,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     int ret = 1;
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
-    if (this->frontendIndex->isLabelExists(label) && !this->backendIndex->isMultiValue()) {
+    if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
         // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
         auto *old_job = this->labelToInsertJobs.at(label).at(0);
         old_job->id = INVALID_JOB_ID;
@@ -574,6 +574,10 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         this->mainIndexGuard.unlock_shared();
         ret = 0;
     }
+    // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
+    // lock of the main index guard).
+    this->executeReadySwapJobs();
+
     // Insert job to the queue and signal the workers' updater.
     this->submitSingleJob(new_insert_job);
     this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
