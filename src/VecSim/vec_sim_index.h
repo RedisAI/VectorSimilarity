@@ -57,6 +57,19 @@ protected:
     bool isMulti;            // Determines if the index should multi-index or not.
     void *logCallbackCtx;    // Context for the log callback.
 
+    void fillIndexInfo getInfo(VecSimIndexInfo *info) {
+        info->algo = this->getAlgo();
+        info->indexSize = this->size();
+        info->indexLabelCount = this->labelCount();
+        info->metric = this->getMetric();
+        info->memory = this->getMemoryUsage();
+        info->type = this->getType();
+        info->isMulti = this->isMultiValue();
+        info->dim = this->getDim();
+        info->last_mode = this->last_mode;
+        info->blockSize = this->blockSize;
+    }
+
 public:
     /**
      * @brief Construct a new Vec Sim Index object
@@ -83,20 +96,6 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
-
-    virtual VecSimInfo *getInfo() {
-        VecSimInfo *info = new VecSimInfo();
-        info->algo = this->getAlgo();
-        info->indexSize = this->size();
-        info->indexLabelCount = this->labelCount();
-        info->metric = this->getMetric();
-        info->memory = this->getMemoryUsage();
-        info->type = this->getType();
-        info->isMulti = this->isMultiValue();
-        info->dim = this->getDim();
-        info->last_mode = this->last_mode;
-        return info;
-    }
 
     void log(const char *fmt, ...) const {
         if (VecSimIndexInterface::logCallback) {

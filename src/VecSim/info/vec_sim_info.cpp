@@ -1,7 +1,7 @@
 #include "vec_sim_info.h"
 #include "utils/vec_utils.h"
 
-VecSimInfoIterator *VecSimInfo::getIterator() {
+VecSimInfoIterator *VecSimIndexInfo::getIterator() {
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(7);
 
     infoIterator->addInfoField(VecSim_InfoField{

@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "info_iterator_struct.h"
+#include "VecSim/info/info_iterator_struct.h"
 
 extern "C" size_t VecSimInfoIterator_NumberOfFields(VecSimInfoIterator *infoIterator) {
     return infoIterator->numberOfFields();

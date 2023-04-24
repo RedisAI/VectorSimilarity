@@ -56,6 +56,9 @@ public:
     static const char *SEARCH_MODE_STRING;
     static const char *HYBRID_POLICY_STRING;
     static const char *BATCH_SIZE_STRING;
+
+    static const char *FRONTEND_INDEX_STRING;
+    static const char *BACKEND_INDEX_STRING;
 };
 
 inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {

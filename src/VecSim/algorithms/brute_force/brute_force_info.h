@@ -8,9 +8,4 @@
 
 #include "VecSim/vec_sim_info.h"
 
-struct BruteForceInfo : public VecSimInfo {
-public:
-    BruteForceInfo(VecSimInfo *info);
-    size_t blockSize; // Brute force algorithm vector block (mini matrix) size
-    virtual VecSimInfoIterator *getIterator() override;
-};
+struct BruteForceInfo : public VecSimIndexInfo {};

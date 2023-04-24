@@ -1,8 +1,14 @@
+/*
+ *Copyright Redis Ltd. 2021 - present
+ *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+ *the Server Side Public License v1 (SSPLv1).
+ */
+
 #pragma once
 
 #include "vec_sim_index.h"
 #include "algorithms/brute_force/brute_force.h"
-
+#include "tiered_index_info.h" // TODO: Consider moving tiered index files from root to their own folder.
 #include <shared_mutex>
 
 /**
@@ -44,8 +50,8 @@ protected:
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
-                      TieredIndexParams tieredParams)
-        : VecSimIndexInterface(backendIndex_->getAllocator()), backendIndex(backendIndex_),
+                      TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
+        : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
           memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {}
@@ -57,6 +63,8 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+
+    virtual VecSimIndexInfo *info() override;
 };
 
 template <typename DataType, typename DistType>
@@ -108,4 +116,20 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
             return merge_results<false>(main_results, flat_results, k);
         }
     }
+}
+
+virtual VecSimIndexInfo *VecSimTieredIndex<DataType, DistType>::info() {
+    TieredIndexInfo *info = new TieredIndexInfo();
+    info->backendIndexInfo = this->backendIndex->info();
+    info->frontendIndexInfo = this->frontendIndex->info();
+    info->management_layer_memory = this->getAllocator()->getAllocatedMemory();
+    info->memory = info->management_layer_memory + info->backendIndexInfo->memory +
+                   info->frontendIndexInfo->memory;
+    info->indexType = VecSimAlgo_TIERED;
+    info->indexSize = this->indexSize();
+    info->indexLabelCount = this->indexLabelCount();
+    info->last_mode = this->last_mode;
+    info->isMultiValue = this->isMultiValue();
+
+    return info;
 }

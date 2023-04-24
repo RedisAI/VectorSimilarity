@@ -27,7 +27,9 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                           .multi = params->primaryIndexParams->hnswParams.multi,
                           .blockSize = params->primaryIndexParams->hnswParams.blockSize};
 
-    AbstractIndexInitParams abstractInitParams = {.allocator = hnsw_index->getAllocator(),
+    // Each part of the tiered index should have its own allocator.
+    std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
+    AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
                                                   .dim = bf_params.dim,
                                                   .vecType = bf_params.type,
                                                   .metric = bf_params.metric,
@@ -38,8 +40,9 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
     // Create new tiered hnsw index
+    std::shared_ptr<VecSimAllocator> tiered_allocator = VecSimAllocator::newVecsimAllocator();
     return new (hnsw_index->getAllocator())
-        TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params);
+        TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params, tiered_allocator);
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_params_output) {

@@ -8,7 +8,7 @@
  * @brief Struct that holds information about the index.
  *
  */
-struct VecSimInfo {
+struct VecSimIndexInfo {
 
 public:
     VecSimAlgo algo;         // Index algorithm.
@@ -22,5 +22,5 @@ public:
     VecSearchMode last_mode; // The mode in which the last query ran.
 
     virtual VecSimInfoIterator *getIterator();
-    virtual ~VecSimInfo() {}
+    virtual ~VecSimIndexInfo() {}
 };

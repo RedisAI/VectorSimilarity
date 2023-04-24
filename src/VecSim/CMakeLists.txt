@@ -29,6 +29,7 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     utils/vec_utils.cpp
     memory/vecsim_malloc.cpp
     memory/vecsim_base.cpp
+    info/vec_sim_info.cpp
     ${HEADER_LIST}
 )
 

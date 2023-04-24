@@ -49,7 +49,7 @@ public:
                                              VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override;
-    virtual VecSimInfo *info() const override;
+    virtual VecSimIndexInfo *info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
@@ -354,63 +354,17 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 }
 
 template <typename DataType, typename DistType>
-VecSimInfo *BruteForceIndex<DataType, DistType>::info() const {
-    VecSimInfo *info = VecSimIndexAbstract::info();
-    BruteForceInfo *bfInfo = new BruteForceInfo(info);
-    bfInfo->blockSize = this->blockSize;
-    delete info;
+VecSimIndexInfo *BruteForceIndex<DataType, DistType>::info() const {
+    BruteForceInfo *bfInfo = new BruteForceInfo();
+    this->fillIndexInfo(bfInfo);
     return bfInfo;
 }
 
 template <typename DataType, typename DistType>
 VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
-    VecSimIndexInfo info = this->info();
-    // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 8;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
-
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::TYPE_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.bfInfo.type)}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.dim}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::METRIC_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.bfInfo.metric)}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.isMulti}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexSize}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.indexLabelCount}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.blockSize}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.bfInfo.memory}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
-                         .fieldType = INFOFIELD_STRING,
-                         .fieldValue = {FieldValue{
-                             .stringValue = VecSimSearchMode_ToString(info.bfInfo.last_mode)}}});
-
+    VecSimIndexInfo *info = this->info();
+    VecSimInfoIterator *infoIterator = info->getIterator();
+    delete info;
     return infoIterator;
 }
 
