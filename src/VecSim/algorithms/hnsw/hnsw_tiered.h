@@ -181,11 +181,7 @@ public:
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
-        void *queryBlobCopy = this->allocator->allocate(blobSize);
-        memcpy(queryBlobCopy, queryBlob, blobSize);
-        return new (this->allocator)
-            TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
+        return this->backendIndex->newBatchIterator(queryBlob, queryParams);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
