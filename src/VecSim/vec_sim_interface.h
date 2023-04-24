@@ -70,7 +70,7 @@ public:
     /**
      * @brief A function to free resources used to generate the processed blob.
      */
-    virtual void returnProcessBlob(const void *processed_blob) = 0;
+    virtual void returnProcessedBlob(const void *processed_blob) = 0;
 
     /**
      * @brief Remove a vector from an index.

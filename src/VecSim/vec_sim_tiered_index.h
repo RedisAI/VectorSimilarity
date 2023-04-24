@@ -62,8 +62,8 @@ private:
     const void *processBlob(const void *blob) override {
         return this->backendIndex->processBlob(blob);
     }
-    void returnProcessBlob(const void *processed_blob) override {
-        this->backendIndex->returnProcessBlob(processed_blob);
+    void returnProcessedBlob(const void *processed_blob) override {
+        this->backendIndex->returnProcessedBlob(processed_blob);
     }
 };
 

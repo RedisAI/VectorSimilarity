@@ -116,8 +116,8 @@ protected:
         // Else no process is needed, return the original blob
         return blob;
     }
-    template <typename DataType>
-    void returnProcessBlobImp(const void *processed_blob) {
+
+    void returnProcessedBlobImp(const void *processed_blob) {
         // if the metric is cosine, we need to free the allocated blob
         if (this->metric == VecSimMetric_Cosine) {
             this->getAllocator()->free_allocation(const_cast<void *>(processed_blob));

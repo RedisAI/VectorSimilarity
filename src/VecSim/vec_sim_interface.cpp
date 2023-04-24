@@ -18,6 +18,6 @@ logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
 int VecSimIndexInterface::addVector(const void *blob, labelType label, void *auxiliaryCtx) {
     const void *processed_blob = processBlob(blob);
     int ret = addVectorImp(processed_blob, label, auxiliaryCtx);
-    returnProcessBlob(processed_blob);
+    returnProcessedBlob(processed_blob);
     return ret;
 }
