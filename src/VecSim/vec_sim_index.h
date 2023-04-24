@@ -99,7 +99,6 @@ public:
         }
     }
 
-protected:
     template <typename DataType>
     const void *processBlobImp(const void *blob) const {
         // if the metric is cosine, we need to normalize
@@ -117,7 +116,7 @@ protected:
         return blob;
     }
 
-    void returnProcessedBlobImp(const void *processed_blob) const {
+    virtual void returnProcessedBlob(const void *processed_blob) const {
         // if the metric is cosine, we need to free the allocated blob
         if (this->metric == VecSimMetric_Cosine) {
             this->getAllocator()->free_allocation(const_cast<void *>(processed_blob));

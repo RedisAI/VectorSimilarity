@@ -40,7 +40,7 @@ public:
      * it will call addVector with the normalized blob)
      * It is assumed the the index saves its own copy of the blob.
      */
-    virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx = nullptr);
+    int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx = nullptr);
 
     /**
      * @brief Add a vector blob and its id to the index.
@@ -112,8 +112,8 @@ public:
      * for example, if the distance metric is cosine, it will call topKQuery with the normalized
      * blob.
      */
-    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams);
+    VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
+                                            VecSimQueryParams *queryParams);
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.
@@ -136,8 +136,8 @@ public:
      * for example, if the distance metric is cosine, it will call rangeQuery with the normalized
      * blob.
      */
-    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams);
+    VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
+                                             VecSimQueryParams *queryParams);
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -176,8 +176,8 @@ public:
      * type and dimension.
      * @return Fresh batch iterator
      */
-    virtual VecSimBatchIterator *newBatchIteratorWrapper(const void *queryBlob,
-                                                         VecSimQueryParams *queryParams) const;
+    VecSimBatchIterator *newBatchIteratorWrapper(const void *queryBlob,
+                                                 VecSimQueryParams *queryParams) const;
 
     /**
      * @brief A function to be implemented by the inheriting index and called by rangeQuery.

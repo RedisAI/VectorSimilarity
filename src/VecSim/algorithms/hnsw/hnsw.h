@@ -276,9 +276,7 @@ public:
     virtual const void *processBlob(const void *blob) const override {
         return this->template processBlobImp<DataType>(blob);
     }
-    virtual void returnProcessedBlob(const void *processed_blob) const override {
-        return this->returnProcessedBlobImp(processed_blob);
-    }
+
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function

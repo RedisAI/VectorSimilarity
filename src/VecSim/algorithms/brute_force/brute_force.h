@@ -117,9 +117,7 @@ private:
     virtual const void *processBlob(const void *blob) const override {
         return this->template processBlobImp<DataType>(blob);
     }
-    virtual void returnProcessedBlob(const void *processed_blob) const override {
-        return this->returnProcessedBlobImp(processed_blob);
-    }
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
 #endif
