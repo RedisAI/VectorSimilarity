@@ -116,7 +116,7 @@ public:
         return blob;
     }
 
-    virtual void returnProcessedBlob(const void *processed_blob) const {
+    virtual void returnProcessedBlob(const void *processed_blob) const override {
         // if the metric is cosine, we need to free the allocated blob
         if (this->metric == VecSimMetric_Cosine) {
             this->getAllocator()->free_allocation(const_cast<void *>(processed_blob));
