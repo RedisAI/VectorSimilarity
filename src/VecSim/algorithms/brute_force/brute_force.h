@@ -15,6 +15,7 @@
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/vec_utils.h"
+#include "brute_force_info.h"
 
 #include <cstring>
 #include <cmath>
@@ -48,7 +49,7 @@ public:
                                              VecSimQueryParams *queryParams) override;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override;
-    virtual VecSimIndexInfo info() const override;
+    virtual VecSimInfo *info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
@@ -353,20 +354,12 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
-
-    VecSimIndexInfo info;
-    info.algo = VecSimAlgo_BF;
-    info.bfInfo.dim = this->dim;
-    info.bfInfo.type = this->vecType;
-    info.bfInfo.metric = this->metric;
-    info.bfInfo.indexSize = this->count;
-    info.bfInfo.indexLabelCount = this->indexLabelCount();
-    info.bfInfo.blockSize = this->blockSize;
-    info.bfInfo.memory = this->getAllocationSize();
-    info.bfInfo.isMulti = this->isMulti;
-    info.bfInfo.last_mode = this->last_mode;
-    return info;
+VecSimInfo *BruteForceIndex<DataType, DistType>::info() const {
+    VecSimInfo *info = VecSimIndexAbstract::info();
+    BruteForceInfo *bfInfo = new BruteForceInfo(info);
+    bfInfo->blockSize = this->blockSize;
+    delete info;
+    return bfInfo;
 }
 
 template <typename DataType, typename DistType>

@@ -129,7 +129,7 @@ public:
      *
      * @return Index general and specific meta-data.
      */
-    virtual VecSimIndexInfo info() const = 0;
+    virtual VecSimIndexInfo *info() const = 0;
 
     /**
      * @brief Returns an index information in an iterable structure.

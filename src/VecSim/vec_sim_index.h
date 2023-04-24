@@ -13,6 +13,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
+#include "VecSim/vec_sim_info.h"
 #include <cassert>
 
 using spaces::dist_func_t;
@@ -82,6 +83,20 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
+
+    virtual VecSimInfo *getInfo() {
+        VecSimInfo *info = new VecSimInfo();
+        info->algo = this->getAlgo();
+        info->indexSize = this->size();
+        info->indexLabelCount = this->labelCount();
+        info->metric = this->getMetric();
+        info->memory = this->getMemoryUsage();
+        info->type = this->getType();
+        info->isMulti = this->isMultiValue();
+        info->dim = this->getDim();
+        info->last_mode = this->last_mode;
+        return info;
+    }
 
     void log(const char *fmt, ...) const {
         if (VecSimIndexInterface::logCallback) {
