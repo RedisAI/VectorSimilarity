@@ -319,7 +319,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         if (my_index->backendIndex->indexCapacity() == my_index->backendIndex->indexSize()) {
             my_index->backendIndex->increaseCapacity();
         }
-        my_index->backendIndex->addVectorImp(vector, my_index->backendIndex->indexSize());
+        my_index->backendIndex->addVector(vector, my_index->backendIndex->indexSize());
     };
 
     AsyncJob job(allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
@@ -475,7 +475,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
         for (size_t j = 0; j < per_label; j++) {
             GenerateVector<TEST_DATA_T>(vectors + i * dim * per_label + j * dim, dim,
                                         i * per_label + j);
-            tiered_index->addVectorImp(vectors + i * dim * per_label + j * dim, i);
+            tiered_index->addVector(vectors + i * dim * per_label + j * dim, i);
         }
     }
 
@@ -1769,7 +1769,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
                     for (size_t j = 0; j < dim; j++) {
                         vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
                     }
-                    tiered_index->addVectorImp(vector, (i * batch_size + l) / per_label);
+                    tiered_index->addVector(vector, (i * batch_size + l) / per_label);
                 }
                 for (size_t l = 0; l < batch_size / per_label; l++) {
                     // Every vector associated with the label may appear in flat/HNSW index or in
