@@ -55,22 +55,22 @@ public:
         VecSimIndex_Free(frontendIndex);
     }
 
-    VecSimQueryResult_List topKQueryImp(const void *queryBlob, size_t k,
-                                        VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
+                                     VecSimQueryParams *queryParams) override;
 
 private:
-    const void *processBlob(const void *blob) override {
+    const void *processBlob(const void *blob) const override {
         return this->backendIndex->processBlob(blob);
     }
-    void returnProcessedBlob(const void *processed_blob) override {
+    void returnProcessedBlob(const void *processed_blob) const override {
         this->backendIndex->returnProcessedBlob(processed_blob);
     }
 };
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) {
+VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                                 VecSimQueryParams *queryParams) {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -80,13 +80,13 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
 
         // Simply query the main index and return the results while holding the lock.
         this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->topKQueryImp(queryBlob, k, queryParams);
+        auto res = this->backendIndex->topKQuery(queryBlob, k, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         return res;
     } else {
         // No luck... first query the flat buffer and release the lock.
-        auto flat_results = this->frontendIndex->topKQueryImp(queryBlob, k, queryParams);
+        auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
         this->flatIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
@@ -97,7 +97,7 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
 
         // Lock the main index and query it.
         this->mainIndexGuard.lock_shared();
-        auto main_results = this->backendIndex->topKQueryImp(queryBlob, k, queryParams);
+        auto main_results = this->backendIndex->topKQuery(queryBlob, k, queryParams);
         this->mainIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
