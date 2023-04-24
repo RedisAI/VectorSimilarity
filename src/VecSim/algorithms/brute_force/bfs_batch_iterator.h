@@ -20,8 +20,8 @@ public:
 
 private:
     inline VecSimQueryResult_Code calculateScores() override {
-
-        this->scores.reserve(this->index->indexLabelCount());
+        this->index_label_count = this->index->indexLabelCount();
+        this->scores.reserve(this->index_label_count);
         vecsim_stl::vector<VectorBlock *> blocks = this->index->getVectorBlocks();
         VecSimQueryResult_Code rc;
 

@@ -2,6 +2,8 @@
 
 #include "vec_sim_index.h"
 #include "algorithms/brute_force/brute_force.h"
+#include "VecSim/batch_iterator.h"
+#include "VecSim/utils/merge_results.h"
 
 #include <shared_mutex>
 
@@ -103,9 +105,9 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 
         // Merge the results and return, avoiding duplicates.
         if (this->backendIndex->isMultiValue()) {
-            return merge_results<true>(main_results, flat_results, k);
+            return merge_result_lists<true>(main_results, flat_results, k);
         } else {
-            return merge_results<false>(main_results, flat_results, k);
+            return merge_result_lists<false>(main_results, flat_results, k);
         }
     }
 }
