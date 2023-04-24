@@ -110,3 +110,12 @@ void normalizeVector(DataType *input_vector, size_t dim) {
         input_vector[i] = input_vector[i] / norm;
     }
 }
+
+typedef void (*normalizeVector_f)(void *input_vector, size_t dim);
+
+static inline void normalizeVectorFloat(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<float *>(input_vector), dim);
+}
+static inline void normalizeVectorDouble(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<double *>(input_vector), dim);
+}

@@ -47,7 +47,7 @@ public:
         auto id = label_lookup_.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+        memcpy(vec.data(), this->getDataByInternalId(id), this->data_size);
         vectors_output.push_back(vec);
     }
 #endif

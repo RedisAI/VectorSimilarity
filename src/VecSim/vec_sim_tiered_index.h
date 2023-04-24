@@ -59,11 +59,34 @@ public:
                                      VecSimQueryParams *queryParams) override;
 
 private:
-    const void *processBlob(const void *blob) const override {
-        return this->backendIndex->processBlob(blob);
+    virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
+        // Will be used only if a processing stage is needed
+        char processed_blob[this->backendIndex->getDataSize()];
+        const void *vector_to_add = this->backendIndex->processBlob(blob, processed_blob);
+        return this->addVector(vector_to_add, label, auxiliaryCtx);
     }
-    void returnProcessedBlob(const void *processed_blob) const override {
-        this->backendIndex->returnProcessedBlob(processed_blob);
+    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) override {
+        // Will be used only if a processing stage is needed
+        char processed_blob[this->backendIndex->getDataSize()];
+        const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
+        return this->topKQuery(query_to_send, k, queryParams);
+    }
+    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
+                                                     VecSimQueryParams *queryParams) override {
+        // Will be used only if a processing stage is needed
+        char processed_blob[this->backendIndex->getDataSize()];
+        const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
+
+        return this->rangeQuery(query_to_send, radius, queryParams);
+    }
+    virtual VecSimBatchIterator *
+    newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
+        // Will be used only if a processing stage is needed
+        char processed_blob[this->backendIndex->getDataSize()];
+        const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
+
+        return this->newBatchIterator(query_to_send, queryParams);
     }
 };
 

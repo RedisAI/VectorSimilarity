@@ -65,7 +65,7 @@ public:
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
-            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size);
             vectors_output.push_back(vec);
         }
     }

@@ -40,7 +40,8 @@ public:
      * it will call addVector with the normalized blob)
      * It is assumed the the index saves its own copy of the blob.
      */
-    int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx = nullptr);
+    virtual int addVectorWrapper(const void *blob, labelType label,
+                                 void *auxiliaryCtx = nullptr) = 0;
 
     /**
      * @brief Add a vector blob and its id to the index.
@@ -112,8 +113,8 @@ public:
      * for example, if the distance metric is cosine, it will call topKQuery with the normalized
      * blob.
      */
-    VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                            VecSimQueryParams *queryParams);
+    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) = 0;
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.
@@ -136,8 +137,8 @@ public:
      * for example, if the distance metric is cosine, it will call rangeQuery with the normalized
      * blob.
      */
-    VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                             VecSimQueryParams *queryParams);
+    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
+                                                     VecSimQueryParams *queryParams) = 0;
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -176,8 +177,8 @@ public:
      * type and dimension.
      * @return Fresh batch iterator
      */
-    VecSimBatchIterator *newBatchIteratorWrapper(const void *queryBlob,
-                                                 VecSimQueryParams *queryParams) const;
+    virtual VecSimBatchIterator *newBatchIteratorWrapper(const void *queryBlob,
+                                                         VecSimQueryParams *queryParams) const = 0;
 
     /**
      * @brief A function to be implemented by the inheriting index and called by rangeQuery.
@@ -221,18 +222,4 @@ public:
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
     }
-
-    /**
-     * @brief This functions gets a blob, and if required, *allocates its own copy* of it,
-     * and performs operations before sending it to the index
-     * Returns the blob to be used by the index.
-     * NOTE: It is the caller responsibility to call returnProcessedBlob() after the the processed
-     * vector is no longer needed to free resources.
-     */
-    virtual const void *processBlob(const void *blob) const = 0;
-
-    /**
-     * @brief A function to free resources used to generate the processed blob.
-     */
-    virtual void returnProcessedBlob(const void *processed_blob) const = 0;
 };
