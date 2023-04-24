@@ -86,7 +86,10 @@ void array_free(T *arr) {
 template <typename T>
 void array_pop_front_n(T *arr, size_t n) {
     array_hdr_t<T> *arr_hdr = array_hdr(arr);
-    arr_hdr->len -= MIN(n, arr_hdr->len);
+    n = MIN(n, arr_hdr->len);
+    arr_hdr->len -= n;
+    // mem* functions can handle a pointer to the next element after the end of the array (n = len),
+    // if the number of bytes to copy is 0.
     memmove(arr, arr + n, arr_hdr->len * sizeof(T));
 }
 

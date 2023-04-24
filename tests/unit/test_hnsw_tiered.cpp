@@ -2423,8 +2423,8 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         size_t excessive_iterations = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
             if (iteration_num * n_res == n_labels) {
-                // in some cases, the batch iterator may report that he has more results to return,
-                // but its actually not true and the next call to `VecSimBatchIterator_Next` will
+                // in some cases, the batch iterator may report that it has more results to return,
+                // but it's actually not true and the next call to `VecSimBatchIterator_Next` will
                 // return 0 results. This is safe because we don't guarantee how many results the
                 // batch iterator will return, and a similar scenario can happen when checking
                 // `VecSimBatchIterator_HasNext` on an empty index for the first time (before the

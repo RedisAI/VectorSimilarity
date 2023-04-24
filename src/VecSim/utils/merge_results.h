@@ -11,19 +11,24 @@
 #include "arr_cpp.h"
 #include <unordered_set>
 
-// This pattern is used multiple times so moved to a macro.
 // Append the current result to the merged results, after verifying that it did not added yet (if
 // verification is needed). Also update the set, limit and the current result.
-#define MAYBE_APPEND(cur_res)                                                                      \
-    do {                                                                                           \
-        if (!withSet || ids.insert(cur_res->id).second) {                                          \
-            array_append(results, *cur_res);                                                       \
-            limit--;                                                                               \
-        }                                                                                          \
-        cur_res++;                                                                                 \
-    } while (0)
+template <bool withSet>
+inline constexpr void maybe_append(VecSimQueryResult *&results, VecSimQueryResult *&cur_res,
+                                   std::unordered_set<size_t> &ids, size_t &limit) {
+    // In a single line, checks (only if a check is needed) if we already inserted the current id to
+    // the merged results, add it to the set if not, and returns its conclusion.
+    if (!withSet || ids.insert(cur_res->id).second) {
+        array_append(results, *cur_res);
+        limit--;
+    }
+    cur_res++;
+}
 
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
+// By the end of the function, the first and second referenced pointers will point to the first
+// element that was not merged (in each array), or to the end of the array if it was merged
+// completely.
 template <bool withSet>
 VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryResult *first_end,
                                  VecSimQueryResult *&second, const VecSimQueryResult *second_end,
@@ -38,12 +43,9 @@ VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryRes
     while (limit && cur_first != first_end && cur_second != second_end) {
         int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
         if (cmp > 0) {
-            // In a single line, checks (only if a check is needed) if we already inserted the
-            // current id to the merged results, append it to the merged results if we didn't, and
-            // add it to the set.
-            MAYBE_APPEND(cur_second);
+            maybe_append<withSet>(results, cur_second, ids, limit);
         } else if (cmp < 0) {
-            MAYBE_APPEND(cur_first);
+            maybe_append<withSet>(results, cur_first, ids, limit);
         } else {
             // Even if `withSet` is true, we encountered an exact duplicate, so we know that this id
             // didn't appear before in both arrays, and it won't appear again in both arrays, so we
@@ -60,11 +62,11 @@ VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryRes
     if (limit != 0) {
         if (cur_first == first_end) {
             while (limit && cur_second != second_end) {
-                MAYBE_APPEND(cur_second);
+                maybe_append<withSet>(results, cur_second, ids, limit);
             }
         } else {
             while (limit && cur_first != first_end) {
-                MAYBE_APPEND(cur_first);
+                maybe_append<withSet>(results, cur_first, ids, limit);
             }
         }
     }

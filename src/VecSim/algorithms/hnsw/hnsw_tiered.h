@@ -870,6 +870,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::compute_current_b
     const auto hnsw_end = hnsw_res + VecSimQueryResult_Len(this->hnsw_results);
 
     // Merge results
+    // This call will update `hnsw_res` and `bf_res` to point to the end of the merged results.
     VecSimQueryResult *batch_res;
     if (isMultiValue) {
         batch_res = merge_results<true>(hnsw_res, hnsw_end, bf_res, bf_end, n_res);
@@ -879,7 +880,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::compute_current_b
 
     if (!isMultiValue) {
         // If we're on a single-value index, update the set of results returned from the FLAT index
-        // before popping them.
+        // before popping them, to prevent them to be returned from the HNSW index in later batches.
         for (auto it = this->flat_results.results; it != bf_res; ++it) {
             this->returned_results_set.insert(it->id);
         }
