@@ -15,6 +15,7 @@
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/algorithms/raft_ivf/ivf_factory.h"
 #include "bm_definitions.h"
 
 // This class includes every static data member that is:
@@ -59,6 +60,16 @@ protected:
 
     static inline VecSimParams CreateParams(const BFParams &bf_params) {
         VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+        return params;
+    }
+
+    static inline VecSimParams CreateParams(const RaftIVFFlatParams &flat_params) {
+        VecSimParams params{.algo = VecSimAlgo_RaftIVFFlat, .raftIVFFlatParams = flat_params};
+        return params;
+    }
+
+    static inline VecSimParams CreateParams(const RaftIVFPQParams &pq_params) {
+        VecSimParams params{.algo = VecSimAlgo_RaftIVFPQ, .raftIVFPQParams = pq_params};
         return params;
     }
 

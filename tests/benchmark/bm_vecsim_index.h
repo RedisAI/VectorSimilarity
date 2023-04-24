@@ -24,7 +24,15 @@ protected:
     static inline char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
     }
+    
+    /*
+    static inline RaftIVFFlatIndex *CastToFlat(VecSimIndex *index) {
+        return dynamic_cast<RaftIVFFlatIndex *>(index);
+    }
 
+    static inline RaftIVFPQIndex *CastToPQ(VecSimIndex *index) {
+        return dynamic_cast<RaftIVFPQIndex *>(index);
+    }*/
 private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
@@ -53,6 +61,8 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
         VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
+        VecSimIndex_Free(indices[VecSimAlgo_RaftIVFFlat]);
+        VecSimIndex_Free(indices[VecSimAlgo_RaftIVFPQ]);
     }
 }
 
@@ -97,12 +107,40 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     size_t ef_r = 10;
     hnsw_index->setEf(ef_r);
 
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    RaftIVFFlatParams flat_params = {.dim = dim,
+                                     .metric = VecSimMetric_L2,
+                                     .nLists = 1,
+                                     .kmeans_nIters = 1,
+                                     .kmeans_trainsetFraction = 0.5,
+                                     .nProbes = 20};
+    indices.push_back(RaftIVFFlatFactory::NewIndex(&flat_params, allocator));
+
+    RaftIVFPQParams pq_params = {.dim = dim,
+                                 .metric = VecSimMetric_L2,
+                                 .nLists = 1,
+                                 .pqBits = 8,
+                                 .pqDim = 0,
+                                 .codebookKind = RaftIVFPQ_PerSubspace,
+                                 .kmeans_nIters = 1,
+                                 .kmeans_trainsetFraction = 0.5,
+                                 .nProbes = 1,
+                                 .lutType = CUDAType_R_32F,
+                                 .internalDistanceType = CUDAType_R_32F,
+                                 .preferredShmemCarveout = 1.0};
+    indices.push_back(RaftIVFPQFactory::NewIndex(&pq_params, allocator));
+
+    //TieredRaftIVFFlatParams tiered_flat_params = {.flatParams = flat_params};
+    //indices.push_back(RaftIVFFlatFactory::NewTieredIndex(&tiered_flat_params, allocator))
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         char *blob = GetHNSWDataByInternalId(i);
         // Fot multi value indices, the internal id is not necessarily equal the label.
         size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
+        VecSimIndex_AddVector(indices[VecSimAlgo_RaftIVFFlat], blob, label);
+        VecSimIndex_AddVector(indices[VecSimAlgo_RaftIVFPQ], blob, label);
+        // TODO: use batch add
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.
