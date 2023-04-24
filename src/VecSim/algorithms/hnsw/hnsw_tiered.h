@@ -117,7 +117,7 @@ public:
                     const TieredIndexParams &tieredParams);
     virtual ~TieredHNSWIndex();
 
-    int addVectorImp(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
     size_t indexSize() const override;
     size_t indexLabelCount() const override;
@@ -128,9 +128,9 @@ public:
     void increaseCapacity() override {}
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
-                                         VecSimQueryParams *queryParams) override {
-        return this->backendIndex->rangeQueryImp(queryBlob, radius, queryParams);
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                      VecSimQueryParams *queryParams) override {
+        return this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
     }
     VecSimIndexInfo info() const override { return this->backendIndex->info(); }
     VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }
@@ -366,7 +366,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->addVectorImp(blob_copy, job->label, &state);
+        hnsw_index->addVector(blob_copy, job->label, &state);
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
@@ -383,7 +383,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
-        hnsw_index->addVectorImp(blob_copy, job->label, &state);
+        hnsw_index->addVector(blob_copy, job->label, &state);
         if (state.elementMaxLevel > state.currMaxLevel) {
             hnsw_index->unlockIndexDataGuard();
         }
@@ -527,15 +527,15 @@ size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
 }
 
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::addVectorImp(const void *blob, labelType label,
-                                                      void *auxiliaryCtx) {
+int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
+                                                   void *auxiliaryCtx) {
     /* Note: this currently doesn't support overriding (assuming that the label doesn't exist)! */
     this->flatIndexGuard.lock();
     if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
         this->frontendIndex->increaseCapacity();
     }
     idType new_flat_id = this->frontendIndex->indexSize();
-    this->frontendIndex->addVectorImp(blob, label);
+    this->frontendIndex->addVector(blob, label);
     AsyncJob *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.

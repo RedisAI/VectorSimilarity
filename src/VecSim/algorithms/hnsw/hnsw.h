@@ -248,10 +248,10 @@ public:
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
 
-    VecSimQueryResult_List topKQueryImp(const void *query_data, size_t k,
-                                        VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQueryImp(const void *query_data, double radius,
-                                         VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
+                                     VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
+                                      VecSimQueryParams *queryParams) override;
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
@@ -273,10 +273,10 @@ public:
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
 
-    virtual const void *processBlob(const void *blob) override {
+    virtual const void *processBlob(const void *blob) const override {
         return this->template processBlobImp<DataType>(blob);
     }
-    virtual void returnProcessedBlob(const void *processed_blob) override {
+    virtual void returnProcessedBlob(const void *processed_blob) const override {
         return this->returnProcessedBlobImp(processed_blob);
     }
 #ifdef BUILD_TESTS
@@ -1984,8 +1984,8 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQueryImp(const void *query_data, size_t k,
-                                                                   VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
+                                                                VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
@@ -2111,9 +2111,9 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
-HNSWIndex<DataType, DistType>::rangeQueryImp(const void *query_data, double radius,
-                                             VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
+                                                                 double radius,
+                                                                 VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;

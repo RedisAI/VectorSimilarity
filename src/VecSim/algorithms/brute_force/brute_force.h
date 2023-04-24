@@ -44,10 +44,10 @@ public:
     inline DataType *getDataByInternalId(idType id) const {
         return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
     }
-    virtual VecSimQueryResult_List topKQueryImp(const void *queryBlob, size_t k,
-                                                VecSimQueryParams *queryParams) override;
-    virtual VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
-                                                 VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
+                                             VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -114,10 +114,10 @@ protected:
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
 
 private:
-    virtual const void *processBlob(const void *blob) override {
+    virtual const void *processBlob(const void *blob) const override {
         return this->template processBlobImp<DataType>(blob);
     }
-    virtual void returnProcessedBlob(const void *processed_blob) override {
+    virtual void returnProcessedBlob(const void *processed_blob) const override {
         return this->returnProcessedBlobImp(processed_blob);
     }
 #ifdef BUILD_TESTS
@@ -262,8 +262,8 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-BruteForceIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
-                                                  VecSimQueryParams *queryParams) {
+BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
+                                               VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
@@ -313,8 +313,8 @@ BruteForceIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t 
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-BruteForceIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
-                                                   VecSimQueryParams *queryParams) {
+BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
+                                                VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
@@ -419,9 +419,6 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }

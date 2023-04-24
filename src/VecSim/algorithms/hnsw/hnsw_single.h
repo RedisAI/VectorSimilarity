@@ -68,8 +68,7 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVectorImp(const void *vector_data, labelType label,
-                     void *auxiliaryCtx = nullptr) override;
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     inline std::vector<idType> markDelete(labelType label) override;
     inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                               bool also_done_processing = false) const override;
@@ -155,8 +154,8 @@ int HNSWIndex_Single<DataType, DistType>::deleteVector(const labelType label) {
 }
 
 template <typename DataType, typename DistType>
-int HNSWIndex_Single<DataType, DistType>::addVectorImp(const void *vector_data,
-                                                       const labelType label, void *auxiliaryCtx) {
+int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data, const labelType label,
+                                                    void *auxiliaryCtx) {
 
     // Checking if an element with the given label already exists.
     bool label_exists = false;
@@ -180,9 +179,7 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) const {
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
+
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);

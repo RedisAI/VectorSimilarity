@@ -101,14 +101,14 @@ public:
 
 protected:
     template <typename DataType>
-    const void *processBlobImp(const void *blob) {
+    const void *processBlobImp(const void *blob) const {
         // if the metric is cosine, we need to normalize
         if (this->metric == VecSimMetric_Cosine) {
             size_t blob_size = this->dim * sizeof(DataType);
             // Allocate and copy
             void *normalized_blob = this->getAllocator()->allocate(blob_size);
             memcpy(normalized_blob, blob, blob_size);
-            // noramlzie allocated in place
+            // normalize allocated in place
             normalizeVector(static_cast<DataType *>(normalized_blob), this->dim);
             return normalized_blob;
         }
@@ -117,7 +117,7 @@ protected:
         return blob;
     }
 
-    void returnProcessedBlobImp(const void *processed_blob) {
+    void returnProcessedBlobImp(const void *processed_blob) const {
         // if the metric is cosine, we need to free the allocated blob
         if (this->metric == VecSimMetric_Cosine) {
             this->getAllocator()->free_allocation(const_cast<void *>(processed_blob));

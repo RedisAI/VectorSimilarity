@@ -15,25 +15,34 @@ void Vecsim_Log(void *ctx, const char *message) { std::cout << message << std::e
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
 
-int VecSimIndexInterface::addVector(const void *blob, labelType label, void *auxiliaryCtx) {
+int VecSimIndexInterface::addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) {
     const void *processed_blob = processBlob(blob);
-    int ret = addVectorImp(processed_blob, label, auxiliaryCtx);
+    int ret = addVector(processed_blob, label, auxiliaryCtx);
     returnProcessedBlob(processed_blob);
     return ret;
 }
 
-VecSimQueryResult_List VecSimIndexInterface::topKQuery(const void *queryBlob, size_t k,
-                                                       VecSimQueryParams *queryParams) {
+VecSimQueryResult_List VecSimIndexInterface::topKQueryWrapper(const void *queryBlob, size_t k,
+                                                              VecSimQueryParams *queryParams) {
     const void *processed_blob = processBlob(queryBlob);
-    VecSimQueryResult_List ret = topKQueryImp(processed_blob, k, queryParams);
+    VecSimQueryResult_List ret = topKQuery(processed_blob, k, queryParams);
     returnProcessedBlob(processed_blob);
     return ret;
 }
 
-VecSimQueryResult_List VecSimIndexInterface::rangeQuery(const void *queryBlob, double radius,
-                                                        VecSimQueryParams *queryParams) {
+VecSimQueryResult_List VecSimIndexInterface::rangeQueryWrapper(const void *queryBlob, double radius,
+                                                               VecSimQueryParams *queryParams) {
     const void *processed_blob = processBlob(queryBlob);
-    VecSimQueryResult_List ret = rangeQueryImp(processed_blob, radius, queryParams);
+    VecSimQueryResult_List ret = rangeQuery(processed_blob, radius, queryParams);
     returnProcessedBlob(processed_blob);
+    return ret;
+}
+
+VecSimBatchIterator *
+VecSimIndexInterface::newBatchIteratorWrapper(const void *queryBlob,
+                                              VecSimQueryParams *queryParams) const {
+    const void *processed_query = processBlob(queryBlob);
+    VecSimBatchIterator *ret = newBatchIterator(processed_query, queryParams);
+    returnProcessedBlob(processed_query);
     return ret;
 }
