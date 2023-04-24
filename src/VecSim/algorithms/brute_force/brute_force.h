@@ -44,10 +44,10 @@ public:
     inline DataType *getDataByInternalId(idType id) const {
         return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
     }
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryResult_List topKQueryImp(const void *queryBlob, size_t k,
+                                                VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
+                                         VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -262,8 +262,8 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                               VecSimQueryParams *queryParams) {
+BruteForceIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
+                                                  VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
@@ -272,14 +272,6 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     if (0 == k) {
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
-    }
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-
-        queryBlob = normalized_blob;
     }
 
     DistType upperBound = std::numeric_limits<DistType>::lowest();
@@ -321,18 +313,11 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
-BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
-                                                VecSimQueryParams *queryParams) {
+BruteForceIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
+                                                   VecSimQueryParams *queryParams) {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        queryBlob = normalized_blob;
-    }
 
     // Compute scores in every block and save results that are within the range.
     auto res_container =

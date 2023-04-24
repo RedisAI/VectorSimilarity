@@ -21,3 +21,19 @@ int VecSimIndexInterface::addVector(const void *blob, labelType label, void *aux
     returnProcessedBlob(processed_blob);
     return ret;
 }
+
+VecSimQueryResult_List VecSimIndexInterface::topKQuery(const void *queryBlob, size_t k,
+                                                       VecSimQueryParams *queryParams) {
+    const void *processed_blob = processBlob(queryBlob);
+    VecSimQueryResult_List ret = topKQueryImp(processed_blob, k, queryParams);
+    returnProcessedBlob(processed_blob);
+    return ret;
+}
+
+VecSimQueryResult_List VecSimIndexInterface::rangeQuery(const void *queryBlob, double radius,
+                                                        VecSimQueryParams *queryParams) {
+    const void *processed_blob = processBlob(queryBlob);
+    VecSimQueryResult_List ret = rangeQueryImp(processed_blob, radius, queryParams);
+    returnProcessedBlob(processed_blob);
+    return ret;
+}

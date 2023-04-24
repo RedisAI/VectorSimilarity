@@ -51,19 +51,19 @@ public:
     virtual int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr);
 
     /**
-     * @brief A function to be implemented by the inherting index and called by addVector.
+     * @brief A function to be implemented by the inheriting index and called by addVector.
      * @param blob is a processed vector (for example, if the distance metric is cosine,
-     * blob is already *normalized* )
-     * It is assumed the the index savws its own copy of the blob.
+     * blob is already *normalized*)
+     * It is assumed the the index saves its own copy of the blob.
      */
     virtual int addVectorImp(const void *blob, labelType label, void *auxiliaryCtx = nullptr) = 0;
 
     /**
      * @brief This functions gets a blob, and if required, *allocates its own copy* of it,
-     * and performs operations before sending it to addVectorImp
-     * Returns the blob to be added to index. It is assumed that the index copies the blob.
-     * NOTE: It is the caller responsability to call returnProcessBlob() after adding the vector to
-     * the index is done, to free resources.
+     * and performs operations before sending it to the index
+     * Returns the blob to be used by the index.
+     * NOTE: It is the caller responsibility to call returnProcessedBlob() after the the processed
+     * vector is no longer needed to free resources.
      */
     virtual const void *processBlob(const void *blob) = 0;
 
@@ -123,15 +123,22 @@ public:
      *
      * @param queryBlob binary representation of the query vector. Blob size should match the index
      * data type and dimension.
-     * @param k the number of "nearest neighbours" to return (upper bound).
+     * @param k the number of "nearest neighbors" to return (upper bound).
      * @param queryParams run time params for the search, which are algorithm-specific.
      * @return An opaque object the represents a list of results. User can access the id and score
      * (which is the distance according to the index metric) of every result through
      * VecSimQueryResult_Iterator.
      */
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) = 0;
+                                             VecSimQueryParams *queryParams);
 
+    /**
+     * @brief A function to be implemented by the inheriting index and called by topKQuery.
+     * @param blob is a processed vector (for example, if the distance metric is cosine,
+     * blob is already *normalized* )
+     */
+    virtual VecSimQueryResult_List topKQueryImp(const void *queryBlob, size_t k,
+                                                VecSimQueryParams *queryParams) = 0;
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -145,8 +152,14 @@ public:
      * VecSimQueryResult_Iterator.
      */
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) = 0;
-
+                                              VecSimQueryParams *queryParams);
+    /**
+     * @brief A function to be implemented by the inheriting index and called by rangeQuery.
+     * @param blob is a processed vector (for example, if the distance metric is cosine,
+     * blob is already *normalized* )
+     */
+    virtual VecSimQueryResult_List rangeQueryImp(const void *queryBlob, size_t k,
+                                                 VecSimQueryParams *queryParams) = 0;
     /**
      * @brief Return index information.
      *

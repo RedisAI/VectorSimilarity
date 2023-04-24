@@ -128,9 +128,9 @@ public:
     void increaseCapacity() override {}
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams) override {
-        return this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
+    VecSimQueryResult_List rangeQueryImp(const void *queryBlob, double radius,
+                                         VecSimQueryParams *queryParams) override {
+        return this->backendIndex->rangeQueryImp(queryBlob, radius, queryParams);
     }
     VecSimIndexInfo info() const override { return this->backendIndex->info(); }
     VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }

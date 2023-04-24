@@ -248,10 +248,10 @@ public:
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                       VecSimQueryResult_Code *rc) const;
 
-    VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
-                                     VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
-                                      VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List topKQueryImp(const void *query_data, size_t k,
+                                        VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQueryImp(const void *query_data, double radius,
+                                         VecSimQueryParams *queryParams) override;
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
@@ -1984,8 +1984,8 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
-                                                                VecSimQueryParams *queryParams) {
+VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQueryImp(const void *query_data, size_t k,
+                                                                   VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
@@ -1998,12 +1998,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
-    }
     // Get original efRuntime and store it.
     size_t ef = ef_;
 
@@ -2117,9 +2111,9 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
-                                                                 double radius,
-                                                                 VecSimQueryParams *queryParams) {
+VecSimQueryResult_List
+HNSWIndex<DataType, DistType>::rangeQueryImp(const void *query_data, double radius,
+                                             VecSimQueryParams *queryParams) {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
@@ -2130,13 +2124,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
         return rl;
     }
     void *timeoutCtx = nullptr;
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
-    }
 
     double epsilon = epsilon_;
     if (queryParams) {
