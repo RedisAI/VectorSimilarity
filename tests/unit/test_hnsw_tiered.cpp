@@ -2022,7 +2022,8 @@ TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
                          .dim = dim,
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti(),
-                         .M = 32};
+                         .M = 32,
+                         .efRuntime = 2 * n};
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
@@ -2087,8 +2088,8 @@ TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
         // just inserted), and the first result should be this vector.
         auto ver_res = [&](size_t label, double score, size_t index) {
             if (index == 0) {
-                ASSERT_EQ(label, i % n_labels + n_labels);
-                ASSERT_DOUBLE_EQ(score, 0);
+                EXPECT_EQ(label, i % n_labels + n_labels);
+                EXPECT_DOUBLE_EQ(score, 0);
             }
             ASSERT_LE(label, i + n_labels);
         };
