@@ -3062,22 +3062,28 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
     delete index_ctx;
 }
 
-TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
+TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     size_t dim = 4;
     size_t k = 11;
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
 
-    size_t n = k * 3;
+    size_t n_labels = k * 3;
+    size_t n = n_labels * per_label;
+
+    auto edge_delta = (k - 0.5) * per_label;
+    auto mid_delta = edge_delta / 2.1;
     // `range` for querying the "edges" of the index and get k results.
-    double range = dim * (k - 0.5) * (k - 0.5); // L2 distance.
+    double range = dim * edge_delta * edge_delta; // L2 distance.
     // `half_range` for querying a point in the "middle" of the index and get k results around it.
-    double half_range = dim * (k - 0.5) * (k - 0.5) / 4; // L2 distance.
+    double half_range = dim * mid_delta * mid_delta; // L2 distance.
 
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams params = {
         .type = TypeParam::get_index_type(),
         .dim = dim,
         .metric = VecSimMetric_L2,
-        .epsilon = 0.5,
+        .multi = TypeParam::isMulti(),
+        .epsilon = 3.0 * per_label,
     };
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
@@ -3086,7 +3092,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+    ASSERT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
     auto hnsw_index = tiered_index->backendIndex;
     auto flat_index = tiered_index->frontendIndex;
@@ -3105,38 +3111,58 @@ TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
 
     // Define the verification functions.
     auto ver_res_0 = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, index);
-        ASSERT_DOUBLE_EQ(score, dim * id * id);
-    };
-
-    auto ver_res_1mid_by_score = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(std::abs(int(id - query_1mid[0])), (index + 1) / 2);
-        ASSERT_DOUBLE_EQ(score, dim * pow((index + 1) / 2, 2));
-    };
-
-    auto ver_res_2mid_by_score = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(std::abs(int(id - query_2mid[0])), (index + 1) / 2);
-        ASSERT_DOUBLE_EQ(score, dim * pow((index + 1) / 2, 2));
+        EXPECT_EQ(id, index);
+        auto element = id * per_label;
+        EXPECT_DOUBLE_EQ(score, dim * element * element);
     };
 
     auto ver_res_1mid_by_id = [&](size_t id, double score, size_t index) {
-        auto el_delta = std::abs(int(id - query_1mid[0]));
-        ASSERT_DOUBLE_EQ(score, dim * el_delta * el_delta);
+        size_t q_id = query_1mid[0] / per_label;
+        size_t mod = query_1mid[0] - q_id * per_label;
+        double expected_score = 0;
+        if (id > q_id) {
+            expected_score = (id - q_id) * per_label - mod;
+        } else if (id < q_id) {
+            expected_score = (q_id - id) * per_label - (per_label - mod - 1);
+        }
+        expected_score = expected_score * expected_score * dim;
+        EXPECT_DOUBLE_EQ(score, expected_score);
     };
 
     auto ver_res_2mid_by_id = [&](size_t id, double score, size_t index) {
-        auto el_delta = std::abs(int(id - query_2mid[0]));
-        ASSERT_DOUBLE_EQ(score, dim * el_delta * el_delta);
+        size_t q_id = query_2mid[0] / per_label;
+        size_t mod = query_2mid[0] - q_id * per_label;
+        double expected_score = 0;
+        if (id > q_id) {
+            expected_score = (id - q_id) * per_label - mod;
+        } else if (id < q_id) {
+            expected_score = (q_id - id) * per_label - (per_label - mod - 1);
+        }
+        expected_score = expected_score * expected_score * dim;
+        EXPECT_DOUBLE_EQ(score, expected_score);
+    };
+
+    auto ver_res_1mid_by_score = [&](size_t id, double score, size_t index) {
+        size_t q_id = query_1mid[0] / per_label;
+        EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
+        ver_res_1mid_by_id(id, score, index);
+    };
+
+    auto ver_res_2mid_by_score = [&](size_t id, double score, size_t index) {
+        size_t q_id = query_2mid[0] / per_label;
+        EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
+        ver_res_2mid_by_id(id, score, index);
     };
 
     auto ver_res_n = [&](size_t id, double score, size_t index) {
-        ASSERT_EQ(id, n - 1 - index);
-        ASSERT_DOUBLE_EQ(score, dim * index * index);
+        EXPECT_EQ(id, n_labels - 1 - index);
+        auto element = index * per_label;
+        EXPECT_DOUBLE_EQ(score, dim * element * element);
     };
 
     // Insert n/2 vectors to the main index.
     for (size_t i = 0; i < (n + 1) / 2; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i / per_label, i);
     }
     ASSERT_EQ(tiered_index->indexSize(), (n + 1) / 2);
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize());
@@ -3151,7 +3177,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
 
     // Insert n/2 vectors to the flat index.
     for (size_t i = (n + 1) / 2; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i / per_label, i);
     }
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
@@ -3174,10 +3200,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
     // adding directly to the underlying indexes to avoid jobs logic.
     // The main index will have vectors 0 - 2n/3 and the flat index will have vectors n/3 - n
     for (size_t i = n / 3; i < n / 2; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i / per_label, i);
     }
     for (size_t i = n / 2; i < n * 2 / 3; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i, i);
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i / per_label, i);
     }
 
     cur_memory_usage = allocator->getAllocationSize();
@@ -3243,5 +3269,97 @@ TYPED_TEST(HNSWTieredIndexTestBasic, RangeSearch) {
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
+    size_t dim = 4;
+    size_t k = 11;
+    size_t n = 1000;
+    bool isMulti = TypeParam::isMulti();
+
+    size_t per_label = isMulti ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .epsilon = double(dim * k * k),
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+
+    std::atomic_int successful_searches(0);
+    auto parallel_range_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        size_t k = search_job->k;
+        // size_t per_label = search_job->n;
+        size_t dim = search_job->dim;
+        // The range that will get us k results.
+        double range = dim * (k - 0.5) * (k - 0.5) / 4; // L2 distance.
+        auto query = search_job->query;
+
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            TEST_DATA_T element = *(TEST_DATA_T *)query;
+            ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
+            ASSERT_EQ(score, dim * (id - element) * (id - element));
+        };
+        runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
+        search_job->successful_searches++;
+
+        delete search_job;
+    };
+
+    // Fill the job queue with insert and search jobs, while filling the flat index, before
+    // initializing the thread pool.
+    for (size_t i = 0; i < n; i++) {
+        // Insert a vector to the flat index and add a job to insert it to the main index.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+
+        // Add a search job. Make sure the query element is between k and n - k.
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, ((n - i) % (n_labels - (2 * k))) + k);
+        auto search_job =
+            new (allocator) SearchJobMock(allocator, parallel_range_search, tiered_index, query, k,
+                                          per_label, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    EXPECT_EQ(tiered_index->indexSize(), n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
+    for (auto &it : tiered_index->labelToInsertJobs) {
+        EXPECT_EQ(it.second.size(), per_label);
+    }
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // All the vectors are already in the tiered index, so we expect to find the expected
+    // results from the get-go.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(jobQ.size(), 0);
+
+    // Cleanup.
     delete index_ctx;
 }
