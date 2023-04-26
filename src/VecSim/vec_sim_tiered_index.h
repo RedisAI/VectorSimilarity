@@ -58,7 +58,7 @@ public:
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
 #ifdef BUILD_TESTS
-    inline VecSimIndexAbstract<DistType> *getFlatbufferIndex() { return this->backendIndex; }
+    inline VecSimIndexAbstract<DistType> *getFlatbufferIndex() { return this->frontendIndex; }
 #endif
 };
 

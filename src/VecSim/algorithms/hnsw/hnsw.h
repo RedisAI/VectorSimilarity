@@ -1836,7 +1836,14 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     // in tiered index). Also, the synchronization responsibility in this case is on the caller,
     // otherwise, this function should acquire and release the lock to ensure proper parallelism.
     AddVectorCtx state{};
+    // TEMP: normalizing only if its not tiered index
+    DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'
     if (auxiliaryCtx == nullptr) {
+        if (this->metric == VecSimMetric_Cosine) {
+            memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
+            normalizeVector(normalized_blob, this->dim);
+            vector_data = normalized_blob;
+        }
         this->lockIndexDataGuard();
         state = storeNewElement(label);
         if (state.currMaxLevel >= state.elementMaxLevel) {
@@ -1851,12 +1858,6 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
     // Initialisation of the vector data and its label.
     setExternalLabel(new_element_id, label);
-    DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
     memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
 
     // Start scanning the graph from the current entry point.

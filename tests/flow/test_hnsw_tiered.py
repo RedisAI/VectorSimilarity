@@ -57,7 +57,7 @@ def load_queries(dataset_name):
     return queries    
 
 def create_tiered_hnsw_params(swap_job_threshold = 1024):
-    tiered_hnsw_params = HNSWParams()
+    tiered_hnsw_params = TieredHNSWParams()
     tiered_hnsw_params.swapJobThreshold  = swap_job_threshold
     return tiered_hnsw_params   
 
@@ -119,6 +119,7 @@ def create_dbpedia():
     start = time.time()
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
+    print(f"current flat buffer size is f{index.get_curr_bf_size()}, wait for index\n")
     index.wait_for_index()
     dur = time.time() - start
     
@@ -157,6 +158,7 @@ def search_insert_dbpedia():
     data = indices_ctx.data
     
     queries = load_queries("dbpedia-768")
+    num_queries = queries.shape[0]
     
     # Add vectors into the flat index.
     bf_index = indices_ctx.init_and_populate_flat_index()
@@ -170,43 +172,45 @@ def search_insert_dbpedia():
     hnsw_total_time = 0
     k = 10
     query_index = 0
+    searches_number = 0
     
     # config the index log to knn mode to get access to the bf index size during the query.
     index.start_knn_log()
     
     # run knn query every 1 s 
     hnsw_size_vs_query_time = []
+    total_tiered_search_time = 0
     while index.hnsw_label_count() < num_elements:
-        start = time.time()
+        query_start = time.time()
         tiered_labels, _ = index.knn_query(queries[query_index], k)
-        dur = time.time() - start
-        print(f"search took {dur}")
-        
+        query_dur = time.time() - query_start
+        total_tiered_search_time += query_dur
         # for each run get the current hnsw size and the query time
-        hnsw_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
-        hnsw_size_vs_query_time.append((hnsw_curr_size, dur))
+        bf_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
+        print(f"query time = {query_dur}")
+        print(f"bf size = {bf_curr_size}")
         
         # run the query also in the bf index to get the grund truth results
         bf_labels, _ = bf_index.knn_query(queries[query_index], k)
         correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
-        time.sleep(1)
-        query_index += 1
-    
+        time.sleep(2)
+        query_index = min(query_index + 1, num_queries - 1)
+        searches_number += 1
+        
     index_dur = time.time() - index_start
     print(f"search + indexing took {index_dur} s")
     print(f"total memory of tiered index = {index.index_memory()} bytes")
         
-    num_queries = queries.shape[0]
     
     # Measure recall
-    recall = float(correct)/(k*num_queries)
+    recall = float(correct)/(k*searches_number)
     print("Average recall is:", recall)
-    print("tiered query per seconds: ", num_queries/hnsw_total_time)   
+    print("tiered query per seconds: ", searches_number/total_tiered_search_time)   
 
 # In this test we insert the vectors one by one to the tiered index (call wait_for_index after each add vector)
 # We expect to get the same index as if we were inserting the vector to the sync hnsw index.
 # To check that, we perform a knn query with k = vectors number and compare the results' labels
-# to pass the test all the labels should be the same.
+# to pass the test all the labels and distances should be the same.
 def sanity_test():
     num_elements = 10000
     k = num_elements
@@ -231,20 +235,25 @@ def sanity_test():
     hnsw_labels, hnsw_dist = hnsw_index.knn_query(queries[0], k)
     
     #compare
+    has_diff = False
     for i, hnsw_res_label in enumerate(hnsw_labels[0]):
-        tiered_res_label = tiered_labels[0][i]
+        if hnsw_res_label != tiered_labels[0][i]:
+            has_diff = True
+            print(f"hnsw label = {hnsw_res_label}, tiered label = {tiered_labels[0][i]}")
+            print(f"hnsw dist = {hnsw_dist[0][i]}, tiered dist = {tiered_dist[0][i]}")
 
+    assert has_diff == False
 
 def test_main():
+    
 
     print("Test creation")
-    #create_dbpedia()
+    create_dbpedia()
     
     ("Test search")
     search_insert_dbpedia()
    
     sanity_test()
     
-#test_main()   
 
 

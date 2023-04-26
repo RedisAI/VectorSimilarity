@@ -465,7 +465,7 @@ public:
         this->index->setLogCallbackFunction(log_flat_buffer_size);
     }
 
-    size_t getFlatIndexSize(const char *mode) {
+    size_t getFlatIndexSize(const char *mode = "None") {
         if (!strcmp(mode, "insert_and_knn")) {
             return knnLogCtx.curr_flat_size;
         }
@@ -610,15 +610,15 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex")
         .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
-        .def("get_curr_bf_size", &PyTIERED_HNSWIndex::getFlatIndexSize, py::arg("mode"))
+        .def("get_curr_bf_size", &PyTIERED_HNSWIndex::getFlatIndexSize, py::arg("mode") = "None")
         .def("start_knn_log", &PyTIERED_HNSWIndex::SetKNNLogCtx);
 
     py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
-        .def(py::init(
-                 [](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params) {
-                     return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
-                 }),
-             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
+        .def(
+            py::init([](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params) {
+                return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
+            }),
+            py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
         .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount)
         .def("get_threads_num", &PyTIERED_HNSWIndex::GetThreadsNum);
 
