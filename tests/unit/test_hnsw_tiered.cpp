@@ -2,6 +2,8 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
+#include <string>
+#include <array>
 
 #include "test_utils.h"
 
@@ -444,7 +446,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
         ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(i, expected_vector), 0);
     }
 
-    thread_pool.clear();
     delete index_ctx;
 }
 
@@ -1978,4 +1979,823 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
 
     delete index_ctx;
+}
+
+// A set of lambdas that determine whether a vector should be inserted to the
+// HNSW index (returns true) or to the flat index (returns false).
+inline constexpr std::array<std::pair<std::string_view, bool (*)(size_t, size_t)>, 11> lambdas = {{
+    {"100% HNSW,   0% FLAT ", [](size_t idx, size_t n) -> bool { return 1; }},
+    {" 50% HNSW,  50% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 2; }},
+    {"  0% HNSW, 100% FLAT ", [](size_t idx, size_t n) -> bool { return 0; }},
+    {" 90% HNSW,  10% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 10; }},
+    {" 10% HNSW,  90% FLAT ", [](size_t idx, size_t n) -> bool { return !(idx % 10); }},
+    {" 99% HNSW,   1% FLAT ", [](size_t idx, size_t n) -> bool { return idx % 100; }},
+    {"  1% HNSW,  99% FLAT ", [](size_t idx, size_t n) -> bool { return !(idx % 100); }},
+    {"first 10% are in HNSW", [](size_t idx, size_t n) -> bool { return idx < (n / 10); }},
+    {"first 10% are in FLAT", [](size_t idx, size_t n) -> bool { return idx >= (n / 10); }},
+    {" last 10% are in FLAT", [](size_t idx, size_t n) -> bool { return idx < (9 * n / 10); }},
+    {" last 10% are in HNSW", [](size_t idx, size_t n) -> bool { return idx >= (9 * n / 10); }},
+}};
+
+TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
+    size_t d = 4;
+    size_t M = 8;
+    size_t ef = 20;
+    size_t n = 1000;
+
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
+
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
+
+        // For every i, add the vector (i,i,i,i) under the label i.
+        for (size_t i = 0; i < n; i++) {
+            auto cur = decider(i, n) ? hnsw : flat;
+            GenerateAndAddVector<TEST_DATA_T>(cur, d, i % n_labels, i);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
+
+        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+        TEST_DATA_T query[d];
+        GenerateVector<TEST_DATA_T>(query, d, n);
+
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        size_t iteration_num = 0;
+
+        // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
+        // in every iteration. The results order should be sorted by their score (distance from
+        // the query vector), which means sorted from the largest id to the lowest.
+        size_t n_res = 5;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            std::vector<size_t> expected_ids(n_res);
+            for (size_t i = 0; i < n_res; i++) {
+                expected_ids[i] = (n - iteration_num * n_res - i - 1) % n_labels;
+            }
+            auto verify_res = [&](size_t id, double score, size_t index) {
+                ASSERT_EQ(expected_ids[index], id) << decider_name;
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res);
+            iteration_num++;
+        }
+        ASSERT_EQ(iteration_num, n_labels / n_res) << decider_name;
+        VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
+    size_t d = 4;
+    size_t M = 8;
+    size_t ef = 20;
+    size_t n = 1000;
+
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
+
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
+
+        // For every i, add the vector (i,i,i,i) under the label i.
+        for (size_t i = 0; i < n; i++) {
+            auto cur = decider(i, n) ? hnsw : flat;
+            GenerateAndAddVector<TEST_DATA_T>(cur, d, i % n_labels, i);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
+
+        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+        TEST_DATA_T query[d];
+        GenerateVector<TEST_DATA_T>(query, d, n);
+
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        ASSERT_NO_FATAL_FAILURE(VecSimBatchIterator_Reset(batchIterator));
+
+        // Get the 100 vectors whose ids are the maximal among those that hasn't been returned yet,
+        // in every iteration. Run this flow for 3 times, and reset the iterator.
+        size_t n_res = 100;
+        size_t re_runs = 3;
+
+        for (size_t take = 0; take < re_runs; take++) {
+            size_t iteration_num = 0;
+            while (VecSimBatchIterator_HasNext(batchIterator)) {
+                std::vector<size_t> expected_ids(n_res);
+                for (size_t i = 0; i < n_res; i++) {
+                    expected_ids[i] = (n - iteration_num * n_res - i - 1) % n_labels;
+                }
+                auto verify_res = [&](size_t id, double score, size_t index) {
+                    ASSERT_EQ(expected_ids[index], id) << decider_name;
+                };
+                runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
+                iteration_num++;
+            }
+            ASSERT_EQ(iteration_num, n_labels / n_res) << decider_name;
+            VecSimBatchIterator_Reset(batchIterator);
+        }
+
+        // Try resetting the iterator before it is depleted.
+        n_res = 10;
+        for (size_t take = 0; take < re_runs; take++) {
+            size_t iteration_num = 0;
+            do {
+                ASSERT_TRUE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
+                std::vector<size_t> expected_ids(n_res);
+                for (size_t i = 0; i < n_res; i++) {
+                    expected_ids[i] = (n - iteration_num * n_res - i - 1) % n_labels;
+                }
+                auto verify_res = [&](size_t id, double score, size_t index) {
+                    ASSERT_EQ(expected_ids[index], id) << decider_name;
+                };
+                runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE);
+            } while (5 > iteration_num++);
+            VecSimBatchIterator_Reset(batchIterator);
+        }
+        VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
+    size_t d = 4;
+    size_t M = 8;
+    size_t ef = 20;
+    size_t n = 1000;
+
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
+
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
+
+        // For every i, add the vector (i,i,i,i) under the label `n_labels - (i % n_labels)`.
+        for (size_t i = 0; i < n; i++) {
+            auto cur = decider(i, n) ? hnsw : flat;
+            GenerateAndAddVector<TEST_DATA_T>(cur, d, n_labels - (i % n_labels), i);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
+
+        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+        TEST_DATA_T query[d];
+        GenerateVector<TEST_DATA_T>(query, d, n);
+
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+        size_t iteration_num = 0;
+        size_t n_res = 1, expected_n_res = 1;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            iteration_num++;
+            // Expect to get results in the reverse order of labels - which is the order of the
+            // distance from the query vector. Get one result in every iteration.
+            auto verify_res = [&](size_t id, double score, size_t index) {
+                ASSERT_EQ(id, iteration_num) << decider_name;
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, expected_n_res);
+        }
+
+        ASSERT_EQ(iteration_num, n_labels) << decider_name;
+        VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
+    size_t d = 4;
+    size_t M = 8;
+    size_t ef = 1000;
+    size_t n = 1000;
+
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+    HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
+    VecSimQueryParams query_params = CreateQueryParams(hnswRuntimeParams);
+
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
+
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
+
+        TEST_DATA_T query[d];
+        GenerateVector<TEST_DATA_T>(query, d, n);
+
+        VecSimBatchIterator *batchIterator =
+            VecSimBatchIterator_New(tiered_index, query, &query_params);
+
+        // Try to get results even though there are no vectors in the index.
+        VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
+        VecSimQueryResult_Free(res);
+        ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
+
+        // Insert one label and query again. The internal id will be 0.
+        for (size_t j = 0; j < per_label; j++) {
+            GenerateAndAddVector<TEST_DATA_T>(decider(n_labels, n) ? hnsw : flat, d, n_labels,
+                                              n - j);
+        }
+        VecSimBatchIterator_Reset(batchIterator);
+        res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+        ASSERT_EQ(VecSimQueryResult_Len(res), 1) << decider_name;
+        VecSimQueryResult_Free(res);
+        ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator)) << decider_name;
+        VecSimBatchIterator_Free(batchIterator);
+
+        // Insert vectors to the index and re-create the batch iterator.
+        for (size_t i = 1; i < n_labels; i++) {
+            auto cur = decider(i, n) ? hnsw : flat;
+            for (size_t j = 1; j <= per_label; j++) {
+                GenerateAndAddVector<TEST_DATA_T>(cur, d, i, (i - 1) * per_label + j);
+            }
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
+        batchIterator = VecSimBatchIterator_New(tiered_index, query, &query_params);
+
+        // Try to get 0 results.
+        res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
+        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
+        VecSimQueryResult_Free(res);
+
+        // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
+        size_t n_res = 7;
+        size_t iteration_num = 0;
+
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            iteration_num++;
+            std::vector<size_t> expected_ids;
+            // We ask to get the results sorted by ID in a specific batch (in ascending order), but
+            // in every iteration the ids should be lower than the previous one, according to the
+            // distance from the query.
+            for (size_t i = 1; i <= n_res; i++) {
+                expected_ids.push_back(n_labels - iteration_num * n_res + i);
+            }
+            auto verify_res = [&](size_t id, double score, size_t index) {
+                ASSERT_EQ(expected_ids[index], id) << decider_name;
+            };
+            if (iteration_num <= n_labels / n_res) {
+                runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
+            } else {
+                // In the last iteration there are `n_labels % n_res` results left to return.
+                size_t n_left = n_labels % n_res;
+                // Remove the first `n_res - n_left` ids from the expected ids.
+                while (expected_ids.size() > n_left) {
+                    expected_ids.erase(expected_ids.begin());
+                }
+                runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n_left);
+            }
+        }
+        ASSERT_EQ(iteration_num, n_labels / n_res + 1) << decider_name;
+        // Try to get more results even though there are no.
+        res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+        ASSERT_EQ(VecSimQueryResult_Len(res), 0) << decider_name;
+        VecSimQueryResult_Free(res);
+
+        VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
+    size_t d = 4;
+    size_t M = 8;
+    size_t ef = 20;
+    size_t n = 1000;
+
+    size_t per_label = TypeParam::isMulti() ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .initialCapacity = n,
+        .efConstruction = ef,
+        .efRuntime = ef,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+
+    // for (auto &[decider_name, decider] : lambdas) { // TODO: not supported by clang < 16
+    for (auto &lambda : lambdas) {
+        // manually deconstruct the pair to avoid the clang error
+        auto &decider_name = lambda.first;
+        auto &decider = lambda.second;
+
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+        auto allocator = tiered_index->getAllocator();
+
+        auto *hnsw = tiered_index->backendIndex;
+        auto *flat = tiered_index->frontendIndex;
+
+        // For every i, add the vector (i,i,i,i) under the label i.
+        size_t flat_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            auto cur = decider(i, n) ? hnsw : flat;
+            GenerateAndAddVector<TEST_DATA_T>(cur, d, i % n_labels, i);
+            if (cur == flat) {
+                flat_count++;
+                // Add 10% of the vectors in FLAT to HNSW as well.
+                if (flat_count % 10 == 0) {
+                    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, i % n_labels, i);
+                }
+            }
+        }
+        // The index size should be 100-110% of n.
+        ASSERT_LE(VecSimIndex_IndexSize(tiered_index), n * 1.1) << decider_name;
+        ASSERT_GE(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
+        // The number of unique labels should be n_labels.
+        ASSERT_EQ(tiered_index->indexLabelCount(), n_labels) << decider_name;
+
+        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+        TEST_DATA_T query[d];
+        GenerateVector<TEST_DATA_T>(query, d, n);
+
+        VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+        size_t iteration_num = 0;
+
+        // Get the 5 vectors whose ids are the maximal among those that hasn't been returned yet
+        // in every iteration. The results order should be sorted by their score (distance from
+        // the query vector), which means sorted from the largest id to the lowest.
+        size_t n_res = 5;
+        size_t n_expected = n_res;
+        size_t excessive_iterations = 0;
+        while (VecSimBatchIterator_HasNext(batchIterator)) {
+            if (iteration_num * n_res == n_labels) {
+                // in some cases, the batch iterator may report that it has more results to return,
+                // but it's actually not true and the next call to `VecSimBatchIterator_Next` will
+                // return 0 results. This is safe because we don't guarantee how many results the
+                // batch iterator will return, and a similar scenario can happen when checking
+                // `VecSimBatchIterator_HasNext` on an empty index for the first time (before the
+                // first call to `VecSimBatchIterator_Next`). we check that this scenario doesn't
+                // happen more than once.
+                ASSERT_EQ(excessive_iterations, 0) << decider_name;
+                excessive_iterations = 1;
+                n_expected = 0;
+            }
+            std::vector<size_t> expected_ids(n_expected);
+            for (size_t i = 0; i < n_expected; i++) {
+                expected_ids[i] = (n - iteration_num * n_expected - i - 1) % n_labels;
+            }
+            auto verify_res = [&](size_t id, double score, size_t index) {
+                ASSERT_EQ(expected_ids[index], id) << decider_name;
+            };
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_SCORE, n_expected);
+            iteration_num++;
+        }
+        ASSERT_EQ(iteration_num - excessive_iterations, n_labels / n_res)
+            << decider_name << "\nHad excessive iterations: " << (excessive_iterations != 0);
+        VecSimBatchIterator_Free(batchIterator);
+
+        // Free the index.
+        delete index_ctx;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases) {
+    size_t d = 4;
+
+    std::shared_ptr<VecSimAllocator> allocator;
+    TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *tiered_index;
+    VecSimIndex *hnsw, *flat;
+    TEST_DATA_T query[d];
+    VecSimBatchIterator *iterator;
+    VecSimQueryResult_List batch;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams hnsw_params = {
+        .type = TypeParam::get_index_type(),
+        .dim = d,
+        .metric = VecSimMetric_L2,
+        .multi = true,
+    };
+    VecSimParams params = CreateParams(hnsw_params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto L2 = [&](size_t element) { return element * element * d; };
+
+    // TEST 1:
+    // first batch contains duplicates with different scores.
+    tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+    allocator = tiered_index->getAllocator();
+    hnsw = tiered_index->backendIndex;
+    flat = tiered_index->frontendIndex;
+
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 2);
+
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 1, 3);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 0, 4);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 3, 5);
+
+    ASSERT_EQ(tiered_index->indexLabelCount(), 4);
+
+    GenerateVector<TEST_DATA_T>(query, d, 0);
+    iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+    // batch size is 3 (the size of each index). Internally the tiered batch iterator will have to
+    // handle the duplicates with different scores.
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 3);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 2), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 2), L2(2));
+    VecSimQueryResult_Free(batch);
+
+    // we have 1 more label in the index. we expect the tiered batch iterator to return it only and
+    // filter out the duplicates.
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 1);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(5));
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
+    VecSimQueryResult_Free(batch);
+    // TEST 1 clean up.
+    VecSimBatchIterator_Free(iterator);
+    delete index_ctx;
+
+    // TEST 2:
+    // second batch contains duplicates (different scores) from the first batch.
+    index_ctx = new IndexExtCtx();
+    tiered_index = this->CreateTieredHNSWIndex(params, &jobQ, index_ctx, &memory_ctx);
+    allocator = tiered_index->getAllocator();
+    hnsw = tiered_index->backendIndex;
+    flat = tiered_index->frontendIndex;
+
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(hnsw, d, 3, 3);
+
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 0);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 3, 1);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 0, 2);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 3);
+
+    ASSERT_EQ(tiered_index->indexLabelCount(), 4);
+
+    iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+    // ask for 2 results. The internal batch iterators will return 2 results: hnsw - [0, 1], flat -
+    // [2, 3] so there are no duplicates.
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 0);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(0));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 2);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(0));
+    VecSimQueryResult_Free(batch);
+
+    // first batch contained 1 result from each index, so there is one leftover from each iterator.
+    // Asking for 3 results will return additional 2 results from each iterator and the tiered batch
+    // iterator will have to handle the duplicates that each iterator returned (both labels that
+    // were returned in the first batch and duplicates in the current batch).
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(iterator));
+    batch = VecSimBatchIterator_Next(iterator, 3, BY_SCORE);
+    ASSERT_EQ(VecSimQueryResult_Len(batch), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 0), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 0), L2(1));
+    ASSERT_EQ(VecSimQueryResult_GetId(batch.results + 1), 3);
+    ASSERT_EQ(VecSimQueryResult_GetScore(batch.results + 1), L2(1));
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(iterator));
+    VecSimQueryResult_Free(batch);
+    // TEST 2 clean up.
+    VecSimBatchIterator_Free(iterator);
+
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
+    size_t dim = 4;
+    size_t ef = 500;
+    size_t n = 1000;
+    size_t n_res_min = 3;  // minimum number of results to return per batch
+    size_t n_res_max = 15; // maximum number of results to return per batch
+    bool isMulti = TypeParam::isMulti();
+
+    size_t per_label = isMulti ? 5 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .efRuntime = ef,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+
+    std::atomic_int successful_searches(0);
+    auto parallel_10_batches = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        const size_t res_per_batch = search_job->k;
+        const size_t dim = search_job->dim;
+        const auto query = search_job->query;
+
+        size_t iteration = 0;
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            TEST_DATA_T element = *(TEST_DATA_T *)query;
+            res_index += iteration * res_per_batch;
+            ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
+            ASSERT_EQ(score, dim * (id - element) * (id - element));
+        };
+
+        // Run 10 batches of search.
+        auto tiered_iterator = VecSimBatchIterator_New(search_job->index, query, nullptr);
+        do {
+            runBatchIteratorSearchTest(tiered_iterator, res_per_batch, verify_res);
+        } while (++iteration < 10 && VecSimBatchIterator_HasNext(tiered_iterator));
+
+        VecSimBatchIterator_Free(tiered_iterator);
+        search_job->successful_searches++;
+
+        delete search_job;
+    };
+
+    // Fill the job queue with insert and batch-search jobs, while filling the flat index, before
+    // initializing the thread pool.
+    for (size_t i = 0; i < n; i++) {
+        // Insert a vector to the flat index and add a job to insert it to the main index.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+
+        // Add a search job.
+        size_t cur_res_per_batch = i % (n_res_max - n_res_min) + n_res_min;
+        size_t n_res = cur_res_per_batch * 10;
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        // make sure there are `n_res / 2` vectors in the index in each "side" of the query vector.
+        GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - n_res)) + (n_res / 2));
+        auto search_job =
+            new (allocator) SearchJobMock(allocator, parallel_10_batches, tiered_index, query,
+                                          cur_res_per_batch, n, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    EXPECT_EQ(tiered_index->indexSize(), n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
+    for (auto &it : tiered_index->labelToInsertJobs) {
+        EXPECT_EQ(it.second.size(), per_label);
+    }
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // All the vectors are already in the tiered index, so we expect to find the expected
+    // results from the get-go.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(jobQ.size(), 0);
+
+    // Cleanup.
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    TEST_DATA_T val = 1.0;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, val);
+    // Overwrite label 0 (in the flat buffer) with a different value.
+    val = 2.0;
+    TEST_DATA_T overwritten_vec[] = {val, val, val, val};
+    ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+
+    // Validate that jobs were created properly - first job should be invalid after overwrite,
+    // the second should be a pending insert job.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(0).size(), 1);
+    auto *pending_insert_job = tiered_index->labelToInsertJobs.at(0)[0];
+    ASSERT_EQ(jobQ.size(), 2);
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->label, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+
+    ASSERT_EQ(jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->label, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job), pending_insert_job);
+
+    // Ingest vector into HNSW, and then overwrite it.
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    val = 3.0;
+    overwritten_vec[0] = overwritten_vec[1] = overwritten_vec[2] = overwritten_vec[3] = val;
+    ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    // Swap job should be executed for the overwritten vector since limit is 1, and we are calling
+    // swap job execution prior to insert jobs.
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+
+    // Ingest the updated vector to HNSW.
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
+
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    for (size_t maxSwapJobs : {(int)n + 1, 1}) {
+        auto jobQ = JobQueue();
+        auto index_ctx = new IndexExtCtx();
+        size_t memory_ctx = 0;
+
+        auto *tiered_index =
+            this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, maxSwapJobs);
+        auto allocator = tiered_index->getAllocator();
+
+        // Launch the BG threads loop that takes jobs from the queue and executes them.
+        bool run_thread = true;
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        }
+
+        // Insert vectors and overwrite them multiple times while thread run in the background.
+        std::srand(10); // create pseudo random generator with any arbitrary seed.
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            tiered_index->addVector(vector, i);
+        }
+        EXPECT_EQ(tiered_index->indexLabelCount(), n);
+
+        size_t num_overwrites = 1000;
+        for (size_t i = 0; i < num_overwrites; i++) {
+            size_t label_to_overwrite = std::rand() % n;
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
+        }
+
+        thread_pool_join(jobQ, run_thread);
+
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
+                  n);
+        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), n);
+        auto report = tiered_index->getHNSWIndex()->checkIntegrity();
+        EXPECT_EQ(report.connections_to_repair, 0);
+        EXPECT_EQ(report.valid_state, true);
+
+        delete index_ctx;
+    }
 }

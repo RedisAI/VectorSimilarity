@@ -8,6 +8,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/batch_iterator.h"
+#include <assert.h>
 
 struct VecSimQueryResult_Iterator {
     VecSimQueryResult *results_arr;
@@ -84,6 +85,8 @@ extern "C" void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iter
 /********************** batch iterator API ***************************/
 VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
                                                 VecSimQueryResult_Order order) {
+    assert((order == BY_ID || order == BY_SCORE) &&
+           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     return iterator->getNextResults(n_results, order);
 }
 
