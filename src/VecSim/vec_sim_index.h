@@ -126,6 +126,7 @@ protected:
 
         return this->addVector(vector_to_add, label, auxiliaryCtx);
     }
+
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) override {
         char processed_blob[this->data_size];
@@ -133,6 +134,7 @@ protected:
 
         return this->topKQuery(query_to_send, k, queryParams);
     }
+
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams) override {
         char processed_blob[this->data_size];
@@ -140,6 +142,7 @@ protected:
 
         return this->rangeQuery(query_to_send, radius, queryParams);
     }
+
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
         char processed_blob[this->data_size];
