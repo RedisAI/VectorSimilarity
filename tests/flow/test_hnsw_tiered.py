@@ -117,7 +117,7 @@ class DBPediaIndexCtx:
     
 def create_dbpedia():
     
-    indices_ctx = DBPediaIndexCtx(data_size=100000)
+    indices_ctx = DBPediaIndexCtx()
     num_elements = indices_ctx.num_elements 
     
     threads_num = TIEREDIndex.get_threads_num()
@@ -175,7 +175,7 @@ def create_dbpedia():
    # create_hnsw()
 
 def search_insert_dbpedia():
-    indices_ctx = DBPediaIndexCtx(data_size=100000, mode=CreationMode.CREATE_TIERED_INDEX)
+    indices_ctx = DBPediaIndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
     index = indices_ctx.tiered_index
     
     num_elements = indices_ctx.num_elements
@@ -220,7 +220,7 @@ def search_insert_dbpedia():
         searches_number += 1
     
     # hnsw labels count updates before addVector returns, wait for the queue to be empty
-    index.wait_for_index(0.5)
+    index.wait_for_index(1)
     index_dur = time.time() - index_start
     print(f"search + indexing took {index_dur} s")
     print(f"total memory of tiered index = {index.index_memory()} bytes")
@@ -271,26 +271,7 @@ def sanity_test():
     
 
 
-def test_main():
-    
 
-    print("Test creation")
-    create_dbpedia()
-    
-    print("Test search and insert in parallel")
-   # search_insert_dbpedia()
-    
-    print("Sanity test")
-  #  sanity_test()
-    
-
-
-# only search 
-# insert multi
-# search insetrt multi
-# batch?
-
-# delete
 def recall_after_deletion():
     num_elements = 10000
     
@@ -299,9 +280,11 @@ def recall_after_deletion():
     data = indices_ctx.data
     
     # Populate tiered index 
+    vectors = []
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
-    print(f"current flat buffer size is {index.get_curr_bf_size()}, wait for index\n")
+        vectors.append((i, vector))
+   # print(f"current flat buffer size is {index.get_curr_bf_size()}, wait for index\n")
     index.wait_for_index()
     
     #delete half of the index
@@ -311,16 +294,63 @@ def recall_after_deletion():
     # wait for all repair jobs to be done
     index.wait_for_index(5)
     deletion_time = time.time() - start_delete
+    vectors = [vectors[i] for i in range(1, num_elements, 2)]
+    
     
     assert index.hnsw_label_count() == (num_elements / 2)
     
     print(f"Delete {num_elements / 2} vectors from tiered hnsw index took {deletion_time} s")   
     
-    # init bf only with the vectors we didn't delete
-    indices_ctx.init_and_populate_flat_index(data = data[:num_elements:2])
-    # perfom 10 querires
-        #compare recall with bf index 
+    # perfom querires
+    num_queries = 10
+    queries = load_queries("dbpedia-768")[:num_queries]
     
+    k = 10
+    correct = 0
+    print(f"queries num = {queries.shape[0]}")
+    #compare recall with bf index 
+    index.start_knn_log()
+    for target_vector in queries:
+        tiered_labels, _ = index.knn_query(target_vector, k)
+        
+        # sort distances of every vector from the target vector and get actual k nearest vectors
 
+        dists = [(spatial.distance.cosine(target_vector, vec), key) for key, vec in vectors]
+        dists = sorted(dists)
+        keys = [key for _, key in dists[:k]]
+
+        for label in tiered_labels[0]:
+            for correct_label in keys:
+                if label == correct_label:
+                    correct += 1
+                    break  
+
+    # Measure recall
+    recall = float(correct) / (k * num_queries)
+    print("\nrecall is: \n", recall)
+    assert (recall > 0.9)
 #delete with search
 #delete with insert    
+
+def test_main():
+    print("Test creation")
+    create_dbpedia()
+    
+    print("Test search and insert in parallel")
+    search_insert_dbpedia()
+    
+    print("Sanity test")
+    sanity_test()
+  
+    print("recall after delete test")
+    recall_after_deletion()
+  
+    
+
+
+# only search 
+# insert multi
+# search insetrt multi
+# batch?
+
+# delete
