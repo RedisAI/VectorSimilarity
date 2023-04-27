@@ -452,9 +452,6 @@ public:
     static void log_flat_buffer_size(void *ctx, const char *msg) {
         auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
         knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexSize();
-
-        std::cout << "messaage is = " << msg
-                  << "log is count buffer = " << knnLogCtx->curr_flat_size << std::endl;
     }
     void SetKNNLogCtx() {
         knnLogCtx.flat_index = getFlatBuffer();
