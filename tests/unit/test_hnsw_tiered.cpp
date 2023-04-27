@@ -722,7 +722,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         .dim = dim,
         .metric = VecSimMetric_L2,
         .multi = isMulti,
-        .efRuntime = 20,
+        .efRuntime = n,
     };
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
@@ -1106,7 +1106,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     // Delete vectors one by one and run the resulted repair jobs.
     while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
         // Choose the current entry point each time (it should be modified after the deletion).
-        idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointCopy();
+        idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointState().first;
         auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
         auto incoming_neighbors =
             tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
@@ -1114,7 +1114,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
         ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
                   jobQ.size());
-        ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), ep);
+        ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, ep);
 
         // Execute synchronously all the repair jobs for the current deletion.
         while (!jobQ.empty()) {
@@ -1710,7 +1710,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         thread_pool_join(jobQ, run_thread);
 
         EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
         // Verify that we have no pending jobs.
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
         EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
@@ -1792,7 +1792,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             thread_pool_join(jobQ, run_thread);
 
             EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
-            EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+            EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
             // Verify that we have no pending jobs.
             EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
             EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
@@ -1974,7 +1974,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     jobQ.pop();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
-    EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
 
     // Call delete again, this should only trigger the swap and removal of 1
     // (which has already deleted)
