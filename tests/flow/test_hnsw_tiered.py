@@ -11,6 +11,11 @@ import hnswlib
 import h5py
 from urllib.request import urlretrieve
 import pickle
+from enum import Enum
+
+class CreationMode(Enum):
+    ONLY_PARAMS = 1
+    CREATE_TIERED_INDEX = 2
 
 def download(src, dst):
     if not os.path.exists(dst):
@@ -62,7 +67,7 @@ def create_tiered_hnsw_params(swap_job_threshold = 1024):
     return tiered_hnsw_params   
 
 class DBPediaIndexCtx:
-    def __init__(self, data_size = 0, M = 32, ef_c = 512, ef_r = 10):
+    def __init__(self, data_size = 0, M = 32, ef_c = 512, ef_r = 10, mode=CreationMode.ONLY_PARAMS):
         self.M = M
         self.efConstruction = ef_c
         self.efRuntime = ef_r 
@@ -79,7 +84,12 @@ class DBPediaIndexCtx:
         self.hnsw_params = create_hnsw_params(self.dim, self.num_elements, self.metric, self.type, ef_c, M, ef_r)
         self.tiered_hnsw_params = create_tiered_hnsw_params()
         
-        self.tiered_index = TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
+        assert isinstance(mode, CreationMode)
+        if mode == CreationMode.CREATE_TIERED_INDEX: 
+            self.tiered_index = TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
+        
+    def create_tiered(self):
+        return TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
         
     def init_and_populate_flat_index(self):
         bfparams = BFParams()
@@ -103,55 +113,65 @@ class DBPediaIndexCtx:
         return hnsw_index
     
     
-        
 def create_dbpedia():
     
     indices_ctx = DBPediaIndexCtx()
-    index = indices_ctx.tiered_index
     num_elements = indices_ctx.num_elements 
     
-    threads_num = index.get_threads_num()
+    threads_num = TIEREDIndex.get_threads_num()
+    print(f"thread num = {threads_num}")
     data = indices_ctx.data
     
-    # Measure insertion to tiered index
+    def create_tiered():
+        index = indices_ctx.create_tiered()
+        
+        print(f"Insert {num_elements} vectors to tiered index")
+        start = time.time()
+        for i, vector in enumerate(data):
+            index.add_vector(vector, i)
+        print(f"current flat buffer size is f{index.get_curr_bf_size()}, wait for index\n")
+        index.wait_for_index()
+        dur = time.time() - start
+        
+        # Measure insertion to tiered index
+        
+        print(f"Insert {num_elements} vectors to tiered index took {dur} s")
+        
+        # Measure total memory of the tiered index 
+        print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
     
-    print(f"Insert {num_elements} vectors to tiered index")
-    start = time.time()
-    for i, vector in enumerate(data):
-        index.add_vector(vector, i)
-    print(f"current flat buffer size is f{index.get_curr_bf_size()}, wait for index\n")
-    index.wait_for_index()
-    dur = time.time() - start
+    print(f"Start tiered hnsw creation")
+    create_tiered()
     
-    print(f"Insert {num_elements} vectors to tiered index took {dur} s")
+    def create_parallel():
+        # Measure insertion to parallel index
+        hnsw_parallel_index = HNSWIndex(indices_ctx.hnsw_params)
+        print(f"Insert {num_elements} vectors to parallel hnsw index")
+        start = time.time()
+        hnsw_parallel_index.add_vector_parallel(data, np.array(range(num_elements)), num_threads=threads_num)
+        dur = time.time() - start
+        print(f"total memory of hnsw index = {hnsw_parallel_index.index_memory()/pow(10,9)} GB")
+        print(f"Insert {num_elements} vectors to parallel hnsw index took {dur} s")   
     
-    # Measure total memory of the tiered index 
-    print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} bytes")
+    print(f"Start parallel hnsw creation")
+    create_parallel()
     
-    # Measure insertion to parallel index
+    def create_hnsw():
+        hnsw_index = HNSWIndex(indices_ctx.hnsw_params)
+        print(f"Insert {num_elements} vectors to hnsw index")
+        start = time.time()
+        for i, vector in enumerate(data):
+            hnsw_index.add_vector(vector, i)
+        dur = time.time() - start
+        
+        print(f"total memory of hnsw index = {hnsw_index.index_memory()/pow(10,9)} GB")
+        print(f"Insert {num_elements} vectors to hnsw index took {dur} s")   
     
-    hnsw_parallel_index = HNSWIndex(indices_ctx.hnsw_params)
-    print(f"Insert {num_elements} vectors to parallel hnsw index")
-    start = time.time()
-    hnsw_parallel_index.add_vector_parallel(data, np.array(range(num_elements)), num_threads=threads_num)
-    dur = time.time() - start
-    print(f"Insert {num_elements} vectors to parallel hnsw index took {dur} s")   
-    
-    
-    hnsw_index = HNSWIndex(indices_ctx.hnsw_params)
-    print(f"Insert {num_elements} vectors to hnsw index")
-    start = time.time()
-    for i, vector in enumerate(data):
-        hnsw_index.add_vector(vector, i)
-    dur = time.time() - start
-    
-    print(f"total memory of hnsw index = {hnsw_index.index_memory()} bytes")
-    print(f"Insert {num_elements} vectors to hnsw index took {dur} s")   
-    
-
+    print(f"Start sync hnsw creation")
+    create_hnsw()
 
 def search_insert_dbpedia():
-    indices_ctx = DBPediaIndexCtx()
+    indices_ctx = DBPediaIndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
     index = indices_ctx.tiered_index
     
     num_elements = indices_ctx.num_elements
@@ -169,7 +189,6 @@ def search_insert_dbpedia():
         index.add_vector(vector, i)
     
     correct = 0
-    hnsw_total_time = 0
     k = 10
     query_index = 0
     searches_number = 0
@@ -178,7 +197,6 @@ def search_insert_dbpedia():
     index.start_knn_log()
     
     # run knn query every 1 s 
-    hnsw_size_vs_query_time = []
     total_tiered_search_time = 0
     while index.hnsw_label_count() < num_elements:
         query_start = time.time()
@@ -215,7 +233,7 @@ def sanity_test():
     num_elements = 10000
     k = num_elements
     
-    indices_ctx = DBPediaIndexCtx(data_size = num_elements)
+    indices_ctx = DBPediaIndexCtx(data_size = num_elements, mode=CreationMode.CREATE_TIERED_INDEX)
     index = indices_ctx.tiered_index    
     
     #add vectors to the tiered index one by one
@@ -250,9 +268,10 @@ def test_main():
     print("Test creation")
     create_dbpedia()
     
-    ("Test search")
+    print("Test search and insert in parallel")
     search_insert_dbpedia()
-   
+    
+    print("Sanity test")
     sanity_test()
     
 

@@ -449,8 +449,6 @@ public:
         }
     }
 
-    size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
-
     static void log_flat_buffer_size(void *ctx, const char *msg) {
         auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
         knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexSize();
@@ -474,6 +472,8 @@ public:
     }
 
     void ResetKNNLogCtx() { this->index->resetLogCallbackFunction(); }
+
+    static size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
 };
 
 PyTIEREDIndex::~PyTIEREDIndex() { thread_pool_terminate(jobQueue, run_thread); }
@@ -611,6 +611,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex")
         .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
         .def("get_curr_bf_size", &PyTIERED_HNSWIndex::getFlatIndexSize, py::arg("mode") = "None")
+        .def_static("get_threads_num", &PyTIEREDIndex::GetThreadsNum)
         .def("start_knn_log", &PyTIERED_HNSWIndex::SetKNNLogCtx);
 
     py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
@@ -619,8 +620,7 @@ PYBIND11_MODULE(VecSim, m) {
                 return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
             }),
             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
-        .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount)
-        .def("get_threads_num", &PyTIERED_HNSWIndex::GetThreadsNum);
+        .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
