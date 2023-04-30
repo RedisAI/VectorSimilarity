@@ -120,7 +120,8 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
             // Vector type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimType_ToString(info.commonInfo.type));
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimType_ToString(info.commonInfo.type));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
             // Vector dimension.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -229,7 +230,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Memory.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
-        } else if(!strcmp(infoField->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
             // Block size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.blockSize);
