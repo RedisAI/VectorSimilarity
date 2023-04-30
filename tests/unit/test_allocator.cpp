@@ -104,7 +104,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         sizeof(BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     int addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 1);
     int64_t expectedAllocationDelta = 0;
@@ -123,10 +123,10 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     // Prepare for next assertion test
-    expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
     addCommandAllocationDelta = VecSimIndex_AddVector(bfIndex, vec, 2);
@@ -144,10 +144,10 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, addCommandAllocationDelta);
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     // Prepare for next assertion test
-    expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
     int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 2);
@@ -168,10 +168,10 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
 
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
     // Prepare for next assertion test
-    expectedAllocationSize = info.bfInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(bfIndex, 1);
@@ -193,7 +193,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
     info = bfIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.bfInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     VecSimIndex_Free(bfIndex);
 }
 
@@ -216,34 +216,34 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
         sizeof(HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T>) + vecsimAllocationOverhead;
     ASSERT_GE(allocator->getAllocationSize(), expectedAllocationSize);
     VecSimIndexInfo info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
-    expectedAllocationSize = info.hnswInfo.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
+    expectedAllocationSize = info.commonInfo.memory;
 
     int addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 1);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
-    expectedAllocationSize = info.hnswInfo.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
+    expectedAllocationSize = info.commonInfo.memory;
 
     addCommandAllocationDelta = VecSimIndex_AddVector(hnswIndex, vec, 2);
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
-    expectedAllocationSize = info.hnswInfo.memory;
+    expectedAllocationSize = info.commonInfo.memory;
 
     int deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 2);
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
-    expectedAllocationSize = info.hnswInfo.memory;
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
+    expectedAllocationSize = info.commonInfo.memory;
 
     deleteCommandAllocationDelta = VecSimIndex_DeleteVector(hnswIndex, 1);
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
     info = hnswIndex->info();
-    ASSERT_EQ(allocator->getAllocationSize(), info.hnswInfo.memory);
+    ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     VecSimIndex_Free(hnswIndex);
 }
 
@@ -352,7 +352,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
                                        2 * vecsimAllocationOverhead);
 
     // Add vectors up to the size of a whole block, and calculate the total memory delta.
-    size_t block_size = hnswIndex->info().hnswInfo.blockSize;
+    size_t block_size = hnswIndex->info().commonInfo.blockSize;
     size_t accumulated_mem_delta = 0;
 
     for (size_t i = 0; i < block_size; i++) {
