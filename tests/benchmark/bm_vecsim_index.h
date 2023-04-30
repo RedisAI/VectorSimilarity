@@ -1,6 +1,8 @@
 #pragma once
 
 #include "bm_vecsim_general.h"
+#include "VecSim/index_factories/tiered_factory.h"
+
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
 public:
@@ -52,7 +54,9 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     ref_count--;
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
+        // VecSimAlgo_HNSW in
+        thread_pool_join();
+        VecSimIndex_Free(indices[VecSimAlgo_TIERED]);
     }
 }
 
@@ -92,10 +96,30 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     // Initialize and load HNSW index for DBPedia data set.
     indices.push_back(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file), &params));
-
     auto *hnsw_index = CastToHNSW(indices[VecSimAlgo_HNSWLIB]);
     size_t ef_r = 10;
     hnsw_index->setEf(ef_r);
+
+    // Create tiered index from the loaded HNSW index.
+    size_t memory_ctx = 0;
+    auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
+    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
+                                       .jobQueueCtx = nullptr,
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback,
+                                       .primaryIndexParams = &primary_index_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+
+    auto *tiered_index =
+        TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
+    indices.push_back(tiered_index);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    run_threads = true;
+    for (size_t i = 0; i < thread_pool_size; i++) {
+        thread_pool.emplace_back(thread_main_loop);
+    }
 
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {

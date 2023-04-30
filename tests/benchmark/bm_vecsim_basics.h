@@ -38,7 +38,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
-    size_t memory_delta = 0;
+    size_t memory_before = (INDICES[st.range(0)])->getAllocationSize();
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
 
@@ -46,17 +46,21 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     for (auto _ : st) {
         // Add one label
         for (labelType vec = 0; vec < vec_per_label; ++vec) {
-            memory_delta += VecSimIndex_AddVector(
-                INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(), label);
+            VecSimIndex_AddVector(INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(),
+                                  label);
         }
         added_vec_count += vec_per_label;
         label++;
     }
+    // For tiered index, wait for all threads to finish indexing
+    BM_VecSimGeneral::thread_pool_wait();
 
+    size_t memory_delta = (INDICES[st.range(0)])->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
 
-    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + added_vec_count);
+    size_t index_size_after = VecSimIndex_IndexSize(INDICES[st.range(0)]);
+    assert(index_size_after == N_VECTORS + added_vec_count);
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all

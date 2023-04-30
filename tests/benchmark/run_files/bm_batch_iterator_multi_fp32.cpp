@@ -15,6 +15,13 @@ const char *BM_VecSimGeneral::hnsw_index_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/fashion_images_multi_test_vecs_fp32.raw";
 
+JobQueue BM_VecSimGeneral::jobQ{};
+const size_t BM_VecSimGeneral::thread_pool_size = MIN(8, std::thread::hardware_concurrency());
+std::vector<std::thread> BM_VecSimGeneral::thread_pool{};
+std::mutex BM_VecSimGeneral::queue_guard{};
+std::condition_variable BM_VecSimGeneral::queue_cond{};
+bool BM_VecSimGeneral::run_threads = false;
+
 #define BM_FUNC_NAME(bm_func, algo) algo##_##bm_func##_Multi
 
 #include "benchmark/bm_initialization/bm_batch_initialize_fp32.h"

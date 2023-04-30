@@ -48,4 +48,4 @@ void operator delete[](void *p, size_t size, std::shared_ptr<VecSimAllocator> al
     allocator->deallocate(p, size);
 }
 
-std::shared_ptr<VecSimAllocator> VecsimBaseObject::getAllocator() { return this->allocator; }
+std::shared_ptr<VecSimAllocator> VecsimBaseObject::getAllocator() const { return this->allocator; }

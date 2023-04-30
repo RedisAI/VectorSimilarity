@@ -160,6 +160,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         size_t last_block_vectors_count = id % this->blockSize;
         this->idToLabelMapping.resize(
             idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
+        this->idToLabelMapping.shrink_to_fit();
     }
 
     // add label to idToLabelMapping

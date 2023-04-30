@@ -10,7 +10,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT), fp32_in
 (benchmark::State &st) { Memory_FLAT(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT))->Iterations(1);
 
-// Memory HSNW
+// Memory HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW), fp32_index_t)
 (benchmark::State &st) { Memory_HNSW(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW))->Iterations(1);
@@ -20,6 +20,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
+REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
 
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
@@ -40,7 +41,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), fp32_index
 (benchmark::State &st) { Range_BF(st); }
 REGISTER_Range_BF(BM_FUNC_NAME(Range, BF));
 
-// Range HSNW
+// Range HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), fp32_index_t)
 (benchmark::State &st) { Range_HNSW(st); }
 REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW));
