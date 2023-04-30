@@ -51,6 +51,7 @@ public:
     static const char *HNSW_EPSILON_STRING;
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
+    // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;

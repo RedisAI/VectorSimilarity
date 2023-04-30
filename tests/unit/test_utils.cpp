@@ -109,6 +109,32 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
     VecSimQueryResult_Free(res);
 }
 
+
+void compareCommonInfo(CommonInfo info1, CommonInfo info2) {
+    ASSERT_EQ(info1.dim, info2.dim);
+    ASSERT_EQ(info1.metric, info2.metric);
+    ASSERT_EQ(info1.indexSize, info2.indexSize);
+    ASSERT_EQ(info1.type, info2.type);
+    ASSERT_EQ(info1.memory, info2.memory);
+    ASSERT_EQ(info1.blockSize, info2.blockSize);
+    ASSERT_EQ(info1.isMulti, info2.isMulti);
+    ASSERT_EQ(info1.last_mode, info2.last_mode);
+    ASSERT_EQ(info1.indexLabelCount, info2.indexLabelCount);
+}
+void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2) {
+
+}
+
+void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2) {
+    ASSERT_EQ(info1.efConstruction, info2.efConstruction);
+    ASSERT_EQ(info1.efRuntime, info2.efRuntime);
+    ASSERT_EQ(info1.entrypoint, info2.entrypoint);
+    ASSERT_EQ(info1.epsilon, info2.epsilon);
+    ASSERT_EQ(info1.M, info2.M);
+    ASSERT_EQ(info1.max_level, info2.max_level);
+    ASSERT_EQ(info1.visitedNodesPoolSize, info2.visitedNodesPoolSize);
+}
+
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
     ASSERT_EQ(10, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {

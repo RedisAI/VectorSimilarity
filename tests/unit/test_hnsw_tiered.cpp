@@ -97,7 +97,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         // there will be a corresponding item in the map.
         my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
         my_index->UpdateIndexMemory(my_index->memoryCtx,
-                                    my_index->getAllocator()->getAllocationSize());
+                                    my_index->getAllocationSize());
     };
 
     HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
@@ -114,7 +114,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     reinterpret_cast<AsyncJob *>(jobQ.front().job)->Execute(jobQ.front().job);
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
-    ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
+    ASSERT_EQ(memory_ctx, tiered_index->getAllocationSize());
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 
@@ -2798,4 +2798,34 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
 
         delete index_ctx;
     }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, testInfo) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSimIndexInfo info = tiered_index->info();
+    EXPECT_EQ(info.algo, VecSimAlgo_TIERED);
+    EXPECT_EQ(info.commonInfo.indexSize, 0);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, memory_ctx);
+    EXPECT_EQ(info.commonInfo.isMulti, TypeParam::isMulti());
+    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
+    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
+    
+    compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
+    compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
+    compareCommonInfo(info.tieredInfo.backendCommonInfo, backendIndexInfo.commonInfo);
+    compareHNSWInfo(info.tieredInfo.backendInfo.hnswInfo, backendIndexInfo.hnswInfo);
+
 }

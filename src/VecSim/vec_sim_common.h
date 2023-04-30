@@ -215,11 +215,15 @@ typedef struct {
 } bfInfoStruct;
 
 typedef struct {
+
+    // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
-    } backendinfo;             // The backend index info.
+    } backendInfo;             // The backend index info.
+    CommonInfo backendCommonInfo;     // Common index info.
     VecSimAlgo backendAlgo;    // The algorithm used in the backend.
-    bfInfoStruct frontendinfo; // The brute force index info.
+    CommonInfo frontendCommonInfo;    // Common index info.
+    bfInfoStruct bfInfo;       // The brute force index info.
 
     uint64_t management_layer_memory; // Memory consumption of the management layer.
     bool backgroundIndexing;          // Determines if the index is currently being indexed in the

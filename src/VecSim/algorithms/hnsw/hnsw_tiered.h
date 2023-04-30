@@ -177,8 +177,7 @@ public:
                                       VecSimQueryParams *queryParams) override {
         return this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
     }
-    VecSimIndexInfo info() const override { return this->backendIndex->info(); }
-    VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }
+
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
         size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);

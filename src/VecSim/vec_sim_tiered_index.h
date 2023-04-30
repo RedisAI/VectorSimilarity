@@ -64,6 +64,9 @@ public:
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
                this->frontendIndex->getAllocationSize();
     }
+
+    virtual VecSimIndexInfo info() const override;
+    virtual VecSimInfoIterator *infoIterator() const override;
 };
 
 template <typename DataType, typename DistType>
@@ -116,3 +119,37 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         }
     }
 }
+
+template <typename DataType, typename DistType>
+VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
+    VecSimIndexInfo info;
+    info.algo = VecSimAlgo_TIERED;
+    info.commonInfo.indexLabelCount = this->indexLabelCount();
+    info.commonInfo.indexSize = this->indexSize();
+    info.commonInfo.memory = this->getAllocationSize();
+    info.commonInfo.isMulti = this->backendIndex->isMultiValue();
+    VecSimIndexInfo backendInfo = this->backendIndex->info();
+
+    info.tieredInfo.backendAlgo = backendInfo.algo;
+    switch (backendInfo.algo) {
+        case VecSimAlgo_HNSWLIB:
+            info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
+            break;
+        default:
+            assert(false && "Unsupported backend algorithm");
+    }
+
+    info.tieredInfo.backendCommonInfo = backendInfo.commonInfo;
+    VecSimIndexInfo frontendInfo = this->frontendIndex->info();
+    // For now, this is hard coded to FLAT
+    info.tieredInfo.frontendCommonInfo = frontendInfo.commonInfo;
+    info.tieredInfo.bfInfo = frontendInfo.bfInfo;
+
+    info.tieredInfo.backgroundIndexing = this->frontendIndex->indexSize() > 0;
+    info.tieredInfo.management_layer_memory = this->allocator->getAllocationSize();
+    return info;
+}
+template <typename DataType, typename DistType>
+ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
+    return NULL;
+ };
