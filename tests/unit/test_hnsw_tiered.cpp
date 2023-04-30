@@ -3186,7 +3186,7 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     // Search for `range` so all the vectors will be from the HNSW index.
     runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
     runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
-    // Search for `range` so all the vectors will be from the main index.
+    // Search for `range` so all the vectors will be from the flat index.
     runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
     // Search for `range` so some of the results will be from the main and some from the flat index.
     runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
