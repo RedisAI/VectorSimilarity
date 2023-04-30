@@ -158,7 +158,8 @@ public:
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                     BruteForceIndex<DataType, DistType> *bf_index,
-                    const TieredIndexParams &tieredParams);
+                    const TieredIndexParams &tieredParams,
+                    std::shared_ptr<VecSimAllocator> allocator);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -511,8 +512,9 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                                                      BruteForceIndex<DataType, DistType> *bf_index,
-                                                     const TieredIndexParams &tiered_index_params)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params),
+                                                     const TieredIndexParams &tiered_index_params,
+                                                     std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum

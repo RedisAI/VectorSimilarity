@@ -1850,7 +1850,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
                                tiered_index->getHNSWIndex())
                                ->label_lookup_.reserve(0);
 
-    size_t initial_mem = allocator->getAllocationSize();
+    size_t initial_mem = tiered_index->getAllocationSize();
 
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
@@ -1888,7 +1888,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // Call this just to trigger an update of the memory context.
     EXPECT_EQ(tiered_index->deleteVector(0), 0);
 
-    EXPECT_EQ(allocator->getAllocationSize(), initial_mem);
+    EXPECT_EQ(tiered_index->getAllocationSize(), initial_mem);
     EXPECT_EQ(initial_mem, memory_ctx);
 
     delete index_ctx;

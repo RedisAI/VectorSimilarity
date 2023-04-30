@@ -46,8 +46,8 @@ protected:
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
-                      TieredIndexParams tieredParams)
-        : VecSimIndexInterface(backendIndex_->getAllocator()), backendIndex(backendIndex_),
+                      TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
+        : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
           memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {}
@@ -59,6 +59,11 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+
+    virtual inline int64_t getAllocationSize() const override {
+        return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
+               this->frontendIndex->getAllocationSize();
+    }
 };
 
 template <typename DataType, typename DistType>
