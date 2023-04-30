@@ -22,6 +22,12 @@ REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
 
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
+(benchmark::State &st) { AddLabel_AsyncIngest(st); }
+BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
+    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
+    ->ArgName("VecSimAlgo_TIERED");
+
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));
