@@ -3183,7 +3183,7 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
 
     cur_memory_usage = allocator->getAllocationSize();
-    // Search for `range` so all the vectors will be from the flat index.
+    // Search for `range` so all the vectors will be from the HNSW index.
     runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
     runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
     // Search for `range` so all the vectors will be from the main index.
