@@ -2893,8 +2893,98 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
     EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
-                                            info.tieredInfo.backendCommonInfo.memory +
-                                            info.tieredInfo.frontendCommonInfo.memory);
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+}
 
+TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    VecSimIndexInfo info = tiered_index->info();
+    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
+    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
+
+    VecSimInfoIterator *infoIterator = tiered_index->infoIterator();
+    EXPECT_EQ(infoIterator->numberOfFields(), 14);
+
+    while (infoIterator->hasNext()) {
+        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
+
+        if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
+            // Algorithm type.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimAlgo_ToString(info.algo));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
+            // Vector type.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimType_ToString(info.commonInfo.type));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
+            // Vector dimension.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.dim);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::METRIC_STRING)) {
+            // Metric.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimMetric_ToString(info.commonInfo.metric));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
+            // Search mode.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimSearchMode_ToString(info.commonInfo.last_mode));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
+            // Index size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
+            // Index label count.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexLabelCount);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
+            // Is the index multi value.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
+            // Block size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.blockSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
+            // Memory.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
+            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
+            compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else {
+            assert(false);
+        }
+    }
+    VecSimInfoIterator_Free(infoIterator);
 }

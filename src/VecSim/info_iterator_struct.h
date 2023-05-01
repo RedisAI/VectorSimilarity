@@ -27,5 +27,12 @@ public:
 
     inline size_t numberOfFields() { return array_len(this->fields); }
 
-    virtual ~VecSimInfoIterator() { array_free(this->fields); }
+    virtual ~VecSimInfoIterator() {
+        for (size_t i = 0; i < array_len(this->fields); i++) {
+            if (this->fields[i].fieldType == INFOFIELD_ITERATOR) {
+                delete this->fields[i].fieldValue.iteratorValue;
+            }
+        }
+        array_free(this->fields);
+    }
 };

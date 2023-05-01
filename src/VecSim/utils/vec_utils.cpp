@@ -50,6 +50,11 @@ const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
 const char *VecSimCommonStrings::HYBRID_POLICY_STRING = "HYBRID_POLICY";
 const char *VecSimCommonStrings::BATCH_SIZE_STRING = "BATCH_SIZE";
 
+const char *VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING = "MANAGEMENT_LAYER_MEMORY";
+const char *VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING = "BACKGROUND_INDEXING";
+const char *VecSimCommonStrings::FRONTEND_INDEX_STRING = "FRONTEND_INDEX";
+const char *VecSimCommonStrings::BACKEND_INDEX_STRING = "BACKEND_INDEX";
+
 void sort_results_by_id(VecSimQueryResult_List rl) {
     qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultById);
