@@ -7,6 +7,7 @@ import numpy as np
 from scipy import spatial
 from numpy.testing import assert_allclose
 import time
+import math
 
 def create_hnsw_params(dim, num_elements, metric, data_type, ef_construction=200, m=16, ef_runtime=10, epsilon=0.01,
                       is_multi=False):
@@ -40,3 +41,14 @@ def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200,
 
     return HNSWIndex(hnsw_params)
 
+
+# Compute the expected speedup as a function of the expected parallel section rate of the code by Amdahl's law
+def expected_speedup(expected_parallel_rate, n_threads):
+    return 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)
+
+def bytes_to_giga(bytes, ndigits = 3):
+    return round(bytes/pow(10,9), ndigits)
+
+def round_(f_value, ndigits = 2):
+    return round(f_value, ndigits)
+    
