@@ -2896,6 +2896,13 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    while (!jobQ.empty()) {
+        delete jobQ.front().job;
+        jobQ.pop();
+    }
+
+    delete index_ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
@@ -2987,4 +2994,5 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
         }
     }
     VecSimInfoIterator_Free(infoIterator);
+    delete index_ctx;
 }
