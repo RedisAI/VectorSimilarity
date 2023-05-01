@@ -146,11 +146,12 @@ protected:
     }
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams) override {
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryResult_Order order) override {
         char processed_blob[this->data_size];
         const void *query_to_send = processBlob(queryBlob, processed_blob);
 
-        return this->rangeQuery(query_to_send, radius, queryParams);
+        return this->rangeQuery(query_to_send, radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *

@@ -62,6 +62,9 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                      VecSimQueryParams *queryParams,
+                                      VecSimQueryResult_Order order) override;
 
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
