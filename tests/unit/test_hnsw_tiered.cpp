@@ -96,8 +96,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         // Here we update labelToInsertJobs mapping, as we except that for every insert job
         // there will be a corresponding item in the map.
         my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
-        my_index->UpdateIndexMemory(my_index->memoryCtx,
-                                    my_index->getAllocationSize());
+        my_index->UpdateIndexMemory(my_index->memoryCtx, my_index->getAllocationSize());
     };
 
     HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
@@ -2804,8 +2803,10 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     size_t n = 1000;
-    HNSWParams params = {
-        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = TypeParam::isMulti()};
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
@@ -2820,12 +2821,80 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
     EXPECT_EQ(info.commonInfo.memory, memory_ctx);
     EXPECT_EQ(info.commonInfo.isMulti, TypeParam::isMulti());
+    EXPECT_EQ(info.commonInfo.dim, dim);
+    EXPECT_EQ(info.commonInfo.metric, VecSimMetric_L2);
+    EXPECT_EQ(info.commonInfo.type, TypeParam::get_index_type());
+    EXPECT_EQ(info.commonInfo.blockSize, INVALID_INFO);
     VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
     VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
-    
+
     compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
     compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
     compareCommonInfo(info.tieredInfo.backendCommonInfo, backendIndexInfo.commonInfo);
     compareHNSWInfo(info.tieredInfo.backendInfo.hnswInfo, backendIndexInfo.hnswInfo);
+
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          backendIndexInfo.commonInfo.memory +
+                                          frontendIndexInfo.commonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 1);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 1);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    if (TypeParam::isMulti()) {
+        GenerateAndAddVector(tiered_index, dim, 1, 1);
+        info = tiered_index->info();
+
+        EXPECT_EQ(info.commonInfo.indexSize, 2);
+        EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
+        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
+        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                              info.tieredInfo.backendCommonInfo.memory +
+                                              info.tieredInfo.frontendCommonInfo.memory);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    }
+
+    VecSimIndex_DeleteVector(tiered_index, 1);
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 0);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                            info.tieredInfo.backendCommonInfo.memory +
+                                            info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
 }

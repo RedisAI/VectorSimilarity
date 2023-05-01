@@ -25,6 +25,7 @@ extern "C" {
 
 #define HNSW_INVALID_LEVEL SIZE_MAX
 #define INVALID_JOB_ID     UINT_MAX
+#define INVALID_INFO       UINT_MAX
 
 // Datatypes for indexing.
 typedef enum {
@@ -219,11 +220,11 @@ typedef struct {
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
-    } backendInfo;             // The backend index info.
-    CommonInfo backendCommonInfo;     // Common index info.
-    VecSimAlgo backendAlgo;    // The algorithm used in the backend.
-    CommonInfo frontendCommonInfo;    // Common index info.
-    bfInfoStruct bfInfo;       // The brute force index info.
+    } backendInfo;                 // The backend index info.
+    CommonInfo backendCommonInfo;  // Common index info.
+    VecSimAlgo backendAlgo;        // The algorithm used in the backend.
+    CommonInfo frontendCommonInfo; // Common index info.
+    bfInfoStruct bfInfo;           // The brute force index info.
 
     uint64_t management_layer_memory; // Memory consumption of the management layer.
     bool backgroundIndexing;          // Determines if the index is currently being indexed in the

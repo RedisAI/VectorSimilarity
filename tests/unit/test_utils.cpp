@@ -109,7 +109,6 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
     VecSimQueryResult_Free(res);
 }
 
-
 void compareCommonInfo(CommonInfo info1, CommonInfo info2) {
     ASSERT_EQ(info1.dim, info2.dim);
     ASSERT_EQ(info1.metric, info2.metric);
@@ -121,9 +120,7 @@ void compareCommonInfo(CommonInfo info1, CommonInfo info2) {
     ASSERT_EQ(info1.last_mode, info2.last_mode);
     ASSERT_EQ(info1.indexLabelCount, info2.indexLabelCount);
 }
-void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2) {
-
-}
+void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2) {}
 
 void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2) {
     ASSERT_EQ(info1.efConstruction, info2.efConstruction);

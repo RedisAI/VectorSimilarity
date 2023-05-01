@@ -123,24 +123,28 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 template <typename DataType, typename DistType>
 VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
+    VecSimIndexInfo backendInfo = this->backendIndex->info();
+    VecSimIndexInfo frontendInfo = this->frontendIndex->info();
     info.algo = VecSimAlgo_TIERED;
     info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize = this->indexSize();
     info.commonInfo.memory = this->getAllocationSize();
     info.commonInfo.isMulti = this->backendIndex->isMultiValue();
-    VecSimIndexInfo backendInfo = this->backendIndex->info();
+    info.commonInfo.type = backendInfo.commonInfo.type;
+    info.commonInfo.metric = backendInfo.commonInfo.metric;
+    info.commonInfo.dim = backendInfo.commonInfo.dim;
+    info.commonInfo.blockSize = INVALID_INFO;
 
     info.tieredInfo.backendAlgo = backendInfo.algo;
     switch (backendInfo.algo) {
-        case VecSimAlgo_HNSWLIB:
-            info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
-            break;
-        default:
-            assert(false && "Unsupported backend algorithm");
+    case VecSimAlgo_HNSWLIB:
+        info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
+        break;
+    default:
+        assert(false && "Unsupported backend algorithm");
     }
 
     info.tieredInfo.backendCommonInfo = backendInfo.commonInfo;
-    VecSimIndexInfo frontendInfo = this->frontendIndex->info();
     // For now, this is hard coded to FLAT
     info.tieredInfo.frontendCommonInfo = frontendInfo.commonInfo;
     info.tieredInfo.bfInfo = frontendInfo.bfInfo;
@@ -150,6 +154,6 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     return info;
 }
 template <typename DataType, typename DistType>
- VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
+VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
     return NULL;
- };
+};
