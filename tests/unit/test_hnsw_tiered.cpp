@@ -3070,8 +3070,8 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     size_t n_labels = k * 3;
     size_t n = n_labels * per_label;
 
-    auto edge_delta = (k - 0.5) * per_label;
-    auto mid_delta = edge_delta / 2.1;
+    auto edge_delta = (k - 0.8) * per_label;
+    auto mid_delta = edge_delta / 2;
     // `range` for querying the "edges" of the index and get k results.
     double range = dim * edge_delta * edge_delta; // L2 distance.
     // `half_range` for querying a point in the "middle" of the index and get k results around it.
@@ -3112,6 +3112,7 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     // Define the verification functions.
     auto ver_res_0 = [&](size_t id, double score, size_t index) {
         EXPECT_EQ(id, index);
+        // The expected score is the distance to the first vector of `id` label.
         auto element = id * per_label;
         EXPECT_DOUBLE_EQ(score, dim * element * element);
     };
@@ -3119,6 +3120,11 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     auto ver_res_1mid_by_id = [&](size_t id, double score, size_t index) {
         size_t q_id = query_1mid[0] / per_label;
         size_t mod = query_1mid[0] - q_id * per_label;
+        // In single value mode, `per_label` is always 1 and `mod` is always 0, so the following
+        // branchings is simply `expected_score = abs(id - q_id)`.
+        // In multi value mode, for ids higher than the query id, the score is the distance to the first
+        // vector of `id` label, and for ids lower than the query id, the score is the distance to the
+        // last vector of `id` label. `mod` is the distance to the first vector of `q_id` label.
         double expected_score = 0;
         if (id > q_id) {
             expected_score = (id - q_id) * per_label - mod;
@@ -3132,6 +3138,11 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     auto ver_res_2mid_by_id = [&](size_t id, double score, size_t index) {
         size_t q_id = query_2mid[0] / per_label;
         size_t mod = query_2mid[0] - q_id * per_label;
+        // In single value mode, `per_label` is always 1 and `mod` is always 0, so the following
+        // branchings is simply `expected_score = abs(id - q_id)`.
+        // In multi value mode, for ids higher than the query id, the score is the distance to the first
+        // vector of `id` label, and for ids lower than the query id, the score is the distance to the
+        // last vector of `id` label. `mod` is the distance to the first vector of `q_id` label.
         double expected_score = 0;
         if (id > q_id) {
             expected_score = (id - q_id) * per_label - mod;
@@ -3302,10 +3313,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
     auto parallel_range_search = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<SearchJobMock *>(job);
         size_t k = search_job->k;
-        // size_t per_label = search_job->n;
         size_t dim = search_job->dim;
         // The range that will get us k results.
-        double range = dim * (k - 0.5) * (k - 0.5) / 4; // L2 distance.
+        double range = dim * ((k - 0.5) / 2) * ((k - 0.5) / 2); // L2 distance.
         auto query = search_job->query;
 
         auto verify_res = [&](size_t id, double score, size_t res_index) {
@@ -3325,12 +3335,12 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         // Insert a vector to the flat index and add a job to insert it to the main index.
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
 
-        // Add a search job. Make sure the query element is between k and n - k.
+        // Add a search job. Make sure the query element is between k and n_labels - k.
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, ((n - i) % (n_labels - (2 * k))) + k);
         auto search_job =
             new (allocator) SearchJobMock(allocator, parallel_range_search, tiered_index, query, k,
-                                          per_label, dim, successful_searches);
+                                          n, dim, successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 

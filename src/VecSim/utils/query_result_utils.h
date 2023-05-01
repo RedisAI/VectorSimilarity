@@ -33,6 +33,8 @@ template <bool withSet>
 VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryResult *first_end,
                                  VecSimQueryResult *&second, const VecSimQueryResult *second_end,
                                  size_t limit) {
+    // Allocate the merged results array with the minimum size needed.
+    // Min of the limit and the sum of the lengths of the two arrays.
     VecSimQueryResult *results = array_new<VecSimQueryResult>(
         std::min(limit, (size_t)(first_end - first) + (size_t)(second_end - second)));
     // Will hold the ids of the results we've already added to the merged results.
