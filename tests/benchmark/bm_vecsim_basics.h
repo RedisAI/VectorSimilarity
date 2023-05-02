@@ -106,6 +106,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     size_t memory_delta = (INDICES[st.range(0)])->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
+    st.counters["num_threads"] = BM_VecSimGeneral::thread_pool_size;
 
     size_t index_size_after = VecSimIndex_IndexSize(INDICES[st.range(0)]);
     assert(index_size_after == N_VECTORS + added_vec_count);

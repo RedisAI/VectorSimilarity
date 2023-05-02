@@ -22,9 +22,9 @@ REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_TIERED);
 
-BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC, fp32_index_t)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single, fp32_index_t)
 (benchmark::State &st) { AddLabel_AsyncIngest(st); }
-BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_ADD_LABEL_ASYNC)
+BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
     ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
     ->ArgName("VecSimAlgo_TIERED");
 
