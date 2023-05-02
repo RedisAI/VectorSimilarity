@@ -468,7 +468,7 @@ public:
         return getFlatBuffer()->indexSize();
     }
 
-    void ResetKNNLogCtx() { this->index->resetLogCallbackFunction(); }
+    void ResetLogCB() { this->index->resetLogCallbackFunction(); }
 
     static size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
 };
@@ -609,6 +609,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
         .def("get_curr_bf_size", &PyTIERED_HNSWIndex::getFlatIndexSize, py::arg("mode") = "None")
         .def_static("get_threads_num", &PyTIEREDIndex::GetThreadsNum)
+        .def("reset_log", &PyTIERED_HNSWIndex::ResetLogCB)
         .def("start_knn_log", &PyTIERED_HNSWIndex::SetKNNLogCtx);
 
     py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
