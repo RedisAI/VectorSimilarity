@@ -2980,6 +2980,10 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
         ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        // The first job in Q should be the invalid overwritten insert vector job.
+        ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+        delete jobQ.front().job;
+        jobQ.pop();
     }
 
     // Insert another vector, this one should go directly to HNSW index since the buffer limit has
