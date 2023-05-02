@@ -103,9 +103,8 @@ class IndexCtx:
     def get_num_labels(self):
         return self.num_vectors / self.num_per_label
         
-    
-def test_create():
-    indices_ctx = IndexCtx()
+def create_tiered_index(is_multi: bool, num_per_label = 1):
+    indices_ctx = IndexCtx(is_multi=is_multi, num_per_label=num_per_label)
     num_elements = indices_ctx.num_vectors
     
     threads_num = TIEREDIndex.get_threads_num()
@@ -155,6 +154,14 @@ def test_create():
     
     assert execution_time_ratio > expected_insertion_speedup
 
+def test_create_tiered():
+    print("Test create tiered hnsw index")
+    create_tiered_index(is_multi=False)      
+      
+def test_create_multi():
+    print("Test create multi label tiered hnsw index")
+    create_tiered_index(is_multi=False)
+    
 def search_insert(is_multi: bool, num_per_label = 1):
     indices_ctx = IndexCtx(mode=CreationMode.CREATE_TIERED_INDEX, is_multi=is_multi, num_per_label=num_per_label)
     index = indices_ctx.tiered_index
@@ -262,7 +269,7 @@ def test_sanity():
     assert has_diff == False
     
 
-def recall_after_deletion():
+def test_recall_after_deletion():
     
     indices_ctx = IndexCtx(mode=CreationMode.CREATE_TIERED_INDEX, ef_r=20)
     index = indices_ctx.tiered_index
@@ -334,65 +341,6 @@ def recall_after_deletion():
     print("\nhsnw tiered recall is: \n", recall_tiered)
     print("\nhsnw recall is: \n", recall_hnsw)
     assert (recall_tiered >= recall_hnsw)
-
-
-#TODO!!!!!!
-def create_multi_index():
-    indices_ctx = IndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
-    index = indices_ctx.tiered_index
-    
-    num_elements = indices_ctx.num_vectors
-    data = indices_ctx.data
-    
-    queries = load_queries("dbpedia-768")
-    num_queries = queries.shape[0]
-    
-    # Add vectors into the flat index.
-    bf_index = indices_ctx.init_and_populate_flat_index()
-    
-    # Start background insertion in the tiered index
-    index_start = time.time()
-    for i, vector in enumerate(data):
-        index.add_vector(vector, i)
-    
-    correct = 0
-    k = 10
-    query_index = 0
-    searches_number = 0
-    
-    # config the index log to knn mode to get access to the bf index size during the query.
-    index.start_knn_log()
-    
-    # run knn query every 1 s 
-    total_tiered_search_time = 0
-    while index.hnsw_label_count() < num_elements:
-        query_start = time.time()
-        tiered_labels, _ = index.knn_query(queries[query_index], k)
-        query_dur = time.time() - query_start
-        total_tiered_search_time += query_dur
-        # for each run get the current hnsw size and the query time
-        bf_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
-        print(f"query time = {query_dur}")
-        print(f"bf size = {bf_curr_size}")
-        
-        # run the query also in the bf index to get the grund truth results
-        bf_labels, _ = bf_index.knn_query(queries[query_index], k)
-        correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
-        time.sleep(10)
-        query_index = min(query_index + 1, num_queries - 1)
-        searches_number += 1
-    
-    # hnsw labels count updates before addVector returns, wait for the queue to be empty
-    index.wait_for_index(1)
-    index_dur = time.time() - index_start
-    print(f"search + indexing took {index_dur} s")
-    print(f"total memory of tiered index = {index.index_memory()} bytes")
-        
-    
-    # Measure recall
-    recall = float(correct)/(k*searches_number)
-    print("Average recall is:", recall)
-    print("tiered query per seconds: ", searches_number/total_tiered_search_time)   
     
     
 def test_main():
