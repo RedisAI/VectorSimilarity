@@ -300,6 +300,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
     auto *hnsw_index = getHNSWIndex();
+    this->mainIndexGuard.lock_shared();
 
     // Get the required data about the relevant ids to delete.
     // Internally, this will hold the index data lock.
@@ -354,6 +355,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         assert(idToSwapJob.find(id) == idToSwapJob.end());
         idToSwapJob[id] = swap_job;
     }
+    this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
 }
 
@@ -597,14 +599,28 @@ template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label,
                                                    void *auxiliaryCtx) {
     int ret = 1;
-    if (this->getWriteMode() == VecSim_WriteInPlace ||
-        this->frontendIndex->indexSize() >= this->flatBufferLimit) {
-        auto hnsw_index = this->getHNSWIndex();
-        // Insert vector directly to HNSW (since flat buffer guard was not held, no need to release
-        // it internally).
-        this->insertVectorToHNSW<false>(hnsw_index, label, blob);
+    auto hnsw_index = this->getHNSWIndex();
+    if (this->getWriteMode() == VecSim_WriteInPlace) {
+        this->mainIndexGuard.lock();
+        // Internally, we may increase the capacity when we append thr new vector,
+        ret = hnsw_index->addVector(blob, label);
+        this->mainIndexGuard.unlock();
         this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
         return ret;
+    }
+    if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
+        // Handle overwrite situation.
+        if (!this->backendIndex->isMultiValue()) {
+            ret -= this->deleteVector(label);
+        }
+        if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
+            // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
+            // directly to HNSW. Since flat buffer guard was not held, no need to release it
+            // internally.
+            this->insertVectorToHNSW<false>(hnsw_index, label, blob);
+            this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
+            return ret;
+        }
     }
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
@@ -646,10 +662,9 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // (in case of override in non-MULTI index) - so if it's there, we remove it (and create the
     // required repair jobs), *before* we submit the insert job.
     if (!this->backendIndex->isMultiValue()) {
-        this->mainIndexGuard.lock_shared();
-        this->deleteLabelFromHNSW(label);
-        this->mainIndexGuard.unlock_shared();
-        ret = 0;
+        // If we removed the previous vector from both HNSW and flat in the overwrite process,
+        // we still return 0 (not -1).
+        ret = MAX(ret - this->deleteLabelFromHNSW(label), 0);
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
@@ -696,9 +711,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     // Note that we may remove the same vector that has been removed from the flat index, if it was
     // being ingested at that time.
     if (this->getWriteMode() == VecSim_WriteAsync) {
-        this->mainIndexGuard.lock_shared();
         num_deleted_vectors += this->deleteLabelFromHNSW(label);
-        this->mainIndexGuard.unlock_shared();
         // Apply ready swap jobs if number of deleted vectors reached the threshold
         // (under exclusive lock of the main index guard).
         this->executeReadySwapJobs();
