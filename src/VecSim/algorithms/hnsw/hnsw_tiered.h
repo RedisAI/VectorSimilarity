@@ -602,7 +602,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     auto hnsw_index = this->getHNSWIndex();
     if (this->getWriteMode() == VecSim_WriteInPlace) {
         this->mainIndexGuard.lock();
-        // Internally, we may increase the capacity when we append thr new vector,
+        // Internally, we may overwrite (delete the previous vector stored under this label), and
+        // may need to increase the capacity when we append the new vector afterwards.
         ret = hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
         this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
@@ -611,6 +612,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
         // Handle overwrite situation.
         if (!this->backendIndex->isMultiValue()) {
+            // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
+            // remove vector from the flat buffer and/or the HNSW index.
             ret -= this->deleteVector(label);
         }
         if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
@@ -621,6 +624,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
             return ret;
         }
+        // Otherwise, we fall back to the "regular" insertion into the flat buffer
+        // (since it is not full anymore after removing the previous vector stored under the label).
     }
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
