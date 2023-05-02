@@ -15,6 +15,8 @@ public:
 
     static void AddLabel_AsyncIngest(benchmark::State &st);
 
+    static void DeleteLabel_AsyncRepair(benchmark::State &st);
+
     // We pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
     // which is not known to VecSimIndex class.
     // We delete one label in each iteration. For multi index deletes multiple vectors per
@@ -127,7 +129,7 @@ template <typename algo_t>
 void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State &st) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
-    double memory_delta = 0;
+    int memory_before = index->getAllocationSize();
     size_t removed_vectors_count = 0;
     std::vector<LabelData> removed_labels_data;
 
@@ -143,12 +145,12 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         st.ResumeTiming();
 
         // Delete label
-        auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
-        memory_delta += delta;
+        VecSimIndex_DeleteVector(index, label_to_remove++);
     }
 
     // Avg. memory delta per vector equals the total memory delta divided by the number
     // of deleted vectors.
+    int memory_delta = index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
 
     // Restore index state.
@@ -160,6 +162,52 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
             VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
         }
     }
+    BM_VecSimGeneral::thread_pool_wait();
+}
+
+template <typename index_type_t>
+void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st) {
+    // Remove a different vector in every execution.
+    size_t label_to_remove = 0;
+    int memory_before = INDICES[st.range(0)]->getAllocationSize();
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, data_t>*>(INDICES[st.range(0)]);
+    size_t removed_vectors_count = 0;
+    std::vector<LabelData> removed_labels_data;
+
+    for (auto _ : st) {
+        st.PauseTiming();
+        LabelData data(0);
+        // Get label id(s) data.
+        tiered_index->getDataByLabel(label_to_remove, data);
+
+        removed_labels_data.push_back(data);
+
+        removed_vectors_count += data.size();
+        st.ResumeTiming();
+
+        // Delete label
+        VecSimIndex_DeleteVector(tiered_index, label_to_remove++);
+        if (label_to_remove == BM_VecSimGeneral::block_size) {
+            BM_VecSimGeneral::thread_pool_wait();
+        }
+    }
+
+    // Avg. memory delta per vector equals the total memory delta divided by the number
+    // of deleted vectors.
+    int memory_delta = tiered_index->getAllocationSize() - memory_before;
+    st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
+    st.counters["num_threads"] = BM_VecSimGeneral::thread_pool_size;
+
+    // Restore index state.
+    // For each label in removed_labels_data
+    for (size_t label_idx = 0; label_idx < removed_labels_data.size(); label_idx++) {
+        size_t vec_count = removed_labels_data[label_idx].size();
+        // Reinsert all the deleted vectors under this label.
+        for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
+            VecSimIndex_AddVector(tiered_index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
+        }
+    }
+    BM_VecSimGeneral::thread_pool_wait();
 }
 
 template <typename index_type_t>

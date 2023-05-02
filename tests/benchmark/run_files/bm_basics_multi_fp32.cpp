@@ -33,6 +33,8 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex
                     float, VecSimAlgo_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Multi, float, float,
                     VecSimAlgo_HNSWLIB)
+DEFINE_DELETE_LABEL(DeleteLabel_Tiered, fp32_index_t, TieredHNSWIndex, float, float,
+                    VecSimAlgo_TIERED)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 
 BENCHMARK_MAIN();

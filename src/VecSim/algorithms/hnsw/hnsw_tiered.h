@@ -192,6 +192,9 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
     }
+#ifdef BUILD_TESTS
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
+#endif
 };
 
 /**
@@ -962,3 +965,11 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrel
     // Update number of results (pop the tail)
     array_pop_back_n(rl.results, end - cur_end);
 }
+
+#ifdef BUILD_TESTS
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::getDataByLabel(labelType label,
+                    std::vector<std::vector<DataType>> &vectors_output) const {
+    this->getHNSWIndex()->getDataByLabel(label, vectors_output);
+}
+#endif

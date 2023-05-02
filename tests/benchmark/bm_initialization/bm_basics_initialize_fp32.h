@@ -31,6 +31,13 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));
+REGISTER_DeleteLabel(DeleteLabel_Tiered);
+
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteLabel_AsyncRepair_Single, fp32_index_t)
+(benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
+BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteLabel_AsyncRepair_Single)
+    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
+    ->ArgName("VecSimAlgo_TIERED");
 
 // TopK BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF), fp32_index_t)
