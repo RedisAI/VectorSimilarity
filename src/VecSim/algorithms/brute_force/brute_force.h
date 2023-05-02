@@ -215,6 +215,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         if (this->count + this->blockSize <= idToLabel_size) {
             size_t vector_to_align_count = idToLabel_size % this->blockSize;
             this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
+            this->idToLabelMapping.shrink_to_fit();
         }
     }
 }
