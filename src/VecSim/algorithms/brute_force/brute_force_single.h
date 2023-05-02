@@ -34,6 +34,10 @@ public:
 
     inline size_t indexLabelCount() const override { return this->count; }
     std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) override;
+
+    // We call this when we KNOW that the label exists in the index.
+    idType getIdOfLabel(labelType label) const { return labelToIdLookup.find(label)->second; }
+
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -111,13 +115,6 @@ BruteForceIndex_Single<DataType, DistType>::~BruteForceIndex_Single() {}
 template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
                                                           void *auxiliaryCtx) {
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
 
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.

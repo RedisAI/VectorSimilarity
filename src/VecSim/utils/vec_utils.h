@@ -81,6 +81,8 @@ void sort_results_by_id(VecSimQueryResult_List results);
 
 void sort_results_by_score(VecSimQueryResult_List results);
 
+void sort_results_by_score_then_id(VecSimQueryResult_List results);
+
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 
 VecSimResolveCode validate_positive_double_param(VecSimRawParam rawParam, double *val);
@@ -109,4 +111,13 @@ void normalizeVector(DataType *input_vector, size_t dim) {
     for (size_t i = 0; i < dim; i++) {
         input_vector[i] = input_vector[i] / norm;
     }
+}
+
+typedef void (*normalizeVector_f)(void *input_vector, size_t dim);
+
+static inline void normalizeVectorFloat(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<float *>(input_vector), dim);
+}
+static inline void normalizeVectorDouble(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<double *>(input_vector), dim);
 }

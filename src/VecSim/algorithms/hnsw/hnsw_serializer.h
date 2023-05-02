@@ -130,7 +130,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // epsilon is only restored from v2 up.
 
     // Restore index meta-data
-    readBinaryPOD(input, this->data_size_);
+    readBinaryPOD(input, this->data_size);
     readBinaryPOD(input, this->size_data_per_element_);
     readBinaryPOD(input, this->size_links_per_element_);
     readBinaryPOD(input, this->size_links_level0_);
@@ -299,7 +299,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->ef_);
 
     // Save index meta-data
-    writeBinaryPOD(output, this->data_size_);
+    writeBinaryPOD(output, this->data_size);
     writeBinaryPOD(output, this->size_data_per_element_);
     writeBinaryPOD(output, this->size_links_per_element_);
     writeBinaryPOD(output, this->size_links_level0_);

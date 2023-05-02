@@ -60,6 +60,11 @@ void sort_results_by_score(VecSimQueryResult_List rl) {
           (__compar_fn_t)cmpVecSimQueryResultByScore);
 }
 
+void sort_results_by_score_then_id(VecSimQueryResult_List rl) {
+    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
+          (__compar_fn_t)cmpVecSimQueryResultByScoreThenId);
+}
+
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val) {
     char *ep; // For checking that strtoll used all rawParam.valLen chars.
     errno = 0;

@@ -116,7 +116,7 @@ extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_
     if (index->indexSize() == index->indexCapacity()) {
         index->increaseCapacity();
     }
-    index->addVector(blob, id);
+    index->addVectorWrapper(blob, id);
     int64_t after = index->getAllocationSize();
     return after - before;
 }
@@ -203,7 +203,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, cons
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryResult_List results;
-    results = index->topKQuery(queryBlob, k, queryParams);
+    results = index->topKQueryWrapper(queryBlob, k, queryParams);
 
     if (order == BY_ID) {
         sort_results_by_id(results);
@@ -221,7 +221,7 @@ extern "C" VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, con
     if (radius < 0) {
         throw std::runtime_error("radius must be non-negative");
     }
-    VecSimQueryResult_List results = index->rangeQuery(queryBlob, radius, queryParams);
+    VecSimQueryResult_List results = index->rangeQueryWrapper(queryBlob, radius, queryParams);
 
     if (order == BY_SCORE) {
         sort_results_by_score(results);
@@ -245,7 +245,7 @@ extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
-    return index->newBatchIterator(queryBlob, queryParams);
+    return index->newBatchIteratorWrapper(queryBlob, queryParams);
 }
 
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {

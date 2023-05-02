@@ -48,12 +48,9 @@ VecSimQueryResult_List HNSWMulti_BatchIterator<DataType, DistType>::prepareResul
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
     for (int i = (int)(top_candidates->size() - 1); i >= 0; i--) {
-        labelType label = top_candidates->top().second;
-        // TODO: get best score by only checking unvisited vectors under this label.
-        DistType score = this->index->getDistanceFrom(label, this->getQueryBlob());
-        VecSimQueryResult_SetId(rl.results[i], label);
-        VecSimQueryResult_SetScore(rl.results[i], score);
-        this->returned.insert(label);
+        VecSimQueryResult_SetId(rl.results[i], top_candidates->top().second);
+        VecSimQueryResult_SetScore(rl.results[i], top_candidates->top().first);
+        this->returned.insert(top_candidates->top().second);
         top_candidates->pop();
     }
     return rl;
