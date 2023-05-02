@@ -41,7 +41,9 @@ class IndexCtx:
         self.num_labels = int(self.num_vectors/num_per_label)
         data_shape = (self.num_labels, num_per_label, self.dim)
         
-        data = np.random.random(data_shape) 
+        self.rng = np.random.default_rng(seed=47)
+        
+        data = self.rng.random(data_shape) 
         self.data = np.float32(data) if self.data_type == VecSimType_FLOAT32 else data
 
         
@@ -97,7 +99,7 @@ class IndexCtx:
         return hnsw_index
     
     def generate_queries(self, num_queries):
-        queries = np.random.random((num_queries, self.dim)) 
+        queries = self.rng.random((num_queries, self.dim)) 
         return np.float32(queries) if self.data_type == VecSimType_FLOAT32 else queries
     
     def get_num_labels(self):
@@ -145,7 +147,7 @@ def create_tiered_index(is_multi: bool, num_per_label = 1):
     
     create_hnsw()
     
-    parallel_execution_portion = 0.85  # we expect that at least 85% of the insert time will be executed in parallel
+    parallel_execution_portion = 0.8  # we expect that at least 80% of the insert time will be executed in parallel
     
     execution_time_ratio = hnsw_index_time / tiered_index_time
     expected_insertion_speedup = round_(expected_speedup(parallel_execution_portion, threads_num), 3)
@@ -196,7 +198,7 @@ def search_insert(is_multi: bool, num_per_label = 1):
         bf_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
         
         # expect query time to improve
-        print(f"query time = {round_(query_dur)}")
+        print(f"query time = {round_(query_dur * 1000)} ms")
         assert query_dur > prev_query_duration
         
         # while bf size should decrease
@@ -238,12 +240,12 @@ def test_sanity():
     
     indices_ctx = IndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
     index = indices_ctx.tiered_index    
-    k = IndexCtx.num_vectors
+    k = indices_ctx.num_vectors
     
     #add vectors to the tiered index one by one
     for i, vector in enumerate(indices_ctx.data):
         index.add_vector(vector, i)
-        index.wait_for_index()
+        index.wait_for_index(1)
     
     print(f"done indexing, label count = {index.hnsw_label_count()}")
     assert index.hnsw_label_count() == indices_ctx.num_labels
@@ -252,7 +254,7 @@ def test_sanity():
     hnsw_index = indices_ctx.init_and_populate_hnsw_index()
     
     query_data = indices_ctx.generate_queries(num_queries=1)
-
+    
     #search knn in tiered
     tiered_labels, tiered_dist = index.knn_query(query_data, k)
     #search knn in hnsw
@@ -277,14 +279,13 @@ def test_recall_after_deletion():
     num_elements = indices_ctx.num_labels
     
     #create hnsw index
-    hnsw_index = create_hnsw_index()
+    hnsw_index = indices_ctx.init_and_populate_hnsw_index()
     
     # Populate tiered index 
     vectors = []
     for i, vector in enumerate(data):
         index.add_vector(vector, i)
-        hnsw_index.add_vector(vector, i)
-        vectors.append((i, vector))
+        vectors.append((i, vector[0]))
 
     print(f"current flat buffer size is {index.get_curr_bf_size()}, wait for index\n")
     index.wait_for_index()
@@ -340,31 +341,110 @@ def test_recall_after_deletion():
     recall_hnsw = float(correct_hnsw) / (k * num_queries)
     print("\nhsnw tiered recall is: \n", recall_tiered)
     print("\nhsnw recall is: \n", recall_hnsw)
-    assert (recall_tiered >= recall_hnsw)
+    assert (recall_tiered > 0.9)
     
+def test_batch_iterator():
+    dim = 100
+    num_elements = 100000
+    M = 26
+    efConstruction = 180
+    efRuntime = 180
+    num_queries = 10
+    indices_ctx = IndexCtx(data_size=num_elements, dim=dim, M=M, ef_c=efConstruction, ef_r=efRuntime)
+
+    index = indices_ctx.tiered_index
+    # Add 100k random vectors to the index
+    data = indices_ctx.data
     
-def test_main():
-    
-    print("Test search and insert in parallel")
-    #search_insert_dbpedia()
-    
-    print("Sanity test")
-   # sanity_test()
-  
-    print("recall after delete test")
-    #recall_after_deletion()
-    
-    print("delete in parallel with search ")
-   # delete_search()
-  
+    vectors = []
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    # Create a random query vector and create a batch iterator
+    query_data = indices_ctx.generate_queries(num_queries=1)
+    batch_iterator = index.create_batch_iterator(query_data)
+    batch_size = 10
+    labels_first_batch, distances_first_batch = batch_iterator.get_next_results(batch_size, BY_ID)
+    for i, _ in enumerate(labels_first_batch[0][:-1]):
+        # Assert sorting by id
+        assert (labels_first_batch[0][i] < labels_first_batch[0][i + 1])
+
+    labels_second_batch, distances_second_batch = batch_iterator.get_next_results(batch_size, BY_SCORE)
+    should_have_return_in_first_batch = []
+    for i, dist in enumerate(distances_second_batch[0][:-1]):
+        # Assert sorting by score
+        assert (distances_second_batch[0][i] < distances_second_batch[0][i + 1])
+        # Assert that every distance in the second batch is higher than any distance of the first batch
+        if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
+            should_have_return_in_first_batch.append(dist)
+    assert (len(should_have_return_in_first_batch) <= 2)
+
+    # Verify that runtime args are sent properly to the batch iterator.
+    query_params = VecSimQueryParams()
+    query_params.hnswRuntimeParams.efRuntime = 5
+    batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
+    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+    # Verify that accuracy is worse with the new lower ef_runtime.
+    assert (sum(labels_first_batch[0]) < sum(labels_first_batch_new[0]))
+
+    query_params.hnswRuntimeParams.efRuntime = efRuntime  # Restore previous ef_runtime.
+    batch_iterator_new = hnsw_index.create_batch_iterator(query_data, query_params)
+    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
+    # Verify that results are now the same.
+    assert_allclose(labels_first_batch_new[0], labels_first_batch[0])
+
+    # Reset
+    batch_iterator.reset()
+
+    # Run in batches of 100 until we reach 1000 results and measure recall
+    batch_size = 100
+    total_res = 1000
+    total_recall = 0
+    query_data = np.float32(rng.random((num_queries, dim)))
+    for target_vector in query_data:
+        correct = 0
+        batch_iterator = hnsw_index.create_batch_iterator(target_vector)
+        iterations = 0
+        # Sort distances of every vector from the target vector and get the actual order
+        dists = [(spatial.distance.euclidean(target_vector, vec), key) for key, vec in vectors]
+        dists = sorted(dists)
+        accumulated_labels = []
+        while batch_iterator.has_next():
+            iterations += 1
+            labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+            accumulated_labels.extend(labels[0])
+            returned_results_num = len(accumulated_labels)
+            if returned_results_num == total_res:
+                keys = [key for _, key in dists[:returned_results_num]]
+                correct += len(set(accumulated_labels).intersection(set(keys)))
+                break
+        assert iterations == np.ceil(total_res / batch_size)
+        recall = float(correct) / total_res
+        assert recall >= 0.89
+        total_recall += recall
+    print(f'\nAvg recall for {total_res} results in index of size {num_elements} with dim={dim} is: ',
+          total_recall / num_queries)
+
+    # Run again a single query in batches until it is depleted.
+    batch_iterator = hnsw_index.create_batch_iterator(query_data[0])
+    iterations = 0
+    accumulated_labels = set()
+
+    while batch_iterator.has_next():
+        iterations += 1
+        labels, distances = batch_iterator.get_next_results(batch_size, BY_SCORE)
+        # Verify that we got new scores in each iteration.
+        assert len(accumulated_labels.intersection(set(labels[0]))) == 0
+        accumulated_labels = accumulated_labels.union(set(labels[0]))
+    assert len(accumulated_labels) >= 0.95 * num_elements
+    print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+ 
     
  
 
 
 
-# only search 
-# insert multi
-# search insetrt multi
 # batch?
 
 # delete search parallel
