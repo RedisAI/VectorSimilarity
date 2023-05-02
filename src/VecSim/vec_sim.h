@@ -209,9 +209,9 @@ void VecSim_SetLogCallbackFunction(logCallbackFunction callback);
  * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
  * background jobs, or insert/delete inplace.
  *
- * @param mode VecSimWriteMode to mode to write in.
+ * @param mode VecSimWriteMode the mode in which we add/remove vectors (async or in-place).
  */
-void VecSim_SetInPlaceWriteMode(VecSimWriteMode mode);
+void VecSim_SetWriteMode(VecSimWriteMode mode);
 
 #ifdef __cplusplus
 }

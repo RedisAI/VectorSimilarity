@@ -1999,7 +1999,7 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
     auto allocator = tiered_index->getAllocator();
 
-    VecSim_SetInPlaceWriteMode(VecSim_WriteInPlace);
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
     // Validate that the vector was inserted directly to the HNSW index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
@@ -2031,7 +2031,7 @@ TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
     auto allocator = tiered_index->getAllocator();
-    VecSim_SetInPlaceWriteMode(VecSim_WriteAsync);
+    VecSim_SetWriteMode(VecSim_WriteAsync);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
@@ -2052,7 +2052,7 @@ TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
     }
 
     // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
-    VecSim_SetInPlaceWriteMode(VecSim_WriteInPlace);
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
     EXPECT_LT(tiered_index->backendIndex->indexSize(), n);
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T vector[dim];
@@ -2065,7 +2065,7 @@ TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
 
     // Now delete the last n inserted vectors of the index using async jobs.
-    VecSim_SetInPlaceWriteMode(VecSim_WriteAsync);
+    VecSim_SetWriteMode(VecSim_WriteAsync);
     run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
         thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
@@ -2077,7 +2077,7 @@ TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
 
     // Insert INPLACE another n vector (instead of the ones that were deleted).
-    VecSim_SetInPlaceWriteMode(VecSim_WriteInPlace);
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T vector[dim];
         for (size_t j = 0; j < dim; j++) {

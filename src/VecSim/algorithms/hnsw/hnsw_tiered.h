@@ -112,7 +112,7 @@ private:
     // ownership (we do it right after we update the HNSW global data and receive the new state).
     template <bool releaseFlatGuard>
     void insertVectorToHNSW(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
-                            DataType *blob);
+                            const void *blob);
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -325,7 +325,7 @@ void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_
 template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
-    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, DataType *blob) {
+    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
     AddVectorCtx state = {0};
@@ -553,7 +553,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         auto hnsw_index = this->getHNSWIndex();
         // Insert vector directly to HNSW (since flat buffer guard was not held, no need to release
         // it internally).
-        this->insertVectorToHNSW<false>(hnsw_index, label, (DataType *)blob);
+        this->insertVectorToHNSW<false>(hnsw_index, label, blob);
         this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
         return 1;
     }

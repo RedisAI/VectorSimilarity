@@ -61,7 +61,8 @@ public:
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
 
-    static VecSimWriteMode getWriteMode() { return asyncWriteMode; }
+    // Return the current state of the global write mode (async/in-place).
+    static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 };
 
 template <typename DataType, typename DistType>
