@@ -12,6 +12,8 @@
 /**
  * An abstract class for performing search in batches. Every index type should implement its own
  * batch iterator class.
+ * A batch iterator instance is NOT meant to be shared between threads, but the iterated index can
+ * be and in this case the iterator should be able to iterate the index concurrently and safely.
  */
 struct VecSimBatchIterator : public VecsimBaseObject {
 private:

@@ -34,6 +34,10 @@ public:
 
     inline size_t indexLabelCount() const override { return this->count; }
     std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) override;
+
+    // We call this when we KNOW that the label exists in the index.
+    idType getIdOfLabel(labelType label) const { return labelToIdLookup.find(label)->second; }
+
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
