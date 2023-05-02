@@ -336,26 +336,31 @@ int tiered_index_mock::update_mem_callback(void *mem_ctx, size_t mem) {
     return VecSim_OK;
 }
 
+// A single iteration of the thread main loop.
+void tiered_index_mock::thread_iteration(JobQueue &jobQ, bool *run_thread) {
+    std::unique_lock<std::mutex> lock(queue_guard);
+    // Wake up and acquire the lock (atomically) ONLY if the job queue is not empty at that
+    // point, or if the thread should not run anymore (and quit in that case).
+    queue_cond.wait(lock, [&jobQ, &run_thread]() { return !jobQ.empty() || (run_thread && !*run_thread); });
+    if (run_thread && !*run_thread)
+        return;
+    auto managed_job = jobQ.front();
+    jobQ.pop();
+    lock.unlock();
+    // Upgrade the index weak reference to a strong ref while we run the job over the index.
+    if (auto temp_ref = managed_job.index_weak_ref.lock()) {
+        managed_job.job->Execute(managed_job.job);
+    }
+    // Free the job.
+    AsyncJobDestructor(managed_job.job);
+}
+
 // Main loop for background worker threads that execute the jobs form the job queue.
 // run_thread uses as a signal to the thread that indicates whether it should keep running or
 // stop and terminate the thread.
 void tiered_index_mock::thread_main_loop(JobQueue &jobQ, bool &run_thread) {
     while (run_thread) {
-        std::unique_lock<std::mutex> lock(queue_guard);
-        // Wake up and acquire the lock (atomically) ONLY if the job queue is not empty at that
-        // point, or if the thread should not run anymore (and quit in that case).
-        queue_cond.wait(lock, [&jobQ, &run_thread]() { return !jobQ.empty() || !run_thread; });
-        if (!run_thread)
-            return;
-        auto managed_job = jobQ.front();
-        jobQ.pop();
-        lock.unlock();
-        // Upgrade the index weak reference to a strong ref while we run the job over the index.
-        if (auto temp_ref = managed_job.index_weak_ref.lock()) {
-            managed_job.job->Execute(managed_job.job);
-        }
-        // Free the job.
-        AsyncJobDestructor(managed_job.job);
+        thread_iteration(jobQ, &run_thread);
     }
 }
 

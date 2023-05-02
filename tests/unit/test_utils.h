@@ -192,6 +192,7 @@ extern std::vector<std::thread> thread_pool;
 extern std::mutex queue_guard;
 extern std::condition_variable queue_cond;
 
+void thread_iteration(JobQueue &jobQ, bool *run_thread = nullptr);
 void thread_main_loop(JobQueue &jobQ, bool &run_thread);
 
 void thread_pool_join(JobQueue &jobQ, bool &run_thread);
