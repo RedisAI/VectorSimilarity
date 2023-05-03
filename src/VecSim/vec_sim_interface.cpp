@@ -15,7 +15,9 @@ timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { 
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
 
 #ifdef BUILD_TESTS
+static inline void Vecsim_Log_DO_NOTHING(void *ctx, const char *message) {}
+
 void VecSimIndexInterface::resetLogCallbackFunction() {
-    VecSimIndexInterface::logCallback = Vecsim_Log;
+    VecSimIndexInterface::logCallback = Vecsim_Log_DO_NOTHING;
 }
 #endif

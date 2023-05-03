@@ -428,6 +428,8 @@ public:
             ThreadParams params(run_thread, executions_status, i, jobQueue);
             thread_pool.emplace_back(thread_main_loop, params);
         }
+
+        ResetLogCB();
     }
 
     virtual ~PyTIEREDIndex() = 0;
@@ -451,7 +453,7 @@ public:
 
     static void log_flat_buffer_size(void *ctx, const char *msg) {
         auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
-        knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexSize();
+        knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexLabelCount();
     }
     void SetKNNLogCtx() {
         knnLogCtx.flat_index = getFlatBuffer();
@@ -465,7 +467,7 @@ public:
             return knnLogCtx.curr_flat_size;
         }
 
-        return getFlatBuffer()->indexSize();
+        return getFlatBuffer()->indexLabelCount();
     }
 
     void ResetLogCB() { this->index->resetLogCallbackFunction(); }
@@ -473,7 +475,10 @@ public:
     static size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
 };
 
-PyTIEREDIndex::~PyTIEREDIndex() { thread_pool_terminate(jobQueue, run_thread); }
+PyTIEREDIndex::~PyTIEREDIndex() {
+    thread_pool_terminate(jobQueue, run_thread);
+    ResetLogCB();
+}
 class PyTIERED_HNSWIndex : public PyTIEREDIndex {
 public:
     explicit PyTIERED_HNSWIndex(const HNSWParams &hnsw_params,

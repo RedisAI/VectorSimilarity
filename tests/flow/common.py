@@ -46,9 +46,12 @@ def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200,
 def expected_speedup(expected_parallel_rate, n_threads):
     return 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)
 
-def bytes_to_giga(bytes, ndigits = 3):
-    return round(bytes/pow(10,9), ndigits)
+def bytes_to_mega(bytes, ndigits = 3):
+    return round(bytes/pow(10,6), ndigits)
 
 def round_(f_value, ndigits = 2):
     return round(f_value, ndigits)
-    
+
+
+def round_ms(f_value, ndigits = 2):
+    return round(f_value * 1000, ndigits)  
