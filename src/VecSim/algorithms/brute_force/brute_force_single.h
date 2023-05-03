@@ -116,13 +116,6 @@ template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_data, labelType label,
                                                           void *auxiliaryCtx) {
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
-
     auto optionalID = this->labelToIdLookup.find(label);
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {

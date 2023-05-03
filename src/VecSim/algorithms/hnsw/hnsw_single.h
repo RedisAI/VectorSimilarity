@@ -47,7 +47,7 @@ public:
         auto id = label_lookup_.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+        memcpy(vec.data(), this->getDataByInternalId(id), this->data_size);
         vectors_output.push_back(vec);
     }
 #endif
@@ -179,9 +179,7 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                        VecSimQueryParams *queryParams) const {
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
+
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);
