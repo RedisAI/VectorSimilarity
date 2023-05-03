@@ -31,27 +31,28 @@ private:
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
+    auto index = INDICES[st.range(0)];
     size_t index_size = N_VECTORS;
-    size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t initial_label_count = index->indexLabelCount();
 
     // In a single vector per label index, index size should equal label count.
     size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
-    size_t memory_delta = 0;
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
 
+    size_t memory_delta = index->getAllocationSize();
     // Add a new label from the test set in every iteration.
     for (auto _ : st) {
         // Add one label
         for (labelType vec = 0; vec < vec_per_label; ++vec) {
-            memory_delta += VecSimIndex_AddVector(
-                INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(), label);
+            VecSimIndex_AddVector(index, QUERIES[added_vec_count % N_QUERIES].data(), label);
         }
         added_vec_count += vec_per_label;
         label++;
     }
+    memory_delta = INDICES[st.range(0)]->getAllocationSize() - memory_delta;
 
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;

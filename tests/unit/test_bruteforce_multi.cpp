@@ -1126,7 +1126,8 @@ TYPED_TEST(BruteForceMultiTest, testSizeEstimation) {
     ASSERT_EQ(estimation, actual);
 
     estimation = EstimateElementSize(params) * bs;
-    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    actual = index->getAllocationSize() - actual; // get the delta
 
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
