@@ -35,9 +35,6 @@ protected:
     void *jobQueueCtx; // External context to be sent to the submit callback.
     SubmitCB SubmitJobsToQueue;
 
-    void *memoryCtx;
-    UpdateMemoryCB UpdateIndexMemory;
-
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
 
@@ -51,10 +48,10 @@ protected:
 
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) {
         vecsim_stl::vector<JobCallback> callbacks(jobs.size(), this->allocator);
-        vecsim_stl::vector<JobCallback> destructors(jobs.size(), this->allocator);
+        vecsim_stl::vector<JobCallback> destructors(jobs.size(), AsyncJobDestructor,
+                                                    this->allocator);
         for (size_t i = 0; i < jobs.size(); i++) {
             callbacks[i] = jobs[i]->Execute;
-            destructors[i] = AsyncJobDestructor;
         }
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 destructors.data(), jobs.size());
@@ -67,7 +64,6 @@ public:
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb),
           flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {

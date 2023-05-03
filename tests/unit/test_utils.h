@@ -181,7 +181,6 @@ struct SearchJobMock : public AsyncJob {
 using JobQueue = std::queue<RefManagedJob>;
 int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
                     JobCallback *freeCBs, size_t jobs_len);
-int update_mem_callback(void *mem_ctx, size_t mem);
 
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;

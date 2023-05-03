@@ -202,7 +202,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -210,7 +209,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
     auto *repair_job = reinterpret_cast<HNSWRepairJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
     job_index->executeRepairJob(repair_job);
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -513,7 +511,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     hnsw_index->repairNodeConnections(job->node_id, job->level);
 
     this->mainIndexGuard.unlock_shared();
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 /******************** Index API ****************************************/
@@ -533,7 +530,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
             : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -648,7 +644,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
     // Insert job to the queue and signal the workers' updater.
     this->submitSingleJob(new_insert_job);
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return ret;
 }
 
@@ -700,7 +695,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         this->mainIndexGuard.unlock();
     }
 
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return num_deleted_vectors;
 }
 
