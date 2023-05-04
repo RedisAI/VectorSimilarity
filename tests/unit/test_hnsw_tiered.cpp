@@ -337,8 +337,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
             jobQ.front().job->Execute(jobQ.front().job);
             successful_executions++;
         }
-        delete jobQ.front().job;
-        jobQ.pop();
+        jobQ.kick();
     };
     std::thread t1(run_fn);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -961,6 +960,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
 
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
+    auto unhandledJobs = std::vector<AsyncJob *>(3);
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
@@ -975,6 +975,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs[0]->deleted_id, 0);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 1);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+    unhandledJobs.push_back(jobQ.front().job);
     jobQ.pop();
 
     // Insert another vector under the label (1) that has not been deleted.
@@ -989,9 +990,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(jobQ.size(), 2);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 0);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+    unhandledJobs.push_back(jobQ.front().job);
     jobQ.pop();
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
+    unhandledJobs.push_back(jobQ.front().job);
     jobQ.pop();
     // No new job for deleting 1->2 edge, just another associated swap job for the existing repair
     // job of 1 (in addition to 0, we have 2).
@@ -1009,6 +1012,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 1);
 
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
+
+    // Clean up.
+    for (auto job : unhandledJobs) {
+        delete job;
+    }
     delete index_ctx;
 }
 
@@ -1049,7 +1057,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     while (jobQ.size() > 1) {
         // First we should have jobs for repairing nodes in level 0.
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
-        jobQ.pop();
+        jobQ.kick();
     }
 
     // The last job should be repairing the single neighbor in level 1.
@@ -1114,8 +1122,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
             // still pending and avoid creating new jobs for nodes that already been repaired
             // as they were pointing to deleted elements.
             tiered_index->idToRepairJobs.erase(repair_node_id);
-            delete jobQ.front().job;
-            jobQ.pop();
+            jobQ.kick();
         }
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
     }
@@ -1149,7 +1156,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
     delete index_ctx;
     EXPECT_EQ(jobQ.size(), 1);
     EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
-    jobQ.pop();
+    jobQ.kick();
 
     // Recreate the index with a new ctx.
     index_ctx = new IndexExtCtx();
@@ -1609,11 +1616,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     ASSERT_EQ(tiered_index->indexSize(), 2);
     tiered_index->labelToInsertJobs.clear();
 
-    // Clean pending insert jobs.
-    while (!jobQ.empty()) {
-        delete jobQ.front().job;
-        jobQ.pop();
-    }
     delete index_ctx;
 }
 
