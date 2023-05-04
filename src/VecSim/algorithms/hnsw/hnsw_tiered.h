@@ -167,7 +167,7 @@ public:
                     BruteForceIndex<DataType, DistType> *bf_index,
                     const TieredIndexParams &tieredParams,
                     std::shared_ptr<VecSimAllocator> allocator);
-    virtual ~TieredHNSWIndex() = default;
+    virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
     int deleteVector(labelType label) override;
@@ -269,9 +269,11 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());
     for (auto &it : idToSwapJob) {
-        if (it.second->pending_repair_jobs_counter.load() == 0) {
+        auto *swap_job = it.second;
+        if (swap_job->pending_repair_jobs_counter.load() == 0) {
             // Swap job is ready for execution - execute and delete it.
-            this->executeSwapJob(it.second, idsToRemove);
+            this->executeSwapJob(swap_job, idsToRemove);
+            delete swap_job;
         }
     }
     for (idType id : idsToRemove) {
@@ -530,6 +532,15 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
             : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
+}
+
+template <typename DataType, typename DistType>
+TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
+    // Delete all the pending swap jobs.
+    // We need to delete them ourselves because they are not passed to any external queue.
+    for (auto &it : this->idToSwapJob) {
+        delete it.second;
+    }
 }
 
 template <typename DataType, typename DistType>

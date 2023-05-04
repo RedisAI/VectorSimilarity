@@ -20,7 +20,10 @@ struct AsyncJob : public VecsimBaseObject {
         : VecsimBaseObject(allocator), jobType(type), Execute(callback), index(index_ref) {}
 };
 
-static void AsyncJobDestructor(AsyncJob *job) { delete job; }
+static void AsyncJobDestructor(AsyncJob *job) {
+    auto allocator = job->getAllocator();
+    delete job;
+}
 
 // All read operations (including KNN, range, batch iterators and get-distance-from) are guaranteed
 // to consider all vectors that were added to the index before the query was submitted. The results
