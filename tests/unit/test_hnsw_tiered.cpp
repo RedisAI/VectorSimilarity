@@ -960,7 +960,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
 
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    auto unhandledJobs = std::vector<AsyncJob *>(3);
+    auto unhandledJobs = std::vector<AsyncJob *>();
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
