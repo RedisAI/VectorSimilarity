@@ -178,7 +178,18 @@ struct SearchJobMock : public AsyncJob {
     ~SearchJobMock() { this->allocator->free_allocation(query); }
 };
 
-using JobQueue = std::queue<RefManagedJob>;
+struct JobQueue : public std::queue<RefManagedJob> {
+    // Pops and destroys the job at the front of the queue.
+    inline void kick() {
+        AsyncJobDestructor(this->front().job);
+        this->pop();
+    }
+    ~JobQueue() {
+        while (!this->empty()) {
+            this->kick();
+        }
+    }
+};
 int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
                     JobCallback *freeCBs, size_t jobs_len);
 
