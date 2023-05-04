@@ -314,6 +314,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         my_index->backendIndex->addVector(vector, my_index->backendIndex->indexSize());
     };
 
+    std::atomic_int successful_executions(0);
     auto job1 =
         new (allocator) AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, dummy_job, tiered_index);
     auto job2 =
@@ -325,7 +326,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
     ASSERT_EQ(jobQ.size(), 2);
 
     // Execute the job from the queue asynchronously, delete the index in the meantime.
-    auto run_fn = [&jobQ]() {
+    auto run_fn = [&jobQ, &successful_executions]() {
         // Create a temporary strong reference of the index from the weak reference that the
         // job holds, to ensure that the index is not deleted while the job is running.
         if (auto temp_ref = jobQ.front().index_weak_ref.lock()) {
@@ -334,6 +335,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
             EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 2);
 
             jobQ.front().job->Execute(jobQ.front().job);
+            successful_executions++;
         }
         delete jobQ.front().job;
         jobQ.pop();
@@ -346,15 +348,16 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
     EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1);
     t1.join();
     // Expect that the first job will succeed.
-    size_t cur_mem = allocator->getAllocationSize();
-    ASSERT_GE(cur_mem, initial_mem);
+    ASSERT_EQ(successful_executions, 1);
 
     // The second job should not run, since the weak reference is not supposed to become a
     // strong references now.
+    ASSERT_EQ(jobQ.size(), 1);
     ASSERT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
     std::thread t2(run_fn);
     t2.join();
-    ASSERT_EQ(allocator->getAllocationSize(), cur_mem);
+    // Expect that the second job is ot successful.
+    ASSERT_EQ(successful_executions, 1);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, insertJob) {
@@ -386,8 +389,7 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
     ASSERT_EQ(insertion_job->id, 0);
     ASSERT_EQ(insertion_job->jobType, HNSW_INSERT_VECTOR_JOB);
 
-    insertion_job->Execute(insertion_job);
-    delete insertion_job;
+    thread_iteration(jobQ);
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
@@ -945,7 +947,6 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     ASSERT_EQ(tiered_index->indexSize(), 4);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
-    jobQ.pop();
 
     delete index_ctx;
 }
