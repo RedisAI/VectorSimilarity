@@ -190,8 +190,9 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     case VecSimAlgo_HNSWLIB:
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
         break;
-    default:
-        assert(false && "Unsupported backend algorithm");
+    case VecSimAlgo_BF:
+    case VecSimAlgo_TIERED:
+        break;
     }
 
     info.tieredInfo.backendCommonInfo = backendInfo.commonInfo;

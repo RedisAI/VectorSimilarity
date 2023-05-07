@@ -70,7 +70,7 @@ protected:
         info.blockSize = this->blockSize;
         info.last_mode = this->last_mode;
         info.isMulti = this->isMulti;
-        info.memory = this->allocator->getAllocationSize();
+        info.memory = this->getAllocationSize();
         info.indexSize = this->indexSize();
         info.indexLabelCount = this->indexLabelCount();
         return info;
