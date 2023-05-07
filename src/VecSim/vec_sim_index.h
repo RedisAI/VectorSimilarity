@@ -171,7 +171,7 @@ public:
             .fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
             .fieldType = INFOFIELD_STRING,
             .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.last_mode)}}});
-}
+    }
     const void *processBlob(const void *original_blob, void *processed_blob) const {
         // if the metric is cosine, we need to normalize
         if (this->metric == VecSimMetric_Cosine) {

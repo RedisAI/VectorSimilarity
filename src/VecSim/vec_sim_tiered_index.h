@@ -73,7 +73,7 @@ public:
 
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
-    
+
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams,
                                       VecSimQueryResult_Order order) override;
@@ -241,6 +241,7 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
     return infoIterator;
 };
 
+template <typename DataType, typename DistType>
 VecSimQueryResult_List
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
@@ -310,4 +311,3 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
         }
     }
 }
-

@@ -2803,12 +2803,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
     }
 }
 
-
 TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     size_t n = 1000;
-        HNSWParams params = {.type = TypeParam::get_index_type(),
+    HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
@@ -2816,7 +2815,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
     size_t memory_ctx = 0;
-        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexInfo info = tiered_index->info();
@@ -2902,11 +2901,11 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
     while (!jobQ.empty()) {
-            delete jobQ.front().job;
+        delete jobQ.front().job;
         jobQ.pop();
-        }
-        
-            delete index_ctx;
+    }
+
+    delete index_ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
@@ -2917,13 +2916,13 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
                          .dim = dim,
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
-                         
-   VecSimParams hnsw_params = CreateParams(params);
+
+    VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
     size_t memory_ctx = 0;
-    
-     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
     auto allocator = tiered_index->getAllocator();
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
@@ -3000,8 +2999,8 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     }
     VecSimInfoIterator_Free(infoIterator);
     delete index_ctx;
-    }
-=======
+}
+
 TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
