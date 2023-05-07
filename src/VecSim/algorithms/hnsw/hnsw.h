@@ -231,7 +231,7 @@ public:
     // (this option is used currently for tests).
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
-    inline idType safeGetEntryPointCopy() const;
+    inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
     inline void lockNodeLinks(idType node_id) const;
@@ -1901,9 +1901,9 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
 }
 
 template <typename DataType, typename DistType>
-idType HNSWIndex<DataType, DistType>::safeGetEntryPointCopy() const {
+auto HNSWIndex<DataType, DistType>::safeGetEntryPointState() const {
     std::shared_lock<std::shared_mutex> lock(index_data_guard_);
-    return entrypoint_node_;
+    return std::make_pair(entrypoint_node_, max_level_);
 }
 
 template <typename DataType, typename DistType>
@@ -1911,12 +1911,12 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                                                           VecSimQueryResult_Code *rc) const {
     *rc = VecSim_QueryResult_OK;
 
-    idType curr_element = safeGetEntryPointCopy();
+    auto [curr_element, max_level] = safeGetEntryPointState();
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = max_level_; level > 0 && curr_element != INVALID_ID; level--) {
+    for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;
@@ -2127,7 +2127,10 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
-    if (VecSim_OK != rl.code) {
+    // Although we checked that the index is not empty (cur_element_count == 0), it might be
+    // that another thread deleted all the elements or didn't finish inserting the first element
+    // yet. Anyway, we observed that the index is empty, so we return an empty result list.
+    if (VecSim_OK != rl.code || bottom_layer_ep == INVALID_ID) {
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }
