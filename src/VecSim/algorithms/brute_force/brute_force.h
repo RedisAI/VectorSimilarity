@@ -46,8 +46,8 @@ public:
     }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                              VecSimQueryParams *queryParams) override;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams) override;
+    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                              VecSimQueryParams *queryParams) override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -267,14 +267,6 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         return rl;
     }
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-
-        queryBlob = normalized_blob;
-    }
-
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::abstract_priority_queue<DistType, labelType> *TopCandidates =
         getNewMaxPriorityQueue();
@@ -319,13 +311,6 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
-
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, queryBlob, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        queryBlob = normalized_blob;
-    }
 
     // Compute scores in every block and save results that are within the range.
     auto res_container =
@@ -382,9 +367,6 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto *queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
     // Ownership of queryBlobCopy moves to BF_BatchIterator that will free it at the end.
     return newBatchIterator_Instance(queryBlobCopy, queryParams);
 }
