@@ -108,7 +108,7 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
 
 TYPED_TEST(BruteForceTest, resize_and_align_index) {
     size_t dim = 4;
-    size_t n = 15;
+    size_t n = 14;
     size_t blockSize = 10;
 
     BFParams params = {
@@ -134,24 +134,26 @@ TYPED_TEST(BruteForceTest, resize_and_align_index) {
 
     // Add another vector, since index size equals to the capacity, this should cause resizing
     // (to fit a multiplication of block_size).
-    GenerateAndAddVector<TEST_DATA_T>(index, dim, n + 1);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
     // Check new capacity size, should be blockSize * 2.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
+    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), 2 * blockSize);
 
-    // Now size = n + 1 = 16, capacity = 2* bs = 20. Test capacity overflow again
-    // to check that it stays aligned with blocksize.
+    // Now size = n + 1 (= 15), capacity = 2 * bs (= 20). Test capacity overflow again
+    // to check that it stays aligned with block size.
 
     size_t add_vectors_count = 8;
     for (size_t i = 0; i < add_vectors_count; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, n + 2 + i, i);
     }
 
-    // Size should be n + 1 + 8 = 24.
+    // Size should be n + 1 + 8 (= 25).
     ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1 + add_vectors_count);
 
     // Check new capacity size, should be blockSize * 3.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 3 * blockSize);
+    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), 3 * blockSize);
 
     VecSimIndex_Free(index);
 }
@@ -170,7 +172,7 @@ TYPED_TEST(BruteForceTest, resize_and_align_index_largeInitialCapacity) {
     BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // add up to blocksize + 1 = 3 + 1 = 4
+    // Add up to block size + 1 = 3 + 1 = 4
     for (size_t i = 0; i < bs + 1; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
@@ -190,6 +192,7 @@ TYPED_TEST(BruteForceTest, resize_and_align_index_largeInitialCapacity) {
     // 10  - 3 - 10 % 3 (1) = 6
     idToLabelMapping_size = bf_index->idToLabelMapping.size();
     ASSERT_EQ(idToLabelMapping_size, n - bs - n % bs);
+    ASSERT_EQ(idToLabelMapping_size, bf_index->idToLabelMapping.capacity());
 
     // Delete all the vectors to decrease idToLabelMapping size by another bs.
     size_t i = 0;
@@ -198,19 +201,24 @@ TYPED_TEST(BruteForceTest, resize_and_align_index_largeInitialCapacity) {
         ++i;
     }
     ASSERT_EQ(bf_index->idToLabelMapping.size(), bs);
+    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), bs);
+
     // Add and delete a vector to achieve:
     // size % block_size == 0 && size + bs <= idToLabelMapping_size(3).
     // idToLabelMapping_size should be resized to zero.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     VecSimIndex_DeleteVector(index, 0);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);
+    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), 0);
 
     // Do it again. This time after adding a vector idToLabelMapping_size is increased by bs.
     // Upon deletion it will be resized to zero again.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), bs);
+    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), bs);
     VecSimIndex_DeleteVector(index, 0);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 0);
+    ASSERT_EQ(bf_index->idToLabelMapping.capacity(), 0);
 
     VecSimIndex_Free(index);
 }
