@@ -57,13 +57,14 @@ public:
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     inline const labelType getLabelByInternalId(idType internal_id) const {
-        return idToLabelMapping[internal_id];
+        return idToLabelMapping.at(internal_id);
     }
     // Remove a specific vector that is stored under a label from the index by its internal id.
     virtual int deleteVectorById(labelType label, idType id) = 0;
-    // Remove a vector and return a map between internal ids and the original internal ids that they
-    // hold AFTER the removals and swaps.
-    virtual std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) = 0;
+    // Remove a vector and return a map between internal ids and the original internal ids of the
+    // vector that they hold as a result of the overall removals and swaps, along with its label.
+    virtual std::unordered_map<idType, std::pair<idType, labelType>>
+    deleteVectorAndGetUpdatedIds(labelType label) = 0;
     // Check if a certain label exists in the index.
     virtual inline bool isLabelExists(labelType label) = 0;
     // Return a set of all labels that are stored in the index (helper for computing label count
@@ -160,6 +161,7 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         size_t last_block_vectors_count = id % this->blockSize;
         this->idToLabelMapping.resize(
             idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
+        this->idToLabelMapping.shrink_to_fit();
     }
 
     // add label to idToLabelMapping
@@ -210,10 +212,11 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         // Resize and align the idToLabelMapping.
         size_t idToLabel_size = idToLabelMapping.size();
         // If the new size is smaller by at least one block comparing to the idToLabelMapping
-        // align to be a multiplication of blocksize  and resize by one block.
+        // align to be a multiplication of block size and resize by one block.
         if (this->count + this->blockSize <= idToLabel_size) {
             size_t vector_to_align_count = idToLabel_size % this->blockSize;
             this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
+            this->idToLabelMapping.shrink_to_fit();
         }
     }
 }
