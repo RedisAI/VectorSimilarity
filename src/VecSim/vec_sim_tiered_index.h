@@ -85,6 +85,25 @@ public:
                    : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
 
+    virtual inline int64_t getAllocationSize() const override {
+        return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
+               this->frontendIndex->getAllocationSize();
+    }
+
+    virtual VecSimIndexInfo info() const override;
+    virtual VecSimInfoIterator *infoIterator() const override;
+
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                      VecSimQueryParams *queryParams,
+                                      VecSimQueryResult_Order order) override;
+
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
+        // For now, decide according to the bigger index.
+        return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
+                   ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
+                   : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
+    }
+
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
