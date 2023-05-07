@@ -27,13 +27,15 @@ protected:
     TieredHNSWIndex<data_t, dist_t> *CreateTieredHNSWIndex(VecSimParams &hnsw_params,
                                                            JobQueue *jobQ, IndexExtCtx *ctx,
                                                            size_t *memory_ctx,
-                                                           size_t swap_job_threshold = 0) {
+                                                           size_t swap_job_threshold = 0,
+                                                           size_t flat_buffer_limit = SIZE_MAX) {
         TieredIndexParams tiered_params = {
             .jobQueue = jobQ,
             .jobQueueCtx = ctx,
             .submitCb = submit_callback,
             .memoryCtx = memory_ctx,
             .UpdateMemCb = update_mem_callback,
+            .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &hnsw_params,
             .specificParams = {TieredHNSWParams{.swapJobThreshold = swap_job_threshold}}};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(
@@ -146,6 +148,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
                                        .submitCb = submit_callback,
                                        .memoryCtx = &memory_ctx,
                                        .UpdateMemCb = update_mem_callback,
+                                       .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &vecsim_hnsw_params};
     VecSimParams params = CreateParams(tiered_params);
     auto *index = VecSimIndex_New(&params);
@@ -221,6 +224,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                                        .submitCb = submit_callback,
                                        .memoryCtx = &memory_ctx,
                                        .UpdateMemCb = update_mem_callback,
+                                       .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &hnsw_params};
     auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
         TieredFactory::NewIndex(&tiered_params));
@@ -2798,4 +2802,262 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
 
         delete index_ctx;
     }
+}
+
+TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    // Validate that the vector was inserted directly to the HNSW index.
+    labelType vec_label = 0;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+
+    // Overwrite inplace - only in single-value mode
+    if (!TypeParam::isMulti()) {
+        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
+        tiered_index->addVector(overwritten_vec, vec_label);
+        ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+        ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+    }
+
+    // Validate that the vector is removed in place.
+    tiered_index->deleteVector(vec_label);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 500;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .M = 32,
+                         .efRuntime = 2 * n};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    // Create and insert vectors one by one async.
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+    size_t n_labels = n / per_label;
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels);
+    }
+
+    // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    EXPECT_LT(tiered_index->backendIndex->indexSize(), n);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
+    }
+    thread_pool_join(jobQ, run_thread);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
+
+    // Now delete the last n inserted vectors of the index using async jobs.
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+    for (size_t i = 0; i < n_labels; i++) {
+        VecSimIndex_DeleteVector(tiered_index, n_labels + i);
+    }
+    // At this point, repair jobs should be executed in the background.
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
+
+    // Insert INPLACE another n vector (instead of the ones that were deleted).
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    // Run twice, at first run we insert non-existing labels, in the second run we overwrite them
+    // (for single-value index only).
+    for (auto overwrite : {0, 1}) {
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            EXPECT_EQ(tiered_index->addVector(vector, i % n_labels + n_labels),
+                      TypeParam::isMulti() ? 1 : 1 - overwrite);
+            // Run a query and see that we only receive ids with label < n_labels+i
+            // (the label that we just inserted), and the first result should be this vector.
+            auto ver_res = [&](size_t label, double score, size_t index) {
+                if (index == 0) {
+                    EXPECT_EQ(label, i % n_labels + n_labels);
+                    EXPECT_DOUBLE_EQ(score, 0);
+                }
+                if (!overwrite) {
+                    ASSERT_LE(label, i + n_labels);
+                }
+            };
+            runTopKSearchTest(tiered_index, vector, 10, ver_res);
+        }
+    }
+
+    thread_pool_join(jobQ, run_thread);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 2 * n_labels);
+
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    // Create tiered index with buffer limit set to 0.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx,
+                                                     DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, 0);
+    auto allocator = tiered_index->getAllocator();
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+
+    // Set the flat limit to 1 and insert another vector - expect it to go to the flat buffer.
+    tiered_index->flatBufferLimit = 1;
+    labelType vec_label = 1;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+
+    // Overwrite the vector, expect removing it from the flat buffer and replace it with the new one
+    // only in single-value mode
+    if (!TypeParam::isMulti()) {
+        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
+        ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
+        ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+        ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+        // The first job in Q should be the invalid overwritten insert vector job.
+        ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+        delete jobQ.front().job;
+        jobQ.pop();
+    }
+
+    // Insert another vector, this one should go directly to HNSW index since the buffer limit has
+    // reached.
+    vec_label = 2;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, 0); // vector is [0,0,0,0]
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 3);
+
+    // Overwrite the vector, expect marking it as deleted in HNSW and insert the new one directly
+    // to HNSW as well.
+    if (!TypeParam::isMulti()) {
+        TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
+        ASSERT_EQ(tiered_index->addVector(overwritten_vec, vec_label), 0);
+        ASSERT_EQ(tiered_index->backendIndex->indexSize(), 3);
+        ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
+        ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 3);
+        ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
+    }
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 500;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .M = 64};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    // Create tiered index with buffer limit set to 100.
+    size_t flat_buffer_limit = 100;
+    auto *tiered_index =
+        this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx,
+                                    DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
+    auto allocator = tiered_index->getAllocator();
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    // Create and insert vectors one by one async. At some point, buffer limit gets full and vectors
+    // are inserted directly to HNSW.
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+    size_t n_labels = n / per_label;
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    // Run twice, at first run we insert non-existing labels, in the second run we overwrite them
+    // (for single-value index only).
+    for (auto overwrite : {0, 1}) {
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T vector[dim];
+            for (size_t j = 0; j < dim; j++) {
+                vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+            }
+            EXPECT_EQ(tiered_index->addVector(vector, i % n_labels),
+                      TypeParam::isMulti() ? 1 : 1 - overwrite);
+            EXPECT_LE(tiered_index->frontendIndex->indexSize(), flat_buffer_limit);
+        }
+    }
+
+    thread_pool_join(jobQ, run_thread);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+
+    delete index_ctx;
 }

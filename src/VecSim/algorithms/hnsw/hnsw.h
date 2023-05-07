@@ -1834,6 +1834,9 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     AddVectorCtx state{};
     if (auxiliaryCtx == nullptr) {
         this->lockIndexDataGuard();
+        if (indexSize() == indexCapacity()) {
+            increaseCapacity();
+        }
         state = storeNewElement(label);
         if (state.currMaxLevel >= state.elementMaxLevel) {
             this->unlockIndexDataGuard();

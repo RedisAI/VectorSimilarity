@@ -36,6 +36,8 @@ protected:
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
 
+    size_t flatBufferLimit;
+
     void submitSingleJob(AsyncJob *job) {
         auto **jobs = array_new<AsyncJob *>(1);
         jobs = array_append(jobs, job);
@@ -50,7 +52,8 @@ public:
         : VecSimIndexInterface(backendIndex_->getAllocator()), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb) {}
+          memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb),
+          flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {
         VecSimIndex_Free(backendIndex);
@@ -59,6 +62,9 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+
+    // Return the current state of the global write mode (async/in-place).
+    static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
 private:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {

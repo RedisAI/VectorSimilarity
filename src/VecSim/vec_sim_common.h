@@ -72,6 +72,9 @@ typedef enum {
 
 typedef struct AsyncJob AsyncJob; // forward declaration.
 
+// Write async/sync mode
+typedef enum { VecSim_WriteAsync, VecSim_WriteInPlace } VecSimWriteMode;
+
 /**
  * Callback signatures for asynchronous tiered index.
  */
@@ -120,6 +123,8 @@ typedef struct {
     void *memoryCtx;            // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
+    size_t flatBufferLimit; // Maximum size allowed for the flat buffer. If flat buffer is full, use
+                            // in-place insertion.
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
     union {
         TieredHNSWParams tieredHnswParams;
