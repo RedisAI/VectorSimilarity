@@ -258,7 +258,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.blockSize);
         } else {
-            ASSERT_TRUE(false);
+            FAIL();
         }
     }
 }
