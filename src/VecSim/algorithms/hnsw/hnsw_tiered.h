@@ -100,7 +100,7 @@ private:
     // label-to-insert-jobs lookup. Also, since deletion a vector triggers swapping of the
     // internal last id with the deleted vector id, here we update the pending insert job(s) for the
     // last id (if needed). This should be called while *flat lock is held* (exclusive lock).
-    void updateInsertJobInternalId(idType prev_id, idType new_id);
+    void updateInsertJobInternalId(idType prev_id, idType new_id, labelType label);
 
     // Helper function for performing in place mark delete of vector(s) associated with a label
     // and creating the appropriate repair jobs for the effected connections. This should be called
@@ -356,11 +356,11 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_id, idType new_id) {
+void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_id, idType new_id,
+                                                                    labelType label) {
     // Update the pending job id, due to a swap that was caused after the removal of new_id.
     assert(new_id != INVALID_ID && prev_id != INVALID_ID);
-    labelType last_idx_label = this->frontendIndex->getLabelByInternalId(prev_id);
-    auto it = this->labelToInsertJobs.find(last_idx_label);
+    auto it = this->labelToInsertJobs.find(label);
     if (it != this->labelToInsertJobs.end()) {
         // There is a pending job for the label of the swapped last id - update its id.
         for (HNSWInsertJob *job_it : it->second) {
@@ -471,11 +471,17 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         if (labelToInsertJobs.at(job->label).empty()) {
             labelToInsertJobs.erase(job->label);
         }
-        // Remove the vector from the flat buffer.
+        // Remove the vector from the flat buffer. This may cause the last vector id to swap with
+        // the deleted id. Hold the label for the last id, so we can later on update its
+        // corresponding job id. Note that after calling deleteVectorById, the last id's label
+        // shouldn't be available, since it is removed from the lookup.
+        labelType last_vec_label =
+            this->frontendIndex->getLabelByInternalId(this->frontendIndex->indexSize() - 1);
         int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
         if (deleted && job->id != this->frontendIndex->indexSize()) {
             // If the vector removal caused a swap with the last id, update the relevant insert job.
-            this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id);
+            this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id,
+                                            last_vec_label);
         }
     }
     this->flatIndexGuard.unlock();
@@ -700,7 +706,9 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             // an example in this function implementation in MULTI index).
             auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
             for (auto &it : updated_ids) {
-                this->updateInsertJobInternalId(it.second, it.first);
+                idType prev_id = it.second.first;
+                labelType updated_vec_label = it.second.second;
+                this->updateInsertJobInternalId(prev_id, it.first, updated_vec_label);
             }
         }
         this->flatIndexGuard.unlock();
