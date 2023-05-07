@@ -2845,7 +2845,7 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     delete index_ctx;
 }
 
-TYPED_TEST(HNSWTieredIndexTest, burstThreadsScenario) {
+TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
     size_t n = 500;
