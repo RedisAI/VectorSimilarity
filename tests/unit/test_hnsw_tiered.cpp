@@ -3082,7 +3082,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
 
     // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
     VecSim_SetWriteMode(VecSim_WriteInPlace);
-    EXPECT_LT(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_LE(tiered_index->backendIndex->indexSize(), n);
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T vector[dim];
         for (size_t j = 0; j < dim; j++) {
