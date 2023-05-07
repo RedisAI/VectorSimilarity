@@ -69,6 +69,17 @@ public:
                                       VecSimQueryParams *queryParams,
                                       VecSimQueryResult_Order order) override;
 
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
+        // For now, decide according to the bigger index.
+        size_t frontend_size = this->frontendIndex->indexSize();
+        size_t backend_size = this->backendIndex->indexSize();
+        return backend_size > frontend_size
+                   ? this->backendIndex->preferAdHocSearch(std::min(subsetSize, backend_size), k,
+                                                           initial_check)
+                   : this->frontendIndex->preferAdHocSearch(std::min(subsetSize, frontend_size), k,
+                                                            initial_check);
+    }
+
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
