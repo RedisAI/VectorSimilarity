@@ -211,7 +211,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
 }
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
-    ASSERT_EQ(16, VecSimInfoIterator_NumberOfFields(infoIter));
+    ASSERT_EQ(17, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -282,6 +282,11 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Block size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.blockSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::HNSW_NUM_MARKED_DELETED)) {
+            // Number of marked deleted.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue,
+                      info.hnswInfo.numberOfMarkedDeletedNodes);
         } else {
             FAIL();
         }

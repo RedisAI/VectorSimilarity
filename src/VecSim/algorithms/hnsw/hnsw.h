@@ -2160,6 +2160,7 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
     info.hnswInfo.max_level = this->getMaxLevel();
     info.hnswInfo.entrypoint = this->getEntryPointLabel();
     info.hnswInfo.visitedNodesPoolSize = this->visited_nodes_handler_pool.getPoolSize();
+    info.hnswInfo.numberOfMarkedDeletedNodes = this->getNumMarkedDeleted();
     return info;
 }
 
@@ -2167,7 +2168,7 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 12;
+    size_t numberOfInfoFields = 13;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{
@@ -2206,6 +2207,11 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
                          .fieldType = INFOFIELD_FLOAT64,
                          .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::HNSW_NUM_MARKED_DELETED,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.numberOfMarkedDeletedNodes}}});
 
     return infoIterator;
 }

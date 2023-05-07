@@ -44,6 +44,7 @@ const char *VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION"
 const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
+const char *VecSimCommonStrings::HNSW_NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
