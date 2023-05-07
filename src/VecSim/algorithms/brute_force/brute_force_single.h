@@ -33,7 +33,8 @@ public:
     }
 
     inline size_t indexLabelCount() const override { return this->count; }
-    std::unordered_map<idType, idType> deleteVectorAndGetUpdatedIds(labelType label) override;
+    std::unordered_map<idType, std::pair<idType, labelType>>
+    deleteVectorAndGetUpdatedIds(labelType label) override;
 
     // We call this when we KNOW that the label exists in the index.
     idType getIdOfLabel(labelType label) const { return labelToIdLookup.find(label)->second; }
@@ -156,10 +157,10 @@ int BruteForceIndex_Single<DataType, DistType>::deleteVector(labelType label) {
 }
 
 template <typename DataType, typename DistType>
-std::unordered_map<idType, idType>
+std::unordered_map<idType, std::pair<idType, labelType>>
 BruteForceIndex_Single<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelType label) {
 
-    std::unordered_map<idType, idType> updated_ids;
+    std::unordered_map<idType, std::pair<idType, labelType>> updated_ids;
     // Find the id to delete.
     auto deleted_label_id_pair = this->labelToIdLookup.find(label);
     if (deleted_label_id_pair == this->labelToIdLookup.end()) {
@@ -172,10 +173,10 @@ BruteForceIndex_Single<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelTy
 
     // Remove the pair of the deleted vector.
     labelToIdLookup.erase(label);
-
-    this->removeVector(id_to_delete);
+    labelType last_id_label = this->idToLabelMapping[this->count - 1];
+    this->removeVector(id_to_delete); // this will decrease this->count and make the swap
     if (id_to_delete != this->count) {
-        updated_ids[id_to_delete] = this->count;
+        updated_ids[id_to_delete] = {this->count, last_id_label};
     }
     return updated_ids;
 }

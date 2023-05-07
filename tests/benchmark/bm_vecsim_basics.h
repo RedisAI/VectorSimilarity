@@ -170,7 +170,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
     int memory_before = INDICES[st.range(0)]->getAllocationSize();
-    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, data_t>*>(INDICES[st.range(0)]);
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(INDICES[st.range(0)]);
     size_t removed_vectors_count = 0;
     std::vector<LabelData> removed_labels_data;
 
@@ -204,7 +204,8 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
         size_t vec_count = removed_labels_data[label_idx].size();
         // Reinsert all the deleted vectors under this label.
         for (size_t vec_idx = 0; vec_idx < vec_count; ++vec_idx) {
-            VecSimIndex_AddVector(tiered_index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
+            VecSimIndex_AddVector(tiered_index, removed_labels_data[label_idx][vec_idx].data(),
+                                  label_idx);
         }
     }
     BM_VecSimGeneral::thread_pool_wait();
