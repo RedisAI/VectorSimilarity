@@ -1601,9 +1601,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
     auto updated_ids = tiered_index->frontendIndex->deleteVectorAndGetUpdatedIds(vec_label_second);
     ASSERT_EQ(updated_ids.size(), 1);
-    ASSERT_EQ(updated_ids.at(1), 2);
+    ASSERT_EQ(updated_ids.at(1).first, 2);
     for (auto &it : updated_ids) {
-        tiered_index->updateInsertJobInternalId(it.second, it.first);
+        tiered_index->updateInsertJobInternalId(it.second.first, it.first, it.second.second);
     }
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first).size(), 2);
@@ -1633,9 +1633,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.erase(vec_label_second), 1);
     updated_ids = tiered_index->frontendIndex->deleteVectorAndGetUpdatedIds(vec_label_second);
     ASSERT_EQ(updated_ids.size(), 1);
-    ASSERT_EQ(updated_ids.at(1), 3);
+    ASSERT_EQ(updated_ids.at(1).first, 3);
     for (auto &it : updated_ids) {
-        tiered_index->updateInsertJobInternalId(it.second, it.first);
+        tiered_index->updateInsertJobInternalId(it.second.first, it.first, it.second.second);
     }
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label_first).size(), 2);
