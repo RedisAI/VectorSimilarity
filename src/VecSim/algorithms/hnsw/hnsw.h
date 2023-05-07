@@ -2249,9 +2249,9 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();
-    if (subsetSize > index_size) {
-        throw std::runtime_error("internal error: subset size cannot be larger than index size");
-    }
+    // Referring to too large subset size as if it was the maximum possible size.
+    subsetSize = std::min(subsetSize, index_size);
+
     size_t d = this->dim;
     size_t M = this->getM();
     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
