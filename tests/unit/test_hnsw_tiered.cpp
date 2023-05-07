@@ -722,7 +722,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         .dim = dim,
         .metric = VecSimMetric_L2,
         .multi = isMulti,
-        .efRuntime = 20,
+        .efRuntime = n,
     };
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
@@ -1106,7 +1106,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     // Delete vectors one by one and run the resulted repair jobs.
     while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
         // Choose the current entry point each time (it should be modified after the deletion).
-        idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointCopy();
+        idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointState().first;
         auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
         auto incoming_neighbors =
             tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
@@ -1114,7 +1114,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
         ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
                   jobQ.size());
-        ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), ep);
+        ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, ep);
 
         // Execute synchronously all the repair jobs for the current deletion.
         while (!jobQ.empty()) {
@@ -1710,7 +1710,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         thread_pool_join(jobQ, run_thread);
 
         EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
-        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+        EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
         // Verify that we have no pending jobs.
         EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
         EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
@@ -1792,7 +1792,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             thread_pool_join(jobQ, run_thread);
 
             EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
-            EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+            EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
             // Verify that we have no pending jobs.
             EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
             EXPECT_EQ(tiered_index->idToRepairJobs.size(), 0);
@@ -1974,7 +1974,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     jobQ.pop();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
-    EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointCopy(), INVALID_ID);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
 
     // Call delete again, this should only trigger the swap and removal of 1
     // (which has already deleted)
@@ -3059,5 +3059,318 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
 
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
+    size_t dim = 4;
+    size_t k = 11;
+    size_t per_label = TypeParam::isMulti() ? 5 : 1;
+
+    size_t n_labels = k * 3;
+    size_t n = n_labels * per_label;
+
+    auto edge_delta = (k - 0.8) * per_label;
+    auto mid_delta = edge_delta / 2;
+    // `range` for querying the "edges" of the index and get k results.
+    double range = dim * edge_delta * edge_delta; // L2 distance.
+    // `half_range` for querying a point in the "middle" of the index and get k results around it.
+    double half_range = dim * mid_delta * mid_delta; // L2 distance.
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = TypeParam::isMulti(),
+        .epsilon = 3.0 * per_label,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t cur_memory_usage, memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    ASSERT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+
+    auto hnsw_index = tiered_index->backendIndex;
+    auto flat_index = tiered_index->frontendIndex;
+
+    TEST_DATA_T query_0[dim];
+    GenerateVector<TEST_DATA_T>(query_0, dim, 0);
+    TEST_DATA_T query_1mid[dim];
+    GenerateVector<TEST_DATA_T>(query_1mid, dim, n / 3);
+    TEST_DATA_T query_2mid[dim];
+    GenerateVector<TEST_DATA_T>(query_2mid, dim, n * 2 / 3);
+    TEST_DATA_T query_n[dim];
+    GenerateVector<TEST_DATA_T>(query_n, dim, n - 1);
+
+    // Search for vectors when the index is empty.
+    runRangeQueryTest(tiered_index, query_0, range, nullptr, 0);
+
+    // Define the verification functions.
+    auto ver_res_0 = [&](size_t id, double score, size_t index) {
+        EXPECT_EQ(id, index);
+        // The expected score is the distance to the first vector of `id` label.
+        auto element = id * per_label;
+        EXPECT_DOUBLE_EQ(score, dim * element * element);
+    };
+
+    auto ver_res_1mid_by_id = [&](size_t id, double score, size_t index) {
+        size_t q_id = query_1mid[0] / per_label;
+        size_t mod = query_1mid[0] - q_id * per_label;
+        // In single value mode, `per_label` is always 1 and `mod` is always 0, so the following
+        // branchings is simply `expected_score = abs(id - q_id)`.
+        // In multi value mode, for ids higher than the query id, the score is the distance to the
+        // first vector of `id` label, and for ids lower than the query id, the score is the
+        // distance to the last vector of `id` label. `mod` is the distance to the first vector of
+        // `q_id` label.
+        double expected_score = 0;
+        if (id > q_id) {
+            expected_score = (id - q_id) * per_label - mod;
+        } else if (id < q_id) {
+            expected_score = (q_id - id) * per_label - (per_label - mod - 1);
+        }
+        expected_score = expected_score * expected_score * dim;
+        EXPECT_DOUBLE_EQ(score, expected_score);
+    };
+
+    auto ver_res_2mid_by_id = [&](size_t id, double score, size_t index) {
+        size_t q_id = query_2mid[0] / per_label;
+        size_t mod = query_2mid[0] - q_id * per_label;
+        // In single value mode, `per_label` is always 1 and `mod` is always 0, so the following
+        // branchings is simply `expected_score = abs(id - q_id)`.
+        // In multi value mode, for ids higher than the query id, the score is the distance to the
+        // first vector of `id` label, and for ids lower than the query id, the score is the
+        // distance to the last vector of `id` label. `mod` is the distance to the first vector of
+        // `q_id` label.
+        double expected_score = 0;
+        if (id > q_id) {
+            expected_score = (id - q_id) * per_label - mod;
+        } else if (id < q_id) {
+            expected_score = (q_id - id) * per_label - (per_label - mod - 1);
+        }
+        expected_score = expected_score * expected_score * dim;
+        EXPECT_DOUBLE_EQ(score, expected_score);
+    };
+
+    auto ver_res_1mid_by_score = [&](size_t id, double score, size_t index) {
+        size_t q_id = query_1mid[0] / per_label;
+        EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
+        ver_res_1mid_by_id(id, score, index);
+    };
+
+    auto ver_res_2mid_by_score = [&](size_t id, double score, size_t index) {
+        size_t q_id = query_2mid[0] / per_label;
+        EXPECT_EQ(std::abs(int(id - q_id)), (index + 1) / 2);
+        ver_res_2mid_by_id(id, score, index);
+    };
+
+    auto ver_res_n = [&](size_t id, double score, size_t index) {
+        EXPECT_EQ(id, n_labels - 1 - index);
+        auto element = index * per_label;
+        EXPECT_DOUBLE_EQ(score, dim * element * element);
+    };
+
+    // Insert n/2 vectors to the main index.
+    for (size_t i = 0; i < (n + 1) / 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i / per_label, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), (n + 1) / 2);
+    ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize());
+
+    // Search for `range` with the flat index empty.
+    cur_memory_usage = allocator->getAllocationSize();
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
+    // Insert n/2 vectors to the flat index.
+    for (size_t i = (n + 1) / 2; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i / per_label, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->indexSize(), hnsw_index->indexSize() + flat_index->indexSize());
+
+    cur_memory_usage = allocator->getAllocationSize();
+    // Search for `range` so all the vectors will be from the HNSW index.
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+    // Search for `range` so all the vectors will be from the flat index.
+    runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
+    // Search for `range` so some of the results will be from the main and some from the flat index.
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
+    // Add some overlapping vectors to the main and flat index.
+    // adding directly to the underlying indexes to avoid jobs logic.
+    // The main index will have vectors 0 - 2n/3 and the flat index will have vectors n/3 - n
+    for (size_t i = n / 3; i < n / 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat_index, dim, i / per_label, i);
+    }
+    for (size_t i = n / 2; i < n * 2 / 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, i / per_label, i);
+    }
+
+    cur_memory_usage = allocator->getAllocationSize();
+    // Search for `range` so all the vectors will be from the main index.
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_0, range, ver_res_0, k, BY_SCORE);
+    // Search for `range` so all the vectors will be from the flat index.
+    runRangeQueryTest(tiered_index, query_n, range, ver_res_n, k, BY_SCORE);
+    // Search for `range` so some of the results will be from the main and some from the flat index.
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_1mid, half_range, ver_res_1mid_by_id, k, BY_ID);
+    runRangeQueryTest(tiered_index, query_2mid, half_range, ver_res_2mid_by_id, k, BY_ID);
+    // Memory usage should not change.
+    ASSERT_EQ(allocator->getAllocationSize(), cur_memory_usage);
+
+    // // // // // // // // // // // //
+    // Check behavior upon timeout.  //
+    // // // // // // // // // // // //
+
+    VecSimQueryResult_List res;
+    // Add a vector to the HNSW index so there will be a reason to query it.
+    GenerateAndAddVector<TEST_DATA_T>(hnsw_index, dim, n, n);
+
+    // Set timeout callback to always return 1 (will fail while querying the flat buffer).
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
+
+    res = VecSimIndex_RangeQuery(tiered_index, query_0, range, nullptr, BY_ID);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(res);
+
+    // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
+    // Brute-force index checks for timeout after each vector.
+    size_t checks_in_flat = flat_index->indexSize();
+    VecSimQueryParams qparams = {.timeoutCtx = &checks_in_flat};
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) {
+        auto count = static_cast<size_t *>(ctx);
+        if (*count == 0) {
+            return 1;
+        }
+        (*count)--;
+        return 0;
+    });
+    res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_SCORE);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(res);
+    // Make sure we didn't get the timeout in the flat index.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_SCORE);
+    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
+    VecSimQueryResult_Free(res);
+
+    // Check again with BY_ID.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_ID);
+    ASSERT_EQ(res.code, VecSim_QueryResult_TimedOut);
+    VecSimQueryResult_Free(res);
+    // Make sure we didn't get the timeout in the flat index.
+    checks_in_flat = flat_index->indexSize(); // Reset the counter.
+    res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_ID);
+    ASSERT_EQ(res.code, VecSim_QueryResult_OK);
+    VecSimQueryResult_Free(res);
+
+    // Clean up.
+    VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
+    size_t dim = 4;
+    size_t k = 11;
+    size_t n = 1000;
+    bool isMulti = TypeParam::isMulti();
+
+    size_t per_label = isMulti ? 10 : 1;
+    size_t n_labels = n / per_label;
+
+    // Create TieredHNSW index instance with a mock queue.
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = isMulti,
+        .epsilon = double(dim * k * k),
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+    EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
+
+    std::atomic_int successful_searches(0);
+    auto parallel_range_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        size_t k = search_job->k;
+        size_t dim = search_job->dim;
+        // The range that will get us k results.
+        double range = dim * ((k - 0.5) / 2) * ((k - 0.5) / 2); // L2 distance.
+        auto query = search_job->query;
+
+        auto verify_res = [&](size_t id, double score, size_t res_index) {
+            TEST_DATA_T element = *(TEST_DATA_T *)query;
+            ASSERT_EQ(std::abs(id - element), (res_index + 1) / 2);
+            ASSERT_EQ(score, dim * (id - element) * (id - element));
+        };
+        runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
+        search_job->successful_searches++;
+
+        delete search_job;
+    };
+
+    // Fill the job queue with insert and search jobs, while filling the flat index, before
+    // initializing the thread pool.
+    for (size_t i = 0; i < n; i++) {
+        // Insert a vector to the flat index and add a job to insert it to the main index.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+
+        // Add a search job. Make sure the query element is between k and n_labels - k.
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, ((n - i) % (n_labels - (2 * k))) + k);
+        auto search_job = new (allocator) SearchJobMock(
+            allocator, parallel_range_search, tiered_index, query, k, n, dim, successful_searches);
+        tiered_index->submitSingleJob(search_job);
+    }
+
+    EXPECT_EQ(tiered_index->indexSize(), n);
+    EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), n_labels);
+    for (auto &it : tiered_index->labelToInsertJobs) {
+        EXPECT_EQ(it.second.size(), per_label);
+    }
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    // All the vectors are already in the tiered index, so we expect to find the expected
+    // results from the get-go.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+
+    thread_pool_join(jobQ, run_thread);
+
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    EXPECT_EQ(successful_searches, n);
+    EXPECT_EQ(jobQ.size(), 0);
+
+    // Cleanup.
     delete index_ctx;
 }

@@ -179,10 +179,6 @@ public:
     void increaseCapacity() override {}
 
     // TODO: Implement the actual methods instead of these temporary ones.
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams) override {
-        return this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
-    }
     VecSimIndexInfo info() const override { return this->backendIndex->info(); }
     VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -766,8 +762,7 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom(labelType label,
 
     // Try to get the distance from the Main index.
     this->mainIndexGuard.lock_shared();
-    auto hnsw = getHNSWIndex();
-    auto hnsw_dist = hnsw->safeGetDistanceFrom(label, blob);
+    auto hnsw_dist = getHNSWIndex()->safeGetDistanceFrom(label, blob);
     this->mainIndexGuard.unlock_shared();
 
     // Return the minimum distance that is not NaN.
@@ -856,7 +851,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
             auto tail = this->flat_iterator->getNextResults(
                 n_res - VecSimQueryResult_Len(this->flat_results), BY_SCORE_THEN_ID);
             concat_results(this->flat_results, tail);
-            VecSimQueryResult_Free(tail);
 
             if (!isMulti) {
                 // On single-value indexes, duplicates will never appear in the hnsw results before
