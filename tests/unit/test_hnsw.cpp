@@ -1503,7 +1503,8 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
-    ASSERT_NO_THROW(VecSimIndex_PreferAdHocSearch(index, 1, 50, true));
+    ASSERT_EQ(VecSimIndex_PreferAdHocSearch(index, 42, 50, true),
+              VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     VecSimIndex_Free(index);
 }
