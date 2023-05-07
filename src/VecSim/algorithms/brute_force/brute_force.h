@@ -161,7 +161,6 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         size_t last_block_vectors_count = id % this->blockSize;
         this->idToLabelMapping.resize(
             idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
-        this->idToLabelMapping.shrink_to_fit();
     }
 
     // add label to idToLabelMapping
@@ -216,7 +215,6 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
         if (this->count + this->blockSize <= idToLabel_size) {
             size_t vector_to_align_count = idToLabel_size % this->blockSize;
             this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
-            this->idToLabelMapping.shrink_to_fit();
         }
     }
 }
