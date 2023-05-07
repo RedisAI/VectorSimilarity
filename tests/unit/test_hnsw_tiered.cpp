@@ -2990,7 +2990,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
             compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
         } else {
-            assert(false);
+            FAIL();
         }
     }
     VecSimInfoIterator_Free(infoIterator);
