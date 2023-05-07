@@ -16,8 +16,10 @@
 #include <thread>
 #include <VecSim/algorithms/hnsw/hnsw_single.h>
 #include <VecSim/algorithms/brute_force/brute_force_single.h>
+#include "tiered_index_mock.h"
 
 namespace py = pybind11;
+using namespace tiered_index_mock;
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
@@ -173,6 +175,13 @@ public:
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
+
+    size_t indexMemory() { return this->index->getAllocationSize(); }
+
+    double getGetDistanceFrom(size_t id, const py::object &input) {
+        py::array query(input);
+        return this->index->getDistanceFrom(id, (const char *)query.data(0));
+    }
 
     PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
         py::array query(input);
@@ -360,6 +369,94 @@ public:
     }
 };
 
+class PyTIEREDIndex : public PyVecSimIndex {
+
+protected:
+    JobQueue jobQueue;          // External queue that holds the jobs.
+    IndexExtCtx jobQueueCtx;    // External context to be sent to the submit callback.
+    SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
+    size_t memoryCtx;           // External context that stores the index memory consumption.
+    UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
+                                // with a given memory (number).
+    size_t flatBufferLimit; // Maximum size allowed for the flat buffer. If flat buffer is full, use
+                            // in-place insertion.
+    bool run_thread;
+    std::bitset<MAX_POOL_SIZE> executions_status;
+
+    TieredIndexParams TieredIndexParams_Init() {
+        TieredIndexParams ret = {
+            .jobQueue = &this->jobQueue,
+            .jobQueueCtx = &this->jobQueueCtx,
+            .submitCb = this->submitCb,
+            .memoryCtx = &this->memoryCtx,
+            .UpdateMemCb = this->UpdateMemCb,
+            .flatBufferLimit = this->flatBufferLimit,
+        };
+
+        return ret;
+    }
+
+public:
+    explicit PyTIEREDIndex(size_t BufferLimit = 20000000)
+        : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback), flatBufferLimit(BufferLimit),
+          run_thread(true) {
+
+        for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+            ThreadParams params(run_thread, executions_status, i, jobQueue);
+            thread_pool.emplace_back(thread_main_loop, params);
+        }
+    }
+
+    virtual ~PyTIEREDIndex() = 0;
+
+    void WaitForIndex(size_t waiting_duration = 10) {
+        bool keep_wating = true;
+        while (keep_wating) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(waiting_duration));
+            std::unique_lock<std::mutex> lock(queue_guard);
+            if (jobQueue.empty()) {
+                while (true) {
+                    if (executions_status.count() == 0) {
+                        keep_wating = false;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(waiting_duration));
+                }
+            }
+        }
+    }
+
+
+    static size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
+
+    size_t getBufferLimit() {return flatBufferLimit; }
+};
+
+PyTIEREDIndex::~PyTIEREDIndex() { thread_pool_terminate(jobQueue, run_thread); }
+class PyTIERED_HNSWIndex : public PyTIEREDIndex {
+public:
+    explicit PyTIERED_HNSWIndex(const HNSWParams &hnsw_params,
+                                const TieredHNSWParams &tiered_hnsw_params) {
+
+        // Create primaryIndexParams and specific params for hnsw tiered index.
+        VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+
+        // create TieredIndexParams
+        TieredIndexParams tiered_params = TieredIndexParams_Init();
+
+        tiered_params.primaryIndexParams = &primary_index_params;
+        tiered_params.specificParams.tieredHnswParams = tiered_hnsw_params;
+
+        // create VecSimParams for TieredIndexParams
+        VecSimParams params = {.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
+
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        // Set the created tiered index in the index external context.
+        this->jobQueueCtx.index_strong_ref = this->index;
+    }
+    size_t HNSWLabelCount() { return this->index->info().hnswInfo.indexLabelCount; }
+};
+
 class PyBFIndex : public PyVecSimIndex {
 public:
     explicit PyBFIndex(const BFParams &bf_params) {
@@ -413,6 +510,10 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
+    py::class_<TieredHNSWParams>(m, "TieredHNSWParams")
+        .def(py::init())
+        .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold);
+
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
         .def_readwrite("algo", &VecSimParams::algo)
@@ -439,8 +540,11 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_query", &PyVecSimIndex::range, py::arg("vector"), py::arg("radius"),
              py::arg("query_param") = nullptr)
         .def("index_size", &PyVecSimIndex::indexSize)
+        .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
+        .def("get_distance_from", &PyVecSimIndex::getGetDistanceFrom, py::arg("label"),
+             py::arg("blob"))
         .def("get_vector", &PyVecSimIndex::getVector);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
@@ -459,6 +563,19 @@ PYBIND11_MODULE(VecSim, m) {
         .def("check_integrity", &PyHNSWLibIndex::checkIntegrity)
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
+
+    py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex")
+        .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
+        .def("get_buffer_limit", &PyTIERED_HNSWIndex::getBufferLimit)
+        .def_static("get_threads_num", &PyTIEREDIndex::GetThreadsNum);
+
+    py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
+        .def(
+            py::init([](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params) {
+                return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
+            }),
+            py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
+        .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

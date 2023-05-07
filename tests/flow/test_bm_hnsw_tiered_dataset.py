@@ -1,0 +1,291 @@
+# Copyright Redis Ltd. 2021 - present
+# Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
+# the Server Side Public License v1 (SSPLv1).
+import concurrent
+import math
+import multiprocessing
+import os
+import time
+from common import *
+import hnswlib
+import h5py
+from urllib.request import urlretrieve
+import pickle
+from enum import Enum
+
+class CreationMode(Enum):
+    ONLY_PARAMS = 1
+    CREATE_TIERED_INDEX = 2
+
+def download(src, dst):
+    if not os.path.exists(dst):
+        print('downloading %s -> %s...' % (src, dst))
+        urlretrieve(src, dst)
+
+# Download dataset from s3, save the file locally
+def get_data_set(dataset_name):
+    hdf5_filename = os.path.join('%s.hdf5' % dataset_name)
+    url = 'https://s3.amazonaws.com/benchmarks.redislabs/vecsim/dbpedia/dbpedia-768.hdf5'
+    download(url, hdf5_filename)
+    return h5py.File(hdf5_filename, 'r')
+
+def load_data(dataset_name):
+    data = 0
+
+    np_data_file_path = os.path.join('np_train_%s.npy' % dataset_name)
+
+    try:
+        data = np.load(np_data_file_path, allow_pickle = True)
+        print(f"yay! loaded ")
+    except:
+        dataset = get_data_set(dataset_name)
+        data = np.array(dataset['train'])
+        np.save(np_data_file_path, data)
+        print(f"yay! generated")
+    
+    return data   
+
+def load_queries(dataset_name):
+    queries = 0
+    np_test_file_path = os.path.join('np_test_%s.npy' % dataset_name)
+
+    try:
+        queries = np.load(np_test_file_path, allow_pickle = True)
+        print(f"yay! loaded ")
+    except:
+        hdf5_filename = os.path.join('%s.hdf5' % dataset_name)
+        dataset = h5py.File(hdf5_filename, 'r')
+        queries = np.array(dataset['test'])
+        np.save(np_test_file_path, queries)
+        print(f"yay! generated ")
+    
+    return queries    
+
+# swap_job_threshold = 0 means use the default swap_job_threshold defined in hnsw_tiered.h
+def create_tiered_hnsw_params(swap_job_threshold = 0):
+    tiered_hnsw_params = TieredHNSWParams()
+    tiered_hnsw_params.swapJobThreshold  = swap_job_threshold
+    return tiered_hnsw_params   
+
+class DBPediaIndexCtx:
+    def __init__(self, data_size = 0, initialCap = 0, M = 32, ef_c = 512, ef_r = 10, metric = VecSimMetric_Cosine, is_multi = False, data_type = VecSimType_FLOAT32, swap_job_threshold = 0, mode=CreationMode.ONLY_PARAMS):
+        self.M = M
+        self.efConstruction = ef_c
+        self.efRuntime = ef_r 
+        
+        data = load_data("dbpedia-768")
+        self.num_elements = data_size if data_size != 0 else data.shape[0]
+        self.initialCap = initialCap if initialCap != 0 else 2 * self.num_elements
+        
+        self.data = data[:self.num_elements]
+        self.dim = len(self.data[0])
+        self.metric = metric
+        self.type = data_type
+        self.is_multi = is_multi
+        
+        self.hnsw_params = create_hnsw_params(dim=self.dim, 
+                                              num_elements=self.initialCap, 
+                                              metric=self.metric,
+                                              data_type=self.type,
+                                              ef_construction=ef_c,
+                                              m=M,
+                                              ef_runtime=ef_r,
+                                              is_multi=self.is_multi)
+        self.tiered_hnsw_params = create_tiered_hnsw_params(swap_job_threshold)
+        
+        assert isinstance(mode, CreationMode)
+        if mode == CreationMode.CREATE_TIERED_INDEX: 
+            self.tiered_index = TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
+        
+    def create_tiered(self):
+        return TIERED_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
+            
+    def create_hnsw(self):
+        return HNSWIndex(self.hnsw_params)
+    
+    def set_num_vectors_per_label(self, num_per_label = 1):
+        self.num_per_label = num_per_label
+        
+    def init_and_populate_flat_index(self):
+        bfparams = BFParams()
+        bfparams.initialCapacity = self.num_elements
+        bfparams.dim =self.dim
+        bfparams.type =self.type
+        bfparams.metric =self.metric
+        bfparams.multi = self.is_multi
+        self.flat_index = BFIndex(bfparams)
+        
+        for i, vector in enumerate(self.data):
+            for _ in range(self.num_per_label):
+                self.flat_index.add_vector(vector, i)
+        
+        return self.flat_index
+    
+    def init_and_populate_hnsw_index(self):
+        hnsw_index = HNSWIndex(self.hnsw_params)
+        
+        for i, vector in enumerate(self.data):
+            hnsw_index.add_vector(vector, i)
+        self.hnsw_index = hnsw_index
+        return hnsw_index
+    
+    def generate_random_vectors(self, num_vectors):
+        vectors = 0
+        np_file_path = os.path.join(f'np_{num_vectors}vec_dim{self.dim}.npy')
+
+        try:
+            vectors = np.load(np_file_path, allow_pickle = True)
+            print(f"yay! loaded ")
+        except:
+            rng = np.random.default_rng(seed=47)
+            vectors = np.float32(rng.random((num_vectors, self.dim)))
+            np.save(np_file_path, vectors)
+            print(f"yay! generated ")
+        
+        return vectors     
+        
+    def insert_in_batch(self, index, data, data_first_idx, batch_size, first_label):
+        duration = 0
+        data_last_idx = data_first_idx + batch_size
+        for i, vector in enumerate(data[data_first_idx:data_last_idx]):
+            label = i + first_label
+            start_add = time.time()
+            index.add_vector(vector, label)
+            duration += time.time() - start_add
+        end = time.time()
+        return (duration, end)
+        
+    
+def create_dbpedia():
+    indices_ctx = DBPediaIndexCtx()
+    
+    threads_num = TIEREDIndex.get_threads_num()
+    print(f"thread num = {threads_num}")
+    data = indices_ctx.data
+    num_elements = indices_ctx.num_elements
+    
+    def create_tiered():
+        index = indices_ctx.create_tiered()
+        
+        print(f"Insert {num_elements} vectors to tiered index")
+        print(f"flat buffer limit = {index.get_buffer_limit()}")
+        start = time.time()
+        for i, vector in enumerate(data):
+            index.add_vector(vector, i)
+        bf_dur = time.time() - start
+        
+        print(f''' insert to bf took {bf_dur}, current hnsw size is {index.hnsw_label_count()}")
+                wait for index\n''')
+        index.wait_for_index()
+        dur = time.time() - start
+        
+        assert index.hnsw_label_count() == num_elements
+        
+        # Measure insertion to tiered index
+        
+        print(f"Insert {num_elements} vectors to tiered index took {dur} s")
+        
+        # Measure total memory of the tiered index 
+        print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+    
+    print(f"Start tiered hnsw creation")
+    create_tiered()
+
+def create_dbpedia_graph():
+    indices_ctx = DBPediaIndexCtx(data_size = 100000)
+    
+    threads_num = TIEREDIndex.get_threads_num()
+    print(f"thread num = {threads_num}")
+    dbpeida_data = indices_ctx.data
+    num_elements = indices_ctx.num_elements
+    
+    batches_num_per_ds = 10
+    batch_size = int(num_elements / batches_num_per_ds)
+    
+    #generate 1M random vectors
+   # random_vectors = indices_ctx.generate_random_vectors(num_vectors=pow(10,6))
+    def create_tiered():
+        index = indices_ctx.create_tiered()
+        flat_buffer_limit = index.get_buffer_limit()
+        print(f"flat buffer limit = {flat_buffer_limit}")
+        assert flat_buffer_limit > batch_size
+        
+        #first insert dbpedia in batches
+        for batch in range(batches_num_per_ds):
+            print(f"Insert {batch_size} vectors from dbpedia to tiered index")
+            first_label = batch * batch_size
+            
+            #insert in batches of batch size
+            bf_time, start_wait = indices_ctx.insert_in_batch(index, dbpeida_data, data_first_idx= first_label, batch_size=batch_size, first_label = first_label)
+            print(f''' insert to bf took {bf_time}, current hnsw size is {index.hnsw_label_count()}")
+                    wait for index\n''')
+            
+            # measure time until wait for index for each batch
+            index.wait_for_index()
+            dur = time.time() - start_wait
+            assert index.hnsw_label_count() == (batch + 1) * batch_size
+            total_time = bf_time + dur
+            print(f"Batch number {batch} : Insert {batch_size} vectors to tiered index took {total_time} s")
+            print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+    
+    
+        #Next insert the random vactors
+        for batch in range(batches_num_per_ds):
+            print(f"Insert {batch_size} random vectors to tiered index")
+            data_first_idx = batch * batch_size
+            first_label = num_elements + data_first_idx
+            
+            #insert in batches of batch size
+            bf_time, start_wait = indices_ctx.insert_in_batch(index, dbpeida_data, data_first_idx= data_first_idx, 
+                                                              batch_size=batch_size, 
+                                                              first_label = first_label)
+            print(f''' insert to bf took {bf_time}, current hnsw size is {index.hnsw_label_count()}")
+                    wait for index\n''')
+            
+            # measure time until wait for index for each batch
+            index.wait_for_index()
+            dur = time.time() - start_wait
+            assert index.hnsw_label_count() == num_elements + (batch + 1 ) * batch_size
+            total_time = bf_time + dur
+            print(f"Batch number {batch} : Insert {batch_size} vectors to tiered index took {total_time} s")
+            print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+    
+    print(f"Start tiered hnsw creation")
+    create_tiered()
+    def create_hnsw():
+        index = indices_ctx.create_hnsw()
+        
+        #first insert dbpedia in batches
+        for batch in range(batches_num_per_ds):
+            print(f"Insert {batch_size} vectors from dbpedia to sync hnsw index")
+            first_label = batch * batch_size
+            
+            #insert in batches of batch size
+            batch_time, _ = indices_ctx.insert_in_batch(index, dbpeida_data, data_first_idx= first_label, batch_size=batch_size, first_label = first_label)
+            
+            assert index.index_size() == (batch + 1) * batch_size
+            print(f"Batch number {batch} : Insert {batch_size} vectors to tiered index took {batch_time} s")
+            print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+        #first insert dbpedia in batches
+        for batch in range(batches_num_per_ds):
+            print(f"Insert {batch_size} vectors from dbpedia to sync hnsw index")
+            data_first_idx = batch * batch_size
+            first_label = num_elements + data_first_idx
+            
+            #insert in batches of batch size
+            batch_time, _ = indices_ctx.insert_in_batch(index, dbpeida_data, data_first_idx= data_first_idx, batch_size=batch_size, first_label = first_label)
+            
+            assert index.index_size() == num_elements + (batch + 1) * batch_size
+            print(f"Batch number {batch} : Insert {batch_size} vectors to tiered index took {batch_time} s")
+            print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+   # print(f"dbpedia vectors = {dbpeida_data[0:4].shape[0]}")
+  #  print(f"vectors = {vectors[0]}")
+    print(f"Start hnsw creation")
+    
+    create_hnsw()
+    
+def test_main():
+    print("Test creation")
+ #  create_dbpedia()
+    create_dbpedia_graph()
+
