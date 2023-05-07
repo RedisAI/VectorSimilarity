@@ -152,7 +152,7 @@ endif
 #----------------------------------------------------------------------------------------------
 
 pybind:
-	$(SHOW)python3 -m poetry build
+	$(SHOW)poetry build
 .PHONY: pybind
 
 #----------------------------------------------------------------------------------------------
@@ -186,8 +186,8 @@ valgrind:
 #----------------------------------------------------------------------------------------------
 
 flow_test:
-	$(SHOW)$(MAKE) pybind
-	$(SHOW)tox -e flowenv
+	$(SHOW)poetry install
+	$(SHOW)poetry run pytest tests/flow
 
 .PHONY: flow_test
 
