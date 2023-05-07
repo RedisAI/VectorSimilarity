@@ -192,7 +192,7 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
         break;
     case VecSimAlgo_BF:
     case VecSimAlgo_TIERED:
-        break;
+        assert(false && "Invalid backend algorithm");
     }
 
     info.tieredInfo.backendCommonInfo = backendInfo.commonInfo;
