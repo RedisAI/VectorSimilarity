@@ -180,7 +180,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
         } else {
-            ASSERT_TRUE(false);
+            FAIL();
         }
     }
 }
