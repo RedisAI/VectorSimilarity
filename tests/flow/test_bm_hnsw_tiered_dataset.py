@@ -355,8 +355,8 @@ def search_insert(is_multi: bool, num_per_label = 1):
     
 def test_main():
     print("Test creation")
-    create_dbpedia()
-  #  create_dbpedia_graph()
+#create_dbpedia()
+    create_dbpedia_graph()
     print(f"\nStart insert & search test")
    # search_insert(is_multi=False)
 

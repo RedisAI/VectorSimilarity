@@ -491,7 +491,7 @@ public:
         // Set the created tiered index in the index external context.
         this->jobQueueCtx.index_strong_ref = this->index;
     }
-    size_t HNSWLabelCount() { return this->index->info().hnswInfo.indexLabelCount; }
+    size_t HNSWLabelCount() { return this->index->info().commonInfo.indexLabelCount; }
 };
 
 class PyBFIndex : public PyVecSimIndex {
