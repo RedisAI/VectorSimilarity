@@ -505,15 +505,15 @@ TYPED_TEST(HNSWTest, test_hnsw_info) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.dim, d);
+    ASSERT_EQ(info.commonInfo.dim, d);
     // Default args.
-    ASSERT_FALSE(info.hnswInfo.isMulti);
-    ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_FALSE(info.commonInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
     ASSERT_DOUBLE_EQ(info.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
-    ASSERT_EQ(info.hnswInfo.type, params.type);
+    ASSERT_EQ(info.commonInfo.type, params.type);
     VecSimIndex_Free(index);
 
     d = 1280;
@@ -525,15 +525,15 @@ TYPED_TEST(HNSWTest, test_hnsw_info) {
     index = this->CreateNewIndex(params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.dim, d);
+    ASSERT_EQ(info.commonInfo.dim, d);
     // User args.
-    ASSERT_FALSE(info.hnswInfo.isMulti);
-    ASSERT_EQ(info.hnswInfo.blockSize, bs);
+    ASSERT_FALSE(info.commonInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.efConstruction, 1000);
     ASSERT_EQ(info.hnswInfo.M, 200);
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
     ASSERT_EQ(info.hnswInfo.epsilon, 0.005);
-    ASSERT_EQ(info.hnswInfo.type, params.type);
+    ASSERT_EQ(info.commonInfo.type, params.type);
     VecSimIndex_Free(index);
 }
 
@@ -577,10 +577,10 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
     ASSERT_EQ(0.004, info.hnswInfo.epsilon);
-    ASSERT_EQ(0, info.hnswInfo.indexSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
-    ASSERT_EQ(params.type, info.hnswInfo.type);
+    ASSERT_EQ(params.type, info.commonInfo.type);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -592,7 +592,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_AddVector(index, v, 1);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.hnswInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.indexSize);
     ASSERT_EQ(1, info.hnswInfo.entrypoint);
     ASSERT_GE(1, info.hnswInfo.max_level);
     compareHNSWIndexInfoToIterator(info, infoIter);
@@ -602,7 +602,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_DeleteVector(index, 1);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(0, info.bfInfo.indexSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -612,7 +612,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -620,14 +620,14 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -641,7 +641,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -650,7 +650,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -922,7 +922,7 @@ TYPED_TEST(HNSWTest, hnsw_delete_entry_point) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
-    while (info.hnswInfo.indexSize > 0) {
+    while (info.commonInfo.indexSize > 0) {
         ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entrypoint));
         info = VecSimIndex_Info(index);
     }
@@ -2030,11 +2030,11 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
         ASSERT_EQ(info.hnswInfo.M, M);
         ASSERT_EQ(info.hnswInfo.efConstruction, ef);
         ASSERT_EQ(info.hnswInfo.efRuntime, ef);
-        ASSERT_EQ(info.hnswInfo.indexSize, n);
-        ASSERT_EQ(info.hnswInfo.metric, VecSimMetric_L2);
-        ASSERT_EQ(info.hnswInfo.type, TypeParam::get_index_type());
-        ASSERT_EQ(info.hnswInfo.dim, dim);
-        ASSERT_EQ(info.hnswInfo.indexLabelCount, n_labels[i]);
+        ASSERT_EQ(info.commonInfo.indexSize, n);
+        ASSERT_EQ(info.commonInfo.metric, VecSimMetric_L2);
+        ASSERT_EQ(info.commonInfo.type, TypeParam::get_index_type());
+        ASSERT_EQ(info.commonInfo.dim, dim);
+        ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels[i]);
 
         VecSimIndex_Free(index);
 
@@ -2048,15 +2048,15 @@ TYPED_TEST(HNSWTest, HNSWSerialization_v2) {
         VecSimIndexInfo info2 = VecSimIndex_Info(serialized_index);
         ASSERT_EQ(info2.algo, VecSimAlgo_HNSWLIB);
         ASSERT_EQ(info2.hnswInfo.M, M);
-        ASSERT_EQ(info2.hnswInfo.isMulti, is_multi[i]);
-        ASSERT_EQ(info2.hnswInfo.blockSize, blockSize);
+        ASSERT_EQ(info2.commonInfo.isMulti, is_multi[i]);
+        ASSERT_EQ(info2.commonInfo.blockSize, blockSize);
         ASSERT_EQ(info2.hnswInfo.efConstruction, ef);
         ASSERT_EQ(info2.hnswInfo.efRuntime, ef);
-        ASSERT_EQ(info2.hnswInfo.indexSize, n);
-        ASSERT_EQ(info2.hnswInfo.metric, VecSimMetric_L2);
-        ASSERT_EQ(info2.hnswInfo.type, TypeParam::get_index_type());
-        ASSERT_EQ(info2.hnswInfo.dim, dim);
-        ASSERT_EQ(info2.hnswInfo.indexLabelCount, n_labels[i]);
+        ASSERT_EQ(info2.commonInfo.indexSize, n);
+        ASSERT_EQ(info2.commonInfo.metric, VecSimMetric_L2);
+        ASSERT_EQ(info2.commonInfo.type, TypeParam::get_index_type());
+        ASSERT_EQ(info2.commonInfo.dim, dim);
+        ASSERT_EQ(info2.commonInfo.indexLabelCount, n_labels[i]);
         ASSERT_EQ(info2.hnswInfo.epsilon, epsilon);
 
         // Check the functionality of the loaded index.
@@ -2122,10 +2122,10 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         ASSERT_EQ(info2.hnswInfo.M, M_serialized);
         ASSERT_NE(info2.hnswInfo.M, M_param);
 
-        ASSERT_EQ(info2.hnswInfo.isMulti, is_multi[i]);
+        ASSERT_EQ(info2.commonInfo.isMulti, is_multi[i]);
 
         // Check it was initalized with the default blockSize value.
-        ASSERT_EQ(info2.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
+        ASSERT_EQ(info2.commonInfo.blockSize, DEFAULT_BLOCK_SIZE);
 
         // Check that ef is taken from file and not from @params.
         ASSERT_EQ(info2.hnswInfo.efConstruction, ef_serialized);
@@ -2133,11 +2133,11 @@ TYPED_TEST(HNSWTest, LoadHNSWSerialized_v1) {
         ASSERT_NE(info2.hnswInfo.efRuntime, ef_param);
         ASSERT_NE(info2.hnswInfo.efConstruction, ef_param);
 
-        ASSERT_EQ(info2.hnswInfo.indexSize, n);
-        ASSERT_EQ(info2.hnswInfo.metric, VecSimMetric_L2);
-        ASSERT_EQ(info2.hnswInfo.type, TypeParam::get_index_type());
-        ASSERT_EQ(info2.hnswInfo.dim, dim);
-        ASSERT_EQ(info2.hnswInfo.indexLabelCount, n_labels[i]);
+        ASSERT_EQ(info2.commonInfo.indexSize, n);
+        ASSERT_EQ(info2.commonInfo.metric, VecSimMetric_L2);
+        ASSERT_EQ(info2.commonInfo.type, TypeParam::get_index_type());
+        ASSERT_EQ(info2.commonInfo.dim, dim);
+        ASSERT_EQ(info2.commonInfo.indexLabelCount, n_labels[i]);
         // Check it was initalized with the default epsilon value.
         ASSERT_EQ(info2.hnswInfo.epsilon, HNSW_DEFAULT_EPSILON);
 

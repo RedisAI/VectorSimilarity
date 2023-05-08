@@ -25,6 +25,7 @@ extern "C" {
 
 #define HNSW_INVALID_LEVEL SIZE_MAX
 #define INVALID_JOB_ID     UINT_MAX
+#define INVALID_INFO       UINT_MAX
 
 // Datatypes for indexing.
 typedef enum {
@@ -194,41 +195,58 @@ typedef struct {
                       // to get it from the parameters resolve function.
 } VecSimQueryParams;
 
+typedef struct {
+    size_t indexSize;        // Current count of vectors.
+    size_t indexLabelCount;  // Current unique count of labels.
+    size_t blockSize;        // Brute force algorithm vector block (mini matrix) size
+    VecSimMetric metric;     // Index distance metric
+    uint64_t memory;         // Index memory consumption.
+    VecSimType type;         // Datatype the index holds.
+    bool isMulti;            // Determines if the index should multi-index or not.
+    size_t dim;              // Vector size (dimension).
+    VecSearchMode last_mode; // The mode in which the last query ran.
+} CommonInfo;
+
+typedef struct {
+    size_t M;              // Number of allowed edges per node in graph.
+    size_t efConstruction; // EF parameter for HNSW graph accuracy/latency for indexing.
+    size_t efRuntime;      // EF parameter for HNSW graph accuracy/latency for search.
+    double epsilon;        // Epsilon parameter for HNSW graph accuracy/latency for range search.
+    size_t max_level;      // Number of graph levels.
+    size_t entrypoint;     // Entrypoint vector label.
+    size_t visitedNodesPoolSize;       // The max number of parallel graph scans so far.
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
+} hnswInfoStruct;
+
+typedef struct {
+} bfInfoStruct;
+
+typedef struct {
+
+    // Since we cannot recursively have a struct that contains itself, we need this workaround.
+    union {
+        hnswInfoStruct hnswInfo;
+    } backendInfo;                 // The backend index info.
+    CommonInfo backendCommonInfo;  // Common index info.
+    VecSimAlgo backendAlgo;        // The algorithm used in the backend.
+    CommonInfo frontendCommonInfo; // Common index info.
+    bfInfoStruct bfInfo;           // The brute force index info.
+
+    uint64_t management_layer_memory; // Memory consumption of the management layer.
+    bool backgroundIndexing;          // Determines if the index is currently being indexed in the
+                                      // background.
+} tieredInfoStruct;
+
 /**
  * @brief Index information. Mainly used for debug/testing.
  *
  */
 typedef struct {
+    CommonInfo commonInfo;
     union {
-        struct {
-            size_t indexSize;       // Current count of vectors.
-            size_t indexLabelCount; // Current unique count of labels.
-            size_t blockSize;       // Sets the amount to grow when resizing
-            size_t M;               // Number of allowed edges per node in graph.
-            size_t efConstruction;  // EF parameter for HNSW graph accuracy/latency for indexing.
-            size_t efRuntime;       // EF parameter for HNSW graph accuracy/latency for search.
-            double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
-            size_t max_level; // Number of graph levels.
-            size_t entrypoint;           // Entrypoint vector label.
-            VecSimMetric metric;         // Index distance metric
-            uint64_t memory;             // Index memory consumption.
-            VecSimType type;             // Datatype the index holds.
-            bool isMulti;                // Determines if the index should multi-index or not.
-            size_t dim;                  // Vector size (dimension).
-            VecSearchMode last_mode;     // The mode in which the last query ran.
-            size_t visitedNodesPoolSize; // The max number of parallel graph scans so far.
-        } hnswInfo;
-        struct {
-            size_t indexSize;        // Current count of vectors.
-            size_t indexLabelCount;  // Current unique count of labels.
-            size_t blockSize;        // Brute force algorithm vector block (mini matrix) size
-            VecSimMetric metric;     // Index distance metric
-            uint64_t memory;         // Index memory consumption.
-            VecSimType type;         // Datatype the index holds.
-            bool isMulti;            // Determines if the index should multi-index or not.
-            size_t dim;              // Vector size (dimension).
-            VecSearchMode last_mode; // The mode in which the last query ran.
-        } bfInfo;
+        bfInfoStruct bfInfo;
+        hnswInfoStruct hnswInfo;
+        tieredInfoStruct tieredInfo;
     };
     VecSimAlgo algo; // Algorithm being used.
 } VecSimIndexInfo;

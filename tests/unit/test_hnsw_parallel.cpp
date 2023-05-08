@@ -124,7 +124,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
         successful_searches++;
     };
 
-    size_t memory_before = index->info().hnswInfo.memory;
+    size_t memory_before = index->info().commonInfo.memory;
     std::thread thread_objs[n_threads];
     for (size_t i = 0; i < n_threads; i++) {
         thread_objs[i] = std::thread(parallel_search, i);
@@ -142,7 +142,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
                                                  (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
                                                   2 * sizeof(size_t) + sizeof(void *));
-    ASSERT_EQ(expected_memory, index->info().hnswInfo.memory);
+    ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
 
     VecSimIndex_Free(index);
 }
@@ -294,7 +294,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     };
 
     std::thread thread_objs[n_threads];
-    size_t memory_before = index->info().hnswInfo.memory;
+    size_t memory_before = index->info().commonInfo.memory;
     for (size_t i = 0; i < n_threads; i++) {
         if (i % 3 == 0) {
             thread_objs[i] = std::thread(parallel_knn_search, i);
@@ -317,7 +317,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
                                                  (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
                                                   2 * sizeof(size_t) + sizeof(void *));
-    ASSERT_EQ(expected_memory, index->info().hnswInfo.memory);
+    ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
     VecSimIndex_Free(index);
 }
 

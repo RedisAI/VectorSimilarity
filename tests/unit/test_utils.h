@@ -116,6 +116,10 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
                                 VecSimQueryResult_Order order = BY_SCORE,
                                 size_t expected_n_res = -1);
 
+void compareCommonInfo(CommonInfo info1, CommonInfo info2);
+void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2);
+void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2);
+
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
 
 void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter);
