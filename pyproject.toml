@@ -2,7 +2,6 @@
 name = "VecSim"
 version = "0.0.1"
 description = "Python library around collection of vector similarity algorithms"
-build = "setup.py"
 
 packages = [
     { include = 'src'}
@@ -28,8 +27,6 @@ python = "^3.8"
 
 [tool.poetry.dev-dependencies]
 numpy = "^1.21"
-tox = "^3.25.0"
-tox-poetry = "^0.4.0"
 hnswlib = "^0.6.2"
 pytest = "^6.2.4"
 scipy = "^1.9.1"
@@ -39,3 +36,7 @@ h5py = "^3.7.0"
 [build-system]
 requires = ["poetry-core>=1.0.0", "setuptools"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.build] 
+script  = "setup.py"
+generate-setup-file = true 
