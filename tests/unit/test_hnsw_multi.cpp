@@ -627,13 +627,9 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
-    try {
-        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
-        FAIL() << "Expected std::runtime error";
-    } catch (std::runtime_error const &err) {
-        EXPECT_EQ(err.what(),
-                  std::string("internal error: subset size cannot be larger than index size"));
-    }
+    ASSERT_EQ(VecSimIndex_PreferAdHocSearch(index, 42, 50, true),
+              VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
+
     VecSimIndex_Free(index);
 }
 TYPED_TEST(HNSWMultiTest, search_empty_index) {
