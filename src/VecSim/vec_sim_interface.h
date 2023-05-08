@@ -138,7 +138,8 @@ public:
      * blob.
      */
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams) = 0;
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryResult_Order order) = 0;
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -153,7 +154,9 @@ public:
      * VecSimQueryResult_Iterator.
      */
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) = 0;
+                                              VecSimQueryParams *queryParams,
+                                              VecSimQueryResult_Order order) = 0;
+
     /**
      * @brief Return index information.
      *
@@ -221,5 +224,16 @@ public:
     static logCallbackFunction logCallback;
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
+    }
+
+    /**
+     * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
+     * background jobs, or insert/delete inplace.
+     *
+     * @param mode VecSimWriteMode the mode in which we add/remove vectors (async or in-place).
+     */
+    static VecSimWriteMode asyncWriteMode;
+    inline static void setWriteMode(VecSimWriteMode mode) {
+        VecSimIndexInterface::asyncWriteMode = mode;
     }
 };

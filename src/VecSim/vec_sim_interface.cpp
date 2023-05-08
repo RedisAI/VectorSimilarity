@@ -13,3 +13,4 @@ void Vecsim_Log(void *ctx, const char *message) { std::cout << message << std::e
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
+VecSimWriteMode VecSimIndexInterface::asyncWriteMode = VecSim_WriteAsync;

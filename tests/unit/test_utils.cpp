@@ -109,6 +109,31 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
     VecSimQueryResult_Free(res);
 }
 
+/*
+ * helper function to run range query and iterate over the results. ResCB is a callback that takes
+ * the id, score and index of a result, and performs test-specific logic for each.
+ */
+void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
+                       const std::function<void(size_t, double, size_t)> &ResCB,
+                       size_t expected_res_num, VecSimQueryResult_Order order,
+                       VecSimQueryParams *params) {
+    VecSimQueryResult_List res =
+        VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
+    EXPECT_EQ(VecSimQueryResult_Len(res), expected_res_num);
+    EXPECT_TRUE(allUniqueResults(res));
+    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+    int res_ind = 0;
+    while (VecSimQueryResult_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+        int id = (int)VecSimQueryResult_GetId(item);
+        double score = VecSimQueryResult_GetScore(item);
+        ResCB(id, score, res_ind++);
+    }
+    EXPECT_EQ(res_ind, expected_res_num);
+    VecSimQueryResult_IteratorFree(iterator);
+    VecSimQueryResult_Free(res);
+}
+
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
     ASSERT_EQ(10, VecSimInfoIterator_NumberOfFields(infoIter));
     while (VecSimInfoIterator_HasNextField(infoIter)) {
@@ -233,31 +258,6 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             ASSERT_TRUE(false);
         }
     }
-}
-
-/*
- * helper function to run range query and iterate over the results. ResCB is a callback that takes
- * the id, score and index of a result, and performs test-specific logic for each.
- */
-void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
-                       const std::function<void(size_t, double, size_t)> &ResCB,
-                       size_t expected_res_num, VecSimQueryResult_Order order,
-                       VecSimQueryParams *params) {
-    VecSimQueryResult_List res =
-        VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
-    ASSERT_EQ(VecSimQueryResult_Len(res), expected_res_num);
-    ASSERT_TRUE(allUniqueResults(res));
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
-    int res_ind = 0;
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
-        int id = (int)VecSimQueryResult_GetId(item);
-        double score = VecSimQueryResult_GetScore(item);
-        ResCB(id, score, res_ind++);
-    }
-    ASSERT_EQ(res_ind, expected_res_num);
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
 }
 
 size_t getLabelsLookupNodeSize() {
