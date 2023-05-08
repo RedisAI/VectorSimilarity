@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <istream>
 #include <thread>
+#include <condition_variable>
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_interface.h"
 #include "VecSim/vec_sim_tiered_index.h"
