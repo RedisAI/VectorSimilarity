@@ -44,9 +44,11 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
-    // Create new tiered hnsw index.
-    return new (hnsw_index->getAllocator())
-        TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params);
+    // Create new tiered hnsw index
+    std::shared_ptr<VecSimAllocator> management_layer_allocator =
+        VecSimAllocator::newVecsimAllocator();
+    return new (management_layer_allocator) TieredHNSWIndex<DataType, DistType>(
+        hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 } // namespace TieredHNSWFactory
 #endif
