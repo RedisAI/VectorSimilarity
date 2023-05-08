@@ -1,4 +1,4 @@
- /*
+/*
  *Copyright Redis Ltd. 2021 - present
  *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
  *the Server Side Public License v1 (SSPLv1).
@@ -20,21 +20,6 @@ typedef struct RefManagedJob {
     AsyncJob *job;
     std::weak_ptr<VecSimIndex> index_weak_ref;
 } RefManagedJob;
-
-struct SearchJobMock : public AsyncJob {
-    void *query; // The query vector. ownership is passed to the job in the constructor.
-    size_t k;    // The number of results to return.
-    size_t n;    // The number of vectors in the index (might be useful for the mock)
-    size_t dim;  // The dimension of the vectors in the index (might be useful for the mock)
-    std::atomic_int &successful_searches; // A reference to a shared counter that counts the number
-                                          // of successful searches.
-    SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCB,
-                  VecSimIndex *index_, void *query_, size_t k_, size_t n_, size_t dim_,
-                  std::atomic_int &successful_searches_)
-        : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCB, index_), query(query_), k(k_), n(n_),
-          dim(dim_), successful_searches(successful_searches_) {}
-    ~SearchJobMock() { this->allocator->free_allocation(query); }
-};
 
 using JobQueue = std::queue<RefManagedJob>;
 int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx);

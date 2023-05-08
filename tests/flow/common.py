@@ -41,4 +41,13 @@ def create_hnsw_index(dim, num_elements, metric, data_type, ef_construction=200,
 
     return HNSWIndex(hnsw_params)
 
+def bytes_to_mega(bytes, ndigits = 3):
+    return round(bytes/pow(10,6), ndigits)
+
+def round_(f_value, ndigits = 2):
+    return round(f_value, ndigits)
+
+
+def round_ms(f_value, ndigits = 2):
+    return round(f_value * 1000, ndigits)  
     

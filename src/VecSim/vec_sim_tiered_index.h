@@ -106,7 +106,9 @@ public:
 
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
-
+#ifdef BUILD_TESTS
+    inline VecSimIndexAbstract<DistType> *getFlatbufferIndex() { return this->frontendIndex; }
+#endif
 private:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
         // Will be used only if a processing stage is needed
@@ -141,6 +143,8 @@ private:
 
         return this->newBatchIterator(query_to_send, queryParams);
     }
+
+
 };
 
 template <typename DataType, typename DistType>
@@ -148,7 +152,9 @@ VecSimQueryResult_List
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) {
     this->flatIndexGuard.lock_shared();
-
+#ifdef BUILD_TESTS
+    this->getFlatbufferIndex()->log("");
+#endif
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
