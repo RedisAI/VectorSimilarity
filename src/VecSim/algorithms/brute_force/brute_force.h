@@ -380,9 +380,9 @@ bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, s
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();
-    if (subsetSize > index_size) {
-        throw std::runtime_error("internal error: subset size cannot be larger than index size");
-    }
+    // Referring to too large subset size as if it was the maximum possible size.
+    subsetSize = std::min(subsetSize, index_size);
+
     size_t d = this->dim;
     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;

@@ -3573,3 +3573,45 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
     // Cleanup.
     delete index_ctx;
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
+    size_t dim = 4;
+
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    // Create tiered index with buffer limit set to 0.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+
+    auto hnsw = tiered_index->backendIndex;
+    auto flat = tiered_index->frontendIndex;
+
+    // Insert 5 vectors to the main index.
+    for (size_t i = 0; i < 5; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw, dim, i, i);
+    }
+    // Sanity check. Should choose as HNSW.
+    ASSERT_EQ(tiered_index->preferAdHocSearch(5, 5, true), hnsw->preferAdHocSearch(5, 5, true));
+
+    // Insert 6 vectors to the flat index.
+    for (size_t i = 0; i < 6; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat, dim, i, i);
+    }
+    // Sanity check. Should choose as flat as it has more vectors.
+    ASSERT_EQ(tiered_index->preferAdHocSearch(5, 5, true), flat->preferAdHocSearch(5, 5, true));
+
+    // Check for preference of tiered with subset (10) smaller than the tiered index size (11),
+    // but larger than any of the underlying indexes.
+    ASSERT_NO_THROW(tiered_index->preferAdHocSearch(10, 5, false));
+
+    // Cleanup.
+    delete index_ctx;
+}
