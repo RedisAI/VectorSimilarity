@@ -584,7 +584,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         // may need to increase the capacity when we append the new vector afterwards.
         ret = hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
-        this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
         return ret;
     }
     if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
@@ -599,7 +598,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // directly to HNSW. Since flat buffer guard was not held, no need to release it
             // internally.
             this->insertVectorToHNSW<false>(hnsw_index, label, blob);
-            this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer

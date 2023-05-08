@@ -77,7 +77,7 @@ public:
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
 
-    virtual inline int64_t getAllocationSize() const override {
+    virtual inline uint64_t getAllocationSize() const override {
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
                this->frontendIndex->getAllocationSize();
     }

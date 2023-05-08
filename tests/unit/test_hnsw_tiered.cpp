@@ -229,8 +229,8 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     // above te expected, since in different platforms there are some minor additional
     // allocations).
     size_t expected_mem = TieredFactory::EstimateInitialSize(&tiered_params);
-    ASSERT_LE(expected_mem, allocator->getAllocationSize());
-    ASSERT_GE(expected_mem * 1.02, allocator->getAllocationSize());
+    ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
+    ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
 
     // Create a vector and add it to the tiered index.
     labelType vec_label = 1;
@@ -263,8 +263,8 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     expected_mem += sizeof(void *) + sizeof(size_t);
     // Account for the insert job that was created.
     expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
-    ASSERT_GE(expected_mem * 1.02, allocator->getAllocationSize());
-    ASSERT_LE(expected_mem, allocator->getAllocationSize());
+    ASSERT_GE(expected_mem * 1.02, tiered_index->getAllocationSize());
+    ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
 
     if (isMulti) {
         // Add another vector under the same label (create another insert job)
@@ -2753,15 +2753,14 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, 1);
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexInfo info = tiered_index->info();
     EXPECT_EQ(info.algo, VecSimAlgo_TIERED);
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
-    EXPECT_EQ(info.commonInfo.memory, memory_ctx);
+    EXPECT_EQ(info.commonInfo.memory, tiered_index->getAllocationSize());
     EXPECT_EQ(info.commonInfo.isMulti, TypeParam::isMulti());
     EXPECT_EQ(info.commonInfo.dim, dim);
     EXPECT_EQ(info.commonInfo.metric, VecSimMetric_L2);
@@ -2794,8 +2793,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
 
-    jobQ.front().job->Execute(jobQ.front().job);
-    jobQ.pop();
+    thread_iteration(jobQ);
     info = tiered_index->info();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
@@ -2839,11 +2837,6 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
 
-    while (!jobQ.empty()) {
-        delete jobQ.front().job;
-        jobQ.pop();
-    }
-
     delete index_ctx;
 }
 
@@ -2859,9 +2852,8 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, 1);
     auto allocator = tiered_index->getAllocator();
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
@@ -2951,9 +2943,8 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
 
     VecSim_SetWriteMode(VecSim_WriteInPlace);
@@ -2995,9 +2986,8 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
     VecSim_SetWriteMode(VecSim_WriteAsync);
 
@@ -3088,10 +3078,9 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
     // Create tiered index with buffer limit set to 0.
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx,
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx,
                                                      DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, 0);
     auto allocator = tiered_index->getAllocator();
 
@@ -3119,8 +3108,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
         // The first job in Q should be the invalid overwritten insert vector job.
         ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
-        delete jobQ.front().job;
-        jobQ.pop();
+        jobQ.kick();
     }
 
     // Insert another vector, this one should go directly to HNSW index since the buffer limit has
@@ -3160,13 +3148,11 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
     // Create tiered index with buffer limit set to 100.
     size_t flat_buffer_limit = 100;
-    auto *tiered_index =
-        this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx,
-                                    DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
+    auto *tiered_index = this->CreateTieredHNSWIndex(
+        hnsw_params, &jobQ, index_ctx, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
     auto allocator = tiered_index->getAllocator();
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
@@ -3226,9 +3212,9 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t cur_memory_usage, memory_ctx = 0;
+    size_t cur_memory_usage;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
     ASSERT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
@@ -3443,9 +3429,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
     EXPECT_EQ(index_ctx->index_strong_ref.use_count(), 1);
 
@@ -3465,8 +3450,6 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         };
         runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
         search_job->successful_searches++;
-
-        delete search_job;
     };
 
     // Fill the job queue with insert and search jobs, while filling the flat index, before
@@ -3524,10 +3507,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    size_t memory_ctx = 0;
 
     // Create tiered index with buffer limit set to 0.
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
 
     auto hnsw = tiered_index->backendIndex;
