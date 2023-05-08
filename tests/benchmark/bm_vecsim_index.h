@@ -54,7 +54,7 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     ref_count--;
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        // VecSimAlgo_HNSW in
+        // VecSimAlgo_HNSW will be destroyed as part of the tiered index release.
         thread_pool_join();
         VecSimIndex_Free(indices[VecSimAlgo_TIERED]);
     }
@@ -108,6 +108,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                                        .submitCb = submit_callback,
                                        .memoryCtx = &memory_ctx,
                                        .UpdateMemCb = update_mem_callback,
+                                       .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &primary_index_params,
                                        .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
 
