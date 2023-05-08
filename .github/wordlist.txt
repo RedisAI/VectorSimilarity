@@ -9,7 +9,6 @@ KNN
 RediSearch
 RedisAI
 SIMD
-SIMD
 TBD
 TopK
 VSCode
@@ -22,7 +21,6 @@ allocators
 ann
 benchmarked
 benchmarking
-bm
 bm
 cmake
 cpp
@@ -48,7 +46,6 @@ runtime
 templated
 tox
 valgrind
-vecsim
 vecsim
 virtualenv
 whl
