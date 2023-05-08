@@ -2150,23 +2150,17 @@ template <typename DataType, typename DistType>
 VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
 
     VecSimIndexInfo info;
+    info.commonInfo = this->getCommonInfo();
+
     info.algo = VecSimAlgo_HNSWLIB;
-    info.hnswInfo.dim = this->dim;
-    info.hnswInfo.type = this->vecType;
-    info.hnswInfo.isMulti = this->isMulti;
-    info.hnswInfo.metric = this->metric;
-    info.hnswInfo.blockSize = this->blockSize;
     info.hnswInfo.M = this->getM();
     info.hnswInfo.efConstruction = this->getEfConstruction();
     info.hnswInfo.efRuntime = this->getEf();
     info.hnswInfo.epsilon = this->epsilon_;
-    info.hnswInfo.indexSize = this->indexSize();
-    info.hnswInfo.indexLabelCount = this->indexLabelCount();
     info.hnswInfo.max_level = this->getMaxLevel();
     info.hnswInfo.entrypoint = this->getEntryPointLabel();
-    info.hnswInfo.memory = this->getAllocationSize();
-    info.hnswInfo.last_mode = this->last_mode;
     info.hnswInfo.visitedNodesPoolSize = this->visited_nodes_handler_pool.getPoolSize();
+    info.hnswInfo.numberOfMarkedDeletedNodes = this->getNumMarkedDeleted();
     return info;
 }
 
@@ -2174,71 +2168,50 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 12;
+    size_t numberOfInfoFields = 13;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
         .fieldType = INFOFIELD_STRING,
         .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::TYPE_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.hnswInfo.type)}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.dim}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::METRIC_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.hnswInfo.metric)}}});
 
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.isMulti}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexSize}}});
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
-        .fieldType = INFOFIELD_UINT64,
-        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.indexLabelCount}}});
+    this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.M}}});
+
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING,
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efConstruction}}});
+
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EF_RUNTIME_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.efRuntime}}});
+
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_MAX_LEVEL,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.max_level}}});
+
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_ENTRYPOINT,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.entrypoint}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.memory}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
-                         .fieldType = INFOFIELD_STRING,
-                         .fieldValue = {FieldValue{
-                             .stringValue = VecSimSearchMode_ToString(info.hnswInfo.last_mode)}}});
+
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_EPSILON_STRING,
                          .fieldType = INFOFIELD_FLOAT64,
                          .fieldValue = {FieldValue{.floatingPointValue = info.hnswInfo.epsilon}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::HNSW_NUM_MARKED_DELETED,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.numberOfMarkedDeletedNodes}}});
 
     return infoIterator;
 }
@@ -2249,9 +2222,9 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();
-    if (subsetSize > index_size) {
-        throw std::runtime_error("internal error: subset size cannot be larger than index size");
-    }
+    // Referring to too large subset size as if it was the maximum possible size.
+    subsetSize = std::min(subsetSize, index_size);
+
     size_t d = this->dim;
     size_t M = this->getM();
     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();

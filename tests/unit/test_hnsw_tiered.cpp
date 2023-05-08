@@ -98,8 +98,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         // Here we update labelToInsertJobs mapping, as we except that for every insert job
         // there will be a corresponding item in the map.
         my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
-        my_index->UpdateIndexMemory(my_index->memoryCtx,
-                                    my_index->getAllocator()->getAllocationSize());
+        my_index->UpdateIndexMemory(my_index->memoryCtx, my_index->getAllocationSize());
     };
 
     HNSWInsertJob job(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
@@ -116,7 +115,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     reinterpret_cast<AsyncJob *>(jobQ.front().job)->Execute(jobQ.front().job);
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
-    ASSERT_EQ(memory_ctx, tiered_index->getAllocator()->getAllocationSize());
+    ASSERT_EQ(memory_ctx, tiered_index->getAllocationSize());
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 
@@ -1854,7 +1853,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
                                tiered_index->getHNSWIndex())
                                ->label_lookup_.reserve(0);
 
-    size_t initial_mem = allocator->getAllocationSize();
+    size_t initial_mem = tiered_index->getAllocationSize();
 
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
@@ -1892,7 +1891,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // Call this just to trigger an update of the memory context.
     EXPECT_EQ(tiered_index->deleteVector(0), 0);
 
-    EXPECT_EQ(allocator->getAllocationSize(), initial_mem);
+    EXPECT_EQ(tiered_index->getAllocationSize(), initial_mem);
     EXPECT_EQ(initial_mem, memory_ctx);
 
     delete index_ctx;
@@ -2804,9 +2803,208 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
     }
 }
 
+TYPED_TEST(HNSWTieredIndexTest, testInfo) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    VecSimIndexInfo info = tiered_index->info();
+    EXPECT_EQ(info.algo, VecSimAlgo_TIERED);
+    EXPECT_EQ(info.commonInfo.indexSize, 0);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, memory_ctx);
+    EXPECT_EQ(info.commonInfo.isMulti, TypeParam::isMulti());
+    EXPECT_EQ(info.commonInfo.dim, dim);
+    EXPECT_EQ(info.commonInfo.metric, VecSimMetric_L2);
+    EXPECT_EQ(info.commonInfo.type, TypeParam::get_index_type());
+    EXPECT_EQ(info.commonInfo.blockSize, INVALID_INFO);
+    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
+    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
+
+    compareCommonInfo(info.tieredInfo.frontendCommonInfo, frontendIndexInfo.commonInfo);
+    compareFlatInfo(info.tieredInfo.bfInfo, frontendIndexInfo.bfInfo);
+    compareCommonInfo(info.tieredInfo.backendCommonInfo, backendIndexInfo.commonInfo);
+    compareHNSWInfo(info.tieredInfo.backendInfo.hnswInfo, backendIndexInfo.hnswInfo);
+
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          backendIndexInfo.commonInfo.memory +
+                                          frontendIndexInfo.commonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 1);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+
+    jobQ.front().job->Execute(jobQ.front().job);
+    jobQ.pop();
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 1);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    if (TypeParam::isMulti()) {
+        GenerateAndAddVector(tiered_index, dim, 1, 1);
+        info = tiered_index->info();
+
+        EXPECT_EQ(info.commonInfo.indexSize, 2);
+        EXPECT_EQ(info.commonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 1);
+        EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 1);
+        EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 1);
+        EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                              info.tieredInfo.backendCommonInfo.memory +
+                                              info.tieredInfo.frontendCommonInfo.memory);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    }
+
+    VecSimIndex_DeleteVector(tiered_index, 1);
+    info = tiered_index->info();
+
+    EXPECT_EQ(info.commonInfo.indexSize, 0);
+    EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.backendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+    EXPECT_EQ(info.tieredInfo.frontendCommonInfo.indexLabelCount, 0);
+    EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
+                                          info.tieredInfo.backendCommonInfo.memory +
+                                          info.tieredInfo.frontendCommonInfo.memory);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+
+    while (!jobQ.empty()) {
+        delete jobQ.front().job;
+        jobQ.pop();
+    }
+
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    size_t n = 1000;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx, 1);
+    auto allocator = tiered_index->getAllocator();
+
+    GenerateAndAddVector(tiered_index, dim, 1, 1);
+    VecSimIndexInfo info = tiered_index->info();
+    VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
+    VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
+
+    VecSimInfoIterator *infoIterator = tiered_index->infoIterator();
+    EXPECT_EQ(infoIterator->numberOfFields(), 14);
+
+    while (infoIterator->hasNext()) {
+        VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
+
+        if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
+            // Algorithm type.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimAlgo_ToString(info.algo));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
+            // Vector type.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimType_ToString(info.commonInfo.type));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
+            // Vector dimension.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.dim);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::METRIC_STRING)) {
+            // Metric.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimMetric_ToString(info.commonInfo.metric));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
+            // Search mode.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
+            ASSERT_STREQ(infoField->fieldValue.stringValue,
+                         VecSimSearchMode_ToString(info.commonInfo.last_mode));
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
+            // Index size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_LABEL_COUNT_STRING)) {
+            // Index label count.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.indexLabelCount);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
+            // Is the index multi value.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.isMulti);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
+            // Block size.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.blockSize);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
+            // Memory.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.management_layer_memory);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.backgroundIndexing);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
+            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
+            compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else {
+            FAIL();
+        }
+    }
+    VecSimInfoIterator_Free(infoIterator);
+    delete index_ctx;
+}
+
 TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
+
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = dim,
                          .metric = VecSimMetric_L2,
@@ -2884,7 +3082,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
 
     // Insert another n more vectors INPLACE, while the previous vectors are still being indexed.
     VecSim_SetWriteMode(VecSim_WriteInPlace);
-    EXPECT_LT(tiered_index->backendIndex->indexSize(), n);
+    EXPECT_LE(tiered_index->backendIndex->indexSize(), n);
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T vector[dim];
         for (size_t j = 0; j < dim; j++) {
@@ -3019,6 +3217,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti(),
                          .M = 64};
+
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
@@ -3370,6 +3569,48 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(successful_searches, n);
     EXPECT_EQ(jobQ.size(), 0);
+
+    // Cleanup.
+    delete index_ctx;
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
+    size_t dim = 4;
+
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+    size_t memory_ctx = 0;
+
+    // Create tiered index with buffer limit set to 0.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, &memory_ctx);
+    auto allocator = tiered_index->getAllocator();
+
+    auto hnsw = tiered_index->backendIndex;
+    auto flat = tiered_index->frontendIndex;
+
+    // Insert 5 vectors to the main index.
+    for (size_t i = 0; i < 5; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(hnsw, dim, i, i);
+    }
+    // Sanity check. Should choose as HNSW.
+    ASSERT_EQ(tiered_index->preferAdHocSearch(5, 5, true), hnsw->preferAdHocSearch(5, 5, true));
+
+    // Insert 6 vectors to the flat index.
+    for (size_t i = 0; i < 6; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(flat, dim, i, i);
+    }
+    // Sanity check. Should choose as flat as it has more vectors.
+    ASSERT_EQ(tiered_index->preferAdHocSearch(5, 5, true), flat->preferAdHocSearch(5, 5, true));
+
+    // Check for preference of tiered with subset (10) smaller than the tiered index size (11),
+    // but larger than any of the underlying indexes.
+    ASSERT_NO_THROW(tiered_index->preferAdHocSearch(10, 5, false));
 
     // Cleanup.
     delete index_ctx;

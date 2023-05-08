@@ -356,10 +356,10 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.dim, d);
-    ASSERT_TRUE(info.hnswInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.isMulti);
     // Default args.
-    ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.commonInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
@@ -382,10 +382,10 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
     index = this->CreateNewIndex(params);
     info = VecSimIndex_Info(index);
     ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.dim, d);
-    ASSERT_TRUE(info.hnswInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.isMulti);
     // User args.
-    ASSERT_EQ(info.hnswInfo.blockSize, bs);
+    ASSERT_EQ(info.commonInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, ef_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, ef_RT);
@@ -431,7 +431,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
     ASSERT_EQ(0.004, info.hnswInfo.epsilon);
-    ASSERT_EQ(0, info.hnswInfo.indexSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
@@ -448,8 +448,8 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_AddVector(index, v, 1);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(4, info.hnswInfo.indexSize);
-    ASSERT_EQ(2, info.hnswInfo.indexLabelCount);
+    ASSERT_EQ(4, info.commonInfo.indexSize);
+    ASSERT_EQ(2, info.commonInfo.indexLabelCount);
     ASSERT_GE(1, info.hnswInfo.max_level);
     ASSERT_EQ(0, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
@@ -459,8 +459,8 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(2, info.hnswInfo.indexSize);
-    ASSERT_EQ(1, info.hnswInfo.indexLabelCount);
+    ASSERT_EQ(2, info.commonInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.indexLabelCount);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -470,7 +470,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -478,14 +478,14 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -499,7 +499,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -508,7 +508,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -627,13 +627,9 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
-    try {
-        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
-        FAIL() << "Expected std::runtime error";
-    } catch (std::runtime_error const &err) {
-        EXPECT_EQ(err.what(),
-                  std::string("internal error: subset size cannot be larger than index size"));
-    }
+    ASSERT_EQ(VecSimIndex_PreferAdHocSearch(index, 42, 50, true),
+              VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
+
     VecSimIndex_Free(index);
 }
 TYPED_TEST(HNSWMultiTest, search_empty_index) {
@@ -1246,7 +1242,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
-    while (info.hnswInfo.indexSize > 0) {
+    while (info.commonInfo.indexSize > 0) {
         ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entrypoint));
         info = VecSimIndex_Info(index);
     }

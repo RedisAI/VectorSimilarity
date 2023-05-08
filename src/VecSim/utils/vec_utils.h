@@ -51,11 +51,18 @@ public:
     static const char *HNSW_EPSILON_STRING;
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
+    static const char *HNSW_NUM_MARKED_DELETED;
+    // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
     static const char *HYBRID_POLICY_STRING;
     static const char *BATCH_SIZE_STRING;
+
+    static const char *TIERED_MANAGEMENT_MEMORY_STRING;
+    static const char *TIERED_BACKGROUND_INDEXING_STRING;
+    static const char *FRONTEND_INDEX_STRING;
+    static const char *BACKEND_INDEX_STRING;
 };
 
 inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {

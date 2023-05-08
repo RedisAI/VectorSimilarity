@@ -165,7 +165,8 @@ public:
 public:
     TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                     BruteForceIndex<DataType, DistType> *bf_index,
-                    const TieredIndexParams &tieredParams);
+                    const TieredIndexParams &tieredParams,
+                    std::shared_ptr<VecSimAllocator> allocator);
     virtual ~TieredHNSWIndex();
 
     int addVector(const void *blob, labelType label, void *auxiliaryCtx = nullptr) override;
@@ -178,9 +179,6 @@ public:
     // needed.
     void increaseCapacity() override {}
 
-    // TODO: Implement the actual methods instead of these temporary ones.
-    VecSimIndexInfo info() const override { return this->backendIndex->info(); }
-    VecSimInfoIterator *infoIterator() const override { return this->backendIndex->infoIterator(); }
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
         size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
@@ -188,12 +186,6 @@ public:
         memcpy(queryBlobCopy, queryBlob, blobSize);
         return new (this->allocator)
             TieredHNSW_BatchIterator(queryBlobCopy, this, queryParams, this->allocator);
-    }
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
-        // For now, decide according to the bigger index.
-        return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
-                   ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
-                   : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
@@ -536,8 +528,9 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistType> *hnsw_index,
                                                      BruteForceIndex<DataType, DistType> *bf_index,
-                                                     const TieredIndexParams &tiered_index_params)
-    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params),
+                                                     const TieredIndexParams &tiered_index_params,
+                                                     std::shared_ptr<VecSimAllocator> allocator)
+    : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator) {
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
