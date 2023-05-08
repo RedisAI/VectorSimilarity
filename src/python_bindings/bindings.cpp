@@ -381,14 +381,7 @@ public:
     }
 };
 
-template <typename DistType>
-struct KNNLogCtx {
-    VecSimIndexAbstract<DistType> *flat_index;
-    size_t curr_flat_size;
-    KNNLogCtx() : flat_index(nullptr), curr_flat_size(0) {}
-};
-
-class PyTIEREDIndex : public PyVecSimIndex {
+class PyTieredIndex : public PyVecSimIndex {
 private:
     VecSimIndexAbstract<float> *getFlatBuffer() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
@@ -405,8 +398,6 @@ protected:
     bool run_thread;
     std::bitset<MAX_POOL_SIZE> executions_status;
 
-    KNNLogCtx<float> knnLogCtx;
-
     TieredIndexParams TieredIndexParams_Init() {
         TieredIndexParams ret = {
             .jobQueue = &this->jobQueue,
@@ -420,7 +411,7 @@ protected:
     }
 
 public:
-    explicit PyTIEREDIndex()
+    explicit PyTieredIndex()
         : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback),
           run_thread(true) {
 
@@ -428,11 +419,9 @@ public:
             ThreadParams params(run_thread, executions_status, i, jobQueue);
             thread_pool.emplace_back(thread_main_loop, params);
         }
-
-        ResetLogCB();
     }
 
-    virtual ~PyTIEREDIndex() = 0;
+    virtual ~PyTieredIndex() = 0;
 
     void WaitForIndex(size_t waiting_duration = 10) {
         bool keep_wating = true;
@@ -451,37 +440,15 @@ public:
         }
     }
 
-    static void log_flat_buffer_size(void *ctx, const char *msg) {
-        auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
-        knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexLabelCount();
-    }
-    void SetKNNLogCtx() {
-        knnLogCtx.flat_index = getFlatBuffer();
-        knnLogCtx.curr_flat_size = 0;
-        knnLogCtx.flat_index->setLogCtx(&knnLogCtx);
-        this->index->setLogCallbackFunction(log_flat_buffer_size);
-    }
-
-    size_t getFlatIndexSize(const char *mode = "None") {
-        if (!strcmp(mode, "insert_and_knn")) {
-            return knnLogCtx.curr_flat_size;
-        }
-
-        return getFlatBuffer()->indexLabelCount();
-    }
-
-    void ResetLogCB() { this->index->resetLogCallbackFunction(); }
+    size_t getFlatIndexSize() { return getFlatBuffer()->indexLabelCount(); }
 
     static size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
 };
 
-PyTIEREDIndex::~PyTIEREDIndex() {
-    thread_pool_terminate(jobQueue, run_thread);
-    ResetLogCB();
-}
-class PyTIERED_HNSWIndex : public PyTIEREDIndex {
+PyTieredIndex::~PyTieredIndex() { thread_pool_terminate(jobQueue, run_thread); }
+class PyTiered_HNSWIndex : public PyTieredIndex {
 public:
-    explicit PyTIERED_HNSWIndex(const HNSWParams &hnsw_params,
+    explicit PyTiered_HNSWIndex(const HNSWParams &hnsw_params,
                                 const TieredHNSWParams &tiered_hnsw_params) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
@@ -589,8 +556,6 @@ PYBIND11_MODULE(VecSim, m) {
         .def("index_memory", &PyVecSimIndex::indexMemory)
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
-        .def("get_distance_from", &PyVecSimIndex::getGetDistanceFrom, py::arg("label"),
-             py::arg("blob"))
         .def("get_vector", &PyVecSimIndex::getVector);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
@@ -610,20 +575,18 @@ PYBIND11_MODULE(VecSim, m) {
         .def("range_parallel", &PyHNSWLibIndex::searchRangeParallel, py::arg("queries"),
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
 
-    py::class_<PyTIEREDIndex, PyVecSimIndex>(m, "TIEREDIndex")
-        .def("wait_for_index", &PyTIERED_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
-        .def("get_curr_bf_size", &PyTIERED_HNSWIndex::getFlatIndexSize, py::arg("mode") = "None")
-        .def_static("get_threads_num", &PyTIEREDIndex::GetThreadsNum)
-        .def("reset_log", &PyTIERED_HNSWIndex::ResetLogCB)
-        .def("start_knn_log", &PyTIERED_HNSWIndex::SetKNNLogCtx);
+    py::class_<PyTieredIndex, PyVecSimIndex>(m, "TieredIndex")
+        .def("wait_for_index", &PyTiered_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
+        .def("get_curr_bf_size", &PyTiered_HNSWIndex::getFlatIndexSize)
+        .def_static("get_threads_num", &PyTieredIndex::GetThreadsNum);
 
-    py::class_<PyTIERED_HNSWIndex, PyTIEREDIndex>(m, "TIERED_HNSWIndex")
+    py::class_<PyTiered_HNSWIndex, PyTieredIndex>(m, "Tiered_HNSWIndex")
         .def(
             py::init([](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params) {
-                return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
+                return new PyTiered_HNSWIndex(hnsw_params, tiered_hnsw_params);
             }),
             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
-        .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount);
+        .def("hnsw_label_count", &PyTiered_HNSWIndex::HNSWLabelCount);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

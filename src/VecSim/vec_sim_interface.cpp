@@ -13,11 +13,3 @@ void Vecsim_Log(void *ctx, const char *message) { std::cout << message << std::e
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
-
-#ifdef BUILD_TESTS
-static inline void Vecsim_Log_DO_NOTHING(void *ctx, const char *message) {}
-
-void VecSimIndexInterface::resetLogCallbackFunction() {
-    VecSimIndexInterface::logCallback = Vecsim_Log_DO_NOTHING;
-}
-#endif
