@@ -34,10 +34,21 @@ public:
     virtual ~VecSimIndexInterface() {}
 
     /**
+     * @brief This Function prepares the blob before sending it to addVector.
+     * @param blob binary representation of the vector. Blob size should match the index data type
+     * and dimension. (for example, if the distance metric is cosine,
+     * it will call addVector with the normalized blob)
+     * It is assumed the the index saves its own copy of the blob.
+     */
+    virtual int addVectorWrapper(const void *blob, labelType label,
+                                 void *auxiliaryCtx = nullptr) = 0;
+
+    /**
      * @brief Add a vector blob and its id to the index.
      *
      * @param blob binary representation of the vector. Blob size should match the index data type
-     * and dimension.
+     * and dimension. It is assumed that the queryBlob has been already processed
+     *  (for example, if the distance metric is cosine, the blob is already *normalized*)
      * @param label the label of the added vector.
      * @param auxiliaryCtx if this is not the main index (but a layer in a tiered index for example)
      * we pass a state of the index to be used internally. Otherwise, if auxiliaryCtx just perform
@@ -96,11 +107,21 @@ public:
     virtual size_t indexLabelCount() const = 0;
 
     /**
-     * @brief Search for the k closest vectors to a given vector in the index.
-     *
+     * @brief This Function prepares the blob before sending it to topKQuery.
      * @param queryBlob binary representation of the query vector. Blob size should match the index
      * data type and dimension.
-     * @param k the number of "nearest neighbours" to return (upper bound).
+     * for example, if the distance metric is cosine, it will call topKQuery with the normalized
+     * blob.
+     */
+    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) = 0;
+
+    /**
+     * @brief Search for the k closest vectors to a given vector in the index.
+     * @param queryBlob binary representation of the query vector. Blob size should match the index
+     * data type and dimension. It is assumed that the queryBlob has been already processed
+     *  (for example, if the distance metric is cosine, the blob is already *normalized*)
+     * @param k the number of "nearest neighbors" to return (upper bound).
      * @param queryParams run time params for the search, which are algorithm-specific.
      * @return An opaque object the represents a list of results. User can access the id and score
      * (which is the distance according to the index metric) of every result through
@@ -110,10 +131,21 @@ public:
                                              VecSimQueryParams *queryParams) = 0;
 
     /**
+     * @brief This Function prepares the blob before sending it to rangeQuery.
+     * @param queryBlob binary representation of the query vector. Blob size should match the index
+     * data type and dimension.
+     * for example, if the distance metric is cosine, it will call rangeQuery with the normalized
+     * blob.
+     */
+    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryResult_Order order) = 0;
+    /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
      * @param queryBlob binary representation of the query vector. Blob size should match the index
-     * data type and dimension.
+     * data type and dimension. It is assumed that the queryBlob has been already processed
+     *  (for example, if the distance metric is cosine, the blob is already *normalized*)
      * @param radius the radius around the query vector to search vectors within it.
      * @param queryParams run time params for the search, which are algorithm-specific.
      * @param order the criterion to sort the results list by it. Options are by score, or by id.
@@ -122,7 +154,8 @@ public:
      * VecSimQueryResult_Iterator.
      */
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) = 0;
+                                              VecSimQueryParams *queryParams,
+                                              VecSimQueryResult_Order order) = 0;
 
     /**
      * @brief Return index information.
@@ -147,9 +180,16 @@ public:
      * type and dimension.
      * @return Fresh batch iterator
      */
+    virtual VecSimBatchIterator *newBatchIteratorWrapper(const void *queryBlob,
+                                                         VecSimQueryParams *queryParams) const = 0;
+
+    /**
+     * @brief A function to be implemented by the inheriting index and called by rangeQuery.
+     * @param blob is a processed vector (for example, if the distance metric is cosine,
+     * blob is already *normalized* )
+     */
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const = 0;
-
     /**
      * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
      * search over the index instead of using batch iterator.
@@ -184,5 +224,16 @@ public:
     static logCallbackFunction logCallback;
     inline static void setLogCallbackFunction(logCallbackFunction callback) {
         VecSimIndexInterface::logCallback = callback;
+    }
+
+    /**
+     * @brief Allow 3rd party to set the write mode for tiered index - async insert/delete using
+     * background jobs, or insert/delete inplace.
+     *
+     * @param mode VecSimWriteMode the mode in which we add/remove vectors (async or in-place).
+     */
+    static VecSimWriteMode asyncWriteMode;
+    inline static void setWriteMode(VecSimWriteMode mode) {
+        VecSimIndexInterface::asyncWriteMode = mode;
     }
 };

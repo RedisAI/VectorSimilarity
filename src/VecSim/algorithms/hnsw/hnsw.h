@@ -85,7 +85,6 @@ protected:
     double epsilon_;
 
     // Index meta-data (based on the data dimensionality and index parameters)
-    size_t data_size_;
     size_t size_data_per_element_;
     size_t size_links_per_element_;
     size_t size_links_level0_;
@@ -232,7 +231,7 @@ public:
     // (this option is used currently for tests).
     virtual inline bool safeCheckIfLabelExistsInIndex(labelType label,
                                                       bool also_done_processing = false) const = 0;
-    inline idType safeGetEntryPointCopy() const;
+    inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
     inline void lockNodeLinks(idType node_id) const;
@@ -285,7 +284,6 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
 #endif
-
 protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
@@ -1562,9 +1560,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DistType>(abstractInitParams), VecSimIndexTombstone(),
-      max_elements_(params->initialCapacity),
-      data_size_(VecSimType_sizeof(params->type) * this->dim),
-      element_levels_(max_elements_, this->allocator),
+      max_elements_(params->initialCapacity), element_levels_(max_elements_, this->allocator),
       visited_nodes_handler_pool(pool_initial_size, max_elements_, this->allocator),
       element_neighbors_locks_(max_elements_, this->allocator) {
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
@@ -1592,18 +1588,18 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     level_generator_.seed(random_seed);
 
     // data_level0_memory will look like this:
-    // | ---2--- | -----2----- | -----4*M0----------- | ---------8-------- |-data_size_-| ---8--- |
+    // | ---2--- | -----2----- | -----4*M0----------- | ---------8-------- |-data_size-| ---8--- |
     // | <flags> | <links_len> | <link_1> <link_2>... |<incoming_links_ptr>|   <data>   | <label> |
 
     size_links_level0_ =
         sizeof(linkListSize) + sizeof(elementFlags) + maxM0_ * sizeof(idType) + sizeof(void *);
-    size_data_per_element_ = size_links_level0_ + data_size_ + sizeof(labelType);
+    size_data_per_element_ = size_links_level0_ + this->data_size + sizeof(labelType);
 
     // No need to test for overflow because we passed the test for size_links_level0_ and this is
     // less.
     incoming_links_offset0 = maxM0_ * sizeof(idType) + sizeof(linkListSize) + sizeof(elementFlags);
     offsetData_ = size_links_level0_;
-    label_offset_ = size_links_level0_ + data_size_;
+    label_offset_ = size_links_level0_ + this->data_size;
     offsetLevel0_ = 0;
 
     data_level0_memory_ =
@@ -1838,6 +1834,9 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     AddVectorCtx state{};
     if (auxiliaryCtx == nullptr) {
         this->lockIndexDataGuard();
+        if (indexSize() == indexCapacity()) {
+            increaseCapacity();
+        }
         state = storeNewElement(label);
         if (state.currMaxLevel >= state.elementMaxLevel) {
             this->unlockIndexDataGuard();
@@ -1851,13 +1850,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     auto [new_element_id, element_max_level, prev_entry_point, prev_max_level] = state;
     // Initialisation of the vector data and its label.
     setExternalLabel(new_element_id, label);
-    DataType normalized_blob[this->dim]; // will be use only if metric is 'Cosine'
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, vector_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        vector_data = normalized_blob;
-    }
-    memcpy(getDataByInternalId(new_element_id), vector_data, data_size_);
+    memcpy(getDataByInternalId(new_element_id), vector_data, this->data_size);
 
     // Start scanning the graph from the current entry point.
     idType curr_element = prev_entry_point;
@@ -1908,9 +1901,9 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
 }
 
 template <typename DataType, typename DistType>
-idType HNSWIndex<DataType, DistType>::safeGetEntryPointCopy() const {
+auto HNSWIndex<DataType, DistType>::safeGetEntryPointState() const {
     std::shared_lock<std::shared_mutex> lock(index_data_guard_);
-    return entrypoint_node_;
+    return std::make_pair(entrypoint_node_, max_level_);
 }
 
 template <typename DataType, typename DistType>
@@ -1918,12 +1911,12 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
                                                           VecSimQueryResult_Code *rc) const {
     *rc = VecSim_QueryResult_OK;
 
-    idType curr_element = safeGetEntryPointCopy();
+    auto [curr_element, max_level] = safeGetEntryPointState();
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
     DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
-    for (size_t level = max_level_; level > 0 && curr_element != INVALID_ID; level--) {
+    for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
     return curr_element;
@@ -1998,12 +1991,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *quer
 
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine.
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
-    }
     // Get original efRuntime and store it.
     size_t ef = ef_;
 
@@ -2131,13 +2118,6 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
     void *timeoutCtx = nullptr;
 
-    DataType normalized_blob[this->dim]; // This will be use only if metric == VecSimMetric_Cosine
-    if (this->metric == VecSimMetric_Cosine) {
-        memcpy(normalized_blob, query_data, this->dim * sizeof(DataType));
-        normalizeVector(normalized_blob, this->dim);
-        query_data = normalized_blob;
-    }
-
     double epsilon = epsilon_;
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;
@@ -2147,7 +2127,10 @@ VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *que
     }
 
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
-    if (VecSim_OK != rl.code) {
+    // Although we checked that the index is not empty (cur_element_count == 0), it might be
+    // that another thread deleted all the elements or didn't finish inserting the first element
+    // yet. Anyway, we observed that the index is empty, so we return an empty result list.
+    if (VecSim_OK != rl.code || bottom_layer_ep == INVALID_ID) {
         rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }

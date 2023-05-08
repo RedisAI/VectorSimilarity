@@ -47,6 +47,7 @@ struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
     VecSimType vecType;  // Datatype to index.
+    size_t data_size;    // Vector size in bytes
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
@@ -56,6 +57,7 @@ protected:
     bool isMulti;            // Determines if the index should multi-index or not.
     void *logCallbackCtx;    // Context for the log callback.
 
+    normalizeVector_f normalize_func; // A pointer to a normalization function of specific type.
 public:
     /**
      * @brief Construct a new Vec Sim Index object
@@ -63,11 +65,13 @@ public:
      */
     VecSimIndexAbstract(const AbstractIndexInitParams &params)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          metric(params.metric),
+          data_size(dim * VecSimType_sizeof(vecType)), metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
           last_mode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         spaces::SetDistFunc(metric, dim, &dist_func);
+        normalize_func =
+            vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }
 
     /**
@@ -82,6 +86,17 @@ public:
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
+    inline size_t getDataSize() const { return data_size; }
+
+    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                              VecSimQueryParams *queryParams) = 0;
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                      VecSimQueryParams *queryParams,
+                                      VecSimQueryResult_Order order) override {
+        auto results = rangeQuery(queryBlob, radius, queryParams);
+        sort_results(results, order);
+        return results;
+    }
 
     void log(const char *fmt, ...) const {
         if (VecSimIndexInterface::logCallback) {
@@ -97,5 +112,53 @@ public:
             logCallback(this->logCallbackCtx, buf);
             delete[] buf;
         }
+    }
+
+    const void *processBlob(const void *original_blob, void *processed_blob) const {
+        // if the metric is cosine, we need to normalize
+        if (this->metric == VecSimMetric_Cosine) {
+            // copy original blob to the output blob
+            memcpy(processed_blob, original_blob, this->data_size);
+            // normalize the copy in place
+            normalize_func(processed_blob, this->dim);
+
+            return processed_blob;
+        }
+
+        // Else no process is needed, return the original blob
+        return original_blob;
+    }
+
+protected:
+    virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
+        char processed_blob[this->data_size];
+        const void *vector_to_add = processBlob(blob, processed_blob);
+
+        return this->addVector(vector_to_add, label, auxiliaryCtx);
+    }
+
+    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
+                                                    VecSimQueryParams *queryParams) override {
+        char processed_blob[this->data_size];
+        const void *query_to_send = processBlob(queryBlob, processed_blob);
+
+        return this->topKQuery(query_to_send, k, queryParams);
+    }
+
+    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
+                                                     VecSimQueryParams *queryParams,
+                                                     VecSimQueryResult_Order order) override {
+        char processed_blob[this->data_size];
+        const void *query_to_send = processBlob(queryBlob, processed_blob);
+
+        return this->rangeQuery(query_to_send, radius, queryParams, order);
+    }
+
+    virtual VecSimBatchIterator *
+    newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
+        char processed_blob[this->data_size];
+        const void *query_to_send = processBlob(queryBlob, processed_blob);
+
+        return this->newBatchIterator(query_to_send, queryParams);
     }
 };

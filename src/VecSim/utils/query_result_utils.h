@@ -33,7 +33,10 @@ template <bool withSet>
 VecSimQueryResult *merge_results(VecSimQueryResult *&first, const VecSimQueryResult *first_end,
                                  VecSimQueryResult *&second, const VecSimQueryResult *second_end,
                                  size_t limit) {
-    VecSimQueryResult *results = array_new<VecSimQueryResult>(limit);
+    // Allocate the merged results array with the minimum size needed.
+    // Min of the limit and the sum of the lengths of the two arrays.
+    VecSimQueryResult *results = array_new<VecSimQueryResult>(
+        std::min(limit, (size_t)(first_end - first) + (size_t)(second_end - second)));
     // Will hold the ids of the results we've already added to the merged results.
     // Will be used only if withSet is true.
     std::unordered_set<size_t> ids;
@@ -92,9 +95,54 @@ VecSimQueryResult_List merge_result_lists(VecSimQueryResult_List first,
     return mergedResults;
 }
 
+// Concatenate the results of two queries into the results of the first query, consuming the second.
 static inline void concat_results(VecSimQueryResult_List &first, VecSimQueryResult_List &second) {
     auto &dst = first.results;
     auto &src = second.results;
 
     dst = array_concat(dst, src);
+    VecSimQueryResult_Free(second);
+}
+
+// Sorts the results by id and removes duplicates.
+// Assumes that a result can appear at most twice in the results list.
+// @returns the number of unique results. This should be set to be the new length of the results
+template <bool IsMulti>
+void filter_results_by_id(VecSimQueryResult_List results) {
+    if (VecSimQueryResult_Len(results) < 2) {
+        return;
+    }
+    sort_results_by_id(results);
+
+    size_t i, cur_end;
+    for (i = 0, cur_end = 0; i < VecSimQueryResult_Len(results) - 1; i++, cur_end++) {
+        const VecSimQueryResult *cur_res = results.results + i;
+        const VecSimQueryResult *next_res = cur_res + 1;
+        if (VecSimQueryResult_GetId(cur_res) == VecSimQueryResult_GetId(next_res)) {
+            if (IsMulti) {
+                // On multi value index, scores might be different and we want to keep the lower
+                // score.
+                if (VecSimQueryResult_GetScore(cur_res) < VecSimQueryResult_GetScore(next_res)) {
+                    results.results[cur_end] = *cur_res;
+                } else {
+                    results.results[cur_end] = *next_res;
+                }
+            } else {
+                // On single value index, scores are the same so we can keep any of the results.
+                results.results[cur_end] = *cur_res;
+            }
+            // Assuming every id can appear at most twice, we can skip the next comparison between
+            // the current and the next result.
+            i++;
+        } else {
+            results.results[cur_end] = *cur_res;
+        }
+    }
+    // If the last result is unique, we need to add it to the results.
+    if (i == VecSimQueryResult_Len(results) - 1) {
+        results.results[cur_end] = results.results[i];
+        // Logically, we should increment cur_end and i here, but we don't need to because it won't
+        // affect the rest of the function.
+    }
+    array_pop_back_n(results.results, i - cur_end);
 }
