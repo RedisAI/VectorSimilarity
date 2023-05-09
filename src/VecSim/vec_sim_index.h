@@ -53,7 +53,7 @@ protected:
                          // resizing)
     dist_func_t<DistType>
         dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
-    VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
+    mutable VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;            // Determines if the index should multi-index or not.
     void *logCallbackCtx;    // Context for the log callback.
 
@@ -109,10 +109,10 @@ public:
     inline size_t getDataSize() const { return data_size; }
 
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) = 0;
+                                              VecSimQueryParams *queryParams) const = 0;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams,
-                                      VecSimQueryResult_Order order) override {
+                                      VecSimQueryResult_Order order) const override {
         auto results = rangeQuery(queryBlob, radius, queryParams);
         sort_results(results, order);
         return results;
@@ -196,7 +196,7 @@ protected:
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) override {
+                                                    VecSimQueryParams *queryParams) const override {
         char processed_blob[this->data_size];
         const void *query_to_send = processBlob(queryBlob, processed_blob);
 
@@ -205,7 +205,7 @@ protected:
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) override {
+                                                     VecSimQueryResult_Order order) const override {
         char processed_blob[this->data_size];
         const void *query_to_send = processBlob(queryBlob, processed_blob);
 

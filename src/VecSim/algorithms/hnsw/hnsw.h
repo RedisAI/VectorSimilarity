@@ -240,7 +240,7 @@ public:
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
     VecSimInfoIterator *infoIterator() const override;
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     char *getDataByInternalId(idType internal_id) const;
     inline idType *getNodeNeighborsAtLevel(idType internal_id, size_t level) const;
     inline linkListSize getNodeNeighborsCount(const idType *list) const;
@@ -248,9 +248,9 @@ public:
                                       VecSimQueryResult_Code *rc) const;
 
     VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
-                                     VecSimQueryParams *queryParams) override;
+                                     VecSimQueryParams *queryParams) const override;
     VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
-                                      VecSimQueryParams *queryParams) override;
+                                      VecSimQueryParams *queryParams) const override;
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
@@ -1978,7 +1978,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
-                                                                VecSimQueryParams *queryParams) {
+                                                                VecSimQueryParams *queryParams) const {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
@@ -2106,7 +2106,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
                                                                  double radius,
-                                                                 VecSimQueryParams *queryParams) {
+                                                                 VecSimQueryParams *queryParams) const {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
@@ -2218,7 +2218,7 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
-                                                      bool initial_check) {
+                                                      bool initial_check) const {
     // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
     // see scripts/HNSW_batches_clf.py
     size_t index_size = this->indexSize();

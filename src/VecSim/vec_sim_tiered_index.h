@@ -75,7 +75,11 @@ public:
     }
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                     VecSimQueryParams *queryParams) override;
+                                     VecSimQueryParams *queryParams) const override;
+
+    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+                                      VecSimQueryParams *queryParams,
+                                      VecSimQueryResult_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
@@ -85,11 +89,7 @@ public:
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
 
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams,
-                                      VecSimQueryResult_Order order) override;
-
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
         return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
                    ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
@@ -108,7 +108,7 @@ private:
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) override {
+                                                    VecSimQueryParams *queryParams) const override {
         // Will be used only if a processing stage is needed
         char processed_blob[this->backendIndex->getDataSize()];
         const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
@@ -117,7 +117,7 @@ private:
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) override {
+                                                     VecSimQueryResult_Order order) const override {
         // Will be used only if a processing stage is needed
         char processed_blob[this->backendIndex->getDataSize()];
         const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
@@ -138,7 +138,7 @@ private:
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                                 VecSimQueryParams *queryParams) {
+                                                 VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -187,7 +187,77 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 }
 
 template <typename DataType, typename DistType>
+VecSimQueryResult_List
+VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
+                                                  VecSimQueryParams *queryParams,
+                                                  VecSimQueryResult_Order order) const {
+    this->flatIndexGuard.lock_shared();
 
+    // If the flat buffer is empty, we can simply query the main index.
+    if (this->frontendIndex->indexSize() == 0) {
+        // Release the flat lock and acquire the main lock.
+        this->flatIndexGuard.unlock_shared();
+
+        // Simply query the main index and return the results while holding the lock.
+        this->mainIndexGuard.lock_shared();
+        auto res = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
+        this->mainIndexGuard.unlock_shared();
+
+        // We could have passed the order to the main index, but we can sort them here after
+        // unlocking it instead.
+        sort_results(res, order);
+        return res;
+    } else {
+        // No luck... first query the flat buffer and release the lock.
+        auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
+        this->flatIndexGuard.unlock_shared();
+
+        // If the query failed (currently only on timeout), return the error code and the partial
+        // results.
+        if (flat_results.code != VecSim_QueryResult_OK) {
+            return flat_results;
+        }
+
+        // Lock the main index and query it.
+        this->mainIndexGuard.lock_shared();
+        auto main_results = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
+        this->mainIndexGuard.unlock_shared();
+
+        // Merge the results and return, avoiding duplicates.
+        // At this point, the return code of the FLAT index is OK, and the return code of the MAIN
+        // index is either OK or TIMEOUT. Make sure to return the return code of the MAIN index.
+        if (BY_SCORE == order) {
+            sort_results_by_score_then_id(main_results);
+            sort_results_by_score_then_id(flat_results);
+
+            // Keep the return code of the main index.
+            auto code = main_results.code;
+
+            // Merge the sorted results with no limit (all the results are valid).
+            VecSimQueryResult_List ret;
+            if (this->backendIndex->isMultiValue()) {
+                ret = merge_result_lists<true>(main_results, flat_results, -1);
+            } else {
+                ret = merge_result_lists<false>(main_results, flat_results, -1);
+            }
+            // Restore the return code and return.
+            ret.code = code;
+            return ret;
+
+        } else { // BY_ID
+            // Notice that we don't modify the return code of the main index in any step.
+            concat_results(main_results, flat_results);
+            if (this->backendIndex->isMultiValue()) {
+                filter_results_by_id<true>(main_results);
+            } else {
+                filter_results_by_id<false>(main_results);
+            }
+            return main_results;
+        }
+    }
+}
+
+template <typename DataType, typename DistType>
 VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
     VecSimIndexInfo backendInfo = this->backendIndex->info();
@@ -259,74 +329,3 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
 
     return infoIterator;
 };
-
-template <typename DataType, typename DistType>
-VecSimQueryResult_List
-VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
-                                                  VecSimQueryParams *queryParams,
-                                                  VecSimQueryResult_Order order) {
-    this->flatIndexGuard.lock_shared();
-
-    // If the flat buffer is empty, we can simply query the main index.
-    if (this->frontendIndex->indexSize() == 0) {
-        // Release the flat lock and acquire the main lock.
-        this->flatIndexGuard.unlock_shared();
-
-        // Simply query the main index and return the results while holding the lock.
-        this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
-        this->mainIndexGuard.unlock_shared();
-
-        // We could have passed the order to the main index, but we can sort them here after
-        // unlocking it instead.
-        sort_results(res, order);
-        return res;
-    } else {
-        // No luck... first query the flat buffer and release the lock.
-        auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
-        this->flatIndexGuard.unlock_shared();
-
-        // If the query failed (currently only on timeout), return the error code and the partial
-        // results.
-        if (flat_results.code != VecSim_QueryResult_OK) {
-            return flat_results;
-        }
-
-        // Lock the main index and query it.
-        this->mainIndexGuard.lock_shared();
-        auto main_results = this->backendIndex->rangeQuery(queryBlob, radius, queryParams);
-        this->mainIndexGuard.unlock_shared();
-
-        // Merge the results and return, avoiding duplicates.
-        // At this point, the return code of the FLAT index is OK, and the return code of the MAIN
-        // index is either OK or TIMEOUT. Make sure to return the return code of the MAIN index.
-        if (BY_SCORE == order) {
-            sort_results_by_score_then_id(main_results);
-            sort_results_by_score_then_id(flat_results);
-
-            // Keep the return code of the main index.
-            auto code = main_results.code;
-
-            // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryResult_List ret;
-            if (this->backendIndex->isMultiValue()) {
-                ret = merge_result_lists<true>(main_results, flat_results, -1);
-            } else {
-                ret = merge_result_lists<false>(main_results, flat_results, -1);
-            }
-            // Restore the return code and return.
-            ret.code = code;
-            return ret;
-
-        } else { // BY_ID
-            // Notice that we don't modify the return code of the main index in any step.
-            concat_results(main_results, flat_results);
-            if (this->backendIndex->isMultiValue()) {
-                filter_results_by_id<true>(main_results);
-            } else {
-                filter_results_by_id<false>(main_results);
-            }
-            return main_results;
-        }
-    }
-}
