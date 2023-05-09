@@ -27,7 +27,8 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                           .multi = params->primaryIndexParams->hnswParams.multi,
                           .blockSize = params->primaryIndexParams->hnswParams.blockSize};
 
-    AbstractIndexInitParams abstractInitParams = {.allocator = hnsw_index->getAllocator(),
+    std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
+    AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
                                                   .dim = bf_params.dim,
                                                   .vecType = bf_params.type,
                                                   .metric = bf_params.metric,
@@ -38,8 +39,11 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
     // Create new tiered hnsw index
-    return new (hnsw_index->getAllocator())
-        TieredHNSWIndex<DataType, DistType>(hnsw_index, frontendIndex, *params);
+    std::shared_ptr<VecSimAllocator> management_layer_allocator =
+        VecSimAllocator::newVecsimAllocator();
+
+    return new (management_layer_allocator) TieredHNSWIndex<DataType, DistType>(
+        hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_params_output) {
@@ -47,6 +51,10 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
 
     // Add size estimation of VecSimTieredIndex sub indexes.
     size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params);
+
+    // Management layer allocator overhead.
+    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+    est += sizeof(VecSimAllocator) + allocations_overhead;
 
     // Size of the TieredHNSWIndex struct.
     if (hnsw_params.type == VecSimType_FLOAT32) {
@@ -87,6 +95,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
 size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     size_t est = 0;
+
     BFParams bf_params{};
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est += TieredHNSWFactory::EstimateInitialSize(params, bf_params);

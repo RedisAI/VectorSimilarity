@@ -21,14 +21,16 @@ typedef enum {
     INFOFIELD_STRING,
     INFOFIELD_INT64,
     INFOFIELD_UINT64,
-    INFOFIELD_FLOAT64
+    INFOFIELD_FLOAT64,
+    INFOFIELD_ITERATOR
 } VecSim_InfoFieldType;
 
 typedef union {
-    double floatingPointValue; // Floating point value. 64 bits float.
-    int64_t integerValue;      // Integer value. Signed 64 bits integer.
-    u_int64_t uintegerValue;   // Unsigned value. Unsigned 64 buts integer.
-    const char *stringValue;   // String value.
+    double floatingPointValue;         // Floating point value. 64 bits float.
+    int64_t integerValue;              // Integer value. Signed 64 bits integer.
+    u_int64_t uintegerValue;           // Unsigned value. Unsigned 64 buts integer.
+    const char *stringValue;           // String value.
+    VecSimInfoIterator *iteratorValue; // Iterator value.
 } FieldValue;
 
 /**

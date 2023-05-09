@@ -51,8 +51,8 @@ protected:
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
-                      TieredIndexParams tieredParams)
-        : VecSimIndexInterface(backendIndex_->getAllocator()), backendIndex(backendIndex_),
+                      TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
+        : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
           memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb),
@@ -65,6 +65,15 @@ public:
 
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
+
+    virtual inline int64_t getAllocationSize() const override {
+        return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
+               this->frontendIndex->getAllocationSize();
+    }
+
+    virtual VecSimIndexInfo info() const override;
+    virtual VecSimInfoIterator *infoIterator() const override;
+
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams,
                                       VecSimQueryResult_Order order) override;
@@ -168,6 +177,80 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         }
     }
 }
+
+template <typename DataType, typename DistType>
+
+VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
+    VecSimIndexInfo info;
+    VecSimIndexInfo backendInfo = this->backendIndex->info();
+    VecSimIndexInfo frontendInfo = this->frontendIndex->info();
+    info.algo = VecSimAlgo_TIERED;
+    info.commonInfo.indexLabelCount = this->indexLabelCount();
+    info.commonInfo.indexSize = this->indexSize();
+    info.commonInfo.memory = this->getAllocationSize();
+    info.commonInfo.isMulti = this->backendIndex->isMultiValue();
+    info.commonInfo.type = backendInfo.commonInfo.type;
+    info.commonInfo.metric = backendInfo.commonInfo.metric;
+    info.commonInfo.dim = backendInfo.commonInfo.dim;
+    info.commonInfo.blockSize = INVALID_INFO;
+    info.commonInfo.last_mode = backendInfo.commonInfo.last_mode;
+
+    info.tieredInfo.backendAlgo = backendInfo.algo;
+    switch (backendInfo.algo) {
+    case VecSimAlgo_HNSWLIB:
+        info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
+        break;
+    case VecSimAlgo_BF:
+    case VecSimAlgo_TIERED:
+        assert(false && "Invalid backend algorithm");
+    }
+
+    info.tieredInfo.backendCommonInfo = backendInfo.commonInfo;
+    // For now, this is hard coded to FLAT
+    info.tieredInfo.frontendCommonInfo = frontendInfo.commonInfo;
+    info.tieredInfo.bfInfo = frontendInfo.bfInfo;
+
+    info.tieredInfo.backgroundIndexing = this->frontendIndex->indexSize() > 0;
+    info.tieredInfo.management_layer_memory = this->allocator->getAllocationSize();
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
+    VecSimIndexInfo info = this->info();
+    // For readability. Update this number when needed.
+    size_t numberOfInfoFields = 14;
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+        .fieldType = INFOFIELD_STRING,
+        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+
+    this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.management_layer_memory}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.backgroundIndexing}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::FRONTEND_INDEX_STRING,
+        .fieldType = INFOFIELD_ITERATOR,
+        .fieldValue = {FieldValue{.iteratorValue = this->frontendIndex->infoIterator()}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
+        .fieldType = INFOFIELD_ITERATOR,
+        .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->infoIterator()}}});
+
+    return infoIterator;
+};
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List

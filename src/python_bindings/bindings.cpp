@@ -190,26 +190,14 @@ public:
     }
 
     py::object getVector(labelType label) {
-        if (index->info().algo == VecSimAlgo_BF) {
-            size_t dim = index->info().bfInfo.dim;
-            if (index->info().bfInfo.type == VecSimType_FLOAT32) {
-                return rawVectorsAsNumpy<float>(label, dim);
-            } else if (index->info().bfInfo.type == VecSimType_FLOAT64) {
-                return rawVectorsAsNumpy<double>(label, dim);
-            } else {
-                throw std::runtime_error("Invalid vector data type");
-            }
-        } else if (index->info().algo == VecSimAlgo_HNSWLIB) {
-            size_t dim = index->info().hnswInfo.dim;
-            if (index->info().hnswInfo.type == VecSimType_FLOAT32) {
-                return rawVectorsAsNumpy<float>(label, dim);
-            } else if (index->info().hnswInfo.type == VecSimType_FLOAT64) {
-                return rawVectorsAsNumpy<double>(label, dim);
-            } else {
-                throw std::runtime_error("Invalid vector data type");
-            }
+        VecSimIndexInfo info = index->info();
+        size_t dim = info.commonInfo.dim;
+        if (info.commonInfo.type == VecSimType_FLOAT32) {
+            return rawVectorsAsNumpy<float>(label, dim);
+        } else if (info.commonInfo.type == VecSimType_FLOAT64) {
+            return rawVectorsAsNumpy<double>(label, dim);
         } else {
-            throw std::runtime_error("Invalid index algorithm");
+            throw std::runtime_error("Invalid vector data type");
         }
     }
 
@@ -366,7 +354,7 @@ public:
     }
 
     bool checkIntegrity() {
-        auto type = VecSimIndex_Info(this->index.get()).hnswInfo.type;
+        auto type = VecSimIndex_Info(this->index.get()).commonInfo.type;
         if (type == VecSimType_FLOAT32) {
             return reinterpret_cast<HNSWIndex<float, float> *>(this->index.get())
                 ->checkIntegrity()
