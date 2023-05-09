@@ -212,6 +212,7 @@ def test_create_tiered():
       
 def test_create_multi():
     print("Test create multi label tiered hnsw index")
+    create_tiered_index(is_multi=True, num_per_label=5)
     
 def test_search_insert():
     print(f"\nStart insert & search test")
@@ -221,7 +222,6 @@ def test_search_insert_multi_index():
     print(f"\nStart insert & search test for multi index")
     
     search_insert(is_multi=True, num_per_label=5)
-    create_tiered_index(is_multi=True, num_per_label=5)
     
 # In this test we insert the vectors one by one to the tiered index (call wait_for_index after each add vector)
 # We expect to get the same index as if we were inserting the vector to the sync hnsw index.
@@ -443,3 +443,56 @@ def test_batch_iterator():
     assert len(accumulated_labels) >= 0.95 * num_elements
     print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
 
+def test_range_query():
+    num_elements = 100000
+    dim = 100
+    efConstruction = 200
+    efRuntime = 10
+    metric = VecSimMetric_L2
+    
+    indices_ctx = IndexCtx(data_size=num_elements, 
+                        dim=dim, 
+                        ef_c=efConstruction, 
+                        ef_r=efRuntime,
+                        metric=metric)
+
+    index = indices_ctx.tiered_index
+    data = indices_ctx.data
+
+    vectors = []
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+        vectors.append((i, vector))
+
+    query_data = indices_ctx.generate_queries(num_queries=1)
+
+    radius = 13.0
+    recalls = {}
+
+    for epsilon_rt in [0.001, 0.01, 0.1]:
+        query_params = VecSimQueryParams()
+        query_params.hnswRuntimeParams.epsilon = epsilon_rt
+        start = time.time()
+        tiered_labels, tiered_distances = index.range_query(query_data, radius=radius, query_param=query_params)
+        end = time.time()
+        res_num = len(tiered_labels[0])
+
+        dists = sorted([(key, spatial.distance.sqeuclidean(query_data.flat, vec)) for key, vec in vectors])
+        actual_results = [(key, dist) for key, dist in dists if dist <= radius]
+
+        print(
+            f'\nlookup time for {num_elements} vectors with dim={dim} took {end - start} seconds with epsilon={epsilon_rt},'
+            f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
+
+        # Compare the number of vectors that are actually within the range to the returned results.
+        assert np.all(np.isin(tiered_labels, np.array([label for label, _ in actual_results])))
+
+        assert max(tiered_distances[0]) <= radius
+        recalls[epsilon_rt] = res_num / len(actual_results)
+
+    # Expect higher recalls for higher epsilon values.
+    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
+
+    # Expect zero results for radius==0
+    tiered_labels, tiered_distances = index.range_query(query_data, radius=0)
+    assert len(tiered_labels[0]) == 0
