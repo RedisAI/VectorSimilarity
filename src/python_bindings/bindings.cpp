@@ -411,7 +411,7 @@ protected:
     }
 
 public:
-    explicit PyTIEREDIndex(size_t BufferLimit = 1000)
+    explicit PyTIEREDIndex(size_t BufferLimit = 3000000)
         : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback),
           flatBufferLimit(BufferLimit), run_thread(true) {
 
@@ -491,7 +491,7 @@ public:
         // Set the created tiered index in the index external context.
         this->jobQueueCtx.index_strong_ref = this->index;
     }
-    size_t HNSWLabelCount() { return this->index->info().commonInfo.indexLabelCount; }
+    size_t HNSWLabelCount() { return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount; }
 };
 
 class PyBFIndex : public PyVecSimIndex {

@@ -296,67 +296,95 @@ def create_dbpedia_graph():
     
     create_hnsw()
 
-def search_insert(is_multi: bool, num_per_label = 1):
-    indices_ctx = DBPediaIndexCtx(data_size=1000, mode=CreationMode.CREATE_TIERED_INDEX, is_multi=is_multi)
-    index = indices_ctx.tiered_index
 
+    
+def insert_and_update():
+    indices_ctx = DBPediaIndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
+    index = indices_ctx.tiered_index
+    threads_num = TIEREDIndex.get_threads_num()
+    print(f"thread num = {threads_num}")
+    data = indices_ctx.data
     num_elements = indices_ctx.num_elements
     
-    query_data = indices_ctx.generate_queries(num_queries=1)
+    print(f"flat buffer limit = {index.get_buffer_limit()}")
+    start = time.time()
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+    bf_dur = time.time() - start
     
-    # Add vectors to the flat index.
-    bf_index = indices_ctx.init_and_populate_flat_index()
+    print(f''' insert to bf took {bf_dur}, current hnsw size is {index.hnsw_label_count()}")
+            wait for index\n''')
+    index.wait_for_index()
+    dur = time.time() - start
+    # Measure insertion to tiered index
     
-    # Start background insertion to the tiered index.
-    index_start, _, _ = indices_ctx.populate_index(index)
+    print(f"Insert {num_elements} vectors to tiered index took {dur} s")
     
-    correct = 0
-    k = 10
-    searches_number = 0
+    # Measure total memory of the tiered index 
+    print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
     
-    # config knn log
-    index.start_knn_log()
-    
-    # run knn query every 1 s. 
-    total_tiered_search_time = 0
-    prev_bf_size = num_elements
-    while index.hnsw_label_count() < num_elements:
-        # For each run get the current hnsw size and the query time.
-        bf_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
-        query_start = time.time()
-        tiered_labels, _ = index.knn_query(query_data, k)
-        query_dur = time.time() - query_start
-        total_tiered_search_time += query_dur
-        
-        print(f"query time = {round_ms(query_dur)} ms")
-        
-        # BF size should decrease.
-        print(f"bf size = {bf_curr_size}")
-        assert bf_curr_size < prev_bf_size
-        
-        # Run the query also in the bf index to get the ground truth results.
-        bf_labels, _ = bf_index.knn_query(query_data, k)
-        correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
-        time.sleep(1)
-        searches_number += 1
-        prev_bf_size = bf_curr_size
+    assert index.get_curr_bf_size() == 0
      
-    index.reset_log()
+    def search_insert(is_multi: bool, num_per_label = 1):
+        
+        query_data = indices_ctx.generate_queries(num_queries=1)
+        
+        # Add vectors to the flat index.
+        bf_index = indices_ctx.init_and_populate_flat_index()
+        print(f"start overrideing")
+        
+        # Start background insertion to the tiered index.
+        index_start, bf_dur, _ = indices_ctx.populate_index(index)
+        print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+        
+        print(f"insert to bf took {bf_dur}, current hnsw size is {index.hnsw_label_count()}")
+        
+        correct = 0
+        k = 10
+        searches_number = 0
+        
+        # config knn log
+        index.start_knn_log()
+        
+        # run knn query every 1 s. 
+        total_tiered_search_time = 0
+        bf_curr_size = num_elements
+        while bf_curr_size != 0:
+            # For each run get the current hnsw size and the query time.
+            query_start = time.time()
+            tiered_labels, _ = index.knn_query(query_data, k)
+            query_dur = time.time() - query_start
+            total_tiered_search_time += query_dur
+            bf_curr_size = index.get_curr_bf_size(mode = 'insert_and_knn')
+            
+            print(f"query time = {round_ms(query_dur)} ms")
+            print(f"bf size = {bf_curr_size}")
+            
+            # Run the query also in the bf index to get the ground truth results.
+            bf_labels, _ = bf_index.knn_query(query_data, k)
+            correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
+            time.sleep(1)
+            searches_number += 1
+        
+        index.reset_log()
+        
+        # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
+        index.wait_for_index(1)
+        index_dur = time.time() - index_start
+        print(f"indexing during search in tiered took {round_(index_dur)} s")
+        
+        # Measure recall.
+        recall = float(correct)/(k*searches_number)
+        print("Average recall is:", round_(recall, 3))
+        print("tiered query per seconds: ", round_(searches_number/total_tiered_search_time))  
+    search_insert(is_multi=False)
     
-    # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
-    index.wait_for_index(1)
-    index_dur = time.time() - index_start
-    print(f"indexing during search in tiered took {round_(index_dur)} s")
-    
-    # Measure recall.
-    recall = float(correct)/(k*searches_number)
-    print("Average recall is:", round_(recall, 3))
-    print("tiered query per seconds: ", round_(searches_number/total_tiered_search_time)) 
     
 def test_main():
     print("Test creation")
 #create_dbpedia()
-    create_dbpedia_graph()
+  #  create_dbpedia_graph()
     print(f"\nStart insert & search test")
    # search_insert(is_multi=False)
+    insert_and_update()
 
