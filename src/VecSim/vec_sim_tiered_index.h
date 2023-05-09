@@ -297,7 +297,7 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 14;
+    size_t numberOfInfoFields = 13;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{

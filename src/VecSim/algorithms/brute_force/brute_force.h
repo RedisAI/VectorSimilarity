@@ -361,6 +361,10 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
         .fieldType = INFOFIELD_STRING,
         .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
     this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.blockSize}}});
     return infoIterator;
 }
 

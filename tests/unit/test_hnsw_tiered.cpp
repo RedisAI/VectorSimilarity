@@ -2862,7 +2862,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
 
     VecSimInfoIterator *infoIterator = tiered_index->infoIterator();
-    EXPECT_EQ(infoIterator->numberOfFields(), 14);
+    EXPECT_EQ(infoIterator->numberOfFields(), 13);
 
     while (infoIterator->hasNext()) {
         VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
@@ -2902,10 +2902,6 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
             // Is the index multi value.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.isMulti);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BLOCK_SIZE_STRING)) {
-            // Block size.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.blockSize);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
             // Memory.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);

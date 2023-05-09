@@ -1977,8 +1977,9 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
-                                                                VecSimQueryParams *queryParams) const {
+VecSimQueryResult_List
+HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
+                                         VecSimQueryParams *queryParams) const {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = STANDARD_KNN;
@@ -2104,9 +2105,9 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data,
-                                                                 double radius,
-                                                                 VecSimQueryParams *queryParams) const {
+VecSimQueryResult_List
+HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
+                                          VecSimQueryParams *queryParams) const {
 
     VecSimQueryResult_List rl = {0};
     this->last_mode = RANGE_QUERY;
@@ -2177,6 +2178,11 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
         .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
 
     this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.blockSize}}});
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,
