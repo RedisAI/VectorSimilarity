@@ -148,6 +148,11 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
         return VecSimParamResolverErr_NullParam;
     }
     VecSimAlgo index_type = index->info().algo;
+    // Treat tiered index as the backend index type.
+    if (index_type == VecSimAlgo_TIERED) {
+        index_type = index->info().tieredInfo.backendAlgo;
+    }
+
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
