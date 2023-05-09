@@ -178,11 +178,6 @@ public:
 
     size_t indexMemory() { return this->index->getAllocationSize(); }
 
-    double getGetDistanceFrom(size_t id, const py::object &input) {
-        py::array query(input);
-        return this->index->getDistanceFrom(id, (const char *)query.data(0));
-    }
-
     PyBatchIterator createBatchIterator(const py::object &input, VecSimQueryParams *query_params) {
         py::array query(input);
         return PyBatchIterator(
