@@ -331,7 +331,7 @@ int tiered_index_mock::submit_callback(void *job_queue, void *index_ctx, AsyncJo
     return VecSim_OK;
 }
 
-// A single iteration of the thread main loop.
+// If `run_thread` is null, treat it as `true`.
 void tiered_index_mock::thread_iteration(JobQueue &jobQ, bool *run_thread) {
     std::unique_lock<std::mutex> lock(queue_guard);
     // Wake up and acquire the lock (atomically) ONLY if the job queue is not empty at that

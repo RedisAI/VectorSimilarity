@@ -106,9 +106,9 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     VecSimIndexInfo info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
 
-    int addCommandAllocationDelta = -allocator->getAllocationSize();
+    int before = allocator->getAllocationSize();
     VecSimIndex_AddVector(bfIndex, vec, 1);
-    addCommandAllocationDelta += allocator->getAllocationSize();
+    int addCommandAllocationDelta = allocator->getAllocationSize() - before;
     int64_t expectedAllocationDelta = 0;
     expectedAllocationDelta +=
         sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
@@ -131,9 +131,9 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
-    addCommandAllocationDelta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_AddVector(bfIndex, vec, 2);
-    addCommandAllocationDelta += allocator->getAllocationSize();
+    addCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta += sizeof(VectorBlock) + vecsimAllocationOverhead; // New vector block
     expectedAllocationDelta += sizeof(labelType); // resize idToLabelMapping
     expectedAllocationDelta +=
@@ -154,9 +154,9 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
-    int deleteCommandAllocationDelta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_DeleteVector(bfIndex, 2);
-    deleteCommandAllocationDelta += allocator->getAllocationSize();
+    int deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta -=
         (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
@@ -180,9 +180,9 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationSize = info.commonInfo.memory;
     expectedAllocationDelta = 0;
 
-    deleteCommandAllocationDelta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_DeleteVector(bfIndex, 1);
-    deleteCommandAllocationDelta += allocator->getAllocationSize();
+    deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta -=
         (sizeof(VectorBlock) + vecsimAllocationOverhead); // Free the vector block
     expectedAllocationDelta -=
@@ -227,17 +227,17 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     expectedAllocationSize = info.commonInfo.memory;
 
-    int addCommandAllocationDelta = -allocator->getAllocationSize();
+    int before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec, 1);
-    addCommandAllocationDelta += allocator->getAllocationSize();
+    int addCommandAllocationDelta = allocator->getAllocationSize() - before;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     expectedAllocationSize = info.commonInfo.memory;
 
-    addCommandAllocationDelta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec, 2);
-    addCommandAllocationDelta += allocator->getAllocationSize();
+    addCommandAllocationDelta = allocator->getAllocationSize() - before;
 
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize + addCommandAllocationDelta);
     info = hnswIndex->info();
@@ -245,9 +245,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
 
     expectedAllocationSize = info.commonInfo.memory;
 
-    int deleteCommandAllocationDelta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_DeleteVector(hnswIndex, 2);
-    deleteCommandAllocationDelta += allocator->getAllocationSize();
+    int deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
 
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
@@ -255,9 +255,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw) {
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
     expectedAllocationSize = info.commonInfo.memory;
 
-    deleteCommandAllocationDelta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_DeleteVector(hnswIndex, 1);
-    deleteCommandAllocationDelta += allocator->getAllocationSize();
+    deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
 
     ASSERT_EQ(expectedAllocationSize + deleteCommandAllocationDelta,
               allocator->getAllocationSize());
@@ -285,9 +285,9 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
 
     // Add another vector and validate it's exact memory allocation delta.
     TEST_DATA_T vec1[] = {1.0, 0.0};
-    int allocation_delta = -allocator->getAllocationSize();
+    int before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec1, 1);
-    allocation_delta += allocator->getAllocationSize();
+    int allocation_delta = allocator->getAllocationSize() - before;
     size_t vec_max_level = hnswIndex->element_levels_[1];
 
     // Expect the creation of an empty incoming edges set in every level (+ the allocator header
@@ -322,9 +322,9 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     // set.
     TEST_DATA_T vec5[] = {0.5f, 0.0f};
     size_t buckets_num_before = hnswIndex->label_lookup_.bucket_count();
-    allocation_delta = -allocator->getAllocationSize();
+    before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec5, 5);
-    allocation_delta += allocator->getAllocationSize();
+    allocation_delta = allocator->getAllocationSize() - before;
     vec_max_level = hnswIndex->element_levels_[5];
 
     /* Compute the expected allocation delta:

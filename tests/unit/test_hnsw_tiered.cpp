@@ -960,6 +960,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
 
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
+    // In this test we check the created jobs in the queue, and we want to go over them without
+    // executing or deleting them. We therefore pop them into this vector and manually delete them
+    // at the end.
     auto unhandledJobs = std::vector<AsyncJob *>();
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
