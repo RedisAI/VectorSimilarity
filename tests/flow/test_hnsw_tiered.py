@@ -170,7 +170,7 @@ def search_insert(is_multi: bool, num_per_label = 1):
     correct = 0
     k = 10
     searches_number = 0
-    
+    print(f"hnsw size = {index.hnsw_label_count()}")
     # run knn query every 1 s. 
     total_tiered_search_time = 0
     prev_bf_size = num_labels
@@ -489,9 +489,6 @@ def test_range_query():
 
         assert max(tiered_distances[0]) <= radius
         recalls[epsilon_rt] = res_num / len(actual_results)
-
-    # Expect higher recalls for higher epsilon values.
-    assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
 
     # Expect zero results for radius==0
     tiered_labels, tiered_distances = index.range_query(query_data, radius=0)

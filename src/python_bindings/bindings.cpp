@@ -383,6 +383,8 @@ protected:
     size_t memoryCtx;           // External context that stores the index memory consumption.
     UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
                                 // with a given memory (number).
+    size_t flatBufferLimit; // Maximum size allowed for the flat buffer. If flat buffer is full, use
+                            // in-place insertion.
     bool run_thread;
     std::bitset<MAX_POOL_SIZE> executions_status;
 
@@ -393,15 +395,16 @@ protected:
             .submitCb = this->submitCb,
             .memoryCtx = &this->memoryCtx,
             .UpdateMemCb = this->UpdateMemCb,
+            .flatBufferLimit = this->flatBufferLimit,
         };
 
         return ret;
     }
 
 public:
-    explicit PyTieredIndex()
+    explicit PyTieredIndex(size_t BufferLimit = 3000000)
         : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback),
-          run_thread(true) {
+          flatBufferLimit(BufferLimit), run_thread(true) {
 
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
             ThreadParams params(run_thread, executions_status, i, jobQueue);
@@ -431,6 +434,8 @@ public:
     size_t getFlatIndexSize() { return getFlatBuffer()->indexLabelCount(); }
 
     static size_t GetThreadsNum() { return THREAD_POOL_SIZE; }
+
+    size_t getBufferLimit() { return flatBufferLimit; }
 };
 
 PyTieredIndex::~PyTieredIndex() { thread_pool_terminate(jobQueue, run_thread); }
@@ -455,7 +460,9 @@ public:
         // Set the created tiered index in the index external context.
         this->jobQueueCtx.index_strong_ref = this->index;
     }
-    size_t HNSWLabelCount() { return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount; }
+    size_t HNSWLabelCount() {
+        return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount;
+    }
 };
 
 class PyBFIndex : public PyVecSimIndex {
@@ -566,6 +573,7 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyTieredIndex, PyVecSimIndex>(m, "TieredIndex")
         .def("wait_for_index", &PyTiered_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
         .def("get_curr_bf_size", &PyTiered_HNSWIndex::getFlatIndexSize)
+        .def("get_buffer_limit", &PyTiered_HNSWIndex::getBufferLimit)
         .def_static("get_threads_num", &PyTieredIndex::GetThreadsNum);
 
     py::class_<PyTiered_HNSWIndex, PyTieredIndex>(m, "Tiered_HNSWIndex")
