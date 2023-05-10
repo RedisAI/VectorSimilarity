@@ -52,10 +52,10 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     dist_func_t<DistType>
-        dist_func;           // Index's distance function. Chosen by the type, metric and dimension.
-    VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
-    bool isMulti;            // Determines if the index should multi-index or not.
-    void *logCallbackCtx;    // Context for the log callback.
+        dist_func; // Index's distance function. Chosen by the type, metric and dimension.
+    mutable VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
+    bool isMulti;                    // Determines if the index should multi-index or not.
+    void *logCallbackCtx;            // Context for the log callback.
 
     /**
      * @brief Get the common info object
@@ -109,10 +109,10 @@ public:
     inline size_t getDataSize() const { return data_size; }
 
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) = 0;
+                                              VecSimQueryParams *queryParams) const = 0;
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams,
-                                      VecSimQueryResult_Order order) override {
+                                      VecSimQueryResult_Order order) const override {
         auto results = rangeQuery(queryBlob, radius, queryParams);
         sort_results(results, order);
         return results;
@@ -134,6 +134,7 @@ public:
         }
     }
 
+    // Adds all common info to the info iterator, besides the block size.
     void addCommonInfoToIterator(VecSimInfoIterator *infoIterator, const CommonInfo &info) const {
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::TYPE_STRING,
@@ -159,10 +160,6 @@ public:
             VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_LABEL_COUNT_STRING,
                              .fieldType = INFOFIELD_UINT64,
                              .fieldValue = {FieldValue{.uintegerValue = info.indexLabelCount}}});
-        infoIterator->addInfoField(
-            VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                             .fieldType = INFOFIELD_UINT64,
-                             .fieldValue = {FieldValue{.uintegerValue = info.blockSize}}});
         infoIterator->addInfoField(
             VecSim_InfoField{.fieldName = VecSimCommonStrings::MEMORY_STRING,
                              .fieldType = INFOFIELD_UINT64,
@@ -196,7 +193,7 @@ protected:
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) override {
+                                                    VecSimQueryParams *queryParams) const override {
         char processed_blob[this->data_size];
         const void *query_to_send = processBlob(queryBlob, processed_blob);
 
@@ -205,7 +202,7 @@ protected:
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) override {
+                                                     VecSimQueryResult_Order order) const override {
         char processed_blob[this->data_size];
         const void *query_to_send = processBlob(queryBlob, processed_blob);
 
