@@ -868,7 +868,7 @@ TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
         BFParams params = {
-            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = m/2};
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = m / 2};
 
         VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
