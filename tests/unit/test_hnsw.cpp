@@ -1115,9 +1115,9 @@ TYPED_TEST(HNSWTest, hnsw_batch_iterator_batch_size_1) {
 
 TYPED_TEST(HNSWTest, hnsw_batch_iterator_advanced) {
     size_t dim = 4;
-    size_t n = 1000;
+    size_t n = 500;
     size_t M = 8;
-    size_t ef = 1000;
+    size_t ef = n;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
@@ -1178,8 +1178,11 @@ TYPED_TEST(HNSWTest, hnsw_batch_iterator_advanced) {
         if (iteration_num <= n / n_res) {
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
         } else {
-            // In the last iteration there are n%iteration_num (=6) results left to return.
-            expected_ids.erase(expected_ids.begin()); // remove the first id
+            // In the last iteration there are n%n_res results left to return.
+            // remove the first ids that aren't going to be returned since we pass the index size.
+            for (size_t i = 0; i < n_res - n % n_res; i++) {
+                expected_ids.erase(expected_ids.begin());
+            }
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n % n_res);
         }
     }

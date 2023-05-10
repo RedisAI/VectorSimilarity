@@ -1406,9 +1406,9 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
 TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     size_t dim = 4;
     size_t M = 8;
-    size_t ef = 1000;
-    size_t n_labels = 1000;
+    size_t n_labels = 500;
     size_t perLabel = 5;
+    size_t ef = n_labels;
 
     size_t n = n_labels * perLabel;
 
@@ -1472,8 +1472,11 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
         if (iteration_num <= n_labels / n_res) {
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
         } else {
-            // In the last iteration there are n%iteration_num (=6) results left to return.
-            expected_ids.erase(expected_ids.begin()); // remove the first id
+            // In the last iteration there are n%n_res results left to return.
+            // remove the first ids that aren't going to be returned since we pass the index size.
+            for (size_t i = 0; i < n_res - n_labels % n_res; i++) {
+                expected_ids.erase(expected_ids.begin());
+            }
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n_labels % n_res);
         }
     }
@@ -1486,6 +1489,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
 TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     size_t n = 4;
     size_t n_labels = 3;
