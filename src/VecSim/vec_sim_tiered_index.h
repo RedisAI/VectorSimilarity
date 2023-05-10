@@ -56,7 +56,19 @@ public:
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
           memoryCtx(tieredParams.memoryCtx), UpdateIndexMemory(tieredParams.UpdateMemCb),
-          flatBufferLimit(tieredParams.flatBufferLimit) {}
+          flatBufferLimit(tieredParams.flatBufferLimit) {
+
+        auto *handle = (pthread_rwlock_t *)flatIndexGuard.native_handle();
+        pthread_rwlock_t rwlock_prefer_writers;
+        pthread_rwlockattr_t attr;
+        pthread_rwlockattr_setkind_np(&attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+//        pthread_rwlock_init(&rwlock_prefer_writers, &attr);
+//        *handle = rwlock_prefer_writers;
+
+        handle = (pthread_rwlock_t *)mainIndexGuard.native_handle();
+        pthread_rwlock_init(&rwlock_prefer_writers, &attr);
+        *handle = rwlock_prefer_writers;
+    }
 
     virtual ~VecSimTieredIndex() {
         VecSimIndex_Free(backendIndex);
