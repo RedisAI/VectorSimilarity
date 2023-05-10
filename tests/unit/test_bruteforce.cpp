@@ -872,16 +872,15 @@ TYPED_TEST(BruteForceTest, brute_force_zero_minimal_capacity) {
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator) {
     size_t dim = 4;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 5};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-
     // run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t n : {100, 10000}) {
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
+
+        VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         }
@@ -910,23 +909,23 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator) {
         }
         ASSERT_EQ(iteration_num, n / n_res);
         VecSimBatchIterator_Free(batchIterator);
+
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
-
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 5};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
 
     // Run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t n : {100, 10000}) {
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
+        VecSimIndex *index = this->CreateNewIndex(params);
+
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
         }
@@ -965,8 +964,9 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         }
         ASSERT_EQ(iteration_num, n / n_res);
         VecSimBatchIterator_Free(batchIterator);
+
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator_reset) {

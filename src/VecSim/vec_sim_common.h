@@ -219,6 +219,7 @@ typedef struct {
 } hnswInfoStruct;
 
 typedef struct {
+    char dummy;  // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
 typedef struct {

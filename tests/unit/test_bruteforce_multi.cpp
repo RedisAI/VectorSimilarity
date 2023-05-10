@@ -812,17 +812,15 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator) {
     size_t dim = 4;
     size_t perLabel = 5;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 7};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-
     // run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 7};
+        VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
         }
@@ -853,29 +851,26 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator) {
         VecSimBatchIterator_Free(batchIterator);
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
         ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, m);
+
         // Cleanup before next round.
-        for (size_t i = 0; i < m; i++) {
-            VecSimIndex_DeleteVector(index, i);
-        }
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
     size_t perLabel = 5;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 5};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-
     // Run the test twice - for index of size 100, every iteration will run select-based search,
-    // as the number of results is 5, which is more than 0.1% of the index size. for index of size
+    // as the number of results is 5, which is more than 0.1% of the index size. For index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = m/2};
+
+        VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i / (10 * perLabel));
         }
@@ -916,13 +911,12 @@ TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
         VecSimBatchIterator_Free(batchIterator);
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
         ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, m);
+
         // Cleanup before next round.
-        for (size_t i = 0; i < m; i++) {
-            VecSimIndex_DeleteVector(index, i);
-        }
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
+
 TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     size_t dim = 4;
     size_t perLabel = 10;
