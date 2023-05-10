@@ -888,10 +888,11 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     // Note we are adding vectors with ascending values. This causes the numbers of
     // double connections, which are not taking into account in EstimateElementSize,
     // to be zero
-    actual = 0;
+    actual = index->getAllocationSize();
     for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
     }
+    actual = index->getAllocationSize() - actual;
     ASSERT_GE(estimation * 1.02, actual);
     ASSERT_LE(estimation * 0.98, actual);
 

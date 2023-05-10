@@ -111,25 +111,19 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
     return VecSimFactory::EstimateInitialSize(params);
 }
 
-extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id) {
-    int64_t before = index->getAllocationSize();
+extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label) {
     if (index->indexSize() == index->indexCapacity()) {
         index->increaseCapacity();
     }
-    index->addVectorWrapper(blob, id);
-    int64_t after = index->getAllocationSize();
-    return after - before;
+    return index->addVectorWrapper(blob, label);
 }
 
-extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id) {
-    int64_t before = index->getAllocationSize();
-    index->deleteVector(id);
-    int64_t after = index->getAllocationSize();
-    return after - before;
+extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
+    return index->deleteVector(label);
 }
 
-extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob) {
-    return index->getDistanceFrom(id, blob);
+extern "C" double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t label, const void *blob) {
+    return index->getDistanceFrom(label, blob);
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
@@ -154,6 +148,11 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
         return VecSimParamResolverErr_NullParam;
     }
     VecSimAlgo index_type = index->info().algo;
+    // Treat tiered index as the backend index type.
+    if (index_type == VecSimAlgo_TIERED) {
+        index_type = index->info().tieredInfo.backendAlgo;
+    }
+
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
