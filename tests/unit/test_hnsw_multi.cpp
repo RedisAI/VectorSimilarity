@@ -1474,9 +1474,10 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
         } else {
             // In the last iteration there are n%n_res results left to return.
             // remove the first ids that aren't going to be returned since we pass the index size.
-            for (size_t i = 0; i < n_res - n % n_res; i++) {
+            for (size_t i = 0; i < n_res - n_labels % n_res; i++) {
                 expected_ids.erase(expected_ids.begin());
             }
+            runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n_labels % n_res);
         }
     }
     ASSERT_EQ(iteration_num, n_labels / n_res + 1);
