@@ -21,6 +21,7 @@ struct AsyncJob : public VecsimBaseObject {
 };
 
 static void AsyncJobDestructor(AsyncJob *job) {
+    // Holding the allocator so it will not deallocate itself before the job is destroyed.
     auto allocator = job->getAllocator();
     delete job;
 }
