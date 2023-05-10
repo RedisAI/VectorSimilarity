@@ -114,7 +114,7 @@ public:
      * blob.
      */
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) = 0;
+                                                    VecSimQueryParams *queryParams) const = 0;
 
     /**
      * @brief Search for the k closest vectors to a given vector in the index.
@@ -128,7 +128,7 @@ public:
      * VecSimQueryResult_Iterator.
      */
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) = 0;
+                                             VecSimQueryParams *queryParams) const = 0;
 
     /**
      * @brief This Function prepares the blob before sending it to rangeQuery.
@@ -139,7 +139,7 @@ public:
      */
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) = 0;
+                                                     VecSimQueryResult_Order order) const = 0;
     /**
      * @brief Search for the vectors that are in a given range in the index with respect to a given
      * vector. The results can be ordered by their score or id.
@@ -155,7 +155,7 @@ public:
      */
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                               VecSimQueryParams *queryParams,
-                                              VecSimQueryResult_Order order) = 0;
+                                              VecSimQueryResult_Order order) const = 0;
 
     /**
      * @brief Return index information.
@@ -203,7 +203,7 @@ public:
      * creating the hybrid iterator), or after running batches.
      */
 
-    virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) = 0;
+    virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const = 0;
 
     /**
      * @brief Set the latest search mode in the index data (for info/debugging).

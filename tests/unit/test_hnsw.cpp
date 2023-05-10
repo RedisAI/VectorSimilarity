@@ -1597,10 +1597,11 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // Note we are adding vectors with ascending values. This causes the number of
     // unidirectional edges (incoming edges),
     // which are not taken into account in EstimateElementSize, to be zero
-    actual = 0;
+    actual = index->getAllocationSize();
     for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, i + bs);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
     }
+    actual = index->getAllocationSize() - actual;
     ASSERT_GE(estimation * 1.02, actual);
     ASSERT_LE(estimation * 0.98, actual);
 
