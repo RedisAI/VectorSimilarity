@@ -372,9 +372,9 @@ private:
     }
 
 protected:
-    JobQueue jobQueue;          // External queue that holds the jobs.
-    IndexExtCtx jobQueueCtx;    // External context to be sent to the submit callback.
-    SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
+    JobQueue jobQueue;       // External queue that holds the jobs.
+    IndexExtCtx jobQueueCtx; // External context to be sent to the submit callback.
+    SubmitCB submitCb;       // A callback that submits an array of jobs into a given jobQueue.
     size_t flatBufferLimit; // Maximum size allowed for the flat buffer. If flat buffer is full, use
                             // in-place insertion.
     bool run_thread;
@@ -393,8 +393,7 @@ protected:
 
 public:
     explicit PyTieredIndex(size_t BufferLimit = 3000000)
-        : submitCb(submit_callback),
-          flatBufferLimit(BufferLimit), run_thread(true) {
+        : submitCb(submit_callback), flatBufferLimit(BufferLimit), run_thread(true) {
 
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
             ThreadParams params(run_thread, executions_status, i, jobQueue);
