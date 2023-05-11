@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "bm_common.h"
 
 template <typename index_type_t>
@@ -203,8 +204,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
 
         // Delete label
         VecSimIndex_DeleteVector(tiered_index, label_to_remove++);
-//        if (label_to_remove == BM_VecSimGeneral::block_size) {
-        if (label_to_remove == 10000) {
+        if (label_to_remove == BM_VecSimGeneral::block_size) {
             BM_VecSimGeneral::thread_pool_wait();
         }
     }
@@ -287,7 +287,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
 }
 
 #define UNIT_AND_ITERATIONS                                                                        \
-    Unit(benchmark::kMillisecond)->Iterations(10000)
+    Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
 
 // The actual radius will be the given arg divided by 100, since arg must be an integer.
 #define REGISTER_Range_BF(BM_FUNC)                                                                 \
