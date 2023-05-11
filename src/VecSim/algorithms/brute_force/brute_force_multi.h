@@ -70,7 +70,7 @@ private:
     };
 
     inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewMaxPriorityQueue() override {
+    getNewMaxPriorityQueue() const override {
         return new (this->allocator)
             vecsim_stl::updatable_max_heap<DistType, labelType>(this->allocator);
     }

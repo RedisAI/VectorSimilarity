@@ -178,9 +178,20 @@ struct SearchJobMock : public AsyncJob {
     ~SearchJobMock() { this->allocator->free_allocation(query); }
 };
 
-using JobQueue = std::queue<RefManagedJob>;
-int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx);
-int update_mem_callback(void *mem_ctx, size_t mem);
+struct JobQueue : public std::queue<RefManagedJob> {
+    // Pops and destroys the job at the front of the queue.
+    inline void kick() {
+        AsyncJobDestructor(this->front().job);
+        this->pop();
+    }
+    ~JobQueue() {
+        while (!this->empty()) {
+            this->kick();
+        }
+    }
+};
+int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
+                    JobCallback *freeCBs, size_t jobs_len);
 
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;
@@ -191,6 +202,8 @@ extern std::vector<std::thread> thread_pool;
 extern std::mutex queue_guard;
 extern std::condition_variable queue_cond;
 
+// A single iteration of the thread main loop.
+void thread_iteration(JobQueue &jobQ, bool *run_thread = nullptr);
 void thread_main_loop(JobQueue &jobQ, bool &run_thread);
 
 void thread_pool_join(JobQueue &jobQ, bool &run_thread);

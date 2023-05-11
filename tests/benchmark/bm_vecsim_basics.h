@@ -31,49 +31,50 @@ private:
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
+    auto index = INDICES[st.range(0)];
     size_t index_size = N_VECTORS;
-    size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t initial_label_count = index->indexLabelCount();
 
     // In a single vector per label index, index size should equal label count.
     size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
-    size_t memory_delta = 0;
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
 
+    size_t memory_delta = index->getAllocationSize();
     // Add a new label from the test set in every iteration.
     for (auto _ : st) {
         // Add one label
         for (labelType vec = 0; vec < vec_per_label; ++vec) {
-            memory_delta += VecSimIndex_AddVector(
-                INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(), label);
+            VecSimIndex_AddVector(index, QUERIES[added_vec_count % N_QUERIES].data(), label);
         }
         added_vec_count += vec_per_label;
         label++;
     }
+    memory_delta = index->getAllocationSize() - memory_delta;
 
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
 
-    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS + added_vec_count);
+    assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
-    size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t new_label_count = index->indexLabelCount();
     for (size_t label = initial_label_count; label < new_label_count; label++) {
-        VecSimIndex_DeleteVector(INDICES[st.range(0)], label);
+        VecSimIndex_DeleteVector(index, label);
     }
 
-    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
+    assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
 template <typename index_type_t>
 template <typename algo_t>
 void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State &st) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
-    double memory_delta = 0;
+    double memory_delta, memory_before = index->getAllocationSize();
     size_t removed_vectors_count = 0;
     std::vector<LabelData> removed_labels_data;
 
@@ -89,9 +90,9 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         st.ResumeTiming();
 
         // Delete label
-        auto delta = (double)VecSimIndex_DeleteVector(index, label_to_remove++);
-        memory_delta += delta;
+        VecSimIndex_DeleteVector(index, label_to_remove++);
     }
+    memory_delta = index->getAllocationSize() - memory_before;
 
     // Avg. memory delta per vector equals the total memory delta divided by the number
     // of deleted vectors.

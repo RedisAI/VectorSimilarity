@@ -52,18 +52,18 @@ void VecSimIndex_Free(VecSimIndex *index);
  * @param index the index to which the vector is added.
  * @param blob binary representation of the vector. Blob size should match the index data type and
  * dimension.
- * @param id the id of the added vector
- * @return always returns true
+ * @param label the label of the added vector
+ * @return the number of new vectors inserted (1 for new insertion, 0 for override).
  */
-int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t id);
+int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label);
 
 /**
  * @brief Remove a vector from an index.
  * @param index the index from which the vector is removed.
- * @param id the id of the removed vector
- * @return always returns true
+ * @param label the label of the removed vector
+ * @return the number of vectors removed (0 if the label was not found)
  */
-int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
+int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
 
 /**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
@@ -71,13 +71,13 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t id);
  * index's distance metric is cosine, the vector is already normalized.
  * @param index the index from which the first vector is located, and that defines the distance
  * metric.
- * @param id the id of the vector in the index.
+ * @param label the label of the vector in the index.
  * @param blob binary representation of the second vector. Blob size should match the index data
  * type and dimension, and pre-normalized if needed.
  * @return The distance (according to the index's distance metric) between `blob` and the vector
- * with id `id`.
+ * with label  label`.
  */
-double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t id, const void *blob);
+double VecSimIndex_GetDistanceFrom(VecSimIndex *index, size_t label, const void *blob);
 
 /**
  * @brief normalize the vector blob in place.
