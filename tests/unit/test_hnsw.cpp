@@ -1115,9 +1115,9 @@ TYPED_TEST(HNSWTest, hnsw_batch_iterator_batch_size_1) {
 
 TYPED_TEST(HNSWTest, hnsw_batch_iterator_advanced) {
     size_t dim = 4;
-    size_t n = 1000;
+    size_t n = 500;
     size_t M = 8;
-    size_t ef = 1000;
+    size_t ef = n;
 
     HNSWParams params = {.dim = dim,
                          .metric = VecSimMetric_L2,
@@ -1178,8 +1178,11 @@ TYPED_TEST(HNSWTest, hnsw_batch_iterator_advanced) {
         if (iteration_num <= n / n_res) {
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
         } else {
-            // In the last iteration there are n%iteration_num (=6) results left to return.
-            expected_ids.erase(expected_ids.begin()); // remove the first id
+            // In the last iteration there are n%n_res results left to return.
+            // remove the first ids that aren't going to be returned since we pass the index size.
+            for (size_t i = 0; i < n_res - n % n_res; i++) {
+                expected_ids.erase(expected_ids.begin());
+            }
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n % n_res);
         }
     }
@@ -1594,10 +1597,11 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // Note we are adding vectors with ascending values. This causes the number of
     // unidirectional edges (incoming edges),
     // which are not taken into account in EstimateElementSize, to be zero
-    actual = 0;
+    actual = index->getAllocationSize();
     for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, i + bs);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
     }
+    actual = index->getAllocationSize() - actual;
     ASSERT_GE(estimation * 1.02, actual);
     ASSERT_LE(estimation * 0.98, actual);
 
