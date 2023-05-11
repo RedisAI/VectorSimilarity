@@ -25,8 +25,8 @@ typedef struct RefManagedJob {
 } RefManagedJob;
 
 using JobQueue = std::queue<RefManagedJob>;
-int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx);
-int update_mem_callback(void *mem_ctx, size_t mem);
+int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs,
+                                   JobCallback *CBs, JobCallback *freeCBs, size_t len);
 
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;
@@ -86,7 +86,8 @@ void thread_main_loop(ThreadParams params) {
     }
 }
 
-int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx) {
+int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs,
+                                       JobCallback *CBs, JobCallback *freeCBs, size_t len) {
     {
         std::unique_lock<std::mutex> lock(queue_guard);
         for (size_t i = 0; i < len; i++) {
@@ -102,11 +103,6 @@ int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ct
     } else {
         queue_cond.notify_all();
     }
-    return VecSim_OK;
-}
-
-int update_mem_callback(void *mem_ctx, size_t mem) {
-    *(size_t *)mem_ctx = mem;
     return VecSim_OK;
 }
 
