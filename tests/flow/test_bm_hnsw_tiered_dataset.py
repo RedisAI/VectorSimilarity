@@ -7,11 +7,12 @@ import multiprocessing
 import os
 import time
 from common import *
-import hnswlib
 import h5py
 from urllib.request import urlretrieve
 import pickle
 from enum import Enum
+
+from random import choice
 
 class CreationMode(Enum):
     ONLY_PARAMS = 1
@@ -133,6 +134,8 @@ class DBPediaIndexCtx:
             start_add = time.time()
             index.add_vector(vector, label)
             duration += time.time() - start_add
+            if label % 100000 == 0:
+                print(f"time passes= {duration}")
         end = time.time()
         return (start, duration, end)
     
@@ -168,14 +171,26 @@ class DBPediaIndexCtx:
         queries = self.rng.random((num_queries, self.dim)) 
         return np.float32(queries) if self.data_type == VecSimType_FLOAT32 else queries
     
+    def generate_query_from_ds(self):
+        return choice(self.data)
+        
+        
 def create_dbpedia():
-    indices_ctx = DBPediaIndexCtx()
+    indices_ctx = DBPediaIndexCtx(data_size= 1000000)
     
     threads_num = TIEREDIndex.get_threads_num()
     print(f"thread num = {threads_num}")
     data = indices_ctx.data
     num_elements = indices_ctx.num_elements
-    
+    def create_parallel():
+        index = indices_ctx.create_hnsw()
+        print(f"Insert {num_elements} vectors to parallel index")
+        start = time.time()
+        index.add_vector_parallel(data, np.array(range(num_elements)), threads_num)
+        dur = time.time() - start       
+        print(f"Insert {num_elements} vectors to parallel index took {dur} s")
+         
+    create_parallel()
     def create_tiered():
         index = indices_ctx.create_tiered()
         
@@ -214,8 +229,7 @@ def create_dbpedia_graph():
     batches_num_per_ds = 10
     batch_size = int(num_elements / batches_num_per_ds)
     
-    #generate 1M random vectors
-   # random_vectors = indices_ctx.generate_random_vectors(num_vectors=pow(10,6))
+       
     def create_tiered():
         index = indices_ctx.create_tiered()
         flat_buffer_limit = index.get_buffer_limit()
@@ -297,6 +311,79 @@ def create_dbpedia_graph():
     create_hnsw()
 
 
+def insert_delete_reinsert():
+    indices_ctx = DBPediaIndexCtx(data_size = 1000000,mode=CreationMode.CREATE_TIERED_INDEX)
+    index = indices_ctx.tiered_index
+    threads_num = TIEREDIndex.get_threads_num()
+    print(f"thread num = {threads_num}")
+    data = indices_ctx.data
+    num_elements = indices_ctx.num_elements
+    
+    # compute ground truth
+    k = 10
+    query_data = indices_ctx.generate_query_from_ds()
+    
+    bf_index = indices_ctx.init_and_populate_flat_index()
+    bf_labels, _ = bf_index.knn_query(query_data, k)
+    
+    
+    print(f"flat buffer limit = {index.get_buffer_limit()}")
+    start = time.time()
+    for i, vector in enumerate(data):
+        index.add_vector(vector, i)
+    bf_dur = time.time() - start
+    
+    print(f''' insert to bf took {bf_dur}, current hnsw size is {index.hnsw_label_count()}")
+            wait for index\n''')
+    index.wait_for_index()
+    dur = time.time() - start
+    
+    query_start = time.time()
+    tiered_labels, _ = index.knn_query(query_data, k)
+    query_dur = time.time() - query_start
+    
+    print(f"query time = {round_ms(query_dur)} ms")
+    
+    curr_correct = len(np.intersect1d(tiered_labels[0], bf_labels[0]))   
+    curr_recall = float(curr_correct)/k
+    print(f"curr recall after firsdt insertion= {curr_recall}")
+    
+    # Delete half of the index.
+    for i in range(0, num_elements, 2):
+        index.delete_vector(i)
+    assert index.hnsw_label_count() == (num_elements / 2)    
+    index.wait_for_index()
+    
+    #reinsert the deleted vectors
+    start = time.time()
+    for i in range(0, num_elements, 2):
+        vector = data[i]
+        index.add_vector(vector, i)
+    bf_dur = time.time() - start
+    
+    print(f''' insert to bf took {bf_dur}, current hnsw size is {index.hnsw_label_count()}")
+            wait for index\n''')
+    index.wait_for_index()
+    dur = time.time() - start 
+    assert index.hnsw_label_count() == (num_elements)    
+    print(f''' reinsert to the hnsw took insert to bf took {dur}, current hnsw size is {index.hnsw_label_count()}")''')   
+    print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
+    
+    
+
+    
+    print(f"total memory of bf index = {bf_index.index_memory()/pow(10,9)} GB")
+    
+    query_start = time.time()
+    tiered_labels, _ = index.knn_query(query_data, k)
+    query_dur = time.time() - query_start
+    
+    print(f"query time = {round_ms(query_dur)} ms")
+    
+    curr_correct = len(np.intersect1d(tiered_labels[0], bf_labels[0]))   
+    curr_recall = float(curr_correct)/k
+    print(f"curr recall = {curr_recall}")
+    
     
 def insert_and_update():
     indices_ctx = DBPediaIndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
@@ -327,20 +414,24 @@ def insert_and_update():
      
     def search_insert(is_multi: bool, num_per_label = 1):
         
-        query_data = indices_ctx.generate_queries(num_queries=1)
+        #choose random vector from the data base and perform query on it
+        query_data = indices_ctx.generate_query_from_ds()
+        k = 10
         
-        # Add vectors to the flat index.
+        # Calculate ground truth results
         bf_index = indices_ctx.init_and_populate_flat_index()
-        print(f"start overrideing")
+        bf_labels, _ = bf_index.knn_query(query_data, k)
+        
         
         # Start background insertion to the tiered index.
+        print(f"start overriding")
         index_start, bf_dur, _ = indices_ctx.populate_index(index)
+        
+        print(f"insert to bf took {bf_dur}, bf size if {index.get_curr_bf_size()} \n \
+              current hnsw size is {index.hnsw_label_count()}")
         print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
         
-        print(f"insert to bf took {bf_dur}, current hnsw size is {index.hnsw_label_count()}")
-        
         correct = 0
-        k = 10
         searches_number = 0
         
         # config knn log
@@ -360,10 +451,13 @@ def insert_and_update():
             print(f"query time = {round_ms(query_dur)} ms")
             print(f"bf size = {bf_curr_size}")
             
-            # Run the query also in the bf index to get the ground truth results.
-            bf_labels, _ = bf_index.knn_query(query_data, k)
-            correct += len(np.intersect1d(tiered_labels[0], bf_labels[0]))    
-            time.sleep(1)
+            
+            curr_correct = len(np.intersect1d(tiered_labels[0], bf_labels[0]))   
+            curr_recall = float(curr_correct)/k
+            print(f"curr recall = {curr_recall}")
+            correct += curr_correct
+             
+            time.sleep(5)
             searches_number += 1
         
         index.reset_log()
@@ -371,20 +465,48 @@ def insert_and_update():
         # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
         index.wait_for_index(1)
         index_dur = time.time() - index_start
-        print(f"indexing during search in tiered took {round_(index_dur)} s")
+        assert index.get_curr_bf_size() == 0
+        assert index.hnsw_label_count() == num_elements
+
+        print(f"indexing during search in tiered took {round_(index_dur)} s, all repair jobs are done")
+        print(f"total memory of tiered index = {index.index_memory()/pow(10,9)} GB")
         
         # Measure recall.
         recall = float(correct)/(k*searches_number)
         print("Average recall is:", round_(recall, 3))
         print("tiered query per seconds: ", round_(searches_number/total_tiered_search_time))  
+        
+        #execute swap jobs and execute query
+        swap_start = time.time()
+        
+        index.execute_swap_jobs()
+        
+        swap_dur = time.time() - swap_start
+        print(f"swap jobs took = {round_ms(swap_dur)} ms")
+        
+        query_start = time.time()
+        tiered_labels, _ = index.knn_query(query_data, k)
+        query_dur = time.time() - query_start
+        
+        print(f"last query time = {round_ms(query_dur)} ms")
+        
+        curr_correct = len(np.intersect1d(tiered_labels[0], bf_labels[0]))   
+        curr_recall = float(curr_correct)/k
+        print(f"curr recall = {curr_recall}")
+        
+        
+        
     search_insert(is_multi=False)
     
     
 def test_main():
     print("Test creation")
-#create_dbpedia()
+  #  create_dbpedia()
   #  create_dbpedia_graph()
     print(f"\nStart insert & search test")
    # search_insert(is_multi=False)
     insert_and_update()
+    #or sanity
+    #insert_delete_reinsert()
+  
 

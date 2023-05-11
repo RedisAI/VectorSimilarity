@@ -31,7 +31,11 @@ typedef struct IndexExtCtx {
 } IndexExtCtx;
 
 static const size_t MAX_POOL_SIZE = 16;
-static const size_t THREAD_POOL_SIZE = MIN(MAX_POOL_SIZE, std::thread::hardware_concurrency());
+static const size_t hardware_cpu = std::thread::hardware_concurrency();
+
+//  hardware_cpu = 8;
+
+static const size_t THREAD_POOL_SIZE = MIN(MAX_POOL_SIZE, hardware_cpu);
 extern std::vector<std::thread> thread_pool;
 extern std::mutex queue_guard;
 extern std::condition_variable queue_cond;

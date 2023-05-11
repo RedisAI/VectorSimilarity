@@ -85,9 +85,13 @@ private:
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper. Main HNSW
     // lock is assumed to be held exclusive here.
     void executeSwapJob(HNSWSwapJob *job, vecsim_stl::vector<idType> &idsToRemove);
-
+#ifdef BUILD_TESTS
+public:
+#endif
     void executeReadySwapJobs();
-
+#ifdef BUILD_TESTS
+private:
+#endif
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
     static void executeInsertJobWrapper(AsyncJob *job);
@@ -668,6 +672,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
+
     this->executeReadySwapJobs();
 
     // Insert job to the queue and signal the workers' updater.

@@ -491,7 +491,14 @@ public:
         // Set the created tiered index in the index external context.
         this->jobQueueCtx.index_strong_ref = this->index;
     }
-    size_t HNSWLabelCount() { return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount; }
+    size_t HNSWLabelCount() {
+        return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount;
+    }
+
+    void executeReadySwapJobs() {
+        reinterpret_cast<TieredHNSWIndex<float, float> *>(this->index.get())
+            ->executeReadySwapJobs();
+    }
 };
 
 class PyBFIndex : public PyVecSimIndex {
@@ -615,7 +622,8 @@ PYBIND11_MODULE(VecSim, m) {
                 return new PyTIERED_HNSWIndex(hnsw_params, tiered_hnsw_params);
             }),
             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
-        .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount);
+        .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount)
+        .def("execute_swap_jobs", &PyTIERED_HNSWIndex::executeReadySwapJobs);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),

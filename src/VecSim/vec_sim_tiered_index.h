@@ -124,8 +124,6 @@ private:
 
         return this->newBatchIterator(query_to_send, queryParams);
     }
-
-
 };
 
 template <typename DataType, typename DistType>

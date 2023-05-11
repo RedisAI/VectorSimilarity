@@ -228,6 +228,4 @@ protected:
 
         return this->newBatchIterator(query_to_send, queryParams);
     }
-
-
 };
