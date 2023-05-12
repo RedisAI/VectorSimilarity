@@ -2169,7 +2169,7 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 13;
+    size_t numberOfInfoFields = 17;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{
