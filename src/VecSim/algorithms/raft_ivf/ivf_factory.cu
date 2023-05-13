@@ -16,7 +16,7 @@ VecSimIndex *NewIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAll
 VecSimIndex *NewTieredIndex(const TieredRaftIVFFlatParams *params,
                             std::shared_ptr<VecSimAllocator> allocator)
 {
-    assert(params->type == VecSimType_FLOAT32);
+    assert(params->flatParams.type == VecSimType_FLOAT32);
     auto *flat_index = NewIndex(&params->flatParams, allocator);
     return new (allocator) TieredRaftIvfIndex(dynamic_cast<RaftIvfIndexInterface*>(flat_index), params->tieredParams);
 }
@@ -40,7 +40,7 @@ VecSimIndex *NewIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAlloc
 VecSimIndex *NewTieredIndex(const TieredRaftIVFPQParams *params,
                             std::shared_ptr<VecSimAllocator> allocator)
 {
-    assert(params->type == VecSimType_FLOAT32);
+    assert(params->PQParams.type == VecSimType_FLOAT32);
     auto *pq_index = NewIndex(&params->PQParams, allocator);
     return new (allocator) TieredRaftIvfIndex(dynamic_cast<RaftIvfIndexInterface*>(pq_index), params->tieredParams);
 }

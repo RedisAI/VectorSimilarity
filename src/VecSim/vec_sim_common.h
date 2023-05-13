@@ -134,6 +134,11 @@ typedef struct {
 } RaftIVFFlatParams;
 
 typedef struct {
+    RaftIVFFlatParams flatParams;
+    TieredIndexParams tieredParams;
+} TieredRaftIVFFlatParams;
+
+typedef struct {
     VecSimType type;                     // Datatype to index.
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
@@ -153,6 +158,11 @@ typedef struct {
 } RaftIVFPQParams;
 
 typedef struct {
+    RaftIVFPQParams PQParams;
+    TieredIndexParams tieredParams;
+} TieredRaftIVFPQParams;
+
+typedef struct {
     VecSimAlgo algo; // Algorithm to use.
     union {
         HNSWParams hnswParams;
@@ -160,6 +170,8 @@ typedef struct {
         TieredHNSWParams tieredHNSWParams;
         RaftIVFFlatParams raftIVFFlatParams;
         RaftIVFPQParams raftIVFPQParams;
+        TieredRaftIVFFlatParams tieredRaftIVFFlatParams;
+        TieredRaftIVFPQParams tieredRaftIVFPQParams;
     };
 } VecSimParams;
 

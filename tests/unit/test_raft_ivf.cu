@@ -18,14 +18,14 @@ public:
     using dist_t = typename index_type_t::dist_t;
 
 protected:
-    VecSimIndex *CreateNewIndex(RaftIVFFlatParams &params, bool is_multi = false) {
-        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
+    VecSimIndex *CreateNewIndex(RaftIVFFlatParams &params) {
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), false);
     }
-    VecSimIndex *CreateNewIndex(RaftIVFPQParams &params, bool is_multi = false) {
-        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), is_multi);
+    VecSimIndex *CreateNewIndex(RaftIVFPQParams &params) {
+        return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), false);
     }
-    RaftIVFFlatIndex *CastToFlat(VecSimIndex *index) {
-        return dynamic_cast<RaftIVFFlatIndex *>(index);
+    RaftIvfIndexInterface *CastToInterface(VecSimIndex *index) {
+        return dynamic_cast<RaftIvfIndexInterface *>(index);
     }
 
     RaftIVFPQIndex *CastToPQ(VecSimIndex *index) {
@@ -137,7 +137,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFFlat_add_sanity_test) {
     ASSERT_EQ(resultQuery.results[0].id, 2);
     ASSERT_EQ(resultQuery.results[0].score, 0);
     ASSERT_EQ(resultQuery.results[1].id, 1);
-    ASSERT_EQ(resultQuery.results[1].score, dim);
+    ASSERT_EQ(resultQuery.results[1].score, 4);
     VecSimQueryResult_Free(resultQuery);
     VecSimIndex_Free(index);
 }
@@ -175,17 +175,111 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_add_sanity_test) {
     VecSimQueryResult_IteratorFree(it);
 
     // Add second and third vector. Check the topK distances
-    VecSimIndex_AddVector(index, c, 1);
-    VecSimIndex_AddVector(index, b, 2);
+    VecSimIndex_AddVector(index, b, 1);
+    VecSimIndex_AddVector(index, c, 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
-    resultQuery = index->topKQuery(c, 3, &queryParams);
+    resultQuery = index->topKQuery(b, 3, &queryParams);
     sort_results_by_id(resultQuery);
     ASSERT_EQ(resultQuery.results[0].id, 0);
-    ASSERT_EQ(resultQuery.results[0].score, 16);
+    ASSERT_EQ(resultQuery.results[0].score, 4);
     ASSERT_EQ(resultQuery.results[1].id, 1);
-    ASSERT_EQ(resultQuery.results[1].score, 16); // TEST
+    ASSERT_EQ(resultQuery.results[1].score, 0);
     ASSERT_EQ(resultQuery.results[2].id, 2);
-    ASSERT_EQ(resultQuery.results[2].score, 16);
+    ASSERT_EQ(resultQuery.results[2].score, 4);
+    VecSimQueryResult_Free(resultQuery);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(RaftIvfTest, RaftIVFFlat_add_unordered_test) {
+    size_t dim = 4;
+
+    RaftIVFFlatParams params = createDefaultFlatParams(dim);
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    VecSimQueryParams queryParams = {.batchSize = 1};
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    TEST_DATA_T a[dim], b[dim], c[dim], d[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (TEST_DATA_T)0;
+        b[i] = (TEST_DATA_T)1;
+        c[i] = (TEST_DATA_T)2;
+        d[i] = (TEST_DATA_T)3;
+    }
+
+    VecSimQueryResult_List resultQuery;
+    VecSimQueryResult_Iterator *it = nullptr;
+    // Add first vector. Check it was inserted by searching it.
+    VecSimIndex_AddVector(index, a, 3);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    resultQuery = index->topKQuery(a, 1, &queryParams);
+    it = VecSimQueryResult_List_GetIterator(resultQuery);
+    VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
+    ASSERT_EQ(currentResult->id, 3);
+    ASSERT_EQ(currentResult->score, 0);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_Free(resultQuery);
+    VecSimQueryResult_IteratorFree(it);
+
+    // Add second and third vector. Check the topK distances
+    VecSimIndex_AddVector(index, b, 4);
+    VecSimIndex_AddVector(index, c, 6);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
+    resultQuery = index->topKQuery(c, 2, &queryParams);
+    //VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
+    ASSERT_EQ(resultQuery.results[0].id, 6);
+    ASSERT_EQ(resultQuery.results[0].score, 0);
+    ASSERT_EQ(resultQuery.results[1].id, 4);
+    ASSERT_EQ(resultQuery.results[1].score, 4);
+    VecSimQueryResult_Free(resultQuery);
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(RaftIvfTest, RaftIVFPQ_add_unordered_test) {
+    size_t dim = 4;
+
+    RaftIVFPQParams params = createDefaultPQParams(dim);
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    VecSimQueryParams queryParams = {.batchSize = 1};
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    TEST_DATA_T a[dim], b[dim], c[dim], d[dim];
+    for (size_t i = 0; i < dim; i++) {
+        a[i] = (TEST_DATA_T)0;
+        b[i] = (TEST_DATA_T)1;
+        c[i] = (TEST_DATA_T)2; 
+        d[i] = (TEST_DATA_T)3;
+    }
+
+    VecSimQueryResult_List resultQuery;
+    VecSimQueryResult_Iterator *it = nullptr;
+    // Add first vector. Check it was inserted by searching it.
+    VecSimIndex_AddVector(index, a, 3);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    resultQuery = index->topKQuery(a, 1, &queryParams);
+    it = VecSimQueryResult_List_GetIterator(resultQuery);
+    VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
+    ASSERT_EQ(currentResult->id, 3);
+    ASSERT_EQ(currentResult->score, 0);
+    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
+    VecSimQueryResult_Free(resultQuery);
+    VecSimQueryResult_IteratorFree(it);
+
+    // Add second and third vector. Check the topK distances
+    VecSimIndex_AddVector(index, b, 4);
+    VecSimIndex_AddVector(index, c, 6);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
+    resultQuery = index->topKQuery(b, 3, &queryParams);
+    sort_results_by_id(resultQuery);
+    ASSERT_EQ(resultQuery.results[0].id, 3);
+    ASSERT_EQ(resultQuery.results[0].score, 4);
+    ASSERT_EQ(resultQuery.results[1].id, 4);
+    ASSERT_EQ(resultQuery.results[1].score, 0); // TEST
+    ASSERT_EQ(resultQuery.results[2].id, 6);
+    ASSERT_EQ(resultQuery.results[2].score, 4);
     VecSimQueryResult_Free(resultQuery);
     VecSimIndex_Free(index);
 }
@@ -211,7 +305,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFFlat_batch_add_test) {
         labels[vector_id] = vector_id;
     }
     // Vectors: {{0, 0, 0, 0}, {1, 1, 1, 1}, {4, 4, 4, 4}, {9, 9, 9, 9}, ...}
-    auto flat_index = this->CastToFlat(index);
+    auto flat_index = this->CastToInterface(index);
 
     VecSimQueryResult_List resultQuery;
     VecSimQueryResult_Iterator *it = nullptr;
@@ -255,7 +349,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_batch_add_test) {
         labels[vector_id] = vector_id;
     }
     // Vectors: {{0, 0, 0, 0}, {1, 1, 1, 1}, {4, 4, 4, 4}, {9, 9, 9, 9}, ...}
-    auto pq_index = this->CastToPQ(index);
+    auto pq_index = this->CastToInterface(index);
 
     VecSimQueryResult_List resultQuery;
     VecSimQueryResult_Iterator *it = nullptr;

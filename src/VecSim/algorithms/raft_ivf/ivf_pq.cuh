@@ -97,7 +97,7 @@ RaftIVFPQIndex::RaftIVFPQIndex(const RaftIVFPQParams *params, std::shared_ptr<Ve
     build_params_.n_lists = params->nLists;
     build_params_.pq_bits = params->pqBits;
     build_params_.pq_dim = params->pqDim;
-    build_params_.add_data_on_build = true;
+    build_params_.add_data_on_build = false;
     switch (params->codebookKind) {
         case (RaftIVFPQ_PerCluster):
             build_params_.codebook_kind = raft::neighbors::ivf_pq::codebook_gen::PER_CLUSTER;
@@ -148,9 +148,8 @@ int RaftIVFPQIndex::addVector(const void *vector_data, labelType label, bool ove
     if (!pq_index_) {
         pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
             res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
-    } else {
-        raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()), std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
     }
+    raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()), std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
     res_.sync_stream();
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
@@ -172,10 +171,9 @@ int RaftIVFPQIndex::addVectorBatch(const void *vector_data, labelType* labels, s
     if (!pq_index_) {
         pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
             res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
-    } else {
-        raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
     }
+    raft::neighbors::ivf_pq::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
+        std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
     res_.sync_stream();
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
@@ -191,9 +189,8 @@ int RaftIVFPQIndex::addVectorBatchGpuBuffer(const void *vector_data, std::int64_
     if (!pq_index_) {
         pq_index_ = std::make_unique<raftIvfPQIndex>(raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
             res_, build_params_, vector_data_gpu));
-    } else {
-        raft::neighbors::ivf_pq::extend(res_, vector_data_gpu, std::make_optional(label_gpu), pq_index_.get());
     }
+    raft::neighbors::ivf_pq::extend(res_, vector_data_gpu, std::make_optional(label_gpu), pq_index_.get());
     res_.sync_stream();
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?

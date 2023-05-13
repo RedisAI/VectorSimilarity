@@ -16,11 +16,15 @@ public:
 
     // TODO: Implement the actual methods instead of these temporary ones.
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override {
+        updateIvfIndex = true;
         return this->flatBuffer->addVector(blob, label, overwrite_allowed);
     }
-    int deleteVector(labelType id) override { return this->flatBuffer->deleteVector(id); }
+    int deleteVector(labelType id) override {
+        updateIvfIndex = true;
+        return this->flatBuffer->deleteVector(id);
+    }
     double getDistanceFrom(labelType id, const void *blob) const override {
-        return this->index->getDistanceFrom(id, blob);
+        return this->flatBuffer->getDistanceFrom(id, blob);
     }
     size_t indexSize() const override { return this->index->indexSize(); }
     size_t indexCapacity() const override { return this->index->indexCapacity(); }
@@ -28,11 +32,13 @@ public:
     size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {
+        if (updateIvfIndex)
+            transferToIvf();
         return this->index->topKQuery(queryBlob, k, queryParams);
     }
     VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                       VecSimQueryParams *queryParams) override {
-        return this->index->rangeQuery(queryBlob, radius, queryParams);
+        return this->flatBuffer->rangeQuery(queryBlob, radius, queryParams);
     }
     VecSimIndexInfo info() const override { return this->index->info(); }
     VecSimInfoIterator *infoIterator() const override { return this->index->infoIterator(); }
@@ -66,8 +72,10 @@ public:
             offset += vectorBlocks[block_id]->getLength();
         }
         this->ivf_index_->addVectorBatchGpuBuffer(vectorDataGpuBuffer.data_handle(), labels_gpu.data_handle(), this->flatBuffer->indexSize());
+        updateIvfIndex = false;
     }
 private:
     raft::device_resources res_;
     RaftIvfIndexInterface *ivf_index_;
+    bool updateIvfIndex;
 };

@@ -99,7 +99,7 @@ RaftIVFFlatIndex::RaftIVFFlatIndex(const RaftIVFFlatParams *params, std::shared_
     build_params_.kmeans_n_iters = params->kmeans_nIters;
     build_params_.kmeans_trainset_fraction = params->kmeans_trainsetFraction;
     build_params_.adaptive_centers = params->adaptiveCenters;
-    build_params_.add_data_on_build = true;
+    build_params_.add_data_on_build = false;
     search_params_.n_probes = params->nProbes;
     // TODO: Can't build flat_index here because there is no initial data;
     //flat_index_ = std::make_unique<raft::neighbors::ivf_flat::index<DataType, std::int64_t>>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(res_, build_params,
@@ -121,10 +121,9 @@ int RaftIVFFlatIndex::addVector(const void *vector_data, labelType label, bool o
     if (!flat_index_) {
         flat_index_ = std::make_unique<raftIvfFlatIndex>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
             res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
-    } else {
-        raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
     }
+    raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
+        std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
     res_.sync_stream();
 
     // TODO: Verify that label exists already?
@@ -147,10 +146,9 @@ int RaftIVFFlatIndex::addVectorBatch(const void *vector_data, labelType* labels,
     if (!flat_index_) {
         flat_index_ = std::make_unique<raftIvfFlatIndex>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
             res_, build_params_, raft::make_const_mdspan(vector_data_gpu.view())));
-    } else {
-        raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
     }
+    raft::neighbors::ivf_flat::extend(res_, raft::make_const_mdspan(vector_data_gpu.view()),
+        std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
     res_.sync_stream();
 
     // TODO: Verify that label exists already?
@@ -167,9 +165,8 @@ int RaftIVFFlatIndex::addVectorBatchGpuBuffer(const void *vector_data, std::int6
     if (!flat_index_) {
         flat_index_ = std::make_unique<raftIvfFlatIndex>(raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
             res_, build_params_, vector_data_gpu));
-    } else {
-        raft::neighbors::ivf_flat::extend(res_, vector_data_gpu, std::make_optional(label_gpu), flat_index_.get());
     }
+    raft::neighbors::ivf_flat::extend(res_, vector_data_gpu, std::make_optional(label_gpu), flat_index_.get());
     res_.sync_stream();
     // TODO: Verify that label exists already?
     // TODO normalizeVector for cosine?
