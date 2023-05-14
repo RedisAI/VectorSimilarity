@@ -387,9 +387,6 @@ protected:
     JobQueue jobQueue;          // External queue that holds the jobs.
     IndexExtCtx jobQueueCtx;    // External context to be sent to the submit callback.
     SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
-    size_t memoryCtx;           // External context that stores the index memory consumption.
-    UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
-                                // with a given memory (number).
     size_t flatBufferLimit; // Maximum size allowed for the flat buffer. If flat buffer is full, use
                             // in-place insertion.
     bool run_thread;
@@ -402,8 +399,6 @@ protected:
             .jobQueue = &this->jobQueue,
             .jobQueueCtx = &this->jobQueueCtx,
             .submitCb = this->submitCb,
-            .memoryCtx = &this->memoryCtx,
-            .UpdateMemCb = this->UpdateMemCb,
             .flatBufferLimit = this->flatBufferLimit,
         };
 
@@ -411,8 +406,8 @@ protected:
     }
 
 public:
-    explicit PyTIEREDIndex(size_t BufferLimit = 3000000)
-        : submitCb(submit_callback), memoryCtx(0), UpdateMemCb(update_mem_callback),
+    explicit PyTIEREDIndex(size_t BufferLimit = 1000)
+        : submitCb(submit_callback),
           flatBufferLimit(BufferLimit), run_thread(true) {
 
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
@@ -493,6 +488,10 @@ public:
     }
     size_t HNSWLabelCount() {
         return this->index->info().tieredInfo.backendCommonInfo.indexLabelCount;
+    }
+
+    size_t HNSWMarkedDeleted() {
+        return this->index->info().tieredInfo.backendInfo.hnswInfo.numberOfMarkedDeletedNodes;
     }
 
     void executeReadySwapJobs() {
@@ -623,6 +622,7 @@ PYBIND11_MODULE(VecSim, m) {
             }),
             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"))
         .def("hnsw_label_count", &PyTIERED_HNSWIndex::HNSWLabelCount)
+        .def("hnsw_marked_deleted", &PyTIERED_HNSWIndex::HNSWMarkedDeleted)
         .def("execute_swap_jobs", &PyTIERED_HNSWIndex::executeReadySwapJobs);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
