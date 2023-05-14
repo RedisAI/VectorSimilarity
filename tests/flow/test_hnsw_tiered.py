@@ -178,6 +178,7 @@ def search_insert(is_multi: bool, num_per_label = 1):
     # run knn query every 1 s. 
     total_tiered_search_time = 0
     prev_bf_size = num_labels
+    print("Start running queries while indexing is done in the background")
     while index.hnsw_label_count() < num_labels:
         # For each run get the current hnsw size and the query time.
         bf_curr_size = index.get_curr_bf_size()
@@ -202,7 +203,7 @@ def search_insert(is_multi: bool, num_per_label = 1):
     # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
     index.wait_for_index(1)
     index_dur = time.time() - index_start
-    print(f"indexing during search in tiered took {round_(index_dur)} s")
+    print(f"Indexing during searching in the tiered index took {round_(index_dur)} s")
     
     # Measure recall.
     recall = float(correct)/(k*searches_number)
