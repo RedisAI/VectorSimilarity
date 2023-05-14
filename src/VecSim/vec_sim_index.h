@@ -134,7 +134,7 @@ public:
         }
     }
 
-    // Adds all common info to the info iterator, besides the block size.
+    // Adds all common info to the info iterator, besides the block size (currently 8 fields).
     void addCommonInfoToIterator(VecSimInfoIterator *infoIterator, const CommonInfo &info) const {
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::TYPE_STRING,
