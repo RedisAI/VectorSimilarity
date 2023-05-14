@@ -129,8 +129,8 @@ def create_tiered_index(is_multi: bool, num_per_label = 1):
     assert index.hnsw_label_count() == num_elements
     
     # Measure insertion to tiered index.
-    print(f"Insert {num_elements} insertion jobs took {round_ms(bf_dur)} ms")
-    print(f"Done insertion jobs executions using {threads_num} threads took {round_ms(tiered_index_time)} ms")
+    print(f"Insert {num_elements} vectors into the flat buffer took {round_ms(bf_dur)} ms")
+    print(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num} threads took {round_ms(tiered_index_time)} ms")
     
     # Measure total memory of the tiered index.
     tiered_memory = bytes_to_mega(index.index_memory())
@@ -140,7 +140,7 @@ def create_tiered_index(is_multi: bool, num_per_label = 1):
     hnsw_index = HNSWIndex(indices_ctx.hnsw_params)
     _, hnsw_index_time, _ = indices_ctx.populate_index(hnsw_index)
 
-    print(f"Insert {num_elements} vectors to sync hnsw index took {round_(hnsw_index_time)} s")   
+    print(f"Insert {num_elements} vectors directly to HNSW index (one by one) took {round_(hnsw_index_time)} s")   
     hnsw_memory = bytes_to_mega(hnsw_index.index_memory())
     print(f"total memory of hnsw index = {hnsw_memory} MB")
     
@@ -154,10 +154,14 @@ def create_tiered_index(is_multi: bool, num_per_label = 1):
     
 
 def search_insert(is_multi: bool, num_per_label = 1):
-    indices_ctx = IndexCtx(data_size=100000, is_multi=is_multi, num_per_label=num_per_label)
+    data_size = 100000
+    indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label)
     index = indices_ctx.tiered_index
 
     num_labels = indices_ctx.num_labels
+    
+    print(f'''Insert total of {num_labels} vectors of dim = {indices_ctx.dim},
+          {num_per_label} vectors in each label. Total labels = {num_labels}''')
     
     query_data = indices_ctx.generate_queries(num_queries=1)
     
@@ -170,7 +174,7 @@ def search_insert(is_multi: bool, num_per_label = 1):
     correct = 0
     k = 10
     searches_number = 0
-    print(f"hnsw size = {index.hnsw_label_count()}")
+    print(f"HNSW labels number = {index.hnsw_label_count()}")
     # run knn query every 1 s. 
     total_tiered_search_time = 0
     prev_bf_size = num_labels
@@ -330,8 +334,8 @@ def test_recall_after_deletion():
     # Measure recall.
     recall_tiered = float(correct_tiered) / (k * num_queries)
     recall_hnsw = float(correct_hnsw) / (k * num_queries)
-    print("hsnw tiered recall is: \n", recall_tiered)
-    print("hsnw recall is: \n", recall_hnsw)
+    print("HNSW tiered recall is: \n", recall_tiered)
+    print("HNSW recall is: \n", recall_hnsw)
     assert (recall_tiered >= 0.9)
 
 
