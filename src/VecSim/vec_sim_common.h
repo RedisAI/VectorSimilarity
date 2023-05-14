@@ -11,6 +11,7 @@ extern "C" {
 #endif
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 // Common definitions
 #define INVALID_ID    UINT_MAX
@@ -79,9 +80,9 @@ typedef enum { VecSim_WriteAsync, VecSim_WriteInPlace } VecSimWriteMode;
 /**
  * Callback signatures for asynchronous tiered index.
  */
-typedef int (*SubmitCB)(void *job_queue, AsyncJob **jobs, size_t jobs_len, void *index_ctx);
-typedef int (*UpdateMemoryCB)(void *memory_ctx, size_t memory);
 typedef void (*JobCallback)(AsyncJob *);
+typedef int (*SubmitCB)(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
+                        JobCallback *freeCBs, size_t jobs_len);
 
 /**
  * @brief Index initialization parameters.
@@ -118,12 +119,9 @@ typedef struct {
 
 // A struct that contains the common tiered index params.
 typedef struct {
-    void *jobQueue;             // External queue that holds the jobs.
-    void *jobQueueCtx;          // External context to be sent to the submit callback.
-    SubmitCB submitCb;          // A callback that submits an array of jobs into a given jobQueue.
-    void *memoryCtx;            // External context that stores the index memory consumption.
-    UpdateMemoryCB UpdateMemCb; // A callback that updates the memoryCtx
-                                // with a given memory (number).
+    void *jobQueue;         // External queue that holds the jobs.
+    void *jobQueueCtx;      // External context to be sent to the submit callback.
+    SubmitCB submitCb;      // A callback that submits an array of jobs into a given jobQueue.
     size_t flatBufferLimit; // Maximum size allowed for the flat buffer. If flat buffer is full, use
                             // in-place insertion.
     VecSimParams *primaryIndexParams; // Parameters to initialize the index.
@@ -219,6 +217,7 @@ typedef struct {
 } hnswInfoStruct;
 
 typedef struct {
+    char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
 typedef struct {

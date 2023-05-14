@@ -86,13 +86,14 @@ protected:
 
     // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
-//        return std::string(getenv("ROOT")) + "/" + file_name;
+        //        return std::string(getenv("ROOT")) + "/" + file_name;
         return std::string("/home/alon/Code/VectorSimilarity/") + file_name;
     }
 
     /** Mock tiered index callbacks. **/
 
-    static int submit_callback(void *job_queue, AsyncJob **jobs, size_t len, void *index_ctx) {
+    static int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
+                               JobCallback *freeCBs, size_t len) {
         {
             std::unique_lock<std::mutex> lock(queue_guard);
             for (size_t i = 0; i < len; i++) {
@@ -104,11 +105,6 @@ protected:
         } else {
             queue_cond.notify_all();
         }
-        return VecSim_OK;
-    }
-
-    static int update_mem_callback(void *mem_ctx, size_t mem) {
-        *(size_t *)mem_ctx = mem;
         return VecSim_OK;
     }
 

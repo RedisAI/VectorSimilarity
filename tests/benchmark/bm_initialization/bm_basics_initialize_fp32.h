@@ -28,7 +28,7 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
     ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
     ->ArgName("VecSimAlgo_TIERED");
 
-//BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
+// BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
 //    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_HNSWLIB)
 //    ->ArgName("VecSimAlgo_ParallelHNSW");
 
@@ -40,7 +40,10 @@ REGISTER_DeleteLabel(DeleteLabel_Tiered);
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteLabel_AsyncRepair_Single, fp32_index_t)
 (benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
 BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteLabel_AsyncRepair_Single)
-    ->UNIT_AND_ITERATIONS->Arg(1)->Arg(1000)->Arg(10000)->ArgName("SwapJobsThreshold");
+    ->UNIT_AND_ITERATIONS->Arg(1)
+    ->Arg(1000)
+    ->Arg(10000)
+    ->ArgName("SwapJobsThreshold");
 
 // TopK BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF), fp32_index_t)

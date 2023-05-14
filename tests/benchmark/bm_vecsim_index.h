@@ -106,8 +106,6 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     TieredIndexParams tiered_params = {.jobQueue = &jobQ,
                                        .jobQueueCtx = nullptr,
                                        .submitCb = submit_callback,
-                                       .memoryCtx = &memory_ctx,
-                                       .UpdateMemCb = update_mem_callback,
                                        .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &primary_index_params,
                                        .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};

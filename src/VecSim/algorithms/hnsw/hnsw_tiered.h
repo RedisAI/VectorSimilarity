@@ -207,8 +207,6 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job)
     auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
-    delete insert_job;
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -216,8 +214,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
     auto *repair_job = reinterpret_cast<HNSWRepairJob *>(job);
     auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
     job_index->executeRepairJob(repair_job);
-    delete repair_job;
-    job_index->UpdateIndexMemory(job_index->memoryCtx, job_index->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
@@ -260,7 +256,6 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
     } else {
         idsToRemove.push_back(job->deleted_id);
     }
-    delete job;
 }
 
 template <typename DataType, typename DistType>
@@ -281,15 +276,17 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());
     for (auto &it : idToSwapJob) {
-        if (it.second->pending_repair_jobs_counter.load() == 0) {
+        auto *swap_job = it.second;
+        if (swap_job->pending_repair_jobs_counter.load() == 0) {
             // Swap job is ready for execution - execute and delete it.
-            this->executeSwapJob(it.second, idsToRemove);
+            this->executeSwapJob(swap_job, idsToRemove);
+            delete swap_job;
         }
     }
     for (idType id : idsToRemove) {
         idToSwapJob.erase(id);
     }
-    readySwapJobs-= idsToRemove.size();
+    readySwapJobs -= idsToRemove.size();
     this->mainIndexGuard.unlock();
 }
 
@@ -304,7 +301,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
     for (size_t i = 0; i < internal_ids.size(); i++) {
         idType id = internal_ids[i];
-        vecsim_stl::vector<HNSWRepairJob *> repair_jobs(this->allocator);
+        vecsim_stl::vector<AsyncJob *> repair_jobs(this->allocator);
         auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
 
         // Go over all the deleted element links in every level and create repair jobs.
@@ -347,8 +344,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         }
         this->idToRepairJobsGuard.unlock();
 
-        this->SubmitJobsToQueue(this->jobQueue, (AsyncJob **)repair_jobs.data(), repair_jobs.size(),
-                                this->jobQueueCtx);
+        this->submitJobs(repair_jobs);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
         // node id is changed due to swap job).
         assert(idToSwapJob.find(id) == idToSwapJob.end());
@@ -530,7 +526,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     hnsw_index->repairNodeConnections(job->node_id, job->level);
 
     this->mainIndexGuard.unlock_shared();
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 /******************** Index API ****************************************/
@@ -550,24 +545,12 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
             : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
 }
 
 template <typename DataType, typename DistType>
 TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
-    // Delete all the pending insert jobs.
-    for (auto &jobs : this->labelToInsertJobs) {
-        for (auto *job : jobs.second) {
-            delete job;
-        }
-    }
-    // Delete all the pending repair jobs.
-    for (auto &jobs : this->idToRepairJobs) {
-        for (auto *job : jobs.second) {
-            delete job;
-        }
-    }
     // Delete all the pending swap jobs.
+    // We need to delete them ourselves because they are not passed to any external queue.
     for (auto &it : this->idToSwapJob) {
         delete it.second;
     }
@@ -614,7 +597,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         // may need to increase the capacity when we append the new vector afterwards.
         ret = hnsw_index->addVector(blob, label);
         this->mainIndexGuard.unlock();
-        this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
         return ret;
     }
     if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
@@ -629,7 +611,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // directly to HNSW. Since flat buffer guard was not held, no need to release it
             // internally.
             this->insertVectorToHNSW<false>(hnsw_index, label, blob);
-            this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
             return ret;
         }
         // Otherwise, we fall back to the "regular" insertion into the flat buffer
@@ -685,7 +666,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
     // Insert job to the queue and signal the workers' updater.
     this->submitSingleJob(new_insert_job);
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return ret;
 }
 
@@ -737,7 +717,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         this->mainIndexGuard.unlock();
     }
 
-    this->UpdateIndexMemory(this->memoryCtx, this->getAllocationSize());
     return num_deleted_vectors;
 }
 

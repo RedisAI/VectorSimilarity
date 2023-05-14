@@ -45,14 +45,14 @@ public:
         return (DataType *)vectorBlocks.at(id / this->blockSize)->getVector(id % this->blockSize);
     }
     virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) override;
+                                             VecSimQueryParams *queryParams) const override;
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) override;
+                                              VecSimQueryParams *queryParams) const override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     inline labelType getVectorLabel(idType id) const { return idToLabelMapping.at(id); }
 
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
@@ -101,7 +101,7 @@ protected:
     }
     // inline priority queue getter that need to be implemented by derived class
     virtual inline vecsim_stl::abstract_priority_queue<DistType, labelType> *
-    getNewMaxPriorityQueue() = 0;
+    getNewMaxPriorityQueue() const = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
@@ -259,7 +259,7 @@ vecsim_stl::vector<DistType> BruteForceIndex<DataType, DistType>::computeBlockSc
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
 BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                               VecSimQueryParams *queryParams) {
+                                               VecSimQueryParams *queryParams) const {
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
@@ -310,7 +310,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 template <typename DataType, typename DistType>
 VecSimQueryResult_List
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
-                                                VecSimQueryParams *queryParams) {
+                                                VecSimQueryParams *queryParams) const {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->last_mode = RANGE_QUERY;
@@ -353,7 +353,7 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 8;
+    size_t numberOfInfoFields = 10;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
     infoIterator->addInfoField(VecSim_InfoField{
@@ -361,6 +361,10 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
         .fieldType = INFOFIELD_STRING,
         .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
     this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.blockSize}}});
     return infoIterator;
 }
 
@@ -376,7 +380,7 @@ BruteForceIndex<DataType, DistType>::newBatchIterator(const void *queryBlob,
 
 template <typename DataType, typename DistType>
 bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
-                                                            bool initial_check) {
+                                                            bool initial_check) const {
     // This heuristic is based on sklearn decision tree classifier (with 10 leaves nodes) -
     // see scripts/BF_batches_clf.py
     size_t index_size = this->indexSize();

@@ -36,48 +36,47 @@ private:
 template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
 
+    auto index = INDICES[st.range(0)];
     size_t index_size = N_VECTORS;
-    size_t initial_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t initial_label_count = index->indexLabelCount();
 
     // In a single vector per label index, index size should equal label count.
     size_t vec_per_label = index_size % initial_label_count == 0
                                ? index_size / initial_label_count
                                : index_size / initial_label_count + 1;
-    size_t memory_before = (INDICES[st.range(0)])->getAllocationSize();
     labelType label = initial_label_count;
     size_t added_vec_count = 0;
 
+    size_t memory_delta = index->getAllocationSize();
     // Add a new label from the test set in every iteration.
     for (auto _ : st) {
         // Add one label
         for (labelType vec = 0; vec < vec_per_label; ++vec) {
-            VecSimIndex_AddVector(INDICES[st.range(0)], QUERIES[added_vec_count % N_QUERIES].data(),
-                                  label);
+            VecSimIndex_AddVector(index, QUERIES[added_vec_count % N_QUERIES].data(), label);
         }
         added_vec_count += vec_per_label;
         label++;
     }
+    memory_delta = index->getAllocationSize() - memory_delta;
     // For tiered index, wait for all threads to finish indexing
     BM_VecSimGeneral::thread_pool_wait();
 
-    size_t memory_delta = (INDICES[st.range(0)])->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
 
-    size_t index_size_after = VecSimIndex_IndexSize(INDICES[st.range(0)]);
-    assert(index_size_after == N_VECTORS + added_vec_count);
+    assert(VecSimIndex_IndexSize(index) == N_VECTORS + added_vec_count);
 
     // Clean-up all the new vectors to restore the index size to its original value.
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
-    size_t new_label_count = (INDICES[st.range(0)])->indexLabelCount();
+    size_t new_label_count = index->indexLabelCount();
     for (size_t label = initial_label_count; label < new_label_count; label++) {
         // If index is tiered HNSW, remove directly from the underline HNSW.
         VecSimIndex_DeleteVector(
             INDICES[st.range(0) == VecSimAlgo_TIERED ? VecSimAlgo_HNSWLIB : st.range(0)], label);
     }
     BM_VecSimGeneral::thread_pool_wait();
-    assert(VecSimIndex_IndexSize(INDICES[st.range(0)]) == N_VECTORS);
+    assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
 
 template <typename index_type_t>
@@ -103,7 +102,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
         }
         added_vec_count += vec_per_label;
         label++;
-//        if (label == N_VECTORS + BM_VecSimGeneral::block_size) {
+        //        if (label == N_VECTORS + BM_VecSimGeneral::block_size) {
         if (label == N_VECTORS + 10000) {
             BM_VecSimGeneral::thread_pool_wait();
         }
@@ -134,7 +133,7 @@ template <typename algo_t>
 void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State &st) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
-    int memory_before = index->getAllocationSize();
+    double memory_delta, memory_before = index->getAllocationSize();
     size_t removed_vectors_count = 0;
     std::vector<LabelData> removed_labels_data;
 
@@ -152,19 +151,16 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         // Delete label
         VecSimIndex_DeleteVector(index, label_to_remove++);
     }
+    memory_delta = index->getAllocationSize() - memory_before;
 
     BM_VecSimGeneral::thread_pool_wait();
     // Remove the rest of the vectors that hadn't been swapped yet for tiered index.
     if (VecSimIndex_Info(index).algo == VecSimAlgo_TIERED) {
-        reinterpret_cast<TieredHNSWIndex<data_t, data_t>*>(index)->pendingSwapJobsThreshold = 1;
-        reinterpret_cast<TieredHNSWIndex<data_t, data_t>*>(index)->executeReadySwapJobs();
-        reinterpret_cast<TieredHNSWIndex<data_t, data_t>*>(index)->pendingSwapJobsThreshold
-            = DEFAULT_PENDING_SWAP_JOBS_THRESHOLD;
+        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->pendingSwapJobsThreshold = 1;
+        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->executeReadySwapJobs();
+        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->pendingSwapJobsThreshold =
+            DEFAULT_PENDING_SWAP_JOBS_THRESHOLD;
     }
-
-    // Avg. memory delta per vector equals the total memory delta divided by the number
-    // of deleted vectors.
-    int memory_delta = index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
 
     // Restore index state.
@@ -185,7 +181,8 @@ template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
-    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, data_t>*>(INDICES[VecSimAlgo_TIERED]);
+    auto *tiered_index =
+        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(INDICES[VecSimAlgo_TIERED]);
     int memory_before = tiered_index->getAllocationSize();
     size_t removed_vectors_count = 0;
     std::vector<LabelData> removed_labels_data;
@@ -213,7 +210,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // of deleted vectors.
     int memory_delta = tiered_index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
-    st.counters["num_threads"] = (double )BM_VecSimGeneral::thread_pool_size;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::thread_pool_size;
     st.counters["num_zombies"] = tiered_index->idToSwapJob.size();
 
     // Remove the rest of the vectors that hadn't been swapped yet.
@@ -286,8 +283,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
     st.counters["Recall"] = (float)total_res / total_res_bf;
 }
 
-#define UNIT_AND_ITERATIONS                                                                        \
-    Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
+#define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(BM_VecSimGeneral::block_size)
 
 // The actual radius will be the given arg divided by 100, since arg must be an integer.
 #define REGISTER_Range_BF(BM_FUNC)                                                                 \
