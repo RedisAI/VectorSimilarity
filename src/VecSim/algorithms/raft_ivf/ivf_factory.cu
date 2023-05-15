@@ -1,5 +1,6 @@
-#include "ivf_flat.cuh"
-#include "ivf_pq.cuh"
+//#include "ivf_flat.cuh"
+//#include "ivf_pq.cuh"
+#include "ivf_index.cuh"
 #include "ivf_factory.h"
 #include "ivf_tiered.cuh"
 #include <iostream>
@@ -10,7 +11,7 @@ namespace RaftIVFFlatFactory {
 VecSimIndex *NewIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator)
 {
     assert(params->type == VecSimType_FLOAT32);
-    return new (allocator) RaftIVFFlatIndex(params, allocator);
+    return new (allocator) RaftIVFIndex(params, allocator);
 }
 
 VecSimIndex *NewTieredIndex(const TieredRaftIVFFlatParams *params,
@@ -23,7 +24,7 @@ VecSimIndex *NewTieredIndex(const TieredRaftIVFFlatParams *params,
 
 size_t EstimateInitialSize(const RaftIVFFlatParams *params)
 {
-    return sizeof(RaftIVFFlatIndex);
+    return sizeof(RaftIVFIndex);
 }
 
 size_t EstimateElementSize(const RaftIVFFlatParams *params)
@@ -35,7 +36,8 @@ size_t EstimateElementSize(const RaftIVFFlatParams *params)
 namespace RaftIVFPQFactory {
 VecSimIndex *NewIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator)
 {
-    return new (allocator) RaftIVFPQIndex(params, allocator);
+    assert(params->type == VecSimType_FLOAT32);
+    return new (allocator) RaftIVFIndex(params, allocator);
 }
 VecSimIndex *NewTieredIndex(const TieredRaftIVFPQParams *params,
                             std::shared_ptr<VecSimAllocator> allocator)
@@ -47,7 +49,7 @@ VecSimIndex *NewTieredIndex(const TieredRaftIVFPQParams *params,
 
 size_t EstimateInitialSize(const RaftIVFPQParams *params)
 {
-    return sizeof(RaftIVFPQIndex);
+    return sizeof(RaftIVFIndex);
 }
 
 size_t EstimateElementSize(const RaftIVFPQParams *params)

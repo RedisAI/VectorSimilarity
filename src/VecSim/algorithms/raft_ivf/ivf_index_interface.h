@@ -1,6 +1,7 @@
 #pragma once
 
 #include <raft/distance/distance_types.hpp>
+#include "VecSim/vec_sim_index.h"
 
 raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm){
     raft::distance::DistanceType result;
@@ -10,9 +11,6 @@ raft::distance::DistanceType GetRaftDistanceType(VecSimMetric vsm){
             break;
         case VecSimMetric_IP:
             result = raft::distance::DistanceType::InnerProduct;
-            break;
-        case VecSimMetric_Cosine:
-            result = raft::distance::DistanceType::CosineExpanded;
             break;
         default:
             throw std::runtime_error("Metric not supported");

@@ -124,7 +124,7 @@ typedef struct {
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
     bool multi;                          // Determines if the index should multi-index or not.
-    size_t blockSize;                    // TODO: Unused currently
+    size_t blockSize;                    // Currently not used
     size_t nLists;                       // Number of inverted lists.
     bool adaptiveCenters;                // If the lists centers should be updated for new vectors
     bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
@@ -143,10 +143,10 @@ typedef struct {
     size_t dim;                          // Vector's dimension.
     VecSimMetric metric;                 // Distance metric to use in the index.
     bool multi;                          // Determines if the index should multi-index or not.
-    size_t blockSize;
+    size_t blockSize;                    // Currently not used
     size_t nLists;                       // Number of inverted lists.
-    size_t pqBits;                       // If the lists centers should be updated for new vectors
-    size_t pqDim;                        // If the lists centers should be updated for new vectors
+    size_t pqBits;                       // The bit length of an encoded vector element after compression by PQ
+    size_t pqDim;                        // The dimensionality of an encoded vector after compression by PQ
     RaftIVFPQCodebookKind codebookKind;  // "RaftIVFPQ_PerCluster" or "RaftIVFPQ_PerSubspace"
     bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
     size_t kmeans_nIters;                // Number of iterations searching for kmeans centers
@@ -304,7 +304,23 @@ typedef struct {
             size_t dim;              // Vector size (dimension).
             VecSearchMode last_mode; // The mode in which the last query ran.
         } bfInfo;
-        // TODO: Raft IVF info
+        struct {
+            size_t dim;              // Vector size (dimension).
+            size_t indexSize;        // Current count of vectors.
+            size_t nLists;           // Number of inverted lists.
+            VecSimMetric metric;     // Index distance metric
+            VecSimType type;         // Datatype the index holds.
+        } raftIvfFlatInfo;
+        struct {
+            size_t dim;              // Vector size (dimension).
+            size_t indexSize;        // Current count of vectors.
+            size_t nLists;           // Number of inverted lists.
+            size_t pqBits;           // The bit length of an encoded vector element after compression by PQ
+            size_t pqDim;            // The dimensionality of an encoded vector after compression by PQ
+            VecSimMetric metric;     // Index distance metric
+            VecSimType type;         // Datatype the index holds.
+    
+        } raftIvfPQInfo;
     };
     VecSimAlgo algo; // Algorithm being used.
 } VecSimIndexInfo;

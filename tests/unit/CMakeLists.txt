@@ -28,8 +28,8 @@ add_executable(test_spaces test_spaces.cpp)
 add_executable(test_common test_common.cpp test_utils.cpp)
 
 if(USE_CUDA)
-	add_executable(test_raftivf test_raft_ivf.cu test_utils.cpp)
-	target_link_libraries(test_raftivf PUBLIC gtest_main VectorSimilarity PRIVATE raft::raft raft::compiled)
+	add_executable(test_raftivf test_raft_ivf.cpp test_utils.cpp)
+	target_link_libraries(test_raftivf PUBLIC gtest_main VectorSimilarity PRIVATE raft::raft)
 endif()
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)

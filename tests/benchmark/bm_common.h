@@ -57,12 +57,6 @@ template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_RaftIVFFlat(benchmark::State &st, size_t iter,
                                                     size_t k, size_t &correct,
                                                     unsigned short index_offset) {
-    RaftIVFFlatParams params = {.dim = DIM,
-                                .metric = VecSimMetric_L2,
-                                .nLists = 1,
-                                .kmeans_nIters = 1,
-                                .kmeans_trainsetFraction = 0.5,
-                                .nProbes = 1};
     VecSimQueryParams query_params = { .batchSize = 1};
     auto flat_results =
         VecSimIndex_TopKQuery(INDICES[VecSimAlgo_RaftIVFFlat + index_offset],
