@@ -14,16 +14,16 @@ public:
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
                              size_t &correct, unsigned short index_offset = 0);
 
-    static void RunTopK_RaftIVFFlat(benchmark::State &st, size_t iter, size_t k,
-                                size_t &correct, unsigned short index_offset = 0);
+    static void RunTopK_RaftIVFFlat(benchmark::State &st, size_t iter, size_t k, size_t &correct,
+                                    unsigned short index_offset = 0);
     // Search for the K closest vectors to the query in the index. K is defined in the
     // test registration (initialization file).
     static void TopK_BF(benchmark::State &st, unsigned short index_offset = 0);
     // Run TopK using both HNSW and flat index and calculate the recall of the HNSW algorithm
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
-    // Run TopK using both Raft IVF Flat and flat index and calculate the recall of the Raft IVF Flat algorithm
-    // with respect to the results returned by the flat index.
+    // Run TopK using both Raft IVF Flat and flat index and calculate the recall of the Raft IVF
+    // Flat algorithm with respect to the results returned by the flat index.
     static void TopK_RaftIVFFlat(benchmark::State &st, unsigned short index_offset = 0);
 
     // Does nothing but returning the index memory.
@@ -54,10 +54,10 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::RunTopK_RaftIVFFlat(benchmark::State &st, size_t iter,
-                                                    size_t k, size_t &correct,
-                                                    unsigned short index_offset) {
-    VecSimQueryParams query_params = { .batchSize = 1};
+void BM_VecSimCommon<index_type_t>::RunTopK_RaftIVFFlat(benchmark::State &st, size_t iter, size_t k,
+                                                        size_t &correct,
+                                                        unsigned short index_offset) {
+    VecSimQueryParams query_params = {.batchSize = 1};
     auto flat_results =
         VecSimIndex_TopKQuery(INDICES[VecSimAlgo_RaftIVFFlat + index_offset],
                               QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
@@ -120,7 +120,8 @@ void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned sho
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_RaftIVFFlat(benchmark::State &st, unsigned short index_offset) {
+void BM_VecSimCommon<index_type_t>::TopK_RaftIVFFlat(benchmark::State &st,
+                                                     unsigned short index_offset) {
     size_t k = st.range(0);
     size_t correct = 0;
     size_t iter = 0;
@@ -152,7 +153,7 @@ void BM_VecSimCommon<index_type_t>::TopK_RaftIVFFlat(benchmark::State &st, unsig
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
-#define REGISTER_TopK_RaftIVFFlat(BM_CLASS, BM_FUNC)                                                        \
+#define REGISTER_TopK_RaftIVFFlat(BM_CLASS, BM_FUNC)                                               \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Arg(10)                                                                                  \
         ->Arg(100)                                                                                 \

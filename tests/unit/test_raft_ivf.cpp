@@ -30,8 +30,7 @@ protected:
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
-RaftIVFPQParams createDefaultPQParams(size_t dim)
-{
+RaftIVFPQParams createDefaultPQParams(size_t dim) {
     RaftIVFPQParams params = {.dim = dim,
                               .metric = VecSimMetric_L2,
                               .nLists = 1,
@@ -47,8 +46,7 @@ RaftIVFPQParams createDefaultPQParams(size_t dim)
     return params;
 }
 
-RaftIVFFlatParams createDefaultFlatParams(size_t dim)
-{
+RaftIVFFlatParams createDefaultFlatParams(size_t dim) {
     RaftIVFFlatParams params = {.dim = dim,
                                 .metric = VecSimMetric_L2,
                                 .nLists = 1,
@@ -58,8 +56,7 @@ RaftIVFFlatParams createDefaultFlatParams(size_t dim)
     return params;
 }
 
-using DataTypeSetFloat =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>>;
+using DataTypeSetFloat = ::testing::Types<IndexType<VecSimType_FLOAT32, float>>;
 
 TYPED_TEST_SUITE(RaftIvfTest, DataTypeSetFloat);
 
@@ -128,7 +125,6 @@ TYPED_TEST(RaftIvfTest, RaftIVFFlat_add_sanity_test) {
     VecSimIndex_AddVector(index, c, 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
     resultQuery = index->topKQuery(c, 2, &queryParams);
-    //VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
     ASSERT_EQ(resultQuery.results[0].id, 2);
     ASSERT_EQ(resultQuery.results[0].score, 0);
     ASSERT_EQ(resultQuery.results[1].id, 1);
@@ -151,7 +147,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_add_sanity_test) {
     for (size_t i = 0; i < dim; i++) {
         a[i] = (TEST_DATA_T)-10;
         b[i] = (TEST_DATA_T)10;
-        c[i] = (TEST_DATA_T)30; 
+        c[i] = (TEST_DATA_T)30;
         d[i] = (TEST_DATA_T)40;
     }
 
@@ -227,7 +223,6 @@ TYPED_TEST(RaftIvfTest, RaftIVFFlat_add_unordered_test) {
     VecSimIndex_AddVector(index, c, 6);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
     resultQuery = index->topKQuery(c, 2, &queryParams);
-    //VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);
     ASSERT_EQ(resultQuery.results[0].id, 6);
     ASSERT_EQ(resultQuery.results[0].score, 0);
     ASSERT_EQ(resultQuery.results[1].id, 4);
@@ -250,7 +245,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_add_unordered_test) {
     for (size_t i = 0; i < dim; i++) {
         a[i] = (TEST_DATA_T)0;
         b[i] = (TEST_DATA_T)1;
-        c[i] = (TEST_DATA_T)3; 
+        c[i] = (TEST_DATA_T)3;
         d[i] = (TEST_DATA_T)4;
     }
 
@@ -277,7 +272,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_add_unordered_test) {
     it = VecSimQueryResult_List_GetIterator(resultQuery);
     currentResult = VecSimQueryResult_IteratorNext(it);
     ASSERT_EQ(currentResult->id, 3);
-    ASSERT_EQ(currentResult->score, 4);
+    ASSERT_EQ(currentResult->score, 0);
     currentResult = VecSimQueryResult_IteratorNext(it);
     ASSERT_EQ(currentResult->id, 4);
     ASSERT_EQ(currentResult->score, 4); // TODO 0?
@@ -303,7 +298,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFFlat_batch_add_test) {
 
     TEST_DATA_T vectors[dim * batch_size];
     size_t labels[batch_size];
-    for (size_t vector_id = 0; vector_id < batch_size; vector_id++) { 
+    for (size_t vector_id = 0; vector_id < batch_size; vector_id++) {
         for (size_t i = 0; i < dim; i++) {
             vectors[vector_id * dim + i] = (TEST_DATA_T)(vector_id * vector_id);
         }
@@ -347,7 +342,7 @@ TYPED_TEST(RaftIvfTest, RaftIVFPQ_batch_add_test) {
 
     TEST_DATA_T vectors[dim * batch_size];
     size_t labels[batch_size];
-    for (size_t vector_id = 0; vector_id < batch_size; vector_id++) { 
+    for (size_t vector_id = 0; vector_id < batch_size; vector_id++) {
         for (size_t i = 0; i < dim; i++) {
             vectors[vector_id * dim + i] = (TEST_DATA_T)(vector_id * vector_id);
         }

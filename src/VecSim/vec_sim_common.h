@@ -28,7 +28,12 @@ typedef enum {
 } VecSimType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_RaftIVFFlat, VecSimAlgo_RaftIVFPQ } VecSimAlgo;
+typedef enum {
+    VecSimAlgo_BF,
+    VecSimAlgo_HNSWLIB,
+    VecSimAlgo_RaftIVFFlat,
+    VecSimAlgo_RaftIVFPQ
+} VecSimAlgo;
 
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
@@ -120,17 +125,17 @@ typedef struct {
 } TieredHNSWParams;
 
 typedef struct {
-    VecSimType type;                     // Datatype to index.
-    size_t dim;                          // Vector's dimension.
-    VecSimMetric metric;                 // Distance metric to use in the index.
-    bool multi;                          // Determines if the index should multi-index or not.
-    size_t blockSize;                    // Currently not used
-    size_t nLists;                       // Number of inverted lists.
-    bool adaptiveCenters;                // If the lists centers should be updated for new vectors
-    bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
+    VecSimType type;                   // Datatype to index.
+    size_t dim;                        // Vector's dimension.
+    VecSimMetric metric;               // Distance metric to use in the index.
+    bool multi;                        // Determines if the index should multi-index or not.
+    size_t blockSize;                  // Currently not used
+    size_t nLists;                     // Number of inverted lists.
+    bool adaptiveCenters;              // If the lists centers should be updated for new vectors
+    bool conservativeMemoryAllocation; // Use as little GPU memory as possible
     size_t kmeans_nIters;
     float kmeans_trainsetFraction;
-    unsigned nProbes;                    // The number of clusters to search
+    unsigned nProbes; // The number of clusters to search
 } RaftIVFFlatParams;
 
 typedef struct {
@@ -139,22 +144,23 @@ typedef struct {
 } TieredRaftIVFFlatParams;
 
 typedef struct {
-    VecSimType type;                     // Datatype to index.
-    size_t dim;                          // Vector's dimension.
-    VecSimMetric metric;                 // Distance metric to use in the index.
-    bool multi;                          // Determines if the index should multi-index or not.
-    size_t blockSize;                    // Currently not used
-    size_t nLists;                       // Number of inverted lists.
-    size_t pqBits;                       // The bit length of an encoded vector element after compression by PQ
-    size_t pqDim;                        // The dimensionality of an encoded vector after compression by PQ
-    RaftIVFPQCodebookKind codebookKind;  // "RaftIVFPQ_PerCluster" or "RaftIVFPQ_PerSubspace"
-    bool conservativeMemoryAllocation;   // Use as little GPU memory as possible
-    size_t kmeans_nIters;                // Number of iterations searching for kmeans centers
-    float kmeans_trainsetFraction;       // Fraction of data to use during iterative kmeans building
-    unsigned nProbes;                    // Number of clusters to search
-    RaftCudaType lutType;                // Data type of look up table created at search time
-    RaftCudaType internalDistanceType;   // Data type of look up table created at search time
-    double preferredShmemCarveout;       // Fraction of SM's unified memory / L1 cache to be used as shared memory
+    VecSimType type;     // Datatype to index.
+    size_t dim;          // Vector's dimension.
+    VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
+    size_t blockSize;    // Currently not used
+    size_t nLists;       // Number of inverted lists.
+    size_t pqBits;       // The bit length of an encoded vector element after compression by PQ
+    size_t pqDim;        // The dimensionality of an encoded vector after compression by PQ
+    RaftIVFPQCodebookKind codebookKind; // "RaftIVFPQ_PerCluster" or "RaftIVFPQ_PerSubspace"
+    bool conservativeMemoryAllocation;  // Use as little GPU memory as possible
+    size_t kmeans_nIters;               // Number of iterations searching for kmeans centers
+    float kmeans_trainsetFraction;      // Fraction of data to use during iterative kmeans building
+    unsigned nProbes;                   // Number of clusters to search
+    RaftCudaType lutType;               // Data type of look up table created at search time
+    RaftCudaType internalDistanceType;  // Data type of look up table created at search time
+    double preferredShmemCarveout;      // Fraction of SM's unified memory / L1 cache to be used as
+                                        // shared memory
 } RaftIVFPQParams;
 
 typedef struct {
@@ -305,21 +311,21 @@ typedef struct {
             VecSearchMode last_mode; // The mode in which the last query ran.
         } bfInfo;
         struct {
-            size_t dim;              // Vector size (dimension).
-            size_t indexSize;        // Current count of vectors.
-            size_t nLists;           // Number of inverted lists.
-            VecSimMetric metric;     // Index distance metric
-            VecSimType type;         // Datatype the index holds.
+            size_t dim;          // Vector size (dimension).
+            size_t indexSize;    // Current count of vectors.
+            size_t nLists;       // Number of inverted lists.
+            VecSimMetric metric; // Index distance metric
+            VecSimType type;     // Datatype the index holds.
         } raftIvfFlatInfo;
         struct {
-            size_t dim;              // Vector size (dimension).
-            size_t indexSize;        // Current count of vectors.
-            size_t nLists;           // Number of inverted lists.
-            size_t pqBits;           // The bit length of an encoded vector element after compression by PQ
-            size_t pqDim;            // The dimensionality of an encoded vector after compression by PQ
-            VecSimMetric metric;     // Index distance metric
-            VecSimType type;         // Datatype the index holds.
-    
+            size_t dim;       // Vector size (dimension).
+            size_t indexSize; // Current count of vectors.
+            size_t nLists;    // Number of inverted lists.
+            size_t pqBits;    // The bit length of an encoded vector element after compression by PQ
+            size_t pqDim;     // The dimensionality of an encoded vector after compression by PQ
+            VecSimMetric metric; // Index distance metric
+            VecSimType type;     // Datatype the index holds.
+
         } raftIvfPQInfo;
     };
     VecSimAlgo algo; // Algorithm being used.

@@ -24,7 +24,7 @@ protected:
     static inline char *GetHNSWDataByInternalId(size_t id, unsigned short index_offset = 0) {
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
     }
-    
+
     /*
     static inline RaftIVFFlatIndex *CastToFlat(VecSimIndex *index) {
         return dynamic_cast<RaftIVFFlatIndex *>(index);
@@ -130,8 +130,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                                  .preferredShmemCarveout = 1.0};
     indices.push_back(RaftIVFPQFactory::NewIndex(&pq_params, allocator));
 
-    //TieredRaftIVFFlatParams tiered_flat_params = {.flatParams = flat_params};
-    //indices.push_back(RaftIVFFlatFactory::NewTieredIndex(&tiered_flat_params, allocator))
+    // TieredRaftIVFFlatParams tiered_flat_params = {.flatParams = flat_params};
+    // indices.push_back(RaftIVFFlatFactory::NewTieredIndex(&tiered_flat_params, allocator))
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         char *blob = GetHNSWDataByInternalId(i);

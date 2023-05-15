@@ -9,14 +9,16 @@
 
 namespace RaftIVFFlatFactory {
 VecSimIndex *NewIndex(const RaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
-VecSimIndex *NewTieredIndex(const TieredRaftIVFFlatParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewTieredIndex(const TieredRaftIVFFlatParams *params,
+                            std::shared_ptr<VecSimAllocator> allocator);
 size_t EstimateInitialSize(const RaftIVFFlatParams *params);
 size_t EstimateElementSize(const RaftIVFFlatParams *params);
 }; // namespace RaftIVFFlatFactory
 
 namespace RaftIVFPQFactory {
 VecSimIndex *NewIndex(const RaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
-VecSimIndex *NewTieredIndex(const TieredRaftIVFPQParams *params, std::shared_ptr<VecSimAllocator> allocator);
+VecSimIndex *NewTieredIndex(const TieredRaftIVFPQParams *params,
+                            std::shared_ptr<VecSimAllocator> allocator);
 size_t EstimateInitialSize(const RaftIVFPQParams *params);
 size_t EstimateElementSize(const RaftIVFPQParams *params);
 }; // namespace RaftIVFPQFactory
