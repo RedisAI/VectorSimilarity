@@ -186,8 +186,7 @@ int RaftIVFIndex::addVector(const void *vector_data, labelType label, bool overw
     }
     res_.sync_stream();
 
-    // TODO: Verify that label exists already?
-    // TODO normalizeVector for cosine?
+    // TODO: Handle update operation
     this->counts_ += 1;
     return 1;
 }

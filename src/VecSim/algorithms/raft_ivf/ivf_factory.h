@@ -4,7 +4,7 @@
 #include <memory>  // std::shared_ptr
 
 #include "VecSim/vec_sim.h"              //typedef VecSimIndex
-#include "VecSim/vec_sim_common.h"       // RaftIVFFlatParams
+#include "VecSim/vec_sim_common.h"       // RaftIVF*Params
 #include "VecSim/memory/vecsim_malloc.h" // VecSimAllocator
 
 namespace RaftIVFFlatFactory {

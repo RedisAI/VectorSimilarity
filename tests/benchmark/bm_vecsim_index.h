@@ -25,14 +25,6 @@ protected:
         return CastToHNSW(indices[VecSimAlgo_HNSWLIB + index_offset])->getDataByInternalId(id);
     }
 
-    /*
-    static inline RaftIVFFlatIndex *CastToFlat(VecSimIndex *index) {
-        return dynamic_cast<RaftIVFFlatIndex *>(index);
-    }
-
-    static inline RaftIVFPQIndex *CastToPQ(VecSimIndex *index) {
-        return dynamic_cast<RaftIVFPQIndex *>(index);
-    }*/
 private:
     static void Initialize();
     static void InsertToQueries(std::ifstream &input);
