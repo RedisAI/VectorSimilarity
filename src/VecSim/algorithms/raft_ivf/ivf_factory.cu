@@ -1,5 +1,3 @@
-//#include "ivf_flat.cuh"
-//#include "ivf_pq.cuh"
 #include "ivf_index.cuh"
 #include "ivf_factory.h"
 #include "ivf_tiered.cuh"
