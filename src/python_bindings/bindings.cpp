@@ -438,8 +438,10 @@ public:
     }
 
     static void log_flat_buffer_size(void *ctx, const char *msg) {
-        auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
-        knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexLabelCount();
+        if(ctx) {
+            auto *knnLogCtx = reinterpret_cast<KNNLogCtx<float> *>(ctx);
+            knnLogCtx->curr_flat_size = knnLogCtx->flat_index->indexLabelCount();
+        }
     }
     void SetKNNLogCtx() {
         knnLogCtx.flat_index = getFlatBuffer();
@@ -496,7 +498,7 @@ public:
 
     void executeReadySwapJobs() {
         reinterpret_cast<TieredHNSWIndex<float, float> *>(this->index.get())
-            ->executeReadySwapJobs();
+            ->executeReadySwapJobsIMP();
     }
 };
 

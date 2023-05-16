@@ -90,6 +90,7 @@ private:
 #ifdef BUILD_TESTS
 public:
 #endif
+    void executeReadySwapJobsIMP();
     void executeReadySwapJobs();
 #ifdef BUILD_TESTS
 private:
@@ -269,12 +270,10 @@ HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
-    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute every
-    // job for which all of its pending repair jobs were executed (otherwise finish and return).
-    if (readySwapJobs < this->pendingSwapJobsThreshold) {
-        return;
-    }
+void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobsIMP() {
+
+    std::cout << "executing " << readySwapJobs << " swap hobs" << std::endl;
+    std::cout << "there are  " << this->getHNSWIndex()->getNumMarkedDeleted() << " marked delted vectors" << std::endl;
     // Execute swap jobs - acquire hnsw write lock.
     this->mainIndexGuard.lock();
 
@@ -293,6 +292,17 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
     }
     readySwapJobs-= idsToRemove.size();
     this->mainIndexGuard.unlock();
+
+}
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
+    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute every
+    // job for which all of its pending repair jobs were executed (otherwise finish and return).
+    if (readySwapJobs < this->pendingSwapJobsThreshold) {
+        return;
+    }
+
+    executeReadySwapJobsIMP();
 }
 
 template <typename DataType, typename DistType>
@@ -394,7 +404,10 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // Check if resizing is still required (another thread might have done it in the meantime
         // while we release the shared lock).
         if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
+            std::cout<< "current tiered total allocation size =  " << this->getAllocationSize() <<std::endl;
             hnsw_index->increaseCapacity();
+            std::cout<< "after hnsw resize tiered total allocation size =  " << this->getAllocationSize() <<std::endl;
+
         }
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
@@ -664,10 +677,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         // If we removed the previous vector from both HNSW and flat in the overwrite process,
         // we still return 0 (not -1).
         ret = MAX(ret - this->deleteLabelFromHNSW(label), 0);
-        if(ret != 1 && ret != 0) {
-            std::cout<< " ret == " << ret << std:: endl;
-
-        }
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).

@@ -1307,18 +1307,32 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements) {
+    std::cout<< "resize element_levels_" << std::endl;
+
     element_levels_.resize(new_max_elements);
+    std::cout<< "resize  element_levels_" << std::endl;
+
     element_levels_.shrink_to_fit();
+    std::cout<< "resize LabelLookup" << std::endl;
+
     resizeLabelLookup(new_max_elements);
+    std::cout<< "resize visited_nodes_handler_pool" << std::endl;
+
     visited_nodes_handler_pool.resize(new_max_elements);
+    std::cout<< "resize element_neighbors_locks_" << std::endl;
+
     vecsim_stl::vector<std::mutex>(new_max_elements, this->allocator)
         .swap(element_neighbors_locks_);
     // Reallocate base layer
+    std::cout<< "resize data_level0_memory from " << (*(((size_t *)data_level0_memory_) - 1))<< " to" << (new_max_elements * size_data_per_element_) <<std::endl;
+
     char *data_level0_memory_new = (char *)this->allocator->reallocate(
         data_level0_memory_, new_max_elements * size_data_per_element_);
     if (data_level0_memory_new == nullptr)
         throw std::runtime_error("Not enough memory: resizeIndex failed to allocate base layer");
     data_level0_memory_ = data_level0_memory_new;
+
+    std::cout<< "linkLists_new " << (*(((size_t *)linkLists_) - 1))<< " to" << (sizeof(void *) * new_max_elements) <<std::endl;
 
     // Reallocate all other layers
     char **linkLists_new =
@@ -1328,6 +1342,8 @@ void HNSWIndex<DataType, DistType>::resizeIndexInternal(size_t new_max_elements)
     linkLists_ = linkLists_new;
 
     max_elements_ = new_max_elements;
+    std::cout<< "after resize hnsw allocation size =  " << this->getAllocationSize() <<std::endl;
+
 }
 
 template <typename DataType, typename DistType>
@@ -1640,8 +1656,11 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::increaseCapacity() {
+    std::cout<< "increase capacity current hnsw allocation size =  " << this->getAllocationSize() <<std::endl;
     size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
     resizeIndexInternal(max_elements_ + vectors_to_add);
+    std::cout<< "after resize hnsw allocation size =  " << this->getAllocationSize() <<std::endl;
+
 }
 
 template <typename DataType, typename DistType>
@@ -1707,6 +1726,10 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         size_t extra_space_to_free = max_elements_ % this->blockSize;
 
         // Remove one block from the capacity.
+        std::cout<< "resize down from  removeAndSwap interanl id =   " << internalId <<std::endl;
+        std::cout<< "current hnsw allocation size =  " << this->getAllocationSize() <<std::endl;
+        std::cout<< "current hnsw allocation size =  " << this->getAllocationSize() <<std::endl;
+
         this->resizeIndexInternal(max_elements_ - this->blockSize - extra_space_to_free);
     }
 }

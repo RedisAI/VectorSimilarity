@@ -26,6 +26,7 @@ def download(src, dst):
 # Download dataset from s3, save the file locally
 def get_data_set(dataset_name):
     hdf5_filename = os.path.join('%s.hdf5' % dataset_name)
+    print(f"download {hdf5_filename}")
     url = 'https://s3.amazonaws.com/benchmarks.redislabs/vecsim/dbpedia/dbpedia-768.hdf5'
     download(url, hdf5_filename)
     return h5py.File(hdf5_filename, 'r')
@@ -36,9 +37,11 @@ def load_data(dataset_name):
     np_data_file_path = os.path.join('np_train_%s.npy' % dataset_name)
 
     try:
+        print(f"try to load {np_data_file_path}")
         data = np.load(np_data_file_path, allow_pickle = True)
         print(f"yay! loaded ")
     except:
+        print(f"failed to load {np_data_file_path}")
         dataset = get_data_set(dataset_name)
         data = np.array(dataset['train'])
         np.save(np_data_file_path, data)
@@ -134,7 +137,7 @@ class DBPediaIndexCtx:
             start_add = time.time()
             index.add_vector(vector, label)
             duration += time.time() - start_add
-            if label % 100000 == 0:
+            if label % 1000 == 0:
                 print(f"time passes= {duration}")
         end = time.time()
         return (start, duration, end)
@@ -386,7 +389,7 @@ def insert_delete_reinsert():
     
     
 def insert_and_update():
-    indices_ctx = DBPediaIndexCtx(data_size = 300000, mode=CreationMode.CREATE_TIERED_INDEX)
+    indices_ctx = DBPediaIndexCtx(mode=CreationMode.CREATE_TIERED_INDEX)
     index = indices_ctx.tiered_index
     threads_num = TIEREDIndex.get_threads_num()
     print(f"thread num = {threads_num}")
