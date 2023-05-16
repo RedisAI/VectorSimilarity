@@ -133,6 +133,15 @@ public:
             delete[] buf;
         }
     }
+#ifdef BUILD_TESTS
+    // Set new log context to be sent to the log callback.
+    // Returns the previous logctx.
+    inline void *setLogCtx(void *new_logCtx) {
+        void *prev_logCtx = this->logCallbackCtx;
+        this->logCallbackCtx = new_logCtx;
+        return prev_logCtx;
+    }
+#endif
 
     // Adds all common info to the info iterator, besides the block size (currently 8 fields).
     void addCommonInfoToIterator(VecSimInfoIterator *infoIterator, const CommonInfo &info) const {

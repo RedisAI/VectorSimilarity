@@ -186,8 +186,9 @@ valgrind:
 #----------------------------------------------------------------------------------------------
 
 flow_test:
+	$(SHOW)poetry build -vv
 	$(SHOW)poetry install
-	$(SHOW)poetry run pytest tests/flow -v -s
+	$(SHOW)poetry run pytest tests/flow -vv -s
 
 .PHONY: flow_test
 
