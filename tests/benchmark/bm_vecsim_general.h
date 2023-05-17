@@ -123,6 +123,8 @@ protected:
             jobQ.pop();
             lock.unlock();
             job->Execute(job);
+            // Free the job.
+            AsyncJobDestructor(job);
         }
     }
 

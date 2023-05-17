@@ -28,10 +28,6 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
     ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_TIERED)
     ->ArgName("VecSimAlgo_TIERED");
 
-// BENCHMARK_REGISTER_F(BM_VecSimBasics, AddLabel_AsyncIngest_Single)
-//    ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo_HNSWLIB)
-//    ->ArgName("VecSimAlgo_ParallelHNSW");
-
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));

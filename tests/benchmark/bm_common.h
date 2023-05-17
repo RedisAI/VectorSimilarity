@@ -2,7 +2,7 @@
 
 #include "bm_vecsim_index.h"
 
-size_t BM_VecSimGeneral::block_size = 10000;
+size_t BM_VecSimGeneral::block_size = 1024;
 
 // Class for common bm for basic index and updated index.
 template <typename index_type_t>

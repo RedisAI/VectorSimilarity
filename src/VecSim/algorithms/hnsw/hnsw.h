@@ -187,6 +187,7 @@ protected:
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
+    inline void resizeIndexInternal(size_t new_max_elements);
 
     template <bool has_marked_deleted>
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
@@ -270,7 +271,7 @@ public:
     // Inline priority queue getter that need to be implemented by derived class.
     virtual inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const = 0;
     virtual double safeGetDistanceFrom(labelType label, const void *vector_data) const = 0;
-    inline void resizeIndexInternal(size_t new_max_elements);
+
 #ifdef BUILD_TESTS
     /**
      * @brief Used for testing - store vector(s) data associated with a given label. This function
