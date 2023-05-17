@@ -113,7 +113,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     auto *tiered_index =
         TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
     indices.push_back(tiered_index);
-
+//    hnsw_index->resizeIndexInternal(N_VECTORS + BM_VecSimGeneral::block_size);
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     run_threads = true;
     for (size_t i = 0; i < thread_pool_size; i++) {
