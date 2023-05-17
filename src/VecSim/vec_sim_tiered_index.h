@@ -68,18 +68,7 @@ public:
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          flatBufferLimit(tieredParams.flatBufferLimit) {
-        auto *handle = (pthread_rwlock_t *)flatIndexGuard.native_handle();
-        pthread_rwlock_t rwlock_prefer_writers;
-        pthread_rwlockattr_t attr;
-        pthread_rwlockattr_setkind_np(&attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
-        //        pthread_rwlock_init(&rwlock_prefer_writers, &attr);
-        //        *handle = rwlock_prefer_writers;
-
-        handle = (pthread_rwlock_t *)mainIndexGuard.native_handle();
-        pthread_rwlock_init(&rwlock_prefer_writers, &attr);
-        *handle = rwlock_prefer_writers;
-    }
+          flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {
         VecSimIndex_Free(backendIndex);

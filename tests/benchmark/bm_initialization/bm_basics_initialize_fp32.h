@@ -37,8 +37,8 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, DeleteLabel_AsyncRepair_Single, fp3
 (benchmark::State &st) { DeleteLabel_AsyncRepair(st); }
 BENCHMARK_REGISTER_F(BM_VecSimBasics, DeleteLabel_AsyncRepair_Single)
     ->UNIT_AND_ITERATIONS->Arg(1)
-    ->Arg(1000)
-    ->Arg(10000)
+    ->Arg(100)
+    ->Arg(BM_VecSimGeneral::block_size)
     ->ArgName("SwapJobsThreshold");
 
 // TopK BF

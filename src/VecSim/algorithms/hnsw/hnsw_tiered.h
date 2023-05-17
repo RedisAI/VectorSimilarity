@@ -545,6 +545,15 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
             : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
+
+    // Set HNSW r/w lock to prefer writers, to avoid starvation that may occur upon acquiring
+    // the lock exclusively (for periodically resize / applying swap jobs clean up).
+    pthread_rwlock_t rwlock_prefer_writers_main;
+    pthread_rwlockattr_t attr_main;
+    pthread_rwlockattr_setkind_np(&attr_main, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+    pthread_rwlock_init(&rwlock_prefer_writers_main, &attr_main);
+    auto *handle_main = (pthread_rwlock_t *)this->mainIndexGuard.native_handle();
+    *handle_main = rwlock_prefer_writers_main;
 }
 
 template <typename DataType, typename DistType>
