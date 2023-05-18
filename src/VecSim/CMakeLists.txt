@@ -40,5 +40,4 @@ PUBLIC
     VectorSimilaritySpaces
     $<$<BOOL:${VECSIM_BUILD_TESTS}>:VectorSimilaritySerializer>
 PRIVATE
-    $<$<BOOL:${USE_CUDA}>:raft::raft>
-    $<$<BOOL:${USE_CUDA}>:raft::compiled>)
+    $<$<BOOL:${USE_CUDA}>:raft::raft>)

@@ -37,9 +37,9 @@ RaftIVFPQParams createDefaultPQParams(size_t dim) {
                               .pqBits = 8,
                               .pqDim = 0,
                               .codebookKind = RaftIVFPQ_PerSubspace,
-                              .kmeans_nIters = 20,
+                              .kmeans_nIters = 1,
                               .kmeans_trainsetFraction = 0.5,
-                              .nProbes = 20,
+                              .nProbes = 1,
                               .lutType = CUDAType_R_32F,
                               .internalDistanceType = CUDAType_R_32F,
                               .preferredShmemCarveout = 1.0};
@@ -50,9 +50,9 @@ RaftIVFFlatParams createDefaultFlatParams(size_t dim) {
     RaftIVFFlatParams params = {.dim = dim,
                                 .metric = VecSimMetric_L2,
                                 .nLists = 1,
-                                .kmeans_nIters = 20,
+                                .kmeans_nIters = 1,
                                 .kmeans_trainsetFraction = 0.5,
-                                .nProbes = 20};
+                                .nProbes = 1};
     return params;
 }
 

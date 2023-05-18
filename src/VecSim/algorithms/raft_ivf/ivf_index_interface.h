@@ -27,4 +27,5 @@ public:
                                bool overwrite_allowed = true) = 0;
     virtual int addVectorBatchGpuBuffer(const void *vector_data, std::int64_t *label,
                                         size_t batch_size, bool overwrite_allowed = true) = 0;
+    virtual size_t nLists() = 0;
 };

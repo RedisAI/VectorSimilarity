@@ -27,12 +27,16 @@ public:
     double getDistanceFrom(labelType id, const void *blob) const override {
         return this->flatBuffer->getDistanceFrom(id, blob);
     }
-    size_t indexSize() const override { return this->index->indexSize(); }
-    size_t indexCapacity() const override { return this->index->indexCapacity(); }
-    void increaseCapacity() override { this->index->increaseCapacity(); }
-    size_t indexLabelCount() const override { return this->index->indexLabelCount(); }
+    size_t indexSize() const override { return this->flatBuffer->indexSize(); }
+    size_t indexCapacity() const override { return this->flatBuffer->indexCapacity(); }
+    void increaseCapacity() override { this->flatBuffer->increaseCapacity(); }
+    size_t indexLabelCount() const override { return this->flatBuffer->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {
+        // Use flatbuffer if the dataset is small
+        if (this->flatBuffer->indexSize() < this->ivf_index_->nLists())
+            return this->flatBuffer->topKQuery(queryBlob, k, queryParams);
+
         if (updateIvfIndex)
             transferToIvf();
         return this->index->topKQuery(queryBlob, k, queryParams);
@@ -42,43 +46,46 @@ public:
         return this->flatBuffer->rangeQuery(queryBlob, radius, queryParams);
     }
     VecSimIndexInfo info() const override { return this->index->info(); }
-    VecSimInfoIterator *infoIterator() const override { return this->index->infoIterator(); }
+    VecSimInfoIterator *infoIterator() const override { return this->flatBuffer->infoIterator(); }
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
-        return this->index->newBatchIterator(queryBlob, queryParams);
+        return this->flatBuffer->newBatchIterator(queryBlob, queryParams);
     }
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) override {
-        return this->index->preferAdHocSearch(subsetSize, k, initial_check);
+        return this->flatBuffer->preferAdHocSearch(subsetSize, k, initial_check);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
-        return this->index->setLastSearchMode(mode);
+        return this->flatBuffer->setLastSearchMode(mode);
     }
     void transferToIvf() {
         auto dim = this->index->getDim();
+        auto nVectors = this->flatBuffer->indexSize();
         const auto &vectorBlocks = this->flatBuffer->getVectorBlocks();
         auto vectorDataGpuBuffer = raft::make_device_matrix<DataType, std::int64_t>(
-            res_, this->flatBuffer->indexSize(), dim);
-        auto labels_gpu = raft::make_device_matrix<std::int64_t, std::int64_t>(
-            res_, this->flatBuffer->indexSize(), 1);
+            res_, nVectors, dim);
+        auto labels_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(
+            res_, nVectors);
+        auto label_original = this->flatBuffer->getLabels();
+        auto label_converted =
+            std::vector<std::int64_t>(label_original.begin(), label_original.begin() + nVectors);
+        RAFT_CUDA_TRY(cudaMemcpyAsync(labels_gpu.data_handle(), label_converted.data(),
+                                      label_converted.size() * sizeof(std::int64_t),
+                                      cudaMemcpyDefault, res_.get_stream()));
         std::int64_t offset = 0;
         for (int block_id = 0; block_id < vectorBlocks.size(); block_id++) {
+            if (vectorBlocks[block_id]->getLength() == 0)
+                continue;
             RAFT_CUDA_TRY(
                 cudaMemcpyAsync(vectorDataGpuBuffer.data_handle() + offset * dim * sizeof(float),
                                 vectorBlocks[block_id]->getVector(0),
                                 vectorBlocks[block_id]->getLength() * dim * sizeof(float),
                                 cudaMemcpyDefault, res_.get_stream()));
-            auto label_original = this->flatBuffer->getLabels();
-            auto label_converted =
-                std::vector<std::int64_t>(label_original.begin(), label_original.end());
-            RAFT_CUDA_TRY(cudaMemcpyAsync(labels_gpu.data_handle() + offset, label_converted.data(),
-                                          label_original.size() * sizeof(std::int64_t),
-                                          cudaMemcpyDefault, res_.get_stream()));
 
             offset += vectorBlocks[block_id]->getLength();
         }
         this->ivf_index_->addVectorBatchGpuBuffer(vectorDataGpuBuffer.data_handle(),
                                                   labels_gpu.data_handle(),
-                                                  this->flatBuffer->indexSize());
+                                                  nVectors);
         updateIvfIndex = false;
     }
 

@@ -78,6 +78,10 @@ public:
         assert(!"preferAdHocSearch not implemented");
     }
 
+    virtual size_t nLists() {
+        return is_flat_ ? build_params_flat_->n_lists : build_params_pq_->n_lists;
+    }
+
 protected:
     raft::device_resources res_;
     std::unique_ptr<raftIvfFlatIndex> flat_index_;
