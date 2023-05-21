@@ -193,16 +193,26 @@ typedef struct {
                       // to get it from the parameters resolve function.
 } VecSimQueryParams;
 
+/**
+ * Index info that is static and immutable (cannot be changed over time)
+ */
 typedef struct {
-    size_t indexSize;        // Current count of vectors.
-    size_t indexLabelCount;  // Current unique count of labels.
-    size_t blockSize;        // Brute force algorithm vector block (mini matrix) size
-    VecSimMetric metric;     // Index distance metric
-    uint64_t memory;         // Index memory consumption.
-    VecSimType type;         // Datatype the index holds.
-    bool isMulti;            // Determines if the index should multi-index or not.
-    size_t dim;              // Vector size (dimension).
-    VecSearchMode last_mode; // The mode in which the last query ran.
+    VecSimAlgo algo;     // Algorithm being used.
+    size_t blockSize;    // Brute force algorithm vector block (mini matrix) size
+    VecSimMetric metric; // Index distance metric
+    VecSimType type;     // Datatype the index holds.
+    bool isMulti;        // Determines if the index should multi-index or not.
+    size_t dim;          // Vector size (dimension).
+
+    VecSimAlgo tieredBackendAlgo; // The algorithm for the tiered index (if algo is tiered).
+} VecSimIndexStaticInfo;
+
+typedef struct {
+    VecSimIndexStaticInfo basicInfo; // Index immutable meta-data.
+    size_t indexSize;                // Current count of vectors.
+    size_t indexLabelCount;          // Current unique count of labels.
+    uint64_t memory;                 // Index memory consumption.
+    VecSearchMode last_mode;         // The mode in which the last query ran.
 } CommonInfo;
 
 typedef struct {
@@ -220,12 +230,19 @@ typedef struct {
     char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
 
+typedef struct HnswTieredInfo {
+    size_t pendingSwapJobsThreshold;
+} HnswTieredInfo;
+
 typedef struct {
 
     // Since we cannot recursively have a struct that contains itself, we need this workaround.
     union {
         hnswInfoStruct hnswInfo;
-    } backendInfo;                 // The backend index info.
+    } backendInfo; // The backend index info.
+    union {
+        HnswTieredInfo hnswTieredInfo;
+    } specificTieredBackendInfo;   // Info relevant for tiered index with a specific backend.
     CommonInfo backendCommonInfo;  // Common index info.
     VecSimAlgo backendAlgo;        // The algorithm used in the backend.
     CommonInfo frontendCommonInfo; // Common index info.
@@ -234,6 +251,7 @@ typedef struct {
     uint64_t management_layer_memory; // Memory consumption of the management layer.
     bool backgroundIndexing;          // Determines if the index is currently being indexed in the
                                       // background.
+    size_t bufferLimit;               // Maximum number of vectors allowed in the flat buffer.
 } tieredInfoStruct;
 
 /**
@@ -247,7 +265,6 @@ typedef struct {
         hnswInfoStruct hnswInfo;
         tieredInfoStruct tieredInfo;
     };
-    VecSimAlgo algo; // Algorithm being used.
 } VecSimIndexInfo;
 
 // Memory function declarations.

@@ -149,6 +149,13 @@ VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *qu
 VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
 
 /**
+ * @brief Return basic immutable index information.
+ * @param index the index to return its info.
+ * @return Index basic meta-data.
+ */
+VecSimIndexStaticInfo VecSimIndex_StaticInfo(VecSimIndex *index);
+
+/**
  * @brief Returns an info iterator for generic reply purposes.
  *
  * @param index this index to return its info.

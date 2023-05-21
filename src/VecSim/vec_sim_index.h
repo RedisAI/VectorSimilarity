@@ -64,12 +64,8 @@ protected:
      */
     CommonInfo getCommonInfo() const {
         CommonInfo info;
-        info.dim = this->dim;
-        info.type = this->vecType;
-        info.metric = this->metric;
-        info.blockSize = this->blockSize;
+        info.basicInfo = this->getStaticInfo();
         info.last_mode = this->last_mode;
-        info.isMulti = this->isMulti;
         info.memory = this->getAllocationSize();
         info.indexSize = this->indexSize();
         info.indexLabelCount = this->indexLabelCount();
@@ -139,19 +135,20 @@ public:
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::TYPE_STRING,
             .fieldType = INFOFIELD_STRING,
-            .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.type)}}});
+            .fieldValue = {FieldValue{.stringValue = VecSimType_ToString(info.basicInfo.type)}}});
         infoIterator->addInfoField(
             VecSim_InfoField{.fieldName = VecSimCommonStrings::DIMENSION_STRING,
                              .fieldType = INFOFIELD_UINT64,
-                             .fieldValue = {FieldValue{.uintegerValue = info.dim}}});
-        infoIterator->addInfoField(VecSim_InfoField{
-            .fieldName = VecSimCommonStrings::METRIC_STRING,
-            .fieldType = INFOFIELD_STRING,
-            .fieldValue = {FieldValue{.stringValue = VecSimMetric_ToString(info.metric)}}});
+                             .fieldValue = {FieldValue{.uintegerValue = info.basicInfo.dim}}});
+        infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::METRIC_STRING,
+                             .fieldType = INFOFIELD_STRING,
+                             .fieldValue = {FieldValue{
+                                 .stringValue = VecSimMetric_ToString(info.basicInfo.metric)}}});
         infoIterator->addInfoField(
             VecSim_InfoField{.fieldName = VecSimCommonStrings::IS_MULTI_STRING,
                              .fieldType = INFOFIELD_UINT64,
-                             .fieldValue = {FieldValue{.uintegerValue = info.isMulti}}});
+                             .fieldValue = {FieldValue{.uintegerValue = info.basicInfo.isMulti}}});
         infoIterator->addInfoField(
             VecSim_InfoField{.fieldName = VecSimCommonStrings::INDEX_SIZE_STRING,
                              .fieldType = INFOFIELD_UINT64,
@@ -182,6 +179,20 @@ public:
 
         // Else no process is needed, return the original blob
         return original_blob;
+    }
+
+    /**
+     * @brief Get the basic static info object
+     *
+     * @return StaticInfo
+     */
+    VecSimIndexStaticInfo getStaticInfo() const {
+        VecSimIndexStaticInfo s_info{.blockSize = this->blockSize,
+                                     .metric = this->metric,
+                                     .type = this->vecType,
+                                     .isMulti = this->isMulti,
+                                     .dim = this->dim};
+        return s_info;
     }
 
 protected:

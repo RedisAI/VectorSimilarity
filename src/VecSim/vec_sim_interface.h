@@ -160,9 +160,18 @@ public:
     /**
      * @brief Return index information.
      *
-     * @return Index general and specific meta-data.
+     * @return Index general and specific meta-data. Note that this operation might
+     * be time consuming (specially for tiered index where computing label count required
+     * locking and going over the labels sets). So this should be used carefully.
      */
     virtual VecSimIndexInfo info() const = 0;
+
+    /**
+     * @brief Return index static information.
+     *
+     * @return Index general and specific meta-data (for quick and lock-less data retrieval)_
+     */
+    virtual VecSimIndexStaticInfo staticInfo() const = 0;
 
     /**
      * @brief Returns an index information in an iterable structure.

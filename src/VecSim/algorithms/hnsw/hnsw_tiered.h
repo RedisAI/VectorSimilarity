@@ -180,7 +180,9 @@ public:
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
     void increaseCapacity() override {}
-
+    VecSimIndexInfo info() const override;
+    VecSimIndexStaticInfo staticInfo() const override;
+    VecSimInfoIterator *infoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
         size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
@@ -1001,3 +1003,73 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrel
     // Update number of results (pop the tail)
     array_pop_back_n(rl.results, end - cur_end);
 }
+
+template <typename DataType, typename DistType>
+VecSimIndexInfo TieredHNSWIndex<DataType, DistType>::info() const {
+    auto info = VecSimTieredIndex<DataType, DistType>::info();
+    info.tieredInfo.backendAlgo = VecSimAlgo_HNSWLIB;
+    info.tieredInfo.backendInfo.hnswInfo = this->backendIndex->info().hnswInfo;
+    HnswTieredInfo hnswTieredInfo = {.pendingSwapJobsThreshold = this->pendingSwapJobsThreshold};
+    info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
+
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimInfoIterator *TieredHNSWIndex<DataType, DistType>::infoIterator() const {
+    VecSimIndexInfo info = this->info();
+    // For readability. Update this number when needed.
+    size_t numberOfInfoFields = 15;
+    auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .fieldValue = {FieldValue{
+                             .stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
+
+    this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.management_layer_memory}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.backgroundIndexing}}});
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.bufferLimit}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::FRONTEND_INDEX_STRING,
+        .fieldType = INFOFIELD_ITERATOR,
+        .fieldValue = {FieldValue{.iteratorValue = this->frontendIndex->infoIterator()}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
+        .fieldType = INFOFIELD_ITERATOR,
+        .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->infoIterator()}}});
+
+    // Tiered HNSW specific param.
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo
+                                                       .hnswTieredInfo.pendingSwapJobsThreshold}}});
+
+    return infoIterator;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexStaticInfo TieredHNSWIndex<DataType, DistType>::staticInfo() const {
+    VecSimIndexStaticInfo info = this->backendIndex->getStaticInfo();
+    info.blockSize = INVALID_INFO;
+    info.algo = VecSimAlgo_TIERED;
+    info.tieredBackendAlgo = VecSimAlgo_HNSWLIB;
+    return info;
+};
