@@ -221,7 +221,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     tiered_index->executeReadySwapJobs();
     tiered_index->pendingSwapJobsThreshold = DEFAULT_PENDING_SWAP_JOBS_THRESHOLD;
     auto end = high_resolution_clock::now();
-    st.counters["cleanup_time"] = duration_cast<microseconds>(end - start).count() / 1000.0;
+    st.counters["cleanup_time"] = (double)duration_cast<milliseconds>(end - start).count();
 
     // Restore index state.
     // For each label in removed_labels_data
