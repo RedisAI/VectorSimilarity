@@ -1041,7 +1041,7 @@ VecSimInfoIterator *TieredHNSWIndex<DataType, DistType>::infoIterator() const {
         .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.backgroundIndexing}}});
 
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.bufferLimit}}});
 

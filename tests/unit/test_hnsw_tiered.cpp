@@ -2936,7 +2936,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
             compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
-        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT)) {
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
         } else if (!strcmp(infoField->fieldName,
