@@ -26,7 +26,11 @@ struct IndexType {
 #define TEST_DIST_T typename TypeParam::dist_t
 
 using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+    ::testing::Types<IndexType<VecSimType_FLOAT32, float>
+#ifdef FP64_TESTS
+    , IndexType<VecSimType_FLOAT64, double>
+#endif
+    >;
 
 template <typename data_t>
 static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {

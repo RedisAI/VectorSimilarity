@@ -71,6 +71,7 @@ make clean         # remove binary files
 make unit_test     # run unit tests
   CTEST_ARGS=args    # extra CTest arguments
   VG|VALGRIND=1      # run tests with valgrind
+  FP_64=1			# run tests with 64-bit floating point
 make valgrind      # build for Valgrind and run tests
 make flow_test     # run flow tests (with pytest)
   TEST=file::name    # run specific test
@@ -122,6 +123,11 @@ endif
 
 ifeq ($(VERBOSE),1)
 CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=on
+endif
+
+# CMake flags for fp64 unit tests
+ifeq ($(FP_64),1)
+CMAKE_FLAGS += -DFP64_TESTS=on
 endif
 
 CMAKE_FLAGS += \
