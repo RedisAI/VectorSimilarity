@@ -187,7 +187,7 @@ protected:
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
-    inline void resizeIndexInternal(size_t new_max_elements);
+//    inline void resizeIndexInternal(size_t new_max_elements);
 
     template <bool has_marked_deleted>
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
@@ -214,6 +214,7 @@ public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
+    inline void resizeIndexInternal(size_t new_max_elements);
 
     inline void setEf(size_t ef);
     inline size_t getEf() const;
@@ -584,17 +585,23 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     tag_t *elements_tags, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
-    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+//    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    lockNodeLinks(curNodeId);
     idType *node_links = getNodeNeighborsAtLevel(curNodeId, layer);
     linkListSize links_num = getNodeNeighborsCount(node_links);
 
     __builtin_prefetch(elements_tags + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
 
+    std::vector<idType> neighbors_copy(links_num);
     for (size_t j = 0; j < links_num; j++) {
-        idType *candidate_pos = node_links + j;
-        idType candidate_id = *candidate_pos;
-        idType *next_candidate_pos = node_links + j + 1;
+        neighbors_copy[j] = node_links[j];
+    }
+    unlockNodeLinks(curNodeId);
+
+    for (size_t j = 0; j < links_num; j++) {
+        idType candidate_id = neighbors_copy[j];
+        idType *next_candidate_pos = neighbors_copy.data() + j + 1;
 
         __builtin_prefetch(elements_tags + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
