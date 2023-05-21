@@ -94,7 +94,7 @@ private:
     template <typename DataType>
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
         std::vector<std::vector<DataType>> vectors;
-        if (index->info().algo == VecSimAlgo_BF) {
+        if (index->staticInfo().algo == VecSimAlgo_BF) {
             reinterpret_cast<BruteForceIndex<DataType, DataType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         } else {
@@ -182,10 +182,10 @@ public:
 
     py::object getVector(labelType label) {
         VecSimIndexInfo info = index->info();
-        size_t dim = info.commonInfo.dim;
-        if (info.commonInfo.type == VecSimType_FLOAT32) {
+        size_t dim = info.commonInfo.basicInfo.dim;
+        if (info.commonInfo.basicInfo.type == VecSimType_FLOAT32) {
             return rawVectorsAsNumpy<float>(label, dim);
-        } else if (info.commonInfo.type == VecSimType_FLOAT64) {
+        } else if (info.commonInfo.basicInfo.type == VecSimType_FLOAT64) {
             return rawVectorsAsNumpy<double>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
@@ -345,7 +345,7 @@ public:
     }
 
     bool checkIntegrity() {
-        auto type = VecSimIndex_Info(this->index.get()).commonInfo.type;
+        auto type = VecSimIndex_Info(this->index.get()).commonInfo.basicInfo.type;
         if (type == VecSimType_FLOAT32) {
             return reinterpret_cast<HNSWIndex<float, float> *>(this->index.get())
                 ->checkIntegrity()
