@@ -147,11 +147,7 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
     }
-    VecSimAlgo index_type = index->staticInfo().algo;
-    // Treat tiered index as the backend index type.
-    if (index_type == VecSimAlgo_TIERED) {
-        index_type = index->staticInfo().tieredBackendAlgo;
-    }
+    VecSimAlgo index_type = index->basicInfo().algo;
 
     bzero(qparams, sizeof(VecSimQueryParams));
     auto res = VecSimParamResolver_OK;
@@ -235,7 +231,9 @@ extern "C" VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index) {
     return index->infoIterator();
 }
 
-VecSimIndexStaticInfo VecSimIndex_StaticInfo(VecSimIndex *index) { return index->staticInfo(); }
+extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
+    return index->basicInfo();
+}
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {

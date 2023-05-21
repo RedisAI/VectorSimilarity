@@ -88,6 +88,7 @@ public:
     }
 
     virtual VecSimIndexInfo info() const override;
+    virtual VecSimInfoIterator *infoIterator() const override;
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
@@ -262,17 +263,29 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
     VecSimIndexInfo backendInfo = this->backendIndex->info();
     VecSimIndexInfo frontendInfo = this->frontendIndex->info();
-    VecSimIndexStaticInfo s_info{.algo = VecSimAlgo_TIERED,
-                                 .blockSize = INVALID_INFO,
-                                 .metric = backendInfo.commonInfo.basicInfo.metric,
-                                 .type = backendInfo.commonInfo.basicInfo.type,
-                                 .isMulti = this->backendIndex->isMultiValue(),
-                                 .dim = backendInfo.commonInfo.basicInfo.dim};
-    info.commonInfo.basicInfo = s_info;
+
     info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize = this->indexSize();
     info.commonInfo.memory = this->getAllocationSize();
     info.commonInfo.last_mode = backendInfo.commonInfo.last_mode;
+
+    VecSimIndexBasicInfo basic_info{.algo = backendInfo.commonInfo.basicInfo.algo,
+                                    .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
+                                    .metric = backendInfo.commonInfo.basicInfo.metric,
+                                    .type = backendInfo.commonInfo.basicInfo.type,
+                                    .isMulti = this->backendIndex->isMultiValue(),
+                                    .dim = backendInfo.commonInfo.basicInfo.dim,
+                                    .isTiered = true};
+    info.commonInfo.basicInfo = basic_info;
+
+    switch (backendInfo.commonInfo.basicInfo.algo) {
+    case VecSimAlgo_HNSWLIB:
+        info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
+        break;
+    case VecSimAlgo_BF:
+    case VecSimAlgo_TIERED:
+        assert(false && "Invalid backend algorithm");
+    }
 
     info.tieredInfo.backendCommonInfo = backendInfo.commonInfo;
     // For now, this is hard coded to FLAT
@@ -283,4 +296,46 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     info.tieredInfo.management_layer_memory = this->allocator->getAllocationSize();
     info.tieredInfo.bufferLimit = this->flatBufferLimit;
     return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
+    VecSimIndexInfo info = this->info();
+    // For readability. Update this number when needed.
+    size_t numberOfInfoFields = 14;
+    auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .fieldValue = {FieldValue{
+                             .stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
+
+    this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.management_layer_memory}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.backgroundIndexing}}});
+
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.bufferLimit}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::FRONTEND_INDEX_STRING,
+        .fieldType = INFOFIELD_ITERATOR,
+        .fieldValue = {FieldValue{.iteratorValue = this->frontendIndex->infoIterator()}}});
+
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
+        .fieldType = INFOFIELD_ITERATOR,
+        .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->infoIterator()}}});
+    return infoIterator;
 };

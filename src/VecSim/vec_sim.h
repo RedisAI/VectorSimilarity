@@ -153,7 +153,7 @@ VecSimIndexInfo VecSimIndex_Info(VecSimIndex *index);
  * @param index the index to return its info.
  * @return Index basic meta-data.
  */
-VecSimIndexStaticInfo VecSimIndex_StaticInfo(VecSimIndex *index);
+VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index);
 
 /**
  * @brief Returns an info iterator for generic reply purposes.

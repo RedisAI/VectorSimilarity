@@ -2760,7 +2760,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexInfo info = tiered_index->info();
-    EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_TIERED);
+    EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
     EXPECT_EQ(info.commonInfo.memory, tiered_index->getAllocationSize());
@@ -2768,7 +2768,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.basicInfo.dim, dim);
     EXPECT_EQ(info.commonInfo.basicInfo.metric, VecSimMetric_L2);
     EXPECT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
-    EXPECT_EQ(info.commonInfo.basicInfo.blockSize, INVALID_INFO);
+    EXPECT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
     VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
     VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
 
@@ -2785,14 +2785,14 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
 
     // Validate that Static info returns the right restricted info as well.
-    VecSimIndexStaticInfo s_info = VecSimIndex_StaticInfo(tiered_index);
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
     ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
     ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
-    ASSERT_EQ(VecSimAlgo_HNSWLIB, s_info.tieredBackendAlgo);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
     info = tiered_index->info();

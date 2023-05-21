@@ -204,15 +204,15 @@ typedef struct {
     bool isMulti;        // Determines if the index should multi-index or not.
     size_t dim;          // Vector size (dimension).
 
-    VecSimAlgo tieredBackendAlgo; // The algorithm for the tiered index (if algo is tiered).
-} VecSimIndexStaticInfo;
+    bool isTiered; // The algorithm for the tiered index (if algo is tiered).
+} VecSimIndexBasicInfo;
 
 typedef struct {
-    VecSimIndexStaticInfo basicInfo; // Index immutable meta-data.
-    size_t indexSize;                // Current count of vectors.
-    size_t indexLabelCount;          // Current unique count of labels.
-    uint64_t memory;                 // Index memory consumption.
-    VecSearchMode last_mode;         // The mode in which the last query ran.
+    VecSimIndexBasicInfo basicInfo; // Index immutable meta-data.
+    size_t indexSize;               // Current count of vectors.
+    size_t indexLabelCount;         // Current unique count of labels.
+    uint64_t memory;                // Index memory consumption.
+    VecSearchMode last_mode;        // The mode in which the last query ran.
 } CommonInfo;
 
 typedef struct {
@@ -244,7 +244,6 @@ typedef struct {
         HnswTieredInfo hnswTieredInfo;
     } specificTieredBackendInfo;   // Info relevant for tiered index with a specific backend.
     CommonInfo backendCommonInfo;  // Common index info.
-    VecSimAlgo backendAlgo;        // The algorithm used in the backend.
     CommonInfo frontendCommonInfo; // Common index info.
     bfInfoStruct bfInfo;           // The brute force index info.
 

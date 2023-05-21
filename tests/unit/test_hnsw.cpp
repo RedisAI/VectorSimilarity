@@ -534,15 +534,17 @@ TYPED_TEST(HNSWTest, test_hnsw_info) {
     ASSERT_EQ(info.hnswInfo.efRuntime, 500);
     ASSERT_EQ(info.hnswInfo.epsilon, 0.005);
     ASSERT_EQ(info.commonInfo.basicInfo.type, params.type);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isTiered);
 
     // Validate that Static info returns the right restricted info as well.
-    VecSimIndexStaticInfo s_info = VecSimIndex_StaticInfo(index);
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(index);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
     ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
     ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
     VecSimIndex_Free(index);
 }

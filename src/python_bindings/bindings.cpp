@@ -94,7 +94,7 @@ private:
     template <typename DataType>
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
         std::vector<std::vector<DataType>> vectors;
-        if (index->staticInfo().algo == VecSimAlgo_BF) {
+        if (index->basicInfo().algo == VecSimAlgo_BF) {
             reinterpret_cast<BruteForceIndex<DataType, DataType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         } else {

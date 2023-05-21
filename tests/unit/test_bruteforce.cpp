@@ -547,18 +547,21 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
     ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
     ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
     ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isTiered);
+
     // User args.
     ASSERT_EQ(info.commonInfo.basicInfo.blockSize, 1);
     ASSERT_EQ(info.commonInfo.indexSize, 0);
 
     // Validate that Static info returns the right restricted info as well.
-    VecSimIndexStaticInfo s_info = VecSimIndex_StaticInfo(index);
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(index);
     ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
     ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
     ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
     ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
     ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
     VecSimIndex_Free(index);
 }

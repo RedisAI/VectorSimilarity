@@ -239,7 +239,7 @@ public:
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
-    VecSimIndexStaticInfo staticInfo() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     char *getDataByInternalId(idType internal_id) const;
@@ -2167,9 +2167,10 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexStaticInfo HNSWIndex<DataType, DistType>::staticInfo() const {
-    VecSimIndexStaticInfo info = this->getStaticInfo();
+VecSimIndexBasicInfo HNSWIndex<DataType, DistType>::basicInfo() const {
+    VecSimIndexBasicInfo info = this->getBasicInfo();
     info.algo = VecSimAlgo_HNSWLIB;
+    info.isTiered = false;
     return info;
 }
 

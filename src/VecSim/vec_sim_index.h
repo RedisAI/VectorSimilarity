@@ -64,7 +64,7 @@ protected:
      */
     CommonInfo getCommonInfo() const {
         CommonInfo info;
-        info.basicInfo = this->getStaticInfo();
+        info.basicInfo = this->getBasicInfo();
         info.last_mode = this->last_mode;
         info.memory = this->getAllocationSize();
         info.indexSize = this->indexSize();
@@ -184,15 +184,15 @@ public:
     /**
      * @brief Get the basic static info object
      *
-     * @return StaticInfo
+     * @return basicInfo
      */
-    VecSimIndexStaticInfo getStaticInfo() const {
-        VecSimIndexStaticInfo s_info{.blockSize = this->blockSize,
-                                     .metric = this->metric,
-                                     .type = this->vecType,
-                                     .isMulti = this->isMulti,
-                                     .dim = this->dim};
-        return s_info;
+    VecSimIndexBasicInfo getBasicInfo() const {
+        VecSimIndexBasicInfo info{.blockSize = this->blockSize,
+                                  .metric = this->metric,
+                                  .type = this->vecType,
+                                  .isMulti = this->isMulti,
+                                  .dim = this->dim};
+        return info;
     }
 
 protected:

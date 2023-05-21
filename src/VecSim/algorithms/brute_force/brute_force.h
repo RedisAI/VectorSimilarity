@@ -50,7 +50,7 @@ public:
                                               VecSimQueryParams *queryParams) const override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
-    VecSimIndexStaticInfo staticInfo() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
@@ -352,10 +352,11 @@ VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
-VecSimIndexStaticInfo BruteForceIndex<DataType, DistType>::staticInfo() const {
+VecSimIndexBasicInfo BruteForceIndex<DataType, DistType>::basicInfo() const {
 
-    VecSimIndexStaticInfo info = this->getStaticInfo();
+    VecSimIndexBasicInfo info = this->getBasicInfo();
     info.algo = VecSimAlgo_BF;
+    info.isTiered = false;
     return info;
 }
 
