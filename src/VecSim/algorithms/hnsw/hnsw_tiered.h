@@ -340,6 +340,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         }
         swap_job->setRepairJobsNum(incoming_edges.size());
         if (incoming_edges.size() == 0) {
+            // No pending repair jobs, so swap jobs is ready from the beginning.
             readySwapJobs++;
         }
         this->idToRepairJobsGuard.unlock();
