@@ -61,8 +61,10 @@ public:
 
     static const char *TIERED_MANAGEMENT_MEMORY_STRING;
     static const char *TIERED_BACKGROUND_INDEXING_STRING;
+    static const char *TIERED_BUFFER_LIMIT_STRING;
     static const char *FRONTEND_INDEX_STRING;
     static const char *BACKEND_INDEX_STRING;
+    static const char *TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING;
 };
 
 inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {

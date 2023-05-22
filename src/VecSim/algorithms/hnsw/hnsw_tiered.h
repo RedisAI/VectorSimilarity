@@ -180,7 +180,9 @@ public:
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
     void increaseCapacity() override {}
-
+    VecSimIndexInfo info() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
+    VecSimInfoIterator *infoIterator() const override;
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
         size_t blobSize = this->backendIndex->getDim() * sizeof(DataType);
@@ -1001,3 +1003,38 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrel
     // Update number of results (pop the tail)
     array_pop_back_n(rl.results, end - cur_end);
 }
+
+template <typename DataType, typename DistType>
+VecSimIndexInfo TieredHNSWIndex<DataType, DistType>::info() const {
+    auto info = VecSimTieredIndex<DataType, DistType>::info();
+
+    HnswTieredInfo hnswTieredInfo = {.pendingSwapJobsThreshold = this->pendingSwapJobsThreshold};
+    info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
+
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimInfoIterator *TieredHNSWIndex<DataType, DistType>::infoIterator() const {
+    VecSimIndexInfo info = this->info();
+    // Get the base tiered fields.
+    auto *infoIterator = VecSimTieredIndex<DataType, DistType>::infoIterator();
+
+    // Tiered HNSW specific param.
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.specificTieredBackendInfo
+                                                       .hnswTieredInfo.pendingSwapJobsThreshold}}});
+
+    return infoIterator;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
+    VecSimIndexBasicInfo info = this->backendIndex->getBasicInfo();
+    info.blockSize = info.blockSize;
+    info.isTiered = true;
+    info.algo = VecSimAlgo_HNSWLIB;
+    return info;
+};

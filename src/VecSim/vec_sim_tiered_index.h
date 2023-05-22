@@ -263,19 +263,22 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
     VecSimIndexInfo backendInfo = this->backendIndex->info();
     VecSimIndexInfo frontendInfo = this->frontendIndex->info();
-    info.algo = VecSimAlgo_TIERED;
+
     info.commonInfo.indexLabelCount = this->indexLabelCount();
     info.commonInfo.indexSize = this->indexSize();
     info.commonInfo.memory = this->getAllocationSize();
-    info.commonInfo.isMulti = this->backendIndex->isMultiValue();
-    info.commonInfo.type = backendInfo.commonInfo.type;
-    info.commonInfo.metric = backendInfo.commonInfo.metric;
-    info.commonInfo.dim = backendInfo.commonInfo.dim;
-    info.commonInfo.blockSize = INVALID_INFO;
     info.commonInfo.last_mode = backendInfo.commonInfo.last_mode;
 
-    info.tieredInfo.backendAlgo = backendInfo.algo;
-    switch (backendInfo.algo) {
+    VecSimIndexBasicInfo basic_info{.algo = backendInfo.commonInfo.basicInfo.algo,
+                                    .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
+                                    .metric = backendInfo.commonInfo.basicInfo.metric,
+                                    .type = backendInfo.commonInfo.basicInfo.type,
+                                    .isMulti = this->backendIndex->isMultiValue(),
+                                    .dim = backendInfo.commonInfo.basicInfo.dim,
+                                    .isTiered = true};
+    info.commonInfo.basicInfo = basic_info;
+
+    switch (backendInfo.commonInfo.basicInfo.algo) {
     case VecSimAlgo_HNSWLIB:
         info.tieredInfo.backendInfo.hnswInfo = backendInfo.hnswInfo;
         break;
@@ -291,6 +294,7 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
 
     info.tieredInfo.backgroundIndexing = this->frontendIndex->indexSize() > 0;
     info.tieredInfo.management_layer_memory = this->allocator->getAllocationSize();
+    info.tieredInfo.bufferLimit = this->flatBufferLimit;
     return info;
 }
 
@@ -298,13 +302,14 @@ template <typename DataType, typename DistType>
 VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
-    size_t numberOfInfoFields = 13;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    size_t numberOfInfoFields = 14;
+    auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
+    // Set tiered explicitly as algo name for root iterator.
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
         .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+        .fieldValue = {FieldValue{.stringValue = VecSimCommonStrings::TIERED_STRING}}});
 
     this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
 
@@ -318,6 +323,11 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.backgroundIndexing}}});
 
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = info.tieredInfo.bufferLimit}}});
+
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::FRONTEND_INDEX_STRING,
         .fieldType = INFOFIELD_ITERATOR,
@@ -327,6 +337,5 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
         .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
         .fieldType = INFOFIELD_ITERATOR,
         .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->infoIterator()}}});
-
     return infoIterator;
 };

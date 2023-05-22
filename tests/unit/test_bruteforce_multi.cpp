@@ -487,11 +487,11 @@ TYPED_TEST(BruteForceMultiTest, test_bf_info) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.commonInfo.dim, d);
-    ASSERT_TRUE(info.commonInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // Default args.
-    ASSERT_EQ(info.commonInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.commonInfo.indexSize, 0);
     VecSimIndex_Free(index);
 
@@ -501,11 +501,11 @@ TYPED_TEST(BruteForceMultiTest, test_bf_info) {
     index = this->CreateNewIndex(params);
 
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.commonInfo.dim, d);
-    ASSERT_TRUE(info.commonInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // User args.
-    ASSERT_EQ(info.commonInfo.blockSize, 1);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, 1);
     ASSERT_EQ(info.commonInfo.indexSize, 0);
     VecSimIndex_Free(index);
 }
@@ -539,7 +539,7 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.commonInfo.blockSize);
+    ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
     ASSERT_EQ(0, info.commonInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
@@ -633,8 +633,8 @@ TYPED_TEST(BruteForceMultiTest, vector_search_test_l2) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         VecSimIndexInfo info = VecSimIndex_Info(index);
-        ASSERT_EQ(info.algo, VecSimAlgo_BF);
-        ASSERT_EQ(info.commonInfo.blockSize, blocksize);
+        ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+        ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
 
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
