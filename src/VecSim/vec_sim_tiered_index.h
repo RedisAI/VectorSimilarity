@@ -305,11 +305,12 @@ VecSimInfoIterator *VecSimTieredIndex<DataType, DistType>::infoIterator() const 
     size_t numberOfInfoFields = 14;
     auto *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
+    // Set tiered explicitly as algo name for root iterator.
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
                          .fieldType = INFOFIELD_STRING,
                          .fieldValue = {FieldValue{
-                             .stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
+                             .stringValue = VecSimCommonStrings::TIERED_STRING}}});
 
     this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
 

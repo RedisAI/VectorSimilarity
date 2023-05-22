@@ -2886,7 +2886,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
             // Algorithm type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimAlgo_ToString(info.commonInfo.basicInfo.algo));
+                         VecSimCommonStrings::TIERED_STRING);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
             // Vector type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
