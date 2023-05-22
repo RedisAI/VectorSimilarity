@@ -187,7 +187,7 @@ protected:
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
-//    inline void resizeIndexInternal(size_t new_max_elements);
+    //    inline void resizeIndexInternal(size_t new_max_elements);
 
     template <bool has_marked_deleted>
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
@@ -585,7 +585,7 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     tag_t *elements_tags, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
-//    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    //    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
     lockNodeLinks(curNodeId);
     idType *node_links = getNodeNeighborsAtLevel(curNodeId, layer);
     linkListSize links_num = getNodeNeighborsCount(node_links);
