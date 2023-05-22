@@ -20,6 +20,7 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
 REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
+REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_RaftIVFFlat);
 
 // DeleteLabel Registration. Definition is placed in the .cpp file.
 REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
@@ -44,3 +45,8 @@ REGISTER_Range_BF(BM_FUNC_NAME(Range, BF));
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, HNSW), fp32_index_t)
 (benchmark::State &st) { Range_HNSW(st); }
 REGISTER_Range_HNSW(BM_FUNC_NAME(Range, HNSW));
+
+// TopK IVFFlat
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, RaftIVFFlat), fp32_index_t)
+(benchmark::State &st) { TopK_RaftIVFFlat(st); }
+REGISTER_TopK_RaftIVFFlat(BM_VecSimCommon, BM_FUNC_NAME(TopK, RaftIVFFlat));
