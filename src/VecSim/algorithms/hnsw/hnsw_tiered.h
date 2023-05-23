@@ -511,7 +511,9 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         }
     } else {
         // Remove the current job from the invalid jobs' lookup, as we are about to delete it now.
+        this->invalidJobsLookupGuard.lock();
         this->invalidJobs.erase(job->id);
+        this->invalidJobsLookupGuard.unlock();
     }
     this->flatIndexGuard.unlock();
 }

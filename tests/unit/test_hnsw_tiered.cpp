@@ -1733,7 +1733,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             }
 
             // Create and insert 10 vectors, then delete them right after.
-            size_t batch_size = 10;
+            size_t batch_size = 5;
             std::srand(10); // create pseudo random generator with any arbitrary seed.
             for (size_t i = 0; i < n / batch_size; i++) {
                 for (size_t l = 0; l < batch_size; l++) {
