@@ -355,11 +355,11 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.commonInfo.dim, d);
-    ASSERT_TRUE(info.commonInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // Default args.
-    ASSERT_EQ(info.commonInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
@@ -381,11 +381,11 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
 
     index = this->CreateNewIndex(params);
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.commonInfo.dim, d);
-    ASSERT_TRUE(info.commonInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // User args.
-    ASSERT_EQ(info.commonInfo.blockSize, bs);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, ef_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, ef_RT);

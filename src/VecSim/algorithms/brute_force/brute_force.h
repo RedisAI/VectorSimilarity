@@ -50,6 +50,7 @@ public:
                                               VecSimQueryParams *queryParams) const override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
@@ -344,8 +345,18 @@ template <typename DataType, typename DistType>
 VecSimIndexInfo BruteForceIndex<DataType, DistType>::info() const {
 
     VecSimIndexInfo info;
-    info.algo = VecSimAlgo_BF;
     info.commonInfo = this->getCommonInfo();
+    info.commonInfo.basicInfo.algo = VecSimAlgo_BF;
+
+    return info;
+}
+
+template <typename DataType, typename DistType>
+VecSimIndexBasicInfo BruteForceIndex<DataType, DistType>::basicInfo() const {
+
+    VecSimIndexBasicInfo info = this->getBasicInfo();
+    info.algo = VecSimAlgo_BF;
+    info.isTiered = false;
     return info;
 }
 
@@ -356,15 +367,16 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     size_t numberOfInfoFields = 10;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
-    this->addCommonInfoToIterator(infoIterator, info.commonInfo);
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.blockSize}}});
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .fieldValue = {FieldValue{
+                             .stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
+    this->addCommonInfoToIterator(infoIterator, info.commonInfo);
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.basicInfo.blockSize}}});
     return infoIterator;
 }
 
