@@ -73,7 +73,7 @@ private:
 
     // A mapping to hold invalid jobs, so we can dispose them upon index deletion.
     vecsim_stl::unordered_map<idType, AsyncJob *> invalidJobs;
-    idType currInvalidJobId;
+    idType currInvalidJobId; // A unique arbitrary identifier for accessing invalid jobs
     std::mutex invalidJobsLookupGuard;
 
     // This threshold is tested upon deleting a label from HNSW, and once the number of deleted
@@ -120,6 +120,11 @@ private:
     template <bool releaseFlatGuard>
     void insertVectorToHNSW(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
                             const void *blob);
+
+    // Set an insert/repair job as invalid, put the job pointer in the invalid jobs lookup under
+    // the current available id, increase it and return it (while holding invalidJobsLookupGuard).
+    // Returns the id that the job was stored under (to be set in the job id field).
+    idType setAndSaveInvalidJob(AsyncJob *job);
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -232,18 +237,14 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(HNSWSwapJob *job,
 
     // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
     if (idToRepairJobs.find(job->deleted_id) != idToRepairJobs.end()) {
-        invalidJobsLookupGuard.lock();
         for (auto &job_it : idToRepairJobs.at(job->deleted_id)) {
-            job_it->isValid = false;
-            job_it->node_id = currInvalidJobId;
-            this->invalidJobs.insert({currInvalidJobId++, job_it});
+            job_it->node_id = this->setAndSaveInvalidJob(job_it);
             for (auto &swap_job_it : job_it->associatedSwapJobs) {
                 if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
                     readySwapJobs++;
                 }
             }
         }
-        invalidJobsLookupGuard.unlock();
         idToRepairJobs.erase(job->deleted_id);
     }
     // Swap the ids in the pending jobs for the current last id (if exist).
@@ -446,6 +447,16 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     }
 }
 
+template <typename DataType, typename DistType>
+idType TieredHNSWIndex<DataType, DistType>::setAndSaveInvalidJob(AsyncJob *job) {
+    this->invalidJobsLookupGuard.lock();
+    job->isValid = false;
+    idType curInvalidId = currInvalidJobId++;
+    this->invalidJobs.insert({curInvalidId, job});
+    this->invalidJobsLookupGuard.unlock();
+    return curInvalidId;
+}
+
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
@@ -498,6 +509,9 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
             this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id,
                                             last_vec_label);
         }
+    } else {
+        // Remove the current job from the invalid jobs' lookup, as we are about to delete it now.
+        this->invalidJobs.erase(job->id);
     }
     this->flatIndexGuard.unlock();
 }
@@ -656,11 +670,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
         // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
         auto *old_job = this->labelToInsertJobs.at(label).at(0);
-        old_job->isValid = false;
-        old_job->id = currInvalidJobId;
-        this->invalidJobsLookupGuard.lock();
-        this->invalidJobs.insert({currInvalidJobId++, old_job});
-        this->invalidJobsLookupGuard.unlock();
+        old_job->id = this->setAndSaveInvalidJob(old_job);
         this->labelToInsertJobs.erase(label);
         ret = 0;
         // We are going to update the internal id that currently holds the vector associated with
@@ -720,11 +730,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             // Invalidate the pending insert job(s) into HNSW associated with this label
             auto &insert_jobs = this->labelToInsertJobs.at(label);
             for (auto *job : insert_jobs) {
-                job->isValid = false;
-                job->id = currInvalidJobId;
-                this->invalidJobsLookupGuard.lock();
-                this->invalidJobs.insert({currInvalidJobId++, job});
-                this->invalidJobsLookupGuard.unlock();
+                job->id = this->setAndSaveInvalidJob(job);
             }
             num_deleted_vectors += insert_jobs.size();
             // Remove the pending insert job(s) from the labelToInsertJobs mapping.
