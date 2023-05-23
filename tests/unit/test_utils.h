@@ -185,17 +185,13 @@ struct SearchJobMock : public AsyncJob {
 struct JobQueue : public std::queue<RefManagedJob> {
     // Pops and destroys the job at the front of the queue.
     inline void kick() {
-        AsyncJobDestructor(this->front().job);
+        delete this->front().job;
         this->pop();
     }
-    ~JobQueue() {
-        while (!this->empty()) {
-            this->kick();
-        }
-    }
 };
+
 int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
-                    JobCallback *freeCBs, size_t jobs_len);
+                    size_t jobs_len);
 
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;

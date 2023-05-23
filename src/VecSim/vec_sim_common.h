@@ -82,7 +82,7 @@ typedef enum { VecSim_WriteAsync, VecSim_WriteInPlace } VecSimWriteMode;
  */
 typedef void (*JobCallback)(AsyncJob *);
 typedef int (*SubmitCB)(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
-                        JobCallback *freeCBs, size_t jobs_len);
+                        size_t jobs_len);
 
 /**
  * @brief Index initialization parameters.

@@ -14,17 +14,13 @@ struct AsyncJob : public VecsimBaseObject {
     JobType jobType;
     JobCallback Execute; // A callback that receives a job as its input and executes the job.
     VecSimIndex *index;
+    bool isValid;
 
     AsyncJob(std::shared_ptr<VecSimAllocator> allocator, JobType type, JobCallback callback,
              VecSimIndex *index_ref)
-        : VecsimBaseObject(allocator), jobType(type), Execute(callback), index(index_ref) {}
+        : VecsimBaseObject(allocator), jobType(type), Execute(callback), index(index_ref),
+          isValid(true) {}
 };
-
-static void AsyncJobDestructor(AsyncJob *job) {
-    // Holding the allocator so it will not deallocate itself before the job is destroyed.
-    auto allocator = job->getAllocator();
-    delete job;
-}
 
 // All read operations (including KNN, range, batch iterators and get-distance-from) are guaranteed
 // to consider all vectors that were added to the index before the query was submitted. The results
@@ -45,20 +41,16 @@ protected:
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
-        auto destructor = AsyncJobDestructor;
-        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, &job, &job->Execute, &destructor,
-                                1);
+        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, &job, &job->Execute, 1);
     }
 
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) {
         vecsim_stl::vector<JobCallback> callbacks(jobs.size(), this->allocator);
-        vecsim_stl::vector<JobCallback> destructors(jobs.size(), AsyncJobDestructor,
-                                                    this->allocator);
         for (size_t i = 0; i < jobs.size(); i++) {
             callbacks[i] = jobs[i]->Execute;
         }
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
-                                destructors.data(), jobs.size());
+                                jobs.size());
     }
 
 public:

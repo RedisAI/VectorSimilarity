@@ -314,7 +314,7 @@ std::condition_variable tiered_index_mock::queue_cond;
 std::vector<std::thread> tiered_index_mock::thread_pool;
 
 int tiered_index_mock::submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs,
-                                       JobCallback *CBs, JobCallback *freeCBs, size_t len) {
+                                       JobCallback *CBs, size_t len) {
     {
         std::unique_lock<std::mutex> lock(queue_guard);
         for (size_t i = 0; i < len; i++) {
@@ -349,8 +349,8 @@ void tiered_index_mock::thread_iteration(JobQueue &jobQ, bool *run_thread) {
     if (auto temp_ref = managed_job.index_weak_ref.lock()) {
         managed_job.job->Execute(managed_job.job);
     }
-    // Free the job.
-    AsyncJobDestructor(managed_job.job);
+    //    // Free the job.
+    //    AsyncJobDestructor(managed_job.job);
 }
 
 // Main loop for background worker threads that execute the jobs form the job queue.
