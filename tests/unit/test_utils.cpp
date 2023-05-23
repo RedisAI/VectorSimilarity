@@ -349,8 +349,6 @@ void tiered_index_mock::thread_iteration(JobQueue &jobQ, bool *run_thread) {
     if (auto temp_ref = managed_job.index_weak_ref.lock()) {
         managed_job.job->Execute(managed_job.job);
     }
-    //    // Free the job.
-    //    AsyncJobDestructor(managed_job.job);
 }
 
 // Main loop for background worker threads that execute the jobs form the job queue.

@@ -94,6 +94,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         // Here we update labelToInsertJobs mapping, as we except that for every insert job
         // there will be a corresponding item in the map.
         my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
+        delete job;
     };
 
     auto job = new (allocator)
@@ -735,6 +736,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         };
         runTopKSearchTest(job->index, query, k, verify_res);
         search_job->successful_searches++;
+        delete job;
     };
 
     size_t per_label = isMulti ? 10 : 1;
@@ -828,6 +830,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         auto verify_res = [&](size_t id, double score, size_t res_index) {};
         runTopKSearchTest(job->index, query, k, verify_res);
         search_job->successful_searches++;
+        delete job;
     };
 
     // Insert vectors in parallel to search.
@@ -1365,6 +1368,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
 
         search_job->successful_searches++;
+        delete job;
     };
 
     // Insert vectors in parallel to search.
@@ -1613,6 +1617,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     ASSERT_EQ(tiered_index->indexSize(), 2);
     tiered_index->labelToInsertJobs.clear();
 
+    // Clean jobs from queue
+    while (!jobQ.empty()) {
+        jobQ.kick();
+    }
     delete index_ctx;
 }
 
@@ -2573,6 +2581,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
 
         VecSimBatchIterator_Free(tiered_iterator);
         search_job->successful_searches++;
+        delete job;
     };
 
     // Fill the job queue with insert and batch-search jobs, while filling the flat index, before
@@ -3469,6 +3478,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         };
         runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
         search_job->successful_searches++;
+        delete job;
     };
 
     // Fill the job queue with insert and search jobs, while filling the flat index, before
