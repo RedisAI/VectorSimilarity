@@ -313,7 +313,7 @@ def test_recall_after_deletion():
     # Calculate correct vectors for each index.
     # We don't expect hnsw and tiered hnsw results to be identical due to the parallel insertion.
     def calculate_correct(index_labels, keys):
-        correct = 0;
+        correct = 0
         for label in index_labels[0]:
             for correct_label in keys:
                 if label == correct_label:

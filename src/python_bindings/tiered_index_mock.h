@@ -83,6 +83,8 @@ void thread_main_loop(ThreadParams params) {
             managed_job.job->Execute(managed_job.job);
             MarkExecuteDone(params.executions_status, params.thread_index);
         }
+        // Free the job.
+        AsyncJobDestructor(managed_job.job);
     }
 }
 
