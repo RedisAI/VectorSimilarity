@@ -264,11 +264,17 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
 template <typename DataType, typename DistType>
 VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
-    VecSimIndexInfo backendInfo = this->backendIndex->info();
+    this->flatIndexGuard.lock();
     VecSimIndexInfo frontendInfo = this->frontendIndex->info();
+    this->flatIndexGuard.unlock();
+
+    this->mainIndexGuard.lock();
+    VecSimIndexInfo backendInfo = this->backendIndex->info();
+    this->mainIndexGuard.unlock();
 
     info.commonInfo.indexLabelCount = this->indexLabelCount();
-    info.commonInfo.indexSize = this->indexSize();
+    info.commonInfo.indexSize =
+        frontendInfo.commonInfo.indexSize + backendInfo.commonInfo.indexSize;
     info.commonInfo.memory = this->getAllocationSize();
     info.commonInfo.last_mode = backendInfo.commonInfo.last_mode;
 
@@ -295,7 +301,7 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     info.tieredInfo.frontendCommonInfo = frontendInfo.commonInfo;
     info.tieredInfo.bfInfo = frontendInfo.bfInfo;
 
-    info.tieredInfo.backgroundIndexing = this->frontendIndex->indexSize() > 0;
+    info.tieredInfo.backgroundIndexing = frontendInfo.commonInfo.indexSize > 0;
     info.tieredInfo.management_layer_memory = this->allocator->getAllocationSize();
     info.tieredInfo.bufferLimit = this->flatBufferLimit;
     return info;
