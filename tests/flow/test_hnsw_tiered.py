@@ -269,7 +269,7 @@ def test_sanity():
     
 def test_recall_after_deletion():
     
-    indices_ctx = IndexCtx(ef_r=20)
+    indices_ctx = IndexCtx(ef_r=30)
     index = indices_ctx.tiered_index
     data = indices_ctx.data
     num_elements = indices_ctx.num_labels
