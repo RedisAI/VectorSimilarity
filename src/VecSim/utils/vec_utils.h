@@ -10,6 +10,7 @@
 #include "VecSim/vec_sim_common.h"
 #include <VecSim/query_results.h>
 #include <utility>
+#include <cassert>
 #include <cmath> //sqrt
 
 template <typename dist_t>
@@ -25,6 +26,7 @@ public:
     static const char *ALGORITHM_STRING;
     static const char *FLAT_STRING;
     static const char *HNSW_STRING;
+    static const char *TIERED_STRING;
 
     static const char *TYPE_STRING;
     static const char *FLOAT32_STRING;
@@ -49,16 +51,48 @@ public:
     static const char *HNSW_EPSILON_STRING;
     static const char *HNSW_MAX_LEVEL;
     static const char *HNSW_ENTRYPOINT;
+    static const char *HNSW_NUM_MARKED_DELETED;
+    // static const char *HNSW_VISITED_NODES_POOL_SIZE_STRING;
 
     static const char *BLOCK_SIZE_STRING;
     static const char *SEARCH_MODE_STRING;
     static const char *HYBRID_POLICY_STRING;
     static const char *BATCH_SIZE_STRING;
+
+    static const char *TIERED_MANAGEMENT_MEMORY_STRING;
+    static const char *TIERED_BACKGROUND_INDEXING_STRING;
+    static const char *TIERED_BUFFER_LIMIT_STRING;
+    static const char *FRONTEND_INDEX_STRING;
+    static const char *BACKEND_INDEX_STRING;
+    static const char *TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING;
 };
+
+inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
+    return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
+}
+
+inline int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1,
+                                       const VecSimQueryResult *res2) {
+    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
+           !std::isnan(VecSimQueryResult_GetScore(res2)));
+    // Compare doubles
+    return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
+}
+
+inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
+                                             const VecSimQueryResult *res2) {
+    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2))
+               ? cmpVecSimQueryResultByScore(res1, res2)
+               : cmpVecSimQueryResultById(res1, res2);
+}
 
 void sort_results_by_id(VecSimQueryResult_List results);
 
 void sort_results_by_score(VecSimQueryResult_List results);
+
+void sort_results_by_score_then_id(VecSimQueryResult_List results);
+
+void sort_results(VecSimQueryResult_List results, VecSimQueryResult_Order order);
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 
@@ -81,11 +115,20 @@ void normalizeVector(DataType *input_vector, size_t dim) {
     double sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
-        sum += input_vector[i] * input_vector[i];
+        sum += (double)input_vector[i] * (double)input_vector[i];
     }
     DataType norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
         input_vector[i] = input_vector[i] / norm;
     }
+}
+
+typedef void (*normalizeVector_f)(void *input_vector, size_t dim);
+
+static inline void normalizeVectorFloat(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<float *>(input_vector), dim);
+}
+static inline void normalizeVectorDouble(void *input_vector, size_t dim) {
+    normalizeVector(static_cast<double *>(input_vector), dim);
 }

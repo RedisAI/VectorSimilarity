@@ -2,13 +2,13 @@
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams *params,
-                                         std::shared_ptr<VecSimAllocator> allocator,
-                                         EncodingVersion version)
-    : VecSimIndexAbstract<DistType>(allocator, params->dim, params->type, params->metric,
-                                    params->blockSize, params->multi),
-      Serializer(version), max_elements_(params->initialCapacity), epsilon_(params->epsilon),
-      element_levels_(max_elements_, allocator),
-      visited_nodes_handler_pool(1, max_elements_, allocator) {
+                                         const AbstractIndexInitParams &abstractInitParams,
+                                         Serializer::EncodingVersion version)
+    : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
+      max_elements_(params->initialCapacity), epsilon_(params->epsilon),
+      element_levels_(max_elements_, this->allocator),
+      visited_nodes_handler_pool(1, max_elements_, this->allocator),
+      element_neighbors_locks_(max_elements_, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -49,7 +49,8 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
                              .double_connections = HNSW_INVALID_META_DATA,
                              .unidirectional_connections = HNSW_INVALID_META_DATA,
                              .min_in_degree = HNSW_INVALID_META_DATA,
-                             .max_in_degree = HNSW_INVALID_META_DATA};
+                             .max_in_degree = HNSW_INVALID_META_DATA,
+                             .connections_to_repair = 0};
 
     // Save the current memory usage (before we use additional memory for the integrity check).
     res.memory_usage = this->getAllocationSize();
@@ -61,21 +62,25 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             num_deleted++;
         }
         for (size_t l = 0; l <= this->element_levels_[i]; l++) {
-            idType *cur_links = this->get_linklist_at_level(i, l);
-            linkListSize size = this->getListCount(cur_links);
+            idType *cur_links = this->getNodeNeighborsAtLevel(i, l);
+            linkListSize size = this->getNodeNeighborsCount(cur_links);
             std::set<idType> s;
             for (unsigned int j = 0; j < size; j++) {
                 // Check if we found an invalid neighbor.
                 if (cur_links[j] >= this->cur_element_count || cur_links[j] == i) {
                     return res;
                 }
+                // If the neighbor has deleted, then this connection should be repaired.
+                if (isMarkedDeleted(cur_links[j])) {
+                    res.connections_to_repair++;
+                }
                 inbound_connections_num[cur_links[j]]++;
                 s.insert(cur_links[j]);
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                idType *other_links = this->get_linklist_at_level(cur_links[j], l);
-                linkListSize size_other = this->getListCount(other_links);
+                idType *other_links = this->getNodeNeighborsAtLevel(cur_links[j], l);
+                linkListSize size_other = this->getNodeNeighborsCount(other_links);
                 for (int r = 0; r < size_other; r++) {
                     if (other_links[r] == (idType)i) {
                         double_connections++;
@@ -125,7 +130,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // epsilon is only restored from v2 up.
 
     // Restore index meta-data
-    readBinaryPOD(input, this->data_size_);
+    readBinaryPOD(input, this->data_size);
     readBinaryPOD(input, this->size_data_per_element_);
     readBinaryPOD(input, this->size_links_per_element_);
     readBinaryPOD(input, this->size_links_level0_);
@@ -147,7 +152,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     } else {
         readBinaryPOD(input, this->num_marked_deleted);
     }
-    readBinaryPOD(input, this->maxlevel_);
+    readBinaryPOD(input, this->max_level_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
 
@@ -294,7 +299,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->ef_);
 
     // Save index meta-data
-    writeBinaryPOD(output, this->data_size_);
+    writeBinaryPOD(output, this->data_size);
     writeBinaryPOD(output, this->size_data_per_element_);
     writeBinaryPOD(output, this->size_links_per_element_);
     writeBinaryPOD(output, this->size_links_level0_);
@@ -308,7 +313,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     // Save index state
     writeBinaryPOD(output, this->cur_element_count);
     writeBinaryPOD(output, this->num_marked_deleted);
-    writeBinaryPOD(output, this->maxlevel_);
+    writeBinaryPOD(output, this->max_level_);
     writeBinaryPOD(output, this->entrypoint_node_);
 }
 

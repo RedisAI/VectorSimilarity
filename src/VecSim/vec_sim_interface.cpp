@@ -5,5 +5,12 @@
  */
 
 #include "VecSim/vec_sim_interface.h"
+#include <cstdarg>
+#include <iostream>
+
+// Print log messages to stdout
+void Vecsim_Log(void *ctx, const char *message) { std::cout << message << std::endl; }
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
+logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
+VecSimWriteMode VecSimIndexInterface::asyncWriteMode = VecSim_WriteAsync;

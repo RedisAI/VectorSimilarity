@@ -14,7 +14,7 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
-#include "VecSim/algorithms/hnsw/hnsw_factory.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "bm_definitions.h"
 
 // This class includes every static data member that is:

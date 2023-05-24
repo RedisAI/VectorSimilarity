@@ -529,12 +529,12 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.dim, d);
-    ASSERT_FALSE(info.bfInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
     // Default args.
-    ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.commonInfo.indexSize, 0);
     VecSimIndex_Free(index);
 
     d = 1280;
@@ -544,12 +544,25 @@ TYPED_TEST(BruteForceTest, test_bf_info) {
     index = this->CreateNewIndex(params);
 
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.dim, d);
-    ASSERT_FALSE(info.bfInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isMulti);
+    ASSERT_FALSE(info.commonInfo.basicInfo.isTiered);
+
     // User args.
-    ASSERT_EQ(info.bfInfo.blockSize, 1);
-    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, 1);
+    ASSERT_EQ(info.commonInfo.indexSize, 0);
+
+    // Validate that Static info returns the right restricted info as well.
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
+
     VecSimIndex_Free(index);
 }
 
@@ -583,8 +596,8 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.bfInfo.blockSize);
-    ASSERT_EQ(0, info.bfInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -596,7 +609,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_AddVector(index, v, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.bfInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -604,7 +617,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(0, info.bfInfo.indexSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -614,7 +627,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.bfInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -622,14 +635,14 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.bfInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.bfInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -638,7 +651,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.bfInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -647,7 +660,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.bfInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -667,8 +680,8 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_ip) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         VecSimIndexInfo info = VecSimIndex_Info(index);
-        ASSERT_EQ(info.algo, VecSimAlgo_BF);
-        ASSERT_EQ(info.bfInfo.blockSize, blocksize);
+        ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+        ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
 
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -702,8 +715,8 @@ TYPED_TEST(BruteForceTest, brute_force_vector_search_test_l2) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         VecSimIndexInfo info = VecSimIndex_Info(index);
-        ASSERT_EQ(info.algo, VecSimAlgo_BF);
-        ASSERT_EQ(info.bfInfo.blockSize, blocksize);
+        ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+        ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
 
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -872,16 +885,15 @@ TYPED_TEST(BruteForceTest, brute_force_zero_minimal_capacity) {
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator) {
     size_t dim = 4;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 5};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-
     // run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t n : {100, 10000}) {
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
+
+        VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
         }
@@ -910,23 +922,23 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator) {
         }
         ASSERT_EQ(iteration_num, n / n_res);
         VecSimBatchIterator_Free(batchIterator);
+
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
-
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 5};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
 
     // Run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t n : {100, 10000}) {
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
+        VecSimIndex *index = this->CreateNewIndex(params);
+
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i / 10);
         }
@@ -965,8 +977,9 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_non_unique_scores) {
         }
         ASSERT_EQ(iteration_num, n / n_res);
         VecSimBatchIterator_Free(batchIterator);
+
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BruteForceTest, brute_force_batch_iterator_reset) {
@@ -1246,13 +1259,9 @@ TYPED_TEST(BruteForceTest, preferAdHocOptimization) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
-    try {
-        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
-        FAIL() << "Expected std::runtime error";
-    } catch (std::runtime_error const &err) {
-        EXPECT_EQ(err.what(),
-                  std::string("internal error: subset size cannot be larger than index size"));
-    }
+    ASSERT_EQ(VecSimIndex_PreferAdHocSearch(index, 42, 50, true),
+              VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
+
     VecSimIndex_Free(index);
 }
 
@@ -1387,7 +1396,8 @@ TYPED_TEST(BruteForceTest, testSizeEstimation) {
 
     estimation = EstimateElementSize(params) * bs;
 
-    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    actual = index->getAllocationSize() - actual; // get the delta
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);
 

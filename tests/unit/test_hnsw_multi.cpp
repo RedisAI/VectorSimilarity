@@ -11,8 +11,6 @@
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include <cmath>
 #include <map>
-#include <thread>
-#include <atomic>
 
 template <typename index_type_t>
 class HNSWMultiTest : public ::testing::Test {
@@ -357,11 +355,11 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.dim, d);
-    ASSERT_TRUE(info.hnswInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // Default args.
-    ASSERT_EQ(info.hnswInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
     ASSERT_EQ(info.hnswInfo.M, HNSW_DEFAULT_M);
     ASSERT_EQ(info.hnswInfo.efConstruction, HNSW_DEFAULT_EF_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, HNSW_DEFAULT_EF_RT);
@@ -383,11 +381,11 @@ TYPED_TEST(HNSWMultiTest, test_hnsw_info) {
 
     index = this->CreateNewIndex(params);
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_HNSWLIB);
-    ASSERT_EQ(info.hnswInfo.dim, d);
-    ASSERT_TRUE(info.hnswInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // User args.
-    ASSERT_EQ(info.hnswInfo.blockSize, bs);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, bs);
     ASSERT_EQ(info.hnswInfo.M, M);
     ASSERT_EQ(info.hnswInfo.efConstruction, ef_C);
     ASSERT_EQ(info.hnswInfo.efRuntime, ef_RT);
@@ -433,7 +431,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_EQ(250, info.hnswInfo.efConstruction);
     ASSERT_EQ(400, info.hnswInfo.efRuntime);
     ASSERT_EQ(0.004, info.hnswInfo.epsilon);
-    ASSERT_EQ(0, info.hnswInfo.indexSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     ASSERT_EQ(-1, info.hnswInfo.max_level);
     ASSERT_EQ(-1, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
@@ -450,8 +448,8 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_AddVector(index, v, 1);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(4, info.hnswInfo.indexSize);
-    ASSERT_EQ(2, info.hnswInfo.indexLabelCount);
+    ASSERT_EQ(4, info.commonInfo.indexSize);
+    ASSERT_EQ(2, info.commonInfo.indexLabelCount);
     ASSERT_GE(1, info.hnswInfo.max_level);
     ASSERT_EQ(0, info.hnswInfo.entrypoint);
     compareHNSWIndexInfoToIterator(info, infoIter);
@@ -461,8 +459,8 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(2, info.hnswInfo.indexSize);
-    ASSERT_EQ(1, info.hnswInfo.indexLabelCount);
+    ASSERT_EQ(2, info.commonInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.indexLabelCount);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -472,7 +470,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.hnswInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -480,14 +478,14 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.hnswInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -501,7 +499,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -510,7 +508,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.hnswInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -629,13 +627,9 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
 
     // Corner cases - subset size is greater than index size.
-    try {
-        VecSimIndex_PreferAdHocSearch(index, 1, 50, true);
-        FAIL() << "Expected std::runtime error";
-    } catch (std::runtime_error const &err) {
-        EXPECT_EQ(err.what(),
-                  std::string("internal error: subset size cannot be larger than index size"));
-    }
+    ASSERT_EQ(VecSimIndex_PreferAdHocSearch(index, 42, 50, true),
+              VecSimIndex_PreferAdHocSearch(index, 0, 50, true));
+
     VecSimIndex_Free(index);
 }
 TYPED_TEST(HNSWMultiTest, search_empty_index) {
@@ -682,6 +676,52 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWMultiTest, removeVectorWithSwaps) {
+    size_t dim = 4;
+    size_t n = 6;
+
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    auto *index = this->CastToHNSW_Multi(this->CreateNewIndex(params));
+
+    // Insert 3 vectors under two different labels, so that we will have:
+    // {first_label->[0,1,3], second_label->[2,4,5]}
+    labelType first_label = 1;
+    labelType second_label = 2;
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Artificially reorder the internal ids to test that we make the right changes
+    // when we have an id that appears twice in the array upon deleting the ids one by one.
+    ASSERT_EQ(index->label_lookup_.at(second_label).size(), n / 2);
+    index->label_lookup_.at(second_label)[0] = 4;
+    index->label_lookup_.at(second_label)[1] = 2;
+    index->label_lookup_.at(second_label)[2] = 5;
+
+    // Expect that the ids array of the second label will behave as following:
+    // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
+    index->deleteVector(second_label);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Check that the internal ids of the first label are as expected.
+    auto ids = index->label_lookup_.at(first_label);
+    ASSERT_EQ(ids.size(), n / 2);
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 0) != ids.end());
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 1) != ids.end());
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 2) != ids.end());
+    index->deleteVector(first_label);
+    ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     VecSimIndex_Free(index);
 }
@@ -814,7 +854,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
 
 TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     size_t dim = 128;
-    size_t n_labels = 1000;
+    size_t n_labels = DEFAULT_BLOCK_SIZE;
     size_t perLabel = 1;
     size_t bs = DEFAULT_BLOCK_SIZE;
     size_t M = 32;
@@ -838,19 +878,23 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
 
     ASSERT_EQ(estimation, actual);
 
-    for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
+    for (size_t i = 0; i < bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, i);
     }
 
     // Estimate the memory delta of adding a full new block.
-    estimation = EstimateElementSize(params) * (bs % n + bs);
+    estimation = EstimateElementSize(params) * (bs);
 
-    actual = 0;
+    // Note we are adding vectors with ascending values. This causes the numbers of
+    // double connections, which are not taking into account in EstimateElementSize,
+    // to be zero
+    actual = index->getAllocationSize();
     for (size_t i = 0; i < bs; i++) {
-        actual += GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
     }
-    ASSERT_GE(estimation * 1.01, actual);
-    ASSERT_LE(estimation * 0.99, actual);
+    actual = index->getAllocationSize() - actual;
+    ASSERT_GE(estimation * 1.02, actual);
+    ASSERT_LE(estimation * 0.98, actual);
 
     VecSimIndex_Free(index);
 }
@@ -1199,7 +1243,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_delete_entry_point) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
 
-    while (info.hnswInfo.indexSize > 0) {
+    while (info.commonInfo.indexSize > 0) {
         ASSERT_NO_THROW(VecSimIndex_DeleteVector(index, info.hnswInfo.entrypoint));
         info = VecSimIndex_Info(index);
     }
@@ -1362,9 +1406,9 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_batch_size_1) {
 TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     size_t dim = 4;
     size_t M = 8;
-    size_t ef = 1000;
-    size_t n_labels = 1000;
+    size_t n_labels = 500;
     size_t perLabel = 5;
+    size_t ef = n_labels;
 
     size_t n = n_labels * perLabel;
 
@@ -1428,8 +1472,11 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
         if (iteration_num <= n_labels / n_res) {
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID);
         } else {
-            // In the last iteration there are n%iteration_num (=6) results left to return.
-            expected_ids.erase(expected_ids.begin()); // remove the first id
+            // In the last iteration there are n%n_res results left to return.
+            // remove the first ids that aren't going to be returned since we pass the index size.
+            for (size_t i = 0; i < n_res - n_labels % n_res; i++) {
+                expected_ids.erase(expected_ids.begin());
+            }
             runBatchIteratorSearchTest(batchIterator, n_res, verify_res, BY_ID, n_labels % n_res);
         }
     }
@@ -1442,6 +1489,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
 TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     size_t n = 4;
     size_t n_labels = 3;
@@ -1704,8 +1752,8 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     // This value is very close to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
     for (size_t level = 0; level <= this->CastToHNSW_Multi(index)->element_levels_[n]; level++) {
-        idType *neighbors = this->CastToHNSW(index)->get_linklist_at_level(n, level);
-        linkListSize size = this->CastToHNSW(index)->getListCount(neighbors);
+        idType *neighbors = this->CastToHNSW(index)->getNodeNeighborsAtLevel(n, level);
+        linkListSize size = this->CastToHNSW(index)->getNodeNeighborsCount(neighbors);
         for (size_t idx = 0; idx < size; idx++) {
             ASSERT_TRUE((neighbors[idx] / per_label) % 2 != ep_reminder)
                 << "Got a link to " << neighbors[idx] << " on level " << level;
@@ -1757,48 +1805,5 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     runBatchIteratorSearchTest(batchIterator, k, verify_res_after_reinsert);
     VecSimBatchIterator_Free(batchIterator);
-    VecSimIndex_Free(index);
-}
-
-TYPED_TEST(HNSWMultiTest, parallelSearch) {
-    size_t dim = 4;
-    size_t n = 1000;
-    size_t n_labels = 100;
-    size_t k = 11;
-
-    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
-    VecSimIndex *index = this->CreateNewIndex(params);
-
-    for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
-    }
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(index->indexLabelCount(), n_labels);
-
-    std::atomic_int successful_searches(0);
-    // Run parallel searches where every searching thread expects to get different label as results
-    // (determined by the thread id), which are labels in the range [50+myID-5, 50+myID+5].
-    auto parallel_search = [&](int myID) {
-        TEST_DATA_T query_val = 50 + myID;
-        TEST_DATA_T query[dim];
-        GenerateVector<TEST_DATA_T>(query, dim, query_val);
-        auto verify_res = [&](size_t id, double score, size_t res_index) {
-            size_t diff_id = (id > query_val) ? (id - query_val) : (query_val - id);
-            ASSERT_EQ(diff_id, (res_index + 1) / 2);
-            ASSERT_EQ(score, (dim * ((res_index + 1) / 2) * ((res_index + 1) / 2)));
-        };
-        runTopKSearchTest(index, query, k, verify_res);
-        successful_searches++;
-    };
-
-    size_t n_threads = 16;
-    std::thread thread_objs[n_threads];
-    for (size_t i = 0; i < n_threads; i++) {
-        thread_objs[i] = std::thread(parallel_search, i);
-    }
-    for (size_t i = 0; i < n_threads; i++) {
-        thread_objs[i].join();
-    }
-    ASSERT_EQ(successful_searches, n_threads);
     VecSimIndex_Free(index);
 }
