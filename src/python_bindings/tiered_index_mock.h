@@ -83,13 +83,11 @@ void thread_main_loop(ThreadParams params) {
             managed_job.job->Execute(managed_job.job);
             MarkExecuteDone(params.executions_status, params.thread_index);
         }
-        // Free the job.
-        AsyncJobDestructor(managed_job.job);
     }
 }
 
 int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
-                    JobCallback *freeCBs, size_t len) {
+                    size_t len) {
     {
         std::unique_lock<std::mutex> lock(queue_guard);
         for (size_t i = 0; i < len; i++) {
