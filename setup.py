@@ -92,6 +92,5 @@ setup(
     description="Python library around collection of vector similarity algorithm",
     long_description="",
     ext_modules=[CMakeExtension("VecSim", "src/python_bindings")],
-    py_modules=['src/python_bindings/Mybytearray'],
     cmdclass={"build_ext": CMakeBuild}
 )

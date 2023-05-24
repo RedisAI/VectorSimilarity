@@ -27,8 +27,10 @@ public:
     static void operator delete(void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
     static void operator delete[](void *p, size_t size, std::shared_ptr<VecSimAllocator> allocator);
 
-    std::shared_ptr<VecSimAllocator> getAllocator();
-    inline int64_t getAllocationSize() const { return this->allocator->getAllocationSize(); }
+    std::shared_ptr<VecSimAllocator> getAllocator() const;
+    virtual inline uint64_t getAllocationSize() const {
+        return this->allocator->getAllocationSize();
+    }
 
     virtual ~VecsimBaseObject() {}
 };

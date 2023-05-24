@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 // The possible ordering for results that return from a query
-typedef enum { BY_SCORE, BY_ID } VecSimQueryResult_Order;
+typedef enum { BY_SCORE, BY_ID, BY_SCORE_THEN_ID } VecSimQueryResult_Order;
 
 /**
  * @brief A single query result. This is an opaque object from which a user can get the result

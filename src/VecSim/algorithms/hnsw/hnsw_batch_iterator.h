@@ -78,7 +78,7 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 
     this->dist_func = index->getDistFunc();
     this->dim = index->getDim();
-    this->entry_point = index->getEntryPointId();
+    this->entry_point = INVALID_ID; // temporary until we store the entry point to level 0.
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = index->getVisitedList();
     this->visited_tag = this->visited_list->getFreshTag();
@@ -114,8 +114,9 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        idType *node_links = this->index->get_linklist_at_level(curr_node_id, 0);
-        linkListSize links_num = this->index->getListCount(node_links);
+        this->index->lockNodeLinks(curr_node_id);
+        idType *node_links = this->index->getNodeNeighborsAtLevel(curr_node_id, 0);
+        linkListSize links_num = this->index->getNodeNeighborsCount(node_links);
 
         __builtin_prefetch(visited_list->getElementsTags() + *node_links);
         __builtin_prefetch(index->getDataByInternalId(*node_links));
@@ -135,8 +136,9 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
             DistType candidate_dist =
                 dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
             candidates.emplace(candidate_dist, candidate_id);
-            __builtin_prefetch(index->get_linklist_at_level(candidates.top().second, 0));
+            __builtin_prefetch(index->getNodeNeighborsAtLevel(candidates.top().second, 0));
         }
+        this->index->unlockNodeLinks(curr_node_id);
     }
     return VecSim_QueryResult_OK;
 }
@@ -146,7 +148,7 @@ candidatesLabelsMaxHeap<DistType> *
 HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
 
     candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
-    if (this->entry_point == HNSW_INVALID_ID) {
+    if (this->entry_point == INVALID_ID) {
         this->depleted = true;
         return top_candidates;
     }
