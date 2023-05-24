@@ -26,8 +26,12 @@ struct IndexType {
 #define TEST_DATA_T typename TypeParam::data_t
 #define TEST_DIST_T typename TypeParam::dist_t
 
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+using DataTypeSet = ::testing::Types<IndexType<VecSimType_FLOAT32, float>
+#ifdef FP64_TESTS
+                                     ,
+                                     IndexType<VecSimType_FLOAT64, double>
+#endif
+                                     >;
 
 // Define index type for tests that can be automatically generated for single and multi.
 template <VecSimType type, bool IsMulti, typename DataType, typename DistType = DataType>

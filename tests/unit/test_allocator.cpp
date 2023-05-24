@@ -170,8 +170,8 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     // collection allocate additional structures for their internal implementation.
     ASSERT_EQ(allocator->getAllocationSize(),
               expectedAllocationSize + deleteCommandAllocationDelta);
-    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
+    ASSERT_GE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
+    ASSERT_GE(expectedAllocationDelta, deleteCommandAllocationDelta);
 
     info = bfIndex->info();
     ASSERT_EQ(allocator->getAllocationSize(), info.commonInfo.memory);
