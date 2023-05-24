@@ -13,6 +13,8 @@
 template <typename DataType, typename DistType>
 class HNSWIndex_Multi : public HNSWIndex<DataType, DistType> {
 private:
+    // Index global state - this should be guarded by the index_data_guard_ lock in
+    // multithreaded scenario.
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> label_lookup_;
 
 #ifdef BUILD_TESTS
@@ -30,25 +32,40 @@ private:
     }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
+    // Return all the labels in the index - this should be used for computing the number of distinct
+    // labels in a tiered index, and caller should hold the index data guard.
+    inline vecsim_stl::set<labelType> getLabelsSet() const override {
+        vecsim_stl::set<labelType> keys(this->allocator);
+        for (auto &it : label_lookup_) {
+            keys.insert(it.first);
+        }
+        return keys;
+    };
+
+    template <bool Safe>
+    inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
+
 public:
-    HNSWIndex_Multi(const HNSWParams *params, std::shared_ptr<VecSimAllocator> allocator,
+    HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                     size_t random_seed = 100, size_t initial_pool_size = 1)
-        : HNSWIndex<DataType, DistType>(params, allocator, random_seed, initial_pool_size),
-          label_lookup_(this->max_elements_, allocator) {}
+        : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
+          label_lookup_(this->max_elements_, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
-                    std::shared_ptr<VecSimAllocator> allocator, Serializer::EncodingVersion version)
-        : HNSWIndex<DataType, DistType>(input, params, allocator, version),
-          label_lookup_(this->max_elements_, allocator) {}
+                    const AbstractIndexInitParams &abstractInitParams,
+                    Serializer::EncodingVersion version)
+        : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
+          label_lookup_(this->max_elements_, this->allocator) {}
 
-    void GetDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) {
+    void getDataByLabel(labelType label,
+                        std::vector<std::vector<DataType>> &vectors_output) const override {
 
         auto ids = label_lookup_.find(label);
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
-            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size_);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size);
             vectors_output.push_back(vec);
         }
     }
@@ -70,9 +87,16 @@ public:
                                           VecSimQueryParams *queryParams) const override;
 
     int deleteVector(labelType label) override;
-    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
-    double getDistanceFrom(labelType label, const void *vector_data) const override;
+    int addVector(const void *vector_data, labelType label, void *auxiliaryCtx = nullptr) override;
     inline std::vector<idType> markDelete(labelType label) override;
+    inline bool safeCheckIfLabelExistsInIndex(labelType label,
+                                              bool also_done_processing) const override;
+    double getDistanceFrom(labelType label, const void *vector_data) const override {
+        return getDistanceFromInternal<false>(label, vector_data);
+    }
+    double safeGetDistanceFrom(labelType label, const void *vector_data) const override {
+        return getDistanceFromInternal<true>(label, vector_data);
+    }
 };
 
 /**
@@ -84,36 +108,68 @@ size_t HNSWIndex_Multi<DataType, DistType>::indexLabelCount() const {
     return label_lookup_.size();
 }
 
-template <typename DataType, typename DistType>
-double HNSWIndex_Multi<DataType, DistType>::getDistanceFrom(labelType label,
-                                                            const void *vector_data) const {
+/**
+ * helper functions
+ */
 
-    auto IDs = this->label_lookup_.find(label);
-    if (IDs == this->label_lookup_.end()) {
-        return INVALID_SCORE;
+// Depending on the value of the Safe template parameter, this function will either return a copy
+// of the argument or a reference to it.
+template <bool Safe, typename Arg>
+constexpr decltype(auto) getCopyOrReference(Arg &&arg) {
+    if constexpr (Safe) {
+        return std::decay_t<Arg>(arg);
+    } else {
+        return (arg);
+    }
+}
+
+template <typename DataType, typename DistType>
+template <bool Safe>
+double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType label,
+                                                                    const void *vector_data) const {
+    DistType dist = INVALID_SCORE;
+
+    // Check if the label exists in the index, return invalid score if not.
+    if (Safe)
+        this->index_data_guard_.lock_shared();
+    auto it = this->label_lookup_.find(label);
+    if (it == this->label_lookup_.end()) {
+        if (Safe)
+            this->index_data_guard_.unlock_shared();
+        return dist;
     }
 
-    DistType dist = std::numeric_limits<DistType>::infinity();
-    for (auto id : IDs->second) {
-        if (!this->isMarkedDeleted(id)) {
-            DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
-            dist = (dist < d) ? dist : d;
-        }
+    // Get the vector of ids associated with the label.
+    // Get a copy if `Safe` is true, otherwise get a reference.
+    decltype(auto) IDs = getCopyOrReference<Safe>(it->second);
+    if (Safe)
+        this->index_data_guard_.unlock_shared();
+
+    // Iterate over the ids and find the minimum distance.
+    for (auto id : IDs) {
+        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+        dist = std::fmin(dist, d);
     }
 
     return dist;
 }
 
-/**
- * helper functions
- */
-
 template <typename DataType, typename DistType>
 void HNSWIndex_Multi<DataType, DistType>::replaceIdOfLabel(labelType label, idType new_id,
                                                            idType old_id) {
     assert(label_lookup_.find(label) != label_lookup_.end());
+    // *Non-trivial code here* - in every iteration we replace the internal id of the previous last
+    // id that has been swapped with the deleted id. Note that if the old and the new replaced ids
+    // both belong to the same label, then we are going to delete the new id later on as well, since
+    // we are currently iterating on this exact array of ids in 'deleteVector'. Hence, the relevant
+    // part of the vector that should be updated is the "tail" that comes after the position of
+    // old_id, while the "head" may contain old occurrences of old_id that are irrelevant for the
+    // future deletions. Therefore, we iterate from end to beginning. For example, assuming we are
+    // deleting a label that contains the only 3 ids that exist in the index. Hence, we would
+    // expect the following scenario w.r.t. the ids array:
+    // [|1, 0, 2] -> [1, |0, 1] -> [1, 0, |0] (where | marks the current position)
     auto &ids = label_lookup_.at(label);
-    for (size_t i = 0; i < ids.size(); i++) {
+    for (int i = ids.size() - 1; i >= 0; i--) {
         if (ids[i] == old_id) {
             ids[i] = new_id;
             return;
@@ -140,7 +196,7 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
         return ret;
     }
     for (idType id : ids->second) {
-        this->removeVector(id);
+        this->removeVectorInPlace(id);
         ret++;
     }
     label_lookup_.erase(ids);
@@ -149,9 +205,9 @@ int HNSWIndex_Multi<DataType, DistType>::deleteVector(const labelType label) {
 
 template <typename DataType, typename DistType>
 int HNSWIndex_Multi<DataType, DistType>::addVector(const void *vector_data, const labelType label,
-                                                   bool overwrite_allowed) {
+                                                   void *auxiliaryCtx) {
 
-    this->appendVector(vector_data, label);
+    this->appendVector(vector_data, label, (AddVectorCtx *)auxiliaryCtx);
     return 1; // We always add the vector, no overrides in multi.
 }
 
@@ -161,9 +217,6 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
                                                       VecSimQueryParams *queryParams) const {
     auto queryBlobCopy = this->allocator->allocate(sizeof(DataType) * this->dim);
     memcpy(queryBlobCopy, queryBlob, this->dim * sizeof(DataType));
-    if (this->metric == VecSimMetric_Cosine) {
-        normalizeVector((DataType *)queryBlobCopy, this->dim);
-    }
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
         queryBlobCopy, this, queryParams, this->allocator);
@@ -176,6 +229,7 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
@@ -187,4 +241,24 @@ std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType la
     }
     label_lookup_.erase(search);
     return idsToDelete;
+}
+
+template <typename DataType, typename DistType>
+inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(
+    labelType label, bool also_done_processing) const {
+    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
+    auto search_res = label_lookup_.find(label);
+    bool exists = search_res != label_lookup_.end();
+    // If we want to make sure that the vector(s) stored under the label were already indexed,
+    // we go on and check that every associated vector is no longer in process.
+    if (exists && also_done_processing) {
+        for (auto id : search_res->second) {
+            exists = !this->isInProcess(id);
+            // If we find at least one internal id that is still in process, consider it as not
+            // ready.
+            if (!exists)
+                return false;
+        }
+    }
+    return exists;
 }

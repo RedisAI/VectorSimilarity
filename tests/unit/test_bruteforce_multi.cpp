@@ -86,8 +86,8 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     }
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n);
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(info.commonInfo.indexSize, n);
+    ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
     ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
@@ -96,8 +96,8 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
 
     // This should do nothing
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n);
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(info.commonInfo.indexSize, n);
+    ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     ASSERT_EQ(bf_index->idToLabelMapping.size(), n);
     ASSERT_EQ(bf_index->getVectorBlocks().size(), n / blockSize + 1);
 
@@ -105,9 +105,9 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     // (to fit a multiplication of block_size).
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.bfInfo.indexSize, n + 1);
+    ASSERT_EQ(info.commonInfo.indexSize, n + 1);
     // Label count doesn't increase because label 0 already exists
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     // Check new capacity size, should be blockSize * 2.
     ASSERT_EQ(bf_index->idToLabelMapping.size(), 2 * blockSize);
 
@@ -123,9 +123,9 @@ TYPED_TEST(BruteForceMultiTest, resize_and_align_index) {
     size_t new_n = n + 1 + add_vectors_count;
     info = VecSimIndex_Info(index);
 
-    ASSERT_EQ(info.bfInfo.indexSize, new_n);
+    ASSERT_EQ(info.commonInfo.indexSize, new_n);
     // Label count doesn't increase because label 0 already exists
-    ASSERT_EQ(info.bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(info.commonInfo.indexLabelCount, n_labels);
     size_t total_vectors = 0;
     for (auto label_ids : bf_index->labelToIdsLookup) {
         total_vectors += label_ids.second.size();
@@ -196,7 +196,7 @@ TYPED_TEST(BruteForceMultiTest, search_more_than_there_is) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, n_labels);
 
     TEST_DATA_T query[] = {0, 0, 0, 0};
     VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
@@ -288,7 +288,7 @@ TYPED_TEST(BruteForceMultiTest, find_better_score) {
         }
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, n_labels);
 
     auto verify_res = [&](size_t id, double score, size_t index) {
         ASSERT_EQ(id, k - index - 1);
@@ -316,7 +316,7 @@ TYPED_TEST(BruteForceMultiTest, find_better_score_after_pop) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, n - i);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, n_labels);
 
     TEST_DATA_T query[] = {0, 0, 0, 0};
     auto verify_res = [&](size_t id, double score, size_t index) {
@@ -487,12 +487,12 @@ TYPED_TEST(BruteForceMultiTest, test_bf_info) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.dim, d);
-    ASSERT_TRUE(info.bfInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // Default args.
-    ASSERT_EQ(info.bfInfo.blockSize, DEFAULT_BLOCK_SIZE);
-    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
+    ASSERT_EQ(info.commonInfo.indexSize, 0);
     VecSimIndex_Free(index);
 
     d = 1280;
@@ -501,12 +501,12 @@ TYPED_TEST(BruteForceMultiTest, test_bf_info) {
     index = this->CreateNewIndex(params);
 
     info = VecSimIndex_Info(index);
-    ASSERT_EQ(info.algo, VecSimAlgo_BF);
-    ASSERT_EQ(info.bfInfo.dim, d);
-    ASSERT_TRUE(info.bfInfo.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, d);
+    ASSERT_TRUE(info.commonInfo.basicInfo.isMulti);
     // User args.
-    ASSERT_EQ(info.bfInfo.blockSize, 1);
-    ASSERT_EQ(info.bfInfo.indexSize, 0);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, 1);
+    ASSERT_EQ(info.commonInfo.indexSize, 0);
     VecSimIndex_Free(index);
 }
 
@@ -539,8 +539,8 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
 
     VecSimIndexInfo info = VecSimIndex_Info(index);
     VecSimInfoIterator *infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(1, info.bfInfo.blockSize);
-    ASSERT_EQ(0, info.bfInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.basicInfo.blockSize);
+    ASSERT_EQ(0, info.commonInfo.indexSize);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -556,8 +556,8 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_AddVector(index, v, 1);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(4, info.bfInfo.indexSize);
-    ASSERT_EQ(2, info.bfInfo.indexLabelCount);
+    ASSERT_EQ(4, info.commonInfo.indexSize);
+    ASSERT_EQ(2, info.commonInfo.indexLabelCount);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -565,8 +565,8 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     VecSimIndex_DeleteVector(index, 0);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(2, info.bfInfo.indexSize);
-    ASSERT_EQ(1, info.bfInfo.indexLabelCount);
+    ASSERT_EQ(2, info.commonInfo.indexSize);
+    ASSERT_EQ(1, info.commonInfo.indexLabelCount);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -576,7 +576,7 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.bfInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -584,14 +584,14 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.bfInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.bfInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -603,7 +603,7 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 7e3, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.bfInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -612,7 +612,7 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.bfInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
     compareFlatIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -633,8 +633,8 @@ TYPED_TEST(BruteForceMultiTest, vector_search_test_l2) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         VecSimIndexInfo info = VecSimIndex_Info(index);
-        ASSERT_EQ(info.algo, VecSimAlgo_BF);
-        ASSERT_EQ(info.bfInfo.blockSize, blocksize);
+        ASSERT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_BF);
+        ASSERT_EQ(info.commonInfo.basicInfo.blockSize, blocksize);
 
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -710,6 +710,50 @@ TYPED_TEST(BruteForceMultiTest, search_empty_index) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(BruteForceMultiTest, removeVectorWithSwaps) {
+    size_t dim = 4;
+    size_t n = 6;
+
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    auto *index = this->CastToBF_Multi(this->CreateNewIndex(params));
+
+    // Insert 3 vectors under two different labels, so that we will have:
+    // {first_label->[0,1,3], second_label->[2,4,5]}
+    labelType first_label = 1;
+    labelType second_label = 2;
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, first_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, second_label);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    // Artificially reorder the internal ids to test that we make the right changes
+    // when we have an id that appears twice in the array upon deleting the ids one by one.
+    ASSERT_EQ(index->labelToIdsLookup.at(second_label).size(), n / 2);
+    index->labelToIdsLookup.at(second_label)[0] = 4;
+    index->labelToIdsLookup.at(second_label)[1] = 2;
+    index->labelToIdsLookup.at(second_label)[2] = 5;
+
+    // Expect that the ids array of label 0 will behave as following:
+    // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
+    ASSERT_EQ(index->deleteVector(second_label), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
+
+    // Check that the internal ids of the first label are as expected.
+    auto ids = index->labelToIdsLookup.at(first_label);
+    ASSERT_EQ(ids.size(), n / 2);
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 0) != ids.end());
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 1) != ids.end());
+    ASSERT_TRUE(std::find(ids.begin(), ids.end(), 2) != ids.end());
+    ASSERT_EQ(index->deleteVector(first_label), n / 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(BruteForceMultiTest, remove_vector_after_replacing_block) {
     size_t dim = 4;
     size_t bs = 2;
@@ -747,7 +791,7 @@ TYPED_TEST(BruteForceMultiTest, remove_vector_after_replacing_block) {
     VecSimIndex_DeleteVector(index, 3);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 3);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, 2);
+    ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, 2);
     auto bf_index = this->CastToBF_Multi(index);
     ASSERT_EQ(bf_index->getVectorLabel(0), 1);
     ASSERT_EQ(bf_index->getVectorLabel(1), 2);
@@ -768,22 +812,20 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator) {
     size_t dim = 4;
     size_t perLabel = 5;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 7};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-
     // run the test twice - for index of size 100, every iteration will run select-based search,
     // as the number of results is 5, which is more than 0.1% of the index size. for index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 7};
+        VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-        ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, m);
+        ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, m);
 
         // Query for (n,n,...,n) vector (recall that n is the largest id in te index).
         TEST_DATA_T query[dim];
@@ -808,30 +850,27 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator) {
         ASSERT_EQ(iteration_num, m / n_res);
         VecSimBatchIterator_Free(batchIterator);
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-        ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, m);
+        ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, m);
+
         // Cleanup before next round.
-        for (size_t i = 0; i < m; i++) {
-            VecSimIndex_DeleteVector(index, i);
-        }
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
     size_t dim = 4;
     size_t perLabel = 5;
 
-    BFParams params = {
-        .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 200, .blockSize = 5};
-
-    VecSimIndex *index = this->CreateNewIndex(params);
-
     // Run the test twice - for index of size 100, every iteration will run select-based search,
-    // as the number of results is 5, which is more than 0.1% of the index size. for index of size
+    // as the number of results is 5, which is more than 0.1% of the index size. For index of size
     // 10000, we will run the heap-based search until we return 5000 results, and then switch to
     // select-based search.
     for (size_t m : {100, 10000}) {
         size_t n = m * perLabel;
+        BFParams params = {
+            .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = m / 2};
+
+        VecSimIndex *index = this->CreateNewIndex(params);
         for (size_t i = 0; i < n; i++) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i / (10 * perLabel));
         }
@@ -871,14 +910,13 @@ TYPED_TEST(BruteForceMultiTest, brute_force_batch_iterator_non_unique_scores) {
         ASSERT_EQ(iteration_num, m / n_res);
         VecSimBatchIterator_Free(batchIterator);
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-        ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, m);
+        ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, m);
+
         // Cleanup before next round.
-        for (size_t i = 0; i < m; i++) {
-            VecSimIndex_DeleteVector(index, i);
-        }
+        VecSimIndex_Free(index);
     }
-    VecSimIndex_Free(index);
 }
+
 TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     size_t dim = 4;
     size_t perLabel = 10;
@@ -922,7 +960,7 @@ TYPED_TEST(BruteForceMultiTest, batch_iterator_validate_scores) {
     ASSERT_EQ(iteration_num, n_labels / n_res);
     VecSimBatchIterator_Free(batchIterator);
     ASSERT_EQ(VecSimIndex_IndexSize(index), n_labels * perLabel);
-    ASSERT_EQ(VecSimIndex_Info(index).bfInfo.indexLabelCount, n_labels);
+    ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, n_labels);
 
     VecSimIndex_Free(index);
 }
@@ -1082,7 +1120,8 @@ TYPED_TEST(BruteForceMultiTest, testSizeEstimation) {
     ASSERT_EQ(estimation, actual);
 
     estimation = EstimateElementSize(params) * bs;
-    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    actual = index->getAllocationSize() - actual; // get the delta
 
     ASSERT_GE(estimation * 1.01, actual);
     ASSERT_LE(estimation * 0.99, actual);

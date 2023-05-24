@@ -58,7 +58,7 @@ private:
     unsigned short total_handlers_in_use;
 
 public:
-    VisitedNodesHandlerPool(int initial_pool_size, int cap,
+    VisitedNodesHandlerPool(size_t initial_pool_size, int cap,
                             const std::shared_ptr<VecSimAllocator> &allocator);
 
     VisitedNodesHandler *getAvailableVisitedNodesHandler();

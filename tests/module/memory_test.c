@@ -27,18 +27,7 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 // Adds 'amount' vectors to the index. could be 0.
 void _add_vectors(VecSimIndex *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
-    size_t dim;
-    switch (indexInfo.algo) {
-    case VecSimAlgo_BF:
-        dim = indexInfo.bfInfo.dim;
-        break;
-    case VecSimAlgo_HNSWLIB:
-        dim = indexInfo.hnswInfo.dim;
-        break;
-
-    default:
-        break;
-    }
+    size_t dim = indexInfo.commonInfo.basicInfo.dim;
     double vec[dim];
     for (int i = 0; i < dim; i++)
         vec[i] = i;
@@ -53,7 +42,7 @@ void _delete_vectors(VecSimIndex *index, long long amount) {
         VecSimIndex_DeleteVector(index, i);
 }
 
-// Creates a generic index, supports Broute Force and HNSW.
+// Creates a generic index, supports Brute Force and HNSW.
 VecSimIndex *_create_index(VecSimAlgo algo) {
 
     VecSimParams param = {0};
@@ -78,6 +67,9 @@ VecSimIndex *_create_index(VecSimAlgo algo) {
         param.hnswParams.metric = VecSimMetric_L2;
         param.hnswParams.multi = false;
         break;
+    // TODO: add memory test for tiered index
+    case VecSimAlgo_TIERED:
+        return NULL;
     }
 
     return VecSimIndex_New(&param);
@@ -120,18 +112,8 @@ int _VecSim_memory_create_check_impl(RedisModuleCtx *ctx, VecSimAlgo algo, long 
 
     // Actual test: verify that memory usage known to the server is at least the memory amount used
     // by the index.
-    int64_t memory;
-    switch (indexInfo.algo) {
-    case VecSimAlgo_BF:
-        memory = indexInfo.bfInfo.memory;
-        break;
-    case VecSimAlgo_HNSWLIB:
-        memory = indexInfo.hnswInfo.memory;
-        break;
+    uint64_t memory = indexInfo.commonInfo.memory;
 
-    default:
-        break;
-    }
     if (memory <= endMemory - startMemory)
         RedisModule_ReplyWithSimpleString(ctx, "OK");
     else

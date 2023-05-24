@@ -7,7 +7,6 @@
 #include "vec_utils.h"
 #include "VecSim/query_result_struct.h"
 #include <cmath>
-#include <cassert>
 #include <cerrno>
 #include <climits>
 #include <float.h>
@@ -20,6 +19,7 @@ typedef int (*__compar_fn_t)(const void *, const void *);
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
 const char *VecSimCommonStrings::HNSW_STRING = "HNSW";
+const char *VecSimCommonStrings::TIERED_STRING = "TIERED";
 
 const char *VecSimCommonStrings::TYPE_STRING = "TYPE";
 const char *VecSimCommonStrings::FLOAT32_STRING = "FLOAT32";
@@ -44,22 +44,20 @@ const char *VecSimCommonStrings::HNSW_EF_CONSTRUCTION_STRING = "EF_CONSTRUCTION"
 const char *VecSimCommonStrings::HNSW_EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
+const char *VecSimCommonStrings::HNSW_NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
 
 const char *VecSimCommonStrings::BLOCK_SIZE_STRING = "BLOCK_SIZE";
 const char *VecSimCommonStrings::SEARCH_MODE_STRING = "LAST_SEARCH_MODE";
 const char *VecSimCommonStrings::HYBRID_POLICY_STRING = "HYBRID_POLICY";
 const char *VecSimCommonStrings::BATCH_SIZE_STRING = "BATCH_SIZE";
 
-int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
-}
-
-int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
-           !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare doubles
-    return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
+const char *VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING = "MANAGEMENT_LAYER_MEMORY";
+const char *VecSimCommonStrings::TIERED_BACKGROUND_INDEXING_STRING = "BACKGROUND_INDEXING";
+const char *VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING = "TIERED_BUFFER_LIMIT";
+const char *VecSimCommonStrings::FRONTEND_INDEX_STRING = "FRONTEND_INDEX";
+const char *VecSimCommonStrings::BACKEND_INDEX_STRING = "BACKEND_INDEX";
+const char *VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING =
+    "TIERED_HNSW_SWAP_JOBS_THRESHOLD";
 
 void sort_results_by_id(VecSimQueryResult_List rl) {
     qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
@@ -69,6 +67,22 @@ void sort_results_by_id(VecSimQueryResult_List rl) {
 void sort_results_by_score(VecSimQueryResult_List rl) {
     qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultByScore);
+}
+
+void sort_results_by_score_then_id(VecSimQueryResult_List rl) {
+    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
+          (__compar_fn_t)cmpVecSimQueryResultByScoreThenId);
+}
+
+void sort_results(VecSimQueryResult_List rl, VecSimQueryResult_Order order) {
+    switch (order) {
+    case BY_ID:
+        return sort_results_by_id(rl);
+    case BY_SCORE:
+        return sort_results_by_score(rl);
+    case BY_SCORE_THEN_ID:
+        return sort_results_by_score_then_id(rl);
+    }
 }
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val) {
@@ -103,11 +117,11 @@ const char *VecSimAlgo_ToString(VecSimAlgo vecsimAlgo) {
         return VecSimCommonStrings::FLAT_STRING;
     case VecSimAlgo_HNSWLIB:
         return VecSimCommonStrings::HNSW_STRING;
-    default:
-        return NULL;
+    case VecSimAlgo_TIERED:
+        return VecSimCommonStrings::TIERED_STRING;
     }
+    return NULL;
 }
-
 const char *VecSimType_ToString(VecSimType vecsimType) {
     switch (vecsimType) {
     case VecSimType_FLOAT32:
@@ -118,9 +132,8 @@ const char *VecSimType_ToString(VecSimType vecsimType) {
         return VecSimCommonStrings::INT32_STRING;
     case VecSimType_INT64:
         return VecSimCommonStrings::INT64_STRING;
-    default:
-        return NULL;
     }
+    return NULL;
 }
 
 const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
@@ -131,9 +144,8 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
         return "IP";
     case VecSimMetric_L2:
         return "L2";
-    default:
-        return NULL;
     }
+    return NULL;
 }
 
 const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
@@ -150,9 +162,8 @@ const char *VecSimSearchMode_ToString(VecSearchMode vecsimSearchMode) {
         return "HYBRID_BATCHES_TO_ADHOC_BF";
     case RANGE_QUERY:
         return "RANGE_QUERY";
-    default:
-        return NULL;
     }
+    return NULL;
 }
 
 size_t VecSimType_sizeof(VecSimType type) {
