@@ -27,7 +27,7 @@ long long _get_memory_usage(RedisModuleCtx *ctx) {
 // Adds 'amount' vectors to the index. could be 0.
 void _add_vectors(VecSimIndex *index, long long amount) {
     VecSimIndexInfo indexInfo = VecSimIndex_Info(index);
-    size_t dim = indexInfo.commonInfo.dim;
+    size_t dim = indexInfo.commonInfo.basicInfo.dim;
     double vec[dim];
     for (int i = 0; i < dim; i++)
         vec[i] = i;
@@ -112,7 +112,7 @@ int _VecSim_memory_create_check_impl(RedisModuleCtx *ctx, VecSimAlgo algo, long 
 
     // Actual test: verify that memory usage known to the server is at least the memory amount used
     // by the index.
-    int64_t memory = indexInfo.commonInfo.memory;
+    uint64_t memory = indexInfo.commonInfo.memory;
 
     if (memory <= endMemory - startMemory)
         RedisModule_ReplyWithSimpleString(ctx, "OK");

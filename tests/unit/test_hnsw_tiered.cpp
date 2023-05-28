@@ -94,6 +94,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
         // Here we update labelToInsertJobs mapping, as we except that for every insert job
         // there will be a corresponding item in the map.
         my_index->labelToInsertJobs.at(my_insert_job->label).erase(it);
+        delete job;
     };
 
     auto job = new (allocator)
@@ -735,6 +736,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         };
         runTopKSearchTest(job->index, query, k, verify_res);
         search_job->successful_searches++;
+        delete job;
     };
 
     size_t per_label = isMulti ? 10 : 1;
@@ -828,6 +830,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         auto verify_res = [&](size_t id, double score, size_t res_index) {};
         runTopKSearchTest(job->index, query, k, verify_res);
         search_job->successful_searches++;
+        delete job;
     };
 
     // Insert vectors in parallel to search.
@@ -960,10 +963,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
 
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    // In this test we check the created jobs in the queue, and we want to go over them without
-    // executing or deleting them. We therefore pop them into this vector and manually delete them
-    // at the end.
-    auto unhandledJobs = std::vector<AsyncJob *>();
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
     auto allocator = tiered_index->getAllocator();
@@ -978,7 +977,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs[0]->deleted_id, 0);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 1);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
-    unhandledJobs.push_back(jobQ.front().job);
     jobQ.pop();
 
     // Insert another vector under the label (1) that has not been deleted.
@@ -993,11 +991,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(jobQ.size(), 2);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 0);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
-    unhandledJobs.push_back(jobQ.front().job);
     jobQ.pop();
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, 2);
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
-    unhandledJobs.push_back(jobQ.front().job);
     jobQ.pop();
     // No new job for deleting 1->2 edge, just another associated swap job for the existing repair
     // job of 1 (in addition to 0, we have 2).
@@ -1016,10 +1012,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
 
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
 
-    // Clean up.
-    for (auto job : unhandledJobs) {
-        delete job;
-    }
     delete index_ctx;
 }
 
@@ -1060,7 +1052,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     while (jobQ.size() > 1) {
         // First we should have jobs for repairing nodes in level 0.
         ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 0);
-        jobQ.kick();
+        jobQ.pop();
     }
 
     // The last job should be repairing the single neighbor in level 1.
@@ -1153,13 +1145,13 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
 
-    // Delete the index before the job was executed.
+    // Delete the index before the job was executed (this would delete the pending job as well).
     EXPECT_EQ(jobQ.size(), 1);
     EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1);
     delete index_ctx;
     EXPECT_EQ(jobQ.size(), 1);
     EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 0);
-    jobQ.kick();
+    jobQ.pop();
 
     // Recreate the index with a new ctx.
     index_ctx = new IndexExtCtx();
@@ -1173,7 +1165,7 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 1);
     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
 
-    // Delete the index before the job was executed.
+    // Delete the index before the job was executed (this would delete the pending job as well).
     EXPECT_EQ(jobQ.size(), 1);
     EXPECT_EQ(jobQ.front().index_weak_ref.use_count(), 1);
     delete index_ctx;
@@ -1376,6 +1368,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
 
         search_job->successful_searches++;
+        delete job;
     };
 
     // Insert vectors in parallel to search.
@@ -1436,7 +1429,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     // The insert job should become invalid, and executing it should do nothing.
-    ASSERT_EQ(job->id, INVALID_JOB_ID);
+    ASSERT_EQ(job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(job)->id, 0);
     thread_iteration(jobQ);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
 
@@ -1487,6 +1481,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     // Test some more scenarios that are relevant only for multi value index.
     labelType vec_label = 0;
     labelType other_vec_val = 2.0;
+    idType invalidJobsCounter = 0;
     // Create a vector and add it to HNSW in the tiered index.
     TEST_DATA_T vector[dim];
     GenerateVector<TEST_DATA_T>(vector, dim, vec_label);
@@ -1502,7 +1497,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    ASSERT_EQ(jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, invalidJobsCounter++);
     thread_iteration(jobQ);
     ASSERT_EQ(jobQ.size(), 0);
 
@@ -1515,9 +1511,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexSize(), 3);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    ASSERT_EQ(jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, invalidJobsCounter++);
     thread_iteration(jobQ);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    ASSERT_EQ(jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, invalidJobsCounter++);
     thread_iteration(jobQ);
     ASSERT_EQ(jobQ.size(), 0);
 
@@ -1619,6 +1617,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     ASSERT_EQ(tiered_index->indexSize(), 2);
     tiered_index->labelToInsertJobs.clear();
 
+    // Clean jobs from queue
+    while (!jobQ.empty()) {
+        jobQ.kick();
+    }
     delete index_ctx;
 }
 
@@ -1731,7 +1733,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             }
 
             // Create and insert 10 vectors, then delete them right after.
-            size_t batch_size = 10;
+            size_t batch_size = 5;
             std::srand(10); // create pseudo random generator with any arbitrary seed.
             for (size_t i = 0; i < n / batch_size; i++) {
                 for (size_t l = 0; l < batch_size; l++) {
@@ -1878,6 +1880,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     auto allocator = tiered_index->getAllocator();
 
     // Insert 3 vectors, expect to have a fully connected graph.
+    idType invalid_jobs_counter = 0;
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
@@ -1909,7 +1912,8 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
     // The second repair job is invalid due to the removal of (the original) 0.
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
+    ASSERT_EQ(jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, invalid_jobs_counter++);
     ASSERT_EQ(
         reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id, 0);
     thread_iteration(jobQ);
@@ -1923,7 +1927,8 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
     // The repair job is invalid due to the removal of (the previous) 0.
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, INVALID_JOB_ID);
+    ASSERT_EQ(jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->node_id, invalid_jobs_counter);
     ASSERT_EQ(
         reinterpret_cast<HNSWRepairJob *>(jobQ.front().job)->associatedSwapJobs[0]->deleted_id, 0);
     thread_iteration(jobQ);
@@ -2576,6 +2581,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
 
         VecSimBatchIterator_Free(tiered_iterator);
         search_job->successful_searches++;
+        delete job;
     };
 
     // Fill the job queue with insert and batch-search jobs, while filling the flat index, before
@@ -2656,8 +2662,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     auto *pending_insert_job = tiered_index->labelToInsertJobs.at(0)[0];
     ASSERT_EQ(jobQ.size(), 2);
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(jobQ.front().job->isValid, false);
     ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->label, 0);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, 0);
     thread_iteration(jobQ);
 
     ASSERT_EQ(jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
@@ -2756,19 +2763,19 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     VecSimParams hnsw_params = CreateParams(params);
     auto jobQ = JobQueue();
     auto index_ctx = new IndexExtCtx();
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx, 1, 1000);
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexInfo info = tiered_index->info();
-    EXPECT_EQ(info.algo, VecSimAlgo_TIERED);
+    EXPECT_EQ(info.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
     EXPECT_EQ(info.commonInfo.indexSize, 0);
     EXPECT_EQ(info.commonInfo.indexLabelCount, 0);
     EXPECT_EQ(info.commonInfo.memory, tiered_index->getAllocationSize());
-    EXPECT_EQ(info.commonInfo.isMulti, TypeParam::isMulti());
-    EXPECT_EQ(info.commonInfo.dim, dim);
-    EXPECT_EQ(info.commonInfo.metric, VecSimMetric_L2);
-    EXPECT_EQ(info.commonInfo.type, TypeParam::get_index_type());
-    EXPECT_EQ(info.commonInfo.blockSize, INVALID_INFO);
+    EXPECT_EQ(info.commonInfo.basicInfo.isMulti, TypeParam::isMulti());
+    EXPECT_EQ(info.commonInfo.basicInfo.dim, dim);
+    EXPECT_EQ(info.commonInfo.basicInfo.metric, VecSimMetric_L2);
+    EXPECT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
+    EXPECT_EQ(info.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
     VecSimIndexInfo frontendIndexInfo = tiered_index->frontendIndex->info();
     VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
 
@@ -2781,6 +2788,18 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
+    EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
+
+    // Validate that Static info returns the right restricted info as well.
+    VecSimIndexBasicInfo s_info = VecSimIndex_BasicInfo(tiered_index);
+    ASSERT_EQ(info.commonInfo.basicInfo.algo, s_info.algo);
+    ASSERT_EQ(info.commonInfo.basicInfo.dim, s_info.dim);
+    ASSERT_EQ(info.commonInfo.basicInfo.blockSize, s_info.blockSize);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isMulti, s_info.isMulti);
+    ASSERT_EQ(info.commonInfo.basicInfo.type, s_info.type);
+    ASSERT_EQ(info.commonInfo.basicInfo.isTiered, s_info.isTiered);
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
     info = tiered_index->info();
@@ -2865,7 +2884,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     VecSimIndexInfo backendIndexInfo = tiered_index->backendIndex->info();
 
     VecSimInfoIterator *infoIterator = tiered_index->infoIterator();
-    EXPECT_EQ(infoIterator->numberOfFields(), 13);
+    EXPECT_EQ(infoIterator->numberOfFields(), 15);
 
     while (infoIterator->hasNext()) {
         VecSim_InfoField *infoField = VecSimInfoIterator_NextField(infoIterator);
@@ -2873,21 +2892,21 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
             // Algorithm type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
-            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimAlgo_ToString(info.algo));
+            ASSERT_STREQ(infoField->fieldValue.stringValue, VecSimCommonStrings::TIERED_STRING);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TYPE_STRING)) {
             // Vector type.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimType_ToString(info.commonInfo.type));
+                         VecSimType_ToString(info.commonInfo.basicInfo.type));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::DIMENSION_STRING)) {
             // Vector dimension.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.dim);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.dim);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::METRIC_STRING)) {
             // Metric.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimMetric_ToString(info.commonInfo.metric));
+                         VecSimMetric_ToString(info.commonInfo.basicInfo.metric));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SEARCH_MODE_STRING)) {
             // Search mode.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
@@ -2904,7 +2923,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::IS_MULTI_STRING)) {
             // Is the index multi value.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.isMulti);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.basicInfo.isMulti);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::MEMORY_STRING)) {
             // Memory.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -2923,6 +2942,15 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
             compareHNSWIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::TIERED_BUFFER_LIMIT_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, info.tieredInfo.bufferLimit);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING)) {
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(
+                infoField->fieldValue.uintegerValue,
+                info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold);
         } else {
             FAIL();
         }
@@ -3106,8 +3134,9 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
         ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
         // The first job in Q should be the invalid overwritten insert vector job.
-        ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, INVALID_JOB_ID);
-        jobQ.kick();
+        ASSERT_EQ(jobQ.front().job->isValid, false);
+        ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(jobQ.front().job)->id, 0);
+        jobQ.pop();
     }
 
     // Insert another vector, this one should go directly to HNSW index since the buffer limit has
@@ -3449,6 +3478,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         };
         runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
         search_job->successful_searches++;
+        delete job;
     };
 
     // Fill the job queue with insert and search jobs, while filling the flat index, before

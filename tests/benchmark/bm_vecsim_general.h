@@ -93,7 +93,7 @@ protected:
     /** Mock tiered index callbacks. **/
 
     static int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
-                               JobCallback *freeCBs, size_t len) {
+                               size_t len) {
         {
             std::unique_lock<std::mutex> lock(queue_guard);
             for (size_t i = 0; i < len; i++) {
@@ -123,8 +123,6 @@ protected:
             jobQ.pop();
             lock.unlock();
             job->Execute(job);
-            // Free the job.
-            AsyncJobDestructor(job);
         }
     }
 

@@ -26,8 +26,12 @@ struct IndexType {
 #define TEST_DATA_T typename TypeParam::data_t
 #define TEST_DIST_T typename TypeParam::dist_t
 
-using DataTypeSet =
-    ::testing::Types<IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>>;
+using DataTypeSet = ::testing::Types<IndexType<VecSimType_FLOAT32, float>
+#ifdef FP64_TESTS
+                                     ,
+                                     IndexType<VecSimType_FLOAT64, double>
+#endif
+                                     >;
 
 // Define index type for tests that can be automatically generated for single and multi.
 template <VecSimType type, bool IsMulti, typename DataType, typename DistType = DataType>
@@ -181,17 +185,13 @@ struct SearchJobMock : public AsyncJob {
 struct JobQueue : public std::queue<RefManagedJob> {
     // Pops and destroys the job at the front of the queue.
     inline void kick() {
-        AsyncJobDestructor(this->front().job);
+        delete this->front().job;
         this->pop();
     }
-    ~JobQueue() {
-        while (!this->empty()) {
-            this->kick();
-        }
-    }
 };
+
 int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
-                    JobCallback *freeCBs, size_t jobs_len);
+                    size_t jobs_len);
 
 typedef struct IndexExtCtx {
     std::shared_ptr<VecSimIndex> index_strong_ref;

@@ -187,7 +187,7 @@ protected:
                                       idType *neighbours_list, idType *neighbour_neighbours_list,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
     inline void replaceEntryPoint();
-    //    inline void resizeIndexInternal(size_t new_max_elements);
+    inline void resizeIndexInternal(size_t new_max_elements);
 
     template <bool has_marked_deleted>
     inline void SwapLastIdWithDeletedId(idType element_internal_id);
@@ -214,7 +214,6 @@ public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
               size_t random_seed = 100, size_t initial_pool_size = 1);
     virtual ~HNSWIndex();
-    inline void resizeIndexInternal(size_t new_max_elements);
 
     inline void setEf(size_t ef);
     inline size_t getEf() const;
@@ -240,6 +239,7 @@ public:
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
+    VecSimIndexBasicInfo basicInfo() const override;
     VecSimInfoIterator *infoIterator() const override;
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     char *getDataByInternalId(idType internal_id) const;
@@ -585,23 +585,17 @@ DistType HNSWIndex<DataType, DistType>::processCandidate(
     tag_t *elements_tags, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType lowerBound) const {
 
-    //    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
-    lockNodeLinks(curNodeId);
+    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
     idType *node_links = getNodeNeighborsAtLevel(curNodeId, layer);
     linkListSize links_num = getNodeNeighborsCount(node_links);
 
     __builtin_prefetch(elements_tags + *node_links);
     __builtin_prefetch(getDataByInternalId(*node_links));
 
-    std::vector<idType> neighbors_copy(links_num);
     for (size_t j = 0; j < links_num; j++) {
-        neighbors_copy[j] = node_links[j];
-    }
-    unlockNodeLinks(curNodeId);
-
-    for (size_t j = 0; j < links_num; j++) {
-        idType candidate_id = neighbors_copy[j];
-        idType *next_candidate_pos = neighbors_copy.data() + j + 1;
+        idType *candidate_pos = node_links + j;
+        idType candidate_id = *candidate_pos;
+        idType *next_candidate_pos = node_links + j + 1;
 
         __builtin_prefetch(elements_tags + *next_candidate_pos);
         __builtin_prefetch(getDataByInternalId(*next_candidate_pos));
@@ -2160,7 +2154,7 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
     info.commonInfo = this->getCommonInfo();
 
-    info.algo = VecSimAlgo_HNSWLIB;
+    info.commonInfo.basicInfo.algo = VecSimAlgo_HNSWLIB;
     info.hnswInfo.M = this->getM();
     info.hnswInfo.efConstruction = this->getEfConstruction();
     info.hnswInfo.efRuntime = this->getEf();
@@ -2173,23 +2167,32 @@ VecSimIndexInfo HNSWIndex<DataType, DistType>::info() const {
 }
 
 template <typename DataType, typename DistType>
+VecSimIndexBasicInfo HNSWIndex<DataType, DistType>::basicInfo() const {
+    VecSimIndexBasicInfo info = this->getBasicInfo();
+    info.algo = VecSimAlgo_HNSWLIB;
+    info.isTiered = false;
+    return info;
+}
+
+template <typename DataType, typename DistType>
 VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 17;
     VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
 
-    infoIterator->addInfoField(VecSim_InfoField{
-        .fieldName = VecSimCommonStrings::ALGORITHM_STRING,
-        .fieldType = INFOFIELD_STRING,
-        .fieldValue = {FieldValue{.stringValue = VecSimAlgo_ToString(info.algo)}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
+                         .fieldType = INFOFIELD_STRING,
+                         .fieldValue = {FieldValue{
+                             .stringValue = VecSimAlgo_ToString(info.commonInfo.basicInfo.algo)}}});
 
     this->addCommonInfoToIterator(infoIterator, info.commonInfo);
 
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.blockSize}}});
+    infoIterator->addInfoField(VecSim_InfoField{
+        .fieldName = VecSimCommonStrings::BLOCK_SIZE_STRING,
+        .fieldType = INFOFIELD_UINT64,
+        .fieldValue = {FieldValue{.uintegerValue = info.commonInfo.basicInfo.blockSize}}});
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::HNSW_M_STRING,

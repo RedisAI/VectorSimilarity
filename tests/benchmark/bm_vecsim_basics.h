@@ -155,7 +155,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
 
     BM_VecSimGeneral::thread_pool_wait();
     // Remove the rest of the vectors that hadn't been swapped yet for tiered index.
-    if (VecSimIndex_Info(index).algo == VecSimAlgo_TIERED) {
+    if (VecSimIndex_BasicInfo(index).algo == VecSimAlgo_TIERED) {
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->pendingSwapJobsThreshold = 1;
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->executeReadySwapJobs();
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->pendingSwapJobsThreshold =
