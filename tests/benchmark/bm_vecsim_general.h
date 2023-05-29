@@ -51,7 +51,7 @@ protected:
     // Updates @correct according to the number of search results in @hnsw_results
     // that appear also in the flat algorithm results list.
     static void MeasureRecall(VecSimQueryResult_List hnsw_results,
-                              VecSimQueryResult_List bf_results, size_t &correct);
+                              VecSimQueryResult_List bf_results, std::atomic_int &correct);
 
 protected:
     static inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
@@ -79,5 +79,6 @@ protected:
     // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
         return std::string(getenv("ROOT")) + "/" + file_name;
+        //        return std::string("/home/alon/Code/VectorSimilarity") + "/" + file_name;
     }
 };

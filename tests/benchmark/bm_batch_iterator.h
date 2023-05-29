@@ -24,19 +24,17 @@ protected:
     static void HNSW_VariableBatchSize(benchmark::State &st);
     static void HNSW_BatchesToAdhocBF(benchmark::State &st);
 
-    static void RunBatchedSearch_HNSW(benchmark::State &st, size_t &correct, size_t iter,
+    static void RunBatchedSearch_HNSW(benchmark::State &st, std::atomic_int &correct, size_t iter,
                                       size_t num_batches, size_t batch_size, size_t &total_res_num,
                                       size_t batch_increase_factor, size_t index_memory,
                                       double &memory_delta);
 };
 
 template <typename index_type_t>
-void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(benchmark::State &st, size_t &correct,
-                                                           size_t iter, size_t num_batches,
-                                                           size_t batch_size, size_t &total_res_num,
-                                                           size_t batch_increase_factor,
-                                                           size_t index_memory,
-                                                           double &memory_delta) {
+void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
+    benchmark::State &st, std::atomic_int &correct, size_t iter, size_t num_batches,
+    size_t batch_size, size_t &total_res_num, size_t batch_increase_factor, size_t index_memory,
+    double &memory_delta) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
         INDICES.at(VecSimAlgo_HNSWLIB), QUERIES[iter % N_QUERIES].data(), nullptr);
     VecSimQueryResult_List accumulated_results[num_batches];
@@ -158,7 +156,7 @@ void BM_BatchIterator<index_type_t>::HNSW_FixedBatchSize(benchmark::State &st) {
     size_t num_batches = st.range(1);
     size_t total_res_num = num_batches * batch_size;
     size_t iter = 0;
-    size_t correct = 0;
+    std::atomic_int correct = 0;
     size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).commonInfo.memory;
     double memory_delta = 0.0;
 
@@ -177,7 +175,7 @@ void BM_BatchIterator<index_type_t>::HNSW_VariableBatchSize(benchmark::State &st
     size_t num_batches = st.range(1);
     size_t total_res_num;
     size_t iter = 0;
-    size_t correct = 0;
+    std::atomic_int correct = 0;
     size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).commonInfo.memory;
     double memory_delta = 0.0;
 
@@ -196,7 +194,7 @@ void BM_BatchIterator<index_type_t>::HNSW_BatchesToAdhocBF(benchmark::State &st)
     size_t num_batches = st.range(1);
     size_t total_res_num;
     size_t iter = 0;
-    size_t correct = 0;
+    std::atomic_int correct = 0;
     size_t index_memory = VecSimIndex_Info(INDICES[VecSimAlgo_HNSWLIB]).commonInfo.memory;
     double memory_delta = 0.0;
 

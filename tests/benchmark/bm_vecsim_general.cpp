@@ -8,7 +8,7 @@
 #include "bm_vecsim_general.h"
 
 void BM_VecSimGeneral::MeasureRecall(VecSimQueryResult_List hnsw_results,
-                                     VecSimQueryResult_List bf_results, size_t &correct) {
+                                     VecSimQueryResult_List bf_results, std::atomic_int &correct) {
     auto hnsw_it = VecSimQueryResult_List_GetIterator(hnsw_results);
     while (VecSimQueryResult_IteratorHasNext(hnsw_it)) {
         auto hnsw_res_item = VecSimQueryResult_IteratorNext(hnsw_it);
