@@ -5,18 +5,16 @@
 size_t BM_VecSimGeneral::block_size = 1024;
 
 struct SearchJobMock : public AsyncJob {
-    benchmark::State &st;
     size_t ef;
     size_t iter;
     size_t k;
-    std::atomic_int &correct;
-    unsigned short index_offset;
+    VecSimQueryResult_List *all_results;
 
     SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCB,
-                  VecSimIndex *index_, benchmark::State &st_, size_t ef_, size_t iter_, size_t k_,
-                  std::atomic_int &correct_, unsigned short index_offset_)
-        : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCB, index_), st(st_), ef(ef_), iter(iter_),
-          k(k_), correct(correct_), index_offset(index_offset_) {}
+                  VecSimIndex *index_, size_t ef_, size_t iter_, size_t k_,
+                  VecSimQueryResult_List *all_results_)
+        : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCB, index_), ef(ef_), iter(iter_),
+          k(k_), all_results(all_results_) {}
     ~SearchJobMock() {}
 };
 
@@ -133,24 +131,41 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     std::atomic_int iter = 0;
     auto *tiered_index =
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(INDICES[VecSimAlgo_TIERED]);
+    size_t total_iters = 50;
+    VecSimQueryResult_List all_results[total_iters];
 
     auto parallel_knn_search = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<SearchJobMock *>(job);
-        RunTopK_HNSW(search_job->st, search_job->ef, search_job->iter, search_job->k,
-                     search_job->correct, search_job->index_offset, true);
+        HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
+        auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+        size_t cur_iter = search_job->iter;
+        auto hnsw_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_TIERED],
+                                                  QUERIES[cur_iter % N_QUERIES].data(),
+                                                  search_job->k, &query_params, BY_SCORE);
+        search_job->all_results[cur_iter] = hnsw_results;
         delete job;
     };
 
     for (auto _ : st) {
         auto search_job = new (tiered_index->getAllocator())
-            SearchJobMock(tiered_index->getAllocator(), parallel_knn_search, tiered_index, st, ef,
-                          iter, k, correct, index_offset);
+            SearchJobMock(tiered_index->getAllocator(), parallel_knn_search, tiered_index, ef,
+                          iter++, k, all_results);
         tiered_index->submitSingleJob(search_job);
-        iter++;
-        if (iter == 100) {
+        if (iter == total_iters) {
             BM_VecSimGeneral::thread_pool_wait();
         }
     }
+
+    // Measure recall
+    for (iter = 0; iter < total_iters; iter++) {
+        auto bf_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+                                                QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+        BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
+
+        VecSimQueryResult_Free(bf_results);
+        VecSimQueryResult_Free(all_results[iter]);
+    }
+
     st.counters["Recall"] = (float)correct / (float)(k * iter);
     st.counters["num_threads"] = (double)BM_VecSimGeneral::thread_pool_size;
 }
@@ -185,5 +200,5 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({200, 100})                                                                         \
         ->Args({500, 500})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(100)                                                                          \
+        ->Iterations(50)                                                                          \
         ->Unit(benchmark::kMillisecond)
