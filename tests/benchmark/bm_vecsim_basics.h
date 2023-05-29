@@ -102,8 +102,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
         }
         added_vec_count += vec_per_label;
         label++;
-        //        if (label == N_VECTORS + BM_VecSimGeneral::block_size) {
-        if (label == N_VECTORS + BM_VecSimGeneral::block_size) {
+        if (label == initial_label_count + BM_VecSimGeneral::block_size) {
             BM_VecSimGeneral::thread_pool_wait();
         }
     }

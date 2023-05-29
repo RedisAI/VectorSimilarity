@@ -28,12 +28,14 @@ bool BM_VecSimGeneral::run_threads = false;
 
 #define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Single
 #define BM_ADD_LABEL                AddLabel_Single
+#define BM_ADD_LABEL_ASYNC          AddLabel_Async_Single
+#define BM_DELETE_LABEL_ASYNC       DeleteLabel_Async_Single
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex_Single, float,
                     float, VecSimAlgo_BF)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Single, float, float,
                     VecSimAlgo_HNSWLIB)
-DEFINE_DELETE_LABEL(DeleteLabel_Tiered, fp32_index_t, TieredHNSWIndex, float, float,
+DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
                     VecSimAlgo_TIERED)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 BENCHMARK_MAIN();
