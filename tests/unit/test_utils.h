@@ -43,9 +43,13 @@ struct IndexTypeExtended {
 };
 
 using DataTypeSetExtended = ::testing::Types<IndexTypeExtended<VecSimType_FLOAT32, false, float>,
-                                             IndexTypeExtended<VecSimType_FLOAT32, true, float>,
+                                             IndexTypeExtended<VecSimType_FLOAT32, true, float>
+#ifdef FP64_TESTS
+                                             ,
                                              IndexTypeExtended<VecSimType_FLOAT64, false, double>,
-                                             IndexTypeExtended<VecSimType_FLOAT64, true, double>>;
+                                             IndexTypeExtended<VecSimType_FLOAT64, true, double>
+#endif
+                                             >;
 
 template <typename data_t>
 static void GenerateVector(data_t *output, size_t dim, data_t value = 1.0) {
