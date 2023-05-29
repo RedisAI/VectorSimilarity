@@ -101,12 +101,11 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     hnsw_index->setEf(ef_r);
 
     // Create tiered index from the loaded HNSW index.
-    size_t memory_ctx = 0;
     auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
     TieredIndexParams tiered_params = {.jobQueue = &jobQ,
                                        .jobQueueCtx = nullptr,
                                        .submitCb = submit_callback,
-                                       .flatBufferLimit = SIZE_MAX,
+                                       .flatBufferLimit = block_size,
                                        .primaryIndexParams = &primary_index_params,
                                        .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
 
