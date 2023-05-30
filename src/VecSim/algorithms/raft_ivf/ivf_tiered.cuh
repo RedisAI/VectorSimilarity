@@ -76,7 +76,7 @@ public:
             if (vectorBlocks[block_id]->getLength() == 0)
                 continue;
             RAFT_CUDA_TRY(
-                cudaMemcpyAsync(vectorDataGpuBuffer.data_handle() + offset * dim * sizeof(float),
+                cudaMemcpyAsync(vectorDataGpuBuffer.data_handle() + offset * dim,
                                 vectorBlocks[block_id]->getVector(0),
                                 vectorBlocks[block_id]->getLength() * dim * sizeof(float),
                                 cudaMemcpyDefault, res_.get_stream()));

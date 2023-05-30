@@ -1,6 +1,8 @@
 #pragma once
 
 #include "bm_vecsim_general.h"
+#include "bm_tiered_index_mock.h"
+
 template <typename index_type_t>
 class BM_VecSimIndex : public BM_VecSimGeneral {
 public:
@@ -53,6 +55,8 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
         VecSimIndex_Free(indices[VecSimAlgo_HNSWLIB]);
+        VecSimIndex_Free(indices[VecSimAlgo_RaftIVFFlat]);
+        VecSimIndex_Free(indices[VecSimAlgo_RaftIVFPQ]);
     }
 }
 
@@ -97,12 +101,50 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     size_t ef_r = 10;
     hnsw_index->setEf(ef_r);
 
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    auto *jobQ = new tiered_index_mock::JobQueue();
+    size_t memory_ctx = 0;
+    TieredIndexParams tiered_params = {.jobQueue = jobQ,
+                                        .submitCb = tiered_index_mock::submit_callback,
+                                        .memoryCtx = &memory_ctx,
+                                        .UpdateMemCb = tiered_index_mock::update_mem_callback};
+    
+    TieredRaftIVFFlatParams params_tiered_flat;
+    params_tiered_flat.flatParams = {.dim = dim,
+                                     .metric = VecSimMetric_L2,
+                                     .nLists = 1024,
+                                     .kmeans_nIters = 20,
+                                     .kmeans_trainsetFraction = 0.5,
+                                     .nProbes = 20};
+    params_tiered_flat.tieredParams = tiered_params;
+
+    indices.push_back(RaftIVFFlatFactory::NewTieredIndex(&params_tiered_flat, allocator));
+
+    RaftIVFPQParams pq_params = {.dim = dim,
+                                 .metric = VecSimMetric_L2,
+                                 .nLists = 1024,
+                                 .pqBits = 8,
+                                 .pqDim = 0,
+                                 .codebookKind = RaftIVFPQ_PerSubspace,
+                                 .kmeans_nIters = 20,
+                                 .kmeans_trainsetFraction = 0.5,
+                                 .nProbes = 20,
+                                 .lutType = CUDAType_R_32F,
+                                 .internalDistanceType = CUDAType_R_32F,
+                                 .preferredShmemCarveout = 1.0};
+    TieredRaftIVFPQParams params_tiered_pq;
+    params_tiered_pq.PQParams = pq_params;
+    params_tiered_pq.tieredParams = tiered_params;
+    indices.push_back(RaftIVFPQFactory::NewTieredIndex(&params_tiered_pq, allocator));
+
     // Add the same vectors to Flat index.
     for (size_t i = 0; i < n_vectors; ++i) {
         char *blob = GetHNSWDataByInternalId(i);
         // Fot multi value indices, the internal id is not necessarily equal the label.
         size_t label = CastToHNSW(indices[VecSimAlgo_HNSWLIB])->getExternalLabel(i);
         VecSimIndex_AddVector(indices[VecSimAlgo_BF], blob, label);
+        VecSimIndex_AddVector(indices[VecSimAlgo_RaftIVFFlat], blob, label);
+        VecSimIndex_AddVector(indices[VecSimAlgo_RaftIVFPQ], blob, label);
     }
 
     // Load the test query vectors form file. Index file path is relative to repository root dir.

@@ -63,16 +63,6 @@ protected:
         return params;
     }
 
-    static inline VecSimParams CreateParams(const RaftIVFFlatParams &flat_params) {
-        VecSimParams params{.algo = VecSimAlgo_RaftIVFFlat, .raftIVFFlatParams = flat_params};
-        return params;
-    }
-
-    static inline VecSimParams CreateParams(const RaftIVFPQParams &pq_params) {
-        VecSimParams params{.algo = VecSimAlgo_RaftIVFPQ, .raftIVFPQParams = pq_params};
-        return params;
-    }
-
 
     // Gets HNSWParams or BFParams parameters struct, and creates new VecSimIndex.
     template <typename IndexParams>
