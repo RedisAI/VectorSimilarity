@@ -1,6 +1,7 @@
 #include "benchmark/bm_vecsim_basics.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "benchmark/bm_initialization/bm_tiered_initialize.h"
 
 /**************************************
   Basic tests for single value index with fp64 data type.
@@ -18,13 +19,6 @@ const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/DBpedia-n1M-cosine-d768-M64-EFC512_fp64.hnsw_v2";
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/DBpedia-test_vectors-n10k_fp64.raw";
-
-JobQueue BM_VecSimGeneral::jobQ{};
-const size_t BM_VecSimGeneral::thread_pool_size = MIN(8, std::thread::hardware_concurrency());
-std::vector<std::thread> BM_VecSimGeneral::thread_pool{};
-std::mutex BM_VecSimGeneral::queue_guard{};
-std::condition_variable BM_VecSimGeneral::queue_cond{};
-bool BM_VecSimGeneral::run_threads = false;
 
 #define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Single
 #define BM_ADD_LABEL                AddLabel_Single

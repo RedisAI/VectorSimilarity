@@ -1,6 +1,9 @@
 #pragma once
 #include <atomic>
 #include "bm_common.h"
+#include <chrono>
+
+using namespace std::chrono;
 
 template <typename index_type_t>
 class BM_VecSimBasics : public BM_VecSimCommon<index_type_t> {
@@ -155,10 +158,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
     BM_VecSimGeneral::thread_pool_wait();
     // Remove the rest of the vectors that hadn't been swapped yet for tiered index.
     if (VecSimIndex_BasicInfo(index).algo == VecSimAlgo_TIERED) {
-        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->pendingSwapJobsThreshold = 1;
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->executeReadySwapJobs();
-        reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->pendingSwapJobsThreshold =
-            DEFAULT_PENDING_SWAP_JOBS_THRESHOLD;
     }
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
 
@@ -213,8 +213,6 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     st.counters["num_zombies"] = tiered_index->idToSwapJob.size();
 
     // Remove the rest of the vectors that hadn't been swapped yet.
-#include <chrono>
-    using namespace std::chrono;
     auto start = high_resolution_clock::now();
     tiered_index->pendingSwapJobsThreshold = 1;
     tiered_index->executeReadySwapJobs();

@@ -116,7 +116,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     run_threads = true;
     for (size_t i = 0; i < thread_pool_size; i++) {
-        thread_pool.emplace_back(thread_main_loop);
+        thread_pool.emplace_back(thread_main_loop, i);
     }
 
     // Add the same vectors to Flat index.
