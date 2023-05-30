@@ -26,7 +26,10 @@ public:
                        bool overwrite_allowed = true) override;
     int addVectorBatchGpuBuffer(const void *vector_data, std::int64_t *label, size_t batch_size,
                                 bool overwrite_allowed = true) override;
-    int deleteVector(labelType label) override { return 0; }
+    int deleteVector(labelType label) override {
+        assert(!"deleteVector not implemented");
+        return 0;
+    }
     double getDistanceFrom(labelType label, const void *vector_data) const override {
         assert(!"getDistanceFrom not implemented");
         return INVALID_SCORE;
@@ -87,6 +90,8 @@ protected:
     std::unique_ptr<raftIvfFlatIndex> flat_index_;
     std::unique_ptr<raftIvfPQIndex> pq_index_;
     idType counts_;
+    // Build params are kept as class member because the build step on Raft side happens on
+    // the first vector insertion
     std::unique_ptr<raft::neighbors::ivf_flat::index_params> build_params_flat_;
     std::unique_ptr<raft::neighbors::ivf_flat::search_params> search_params_flat_;
     std::unique_ptr<raft::neighbors::ivf_pq::index_params> build_params_pq_;
