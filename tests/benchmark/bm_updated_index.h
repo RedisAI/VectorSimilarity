@@ -16,7 +16,7 @@
 template <typename index_type_t>
 class BM_VecSimUpdatedIndex : public BM_VecSimCommon<index_type_t> {
 public:
-    const static unsigned short updated_index_offset = 2;
+    const static unsigned short updated_index_offset = 3;
     // The constructor is called after we have already registered the tests residing in
     // BM_VecSimCommon, (and not in this class) so `ref_count` is not zero at the first time
     // BM_VecSimUpdatedIndex Ctor is called, and we can't rely on it to decide whether we should
