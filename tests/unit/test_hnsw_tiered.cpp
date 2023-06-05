@@ -6,6 +6,7 @@
 #include <array>
 
 #include "test_utils.h"
+#include "mock_thread_pool.h"
 
 #include <thread>
 
@@ -420,7 +421,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     // Insert vectors
@@ -461,7 +462,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     // Create and insert vectors, store them in this continuous array.
@@ -770,7 +771,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
     // results from the get-go.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     thread_pool_join(jobQ, run_thread);
@@ -817,7 +818,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
     std::vector<size_t> completed_tasks(THREAD_POOL_SIZE, 0);
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
     std::atomic_int successful_searches(0);
 
@@ -1352,7 +1353,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
     std::atomic_int successful_searches(0);
 
@@ -1647,7 +1648,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         // Launch the BG threads loop that takes jobs from the queue and executes them.
         bool run_thread = true;
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
         }
 
         // Create and insert vectors one by one, then delete them one by one.
@@ -1729,7 +1730,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             // Launch the BG threads loop that takes jobs from the queue and executes them.
             bool run_thread = true;
             for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-                thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+                thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
             }
 
             // Create and insert 10 vectors, then delete them right after.
@@ -2616,7 +2617,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
     // results from the get-go.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     thread_pool_join(jobQ, run_thread);
@@ -2714,7 +2715,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
         // Launch the BG threads loop that takes jobs from the queue and executes them.
         bool run_thread = true;
         for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+            thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
         }
 
         // Insert vectors and overwrite them multiple times while thread run in the background.
@@ -3021,7 +3022,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     // Create and insert vectors one by one async.
@@ -3053,7 +3054,7 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
     VecSim_SetWriteMode(VecSim_WriteAsync);
     run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
     for (size_t i = 0; i < n_labels; i++) {
         VecSimIndex_DeleteVector(tiered_index, n_labels + i);
@@ -3185,7 +3186,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     // Create and insert vectors one by one async. At some point, buffer limit gets full and vectors
@@ -3509,7 +3510,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
     // results from the get-go.
     bool run_thread = true;
     for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
-        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread), i);
     }
 
     thread_pool_join(jobQ, run_thread);

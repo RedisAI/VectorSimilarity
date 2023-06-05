@@ -55,7 +55,7 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
         // VecSimAlgo_HNSW will be destroyed as part of the tiered index release.
-        thread_pool_join();
+        tiered_index_mock::thread_pool_join(BM_VecSimGeneral::jobQ, BM_VecSimGeneral::run_threads);
         VecSimIndex_Free(indices[VecSimAlgo_TIERED]);
     }
 }
@@ -104,7 +104,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
     TieredIndexParams tiered_params = {.jobQueue = &jobQ,
                                        .jobQueueCtx = nullptr,
-                                       .submitCb = submit_callback,
+                                       .submitCb = tiered_index_mock::submit_callback,
                                        .flatBufferLimit = block_size,
                                        .primaryIndexParams = &primary_index_params,
                                        .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
@@ -116,7 +116,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     run_threads = true;
     for (size_t i = 0; i < thread_pool_size; i++) {
-        thread_pool.emplace_back(thread_main_loop, i);
+        tiered_index_mock::thread_pool.emplace_back(tiered_index_mock::thread_main_loop,
+                                                    std::ref(BM_VecSimGeneral::jobQ),
+                                                    std::ref(run_threads), i);
     }
 
     // Add the same vectors to Flat index.

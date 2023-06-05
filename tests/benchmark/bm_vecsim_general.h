@@ -21,18 +21,7 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "bm_definitions.h"
-
-using JobQueue = std::queue<AsyncJob *>;
-static const size_t MAX_POOL_SIZE = 16;
-
-void inline MarkExecuteInProcess(std::bitset<MAX_POOL_SIZE> &executions_status,
-                                 size_t thread_index) {
-    executions_status.set(thread_index);
-}
-
-void inline MarkExecuteDone(std::bitset<MAX_POOL_SIZE> &executions_status, size_t thread_index) {
-    executions_status.reset(thread_index);
-}
+#include "utils/mock_thread_pool.h"
 
 // This class includes every static data member that is:
 // 1. Common for fp32 and fp64 data sets.
@@ -57,19 +46,9 @@ protected:
     static const char *test_queries_file;
 
     // Tiered index mock attributes
-    static JobQueue jobQ;
+    static tiered_index_mock::JobQueue jobQ;
     static const size_t thread_pool_size;
-    static std::vector<std::thread> thread_pool;
-    static std::mutex queue_guard;
-    static std::condition_variable queue_cond;
     static bool run_threads;
-    // A bit set to help determine whether all jobs are done by checking
-    // that the job queue is empty and the all the bits are 0.
-    // Each thread is associated with a bit position in the bit set.
-    // The thread's corresponding bit should be set to before the job is popped
-    // from the queue and the execution starts.
-    // We turn the bit off after the execute callback returns to mark the job is done.
-    static std::bitset<MAX_POOL_SIZE> executions_status;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
@@ -78,14 +57,6 @@ protected:
     // that appear also in the flat algorithm results list.
     static void MeasureRecall(VecSimQueryResult_List hnsw_results,
                               VecSimQueryResult_List bf_results, size_t &correct);
-
-    /** Mock tiered index callbacks. **/
-
-    static int submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
-                               size_t len);
-    static void thread_main_loop(int thread_id);
-    static void thread_pool_join();
-    static void thread_pool_wait();
 
 protected:
     static inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {
