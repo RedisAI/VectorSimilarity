@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VecSim/vec_sim_tiered_index.h"
-#include "ivf_index_interface.h"
+#include "ivf_index.cuh"
 #include "ivf_factory.h"
 
 #include <unordered_map>
@@ -11,7 +11,7 @@ class TieredRaftIvfIndex : public VecSimTieredIndex<float, float> {
     using DistType = float;
 
 public:
-    TieredRaftIvfIndex(RaftIvfIndexInterface *ivf_index, TieredIndexParams tieredParams)
+    TieredRaftIvfIndex(RaftIVFIndex *ivf_index, TieredIndexParams tieredParams)
         : VecSimTieredIndex<DataType, DistType>(ivf_index, tieredParams), ivf_index_(ivf_index) {}
     virtual ~TieredRaftIvfIndex() = default;
 
@@ -62,35 +62,33 @@ public:
         auto nVectors = this->flatBuffer->indexSize();
         const auto &vectorBlocks = this->flatBuffer->getVectorBlocks();
         auto vectorDataGpuBuffer = raft::make_device_matrix<DataType, std::int64_t>(
-            res_, nVectors, dim);
+            ivf_index_->get_resources(), nVectors, dim);
         auto labels_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(
-            res_, nVectors);
+            ivf_index_->get_resources(), nVectors);
         auto label_original = this->flatBuffer->getLabels();
         auto label_converted =
             std::vector<std::int64_t>(label_original.begin(), label_original.begin() + nVectors);
         RAFT_CUDA_TRY(cudaMemcpyAsync(labels_gpu.data_handle(), label_converted.data(),
                                       label_converted.size() * sizeof(std::int64_t),
-                                      cudaMemcpyDefault, res_.get_stream()));
+                                      cudaMemcpyDefault, ivf_index_->get_resources().get_stream()));
         std::int64_t offset = 0;
         for (int block_id = 0; block_id < vectorBlocks.size(); block_id++) {
             if (vectorBlocks[block_id]->getLength() == 0)
                 continue;
-            RAFT_CUDA_TRY(
-                cudaMemcpyAsync(vectorDataGpuBuffer.data_handle() + offset * dim,
-                                vectorBlocks[block_id]->getVector(0),
-                                vectorBlocks[block_id]->getLength() * dim * sizeof(float),
-                                cudaMemcpyDefault, res_.get_stream()));
+            RAFT_CUDA_TRY(cudaMemcpyAsync(vectorDataGpuBuffer.data_handle() + offset * dim,
+                                          vectorBlocks[block_id]->getVector(0),
+                                          vectorBlocks[block_id]->getLength() * dim * sizeof(float),
+                                          cudaMemcpyDefault,
+                                          ivf_index_->get_resources().get_stream()));
 
             offset += vectorBlocks[block_id]->getLength();
         }
         this->ivf_index_->addVectorBatchGpuBuffer(vectorDataGpuBuffer.data_handle(),
-                                                  labels_gpu.data_handle(),
-                                                  nVectors);
+                                                  labels_gpu.data_handle(), nVectors);
         updateIvfIndex = false;
     }
 
 private:
-    raft::device_resources res_;
-    RaftIvfIndexInterface *ivf_index_;
+    RaftIVFIndex *ivf_index_;
     bool updateIvfIndex;
 };

@@ -1,6 +1,5 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/raft_ivf/ivf_index_interface.h"
 #include "test_utils.h"
 #include "VecSim/utils/serializer.h"
 #include "VecSim/query_result_struct.h"
@@ -22,9 +21,6 @@ protected:
     }
     VecSimIndex *CreateNewIndex(RaftIVFPQParams &params) {
         return test_utils::CreateNewIndex(params, index_type_t::get_index_type(), false);
-    }
-    RaftIvfIndexInterface *CastToInterface(VecSimIndex *index) {
-        return dynamic_cast<RaftIvfIndexInterface *>(index);
     }
 };
 

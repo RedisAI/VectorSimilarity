@@ -13,8 +13,7 @@
 using namespace tiered_index_mock;
 
 template <typename index_type_t>
-class RaftIvfTieredTest : public ::testing::Test {
-};
+class RaftIvfTieredTest : public ::testing::Test {};
 
 TieredRaftIVFPQParams createDefaultPQTieredParams(size_t dim) {
     RaftIVFPQParams params = {.dim = dim,
@@ -54,10 +53,10 @@ TYPED_TEST(RaftIvfTieredTest, RaftIVFTiered_PQ_add_sanity_test) {
     auto *jobQ = new JobQueue();
     size_t memory_ctx = 0;
     TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                        .submitCb = submit_callback,
-                                        .memoryCtx = &memory_ctx,
-                                        .UpdateMemCb = update_mem_callback};
-    
+                                       .submitCb = submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = update_mem_callback};
+
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     TieredRaftIVFPQParams params_tiered = createDefaultPQTieredParams(dim);
     params_tiered.tieredParams = tiered_params;
@@ -84,7 +83,7 @@ TYPED_TEST(RaftIvfTieredTest, RaftIVFTiered_PQ_add_sanity_test) {
     VecSimIndex_AddVector(index, c, 2);
     VecSimIndex_AddVector(index, d, 3);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
-    
+
     resultQuery = index->topKQuery(a, 1, &queryParams);
     it = VecSimQueryResult_List_GetIterator(resultQuery);
     VecSimQueryResult *currentResult = VecSimQueryResult_IteratorNext(it);

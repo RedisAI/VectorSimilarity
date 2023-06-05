@@ -4,28 +4,44 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/query_result_struct.h"
 #include "VecSim/memory/vecsim_malloc.h"
-#include "ivf_index_interface.h"
 
 #include <raft/core/device_resources.hpp>
-#include <raft/neighbors/ivf_flat.cuh>
-#include <raft/neighbors/ivf_flat_types.hpp>
-#include <raft/neighbors/ivf_pq.cuh>
-#include <raft/neighbors/ivf_pq_types.hpp>
 
-class RaftIVFIndex : public RaftIvfIndexInterface {
+#pragma once
+
+raft::distance::DistanceType inline GetRaftDistanceType(VecSimMetric vsm) {
+    raft::distance::DistanceType result;
+    switch (vsm) {
+    case VecSimMetric::VecSimMetric_L2:
+        result = raft::distance::DistanceType::L2Expanded;
+        break;
+    case VecSimMetric_IP:
+        result = raft::distance::DistanceType::InnerProduct;
+        break;
+    default:
+        throw std::runtime_error("Metric not supported");
+    }
+    return result;
+}
+
+class RaftIVFIndex : public VecSimIndexAbstract<float> {
 public:
     using DataType = float;
     using DistType = float;
-    using raftIvfFlatIndex = raft::neighbors::ivf_flat::index<DataType, std::int64_t>;
-    using raftIvfPQIndex = raft::neighbors::ivf_pq::index<std::int64_t>;
 
     template <typename T>
-    RaftIVFIndex(const T *params, std::shared_ptr<VecSimAllocator> allocator);
-    int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
+    RaftIVFIndex(const T *params, std::shared_ptr<VecSimAllocator> allocator)
+        : VecSimIndexAbstract<float>(allocator, params->dim, params->type, params->metric,
+                                     params->blockSize, params->multi),
+          counts_(0) {}
+    int addVector(const void *vector_data, labelType label,
+                  bool overwrite_allowed = true) override {
+        return this->addVectorBatch(vector_data, &label, 1, overwrite_allowed);
+    }
     int addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
-                       bool overwrite_allowed = true) override;
-    int addVectorBatchGpuBuffer(const void *vector_data, std::int64_t *label, size_t batch_size,
-                                bool overwrite_allowed = true) override;
+                       bool overwrite_allowed = true);
+    virtual int addVectorBatchGpuBuffer(const void *vector_data, std::int64_t *label,
+                                        size_t batch_size, bool overwrite_allowed = true) = 0;
     int deleteVector(labelType label) override {
         assert(!"deleteVector not implemented");
         return 0;
@@ -51,27 +67,6 @@ public:
                                       VecSimQueryParams *queryParams) override {
         assert(!"RangeQuery not implemented");
     }
-    VecSimIndexInfo info() const override {
-        VecSimIndexInfo info;
-        if (is_flat_) {
-            info.raftIvfFlatInfo.dim = this->dim;
-            info.raftIvfFlatInfo.type = this->vecType;
-            info.raftIvfFlatInfo.metric = this->metric;
-            info.raftIvfFlatInfo.indexSize = this->counts_;
-            info.raftIvfFlatInfo.nLists = build_params_flat_->n_lists;
-            info.algo = VecSimAlgo_RaftIVFFlat;
-        } else {
-            info.raftIvfPQInfo.dim = this->dim;
-            info.raftIvfPQInfo.type = this->vecType;
-            info.raftIvfPQInfo.metric = this->metric;
-            info.raftIvfPQInfo.indexSize = this->counts_;
-            info.raftIvfPQInfo.nLists = build_params_pq_->n_lists;
-            info.raftIvfPQInfo.pqBits = build_params_pq_->pq_bits;
-            info.raftIvfPQInfo.pqDim = build_params_pq_->pq_dim;
-            info.algo = VecSimAlgo_RaftIVFPQ;
-        }
-        return info;
-    }
     VecSimInfoIterator *infoIterator() const override { assert(!"infoIterator not implemented"); }
     virtual VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                                   VecSimQueryParams *queryParams) const override {
@@ -81,124 +76,16 @@ public:
         assert(!"preferAdHocSearch not implemented");
     }
 
-    virtual size_t nLists() {
-        return is_flat_ ? build_params_flat_->n_lists : build_params_pq_->n_lists;
-    }
+    auto get_resources() { return res_; }
+
+    virtual size_t nLists() = 0;
 
 protected:
+    virtual void search(const void *vector_data, void *neighbors, void *distances,
+                        size_t batch_size, size_t k) = 0;
     raft::device_resources res_;
-    std::unique_ptr<raftIvfFlatIndex> flat_index_;
-    std::unique_ptr<raftIvfPQIndex> pq_index_;
     idType counts_;
-    // Build params are kept as class member because the build step on Raft side happens on
-    // the first vector insertion
-    std::unique_ptr<raft::neighbors::ivf_flat::index_params> build_params_flat_;
-    std::unique_ptr<raft::neighbors::ivf_flat::search_params> search_params_flat_;
-    std::unique_ptr<raft::neighbors::ivf_pq::index_params> build_params_pq_;
-    std::unique_ptr<raft::neighbors::ivf_pq::search_params> search_params_pq_;
-    bool is_flat_ = true;
 };
-
-template <typename T>
-RaftIVFIndex::RaftIVFIndex(const T *params, std::shared_ptr<VecSimAllocator> allocator)
-    : RaftIvfIndexInterface(allocator, params->dim, params->type, params->metric, params->blockSize,
-                            params->multi),
-      counts_(0) {
-    if constexpr (std::is_same_v<RaftIVFFlatParams, T>) {
-        const RaftIVFFlatParams *params_flat = dynamic_cast<const RaftIVFFlatParams *>(params);
-        build_params_flat_ = std::make_unique<raft::neighbors::ivf_flat::index_params>();
-        build_params_flat_->metric = GetRaftDistanceType(params_flat->metric);
-        build_params_flat_->n_lists = params_flat->nLists;
-        build_params_flat_->kmeans_n_iters = params_flat->kmeans_nIters;
-        build_params_flat_->kmeans_trainset_fraction = params_flat->kmeans_trainsetFraction;
-        build_params_flat_->adaptive_centers = params_flat->adaptiveCenters;
-        build_params_flat_->add_data_on_build = false;
-        search_params_flat_ = std::make_unique<raft::neighbors::ivf_flat::search_params>();
-        search_params_flat_->n_probes = params_flat->nProbes;
-    } else if constexpr (std::is_same_v<RaftIVFPQParams, T>) {
-        is_flat_ = false;
-        const RaftIVFPQParams *params_pq = dynamic_cast<const RaftIVFPQParams *>(params);
-        build_params_pq_ = std::make_unique<raft::neighbors::ivf_pq::index_params>();
-        build_params_pq_->metric = GetRaftDistanceType(params_pq->metric);
-        build_params_pq_->n_lists = params_pq->nLists;
-        build_params_pq_->pq_bits = params_pq->pqBits;
-        build_params_pq_->pq_dim = params_pq->pqDim;
-        build_params_pq_->add_data_on_build = false;
-        switch (params_pq->codebookKind) {
-        case (RaftIVFPQ_PerCluster):
-            build_params_pq_->codebook_kind = raft::neighbors::ivf_pq::codebook_gen::PER_CLUSTER;
-            break;
-        case (RaftIVFPQ_PerSubspace):
-            build_params_pq_->codebook_kind = raft::neighbors::ivf_pq::codebook_gen::PER_SUBSPACE;
-            break;
-        default:
-            assert(!"Unexpected codebook kind value");
-        }
-
-        search_params_pq_ = std::make_unique<raft::neighbors::ivf_pq::search_params>();
-        switch (params_pq->lutType) {
-        case (CUDAType_R_32F):
-            search_params_pq_->lut_dtype = CUDA_R_32F;
-            break;
-        case (CUDAType_R_16F):
-            search_params_pq_->lut_dtype = CUDA_R_16F;
-            break;
-        case (CUDAType_R_8U):
-            search_params_pq_->lut_dtype = CUDA_R_8U;
-            break;
-        }
-        switch (params_pq->internalDistanceType) {
-        case (CUDAType_R_32F):
-            search_params_pq_->lut_dtype = CUDA_R_32F;
-            break;
-        case (CUDAType_R_16F):
-            search_params_pq_->lut_dtype = CUDA_R_16F;
-            break;
-        default:
-            assert(!"Unexpected codebook kind value");
-        }
-        search_params_pq_->preferred_shmem_carveout = params_pq->preferredShmemCarveout;
-    } else {
-        throw std::runtime_error("Unknown params");
-    }
-}
-
-int RaftIVFIndex::addVector(const void *vector_data, labelType label, bool overwrite_allowed) {
-    assert(label < static_cast<labelType>(std::numeric_limits<std::int64_t>::max()));
-    auto vector_data_gpu = raft::make_device_matrix<DataType, std::int64_t>(res_, 1, this->dim);
-    auto label_converted = static_cast<std::int64_t>(label);
-    auto label_gpu = raft::make_device_vector<std::int64_t, std::int64_t>(res_, 1);
-
-    RAFT_CUDA_TRY(cudaMemcpyAsync(vector_data_gpu.data_handle(), (DataType *)vector_data,
-                                  this->dim * sizeof(float), cudaMemcpyDefault, res_.get_stream()));
-    RAFT_CUDA_TRY(cudaMemcpyAsync(label_gpu.data_handle(), &label_converted, sizeof(std::int64_t),
-                                  cudaMemcpyDefault, res_.get_stream()));
-
-    if (is_flat_) {
-        if (!flat_index_) {
-            flat_index_ = std::make_unique<raftIvfFlatIndex>(
-                raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
-                    res_, *build_params_flat_, raft::make_const_mdspan(vector_data_gpu.view())));
-        }
-        raft::neighbors::ivf_flat::extend(
-            res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
-    } else {
-        if (!pq_index_) {
-            pq_index_ = std::make_unique<raftIvfPQIndex>(
-                raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
-                    res_, *build_params_pq_, raft::make_const_mdspan(vector_data_gpu.view())));
-        }
-        raft::neighbors::ivf_pq::extend(
-            res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
-    }
-    res_.sync_stream();
-
-    // TODO: Handle update operation
-    this->counts_ += 1;
-    return 1;
-}
 
 int RaftIVFIndex::addVectorBatch(const void *vector_data, labelType *labels, size_t batch_size,
                                  bool overwrite_allowed) {
@@ -215,55 +102,8 @@ int RaftIVFIndex::addVectorBatch(const void *vector_data, labelType *labels, siz
                                   batch_size * sizeof(std::int64_t), cudaMemcpyDefault,
                                   res_.get_stream()));
 
-    if (is_flat_) {
-        if (!flat_index_) {
-            flat_index_ = std::make_unique<raftIvfFlatIndex>(
-                raft::neighbors::ivf_flat::build<DataType, std::int64_t>(
-                    res_, *build_params_flat_, raft::make_const_mdspan(vector_data_gpu.view())));
-        }
-        raft::neighbors::ivf_flat::extend(
-            res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), flat_index_.get());
-    } else {
-        if (!pq_index_) {
-            pq_index_ = std::make_unique<raftIvfPQIndex>(
-                raft::neighbors::ivf_pq::build<DataType, std::int64_t>(
-                    res_, *build_params_pq_, raft::make_const_mdspan(vector_data_gpu.view())));
-        }
-        raft::neighbors::ivf_pq::extend(
-            res_, raft::make_const_mdspan(vector_data_gpu.view()),
-            std::make_optional(raft::make_const_mdspan(label_gpu.view())), pq_index_.get());
-    }
-    res_.sync_stream();
-
-    this->counts_ += batch_size;
-    return batch_size;
-}
-
-int RaftIVFIndex::addVectorBatchGpuBuffer(const void *vector_data, std::int64_t *labels,
-                                          size_t batch_size, bool overwrite_allowed) {
-    auto vector_data_gpu = raft::make_device_matrix_view<const DataType, std::int64_t>(
-        (const DataType *)vector_data, batch_size, this->dim);
-    auto label_gpu =
-        raft::make_device_vector_view<const std::int64_t, std::int64_t>(labels, batch_size);
-
-    if (is_flat_) {
-        if (!flat_index_) {
-            flat_index_ = std::make_unique<raftIvfFlatIndex>(
-                raft::neighbors::ivf_flat::build<DataType, std::int64_t>(res_, *build_params_flat_,
-                                                                         vector_data_gpu));
-        }
-        raft::neighbors::ivf_flat::extend(res_, vector_data_gpu, std::make_optional(label_gpu),
-                                          flat_index_.get());
-    } else {
-        if (!pq_index_) {
-            pq_index_ = std::make_unique<raftIvfPQIndex>(
-                raft::neighbors::ivf_pq::build<DataType, std::int64_t>(res_, *build_params_pq_,
-                                                                       vector_data_gpu));
-        }
-        raft::neighbors::ivf_pq::extend(res_, vector_data_gpu, std::make_optional(label_gpu),
-                                        pq_index_.get());
-    }
+    this->addVectorBatchGpuBuffer(vector_data_gpu.data_handle(), label_gpu.data_handle(),
+                                  batch_size, overwrite_allowed);
     res_.sync_stream();
 
     this->counts_ += batch_size;
@@ -274,27 +114,24 @@ int RaftIVFIndex::addVectorBatchGpuBuffer(const void *vector_data, std::int64_t 
 VecSimQueryResult_List RaftIVFIndex::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) {
     VecSimQueryResult_List result_list = {0};
-    if ((is_flat_ && !flat_index_) || (!is_flat_ && !pq_index_)) {
+    if (this->counts_ == 0) {
         result_list.results = array_new<VecSimQueryResult>(0);
         return result_list;
     }
+    if (k > this->counts_)
+        k = this->counts_; // Safeguard K
     auto vector_data_gpu =
-        raft::make_device_matrix<DataType, std::int64_t>(res_, queryParams->batchSize, this->dim);
+        raft::make_device_matrix<DataType, std::uint32_t>(res_, queryParams->batchSize, this->dim);
     auto neighbors_gpu =
-        raft::make_device_matrix<std::int64_t, std::int64_t>(res_, queryParams->batchSize, k);
+        raft::make_device_matrix<std::int64_t, std::uint32_t>(res_, queryParams->batchSize, k);
     auto distances_gpu =
-        raft::make_device_matrix<float, std::int64_t>(res_, queryParams->batchSize, k);
+        raft::make_device_matrix<float, std::uint32_t>(res_, queryParams->batchSize, k);
     RAFT_CUDA_TRY(cudaMemcpyAsync(vector_data_gpu.data_handle(), (const DataType *)queryBlob,
                                   this->dim * queryParams->batchSize * sizeof(float),
                                   cudaMemcpyDefault, res_.get_stream()));
-    if (is_flat_)
-        raft::neighbors::ivf_flat::search(res_, *search_params_flat_, *flat_index_,
-                                          raft::make_const_mdspan(vector_data_gpu.view()),
-                                          neighbors_gpu.view(), distances_gpu.view());
-    else
-        raft::neighbors::ivf_pq::search(res_, *search_params_pq_, *pq_index_,
-                                        raft::make_const_mdspan(vector_data_gpu.view()),
-                                        neighbors_gpu.view(), distances_gpu.view());
+
+    this->search(vector_data_gpu.data_handle(), neighbors_gpu.data_handle(),
+                 distances_gpu.data_handle(), 1, k);
 
     auto result_size = queryParams->batchSize * k;
     auto *neighbors = array_new_len<std::int64_t>(result_size, result_size);
@@ -315,4 +152,4 @@ VecSimQueryResult_List RaftIVFIndex::topKQuery(const void *queryBlob, size_t k,
     array_free(neighbors);
     array_free(distances);
     return result_list;
-}
+};

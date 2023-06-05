@@ -105,10 +105,10 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     auto *jobQ = new tiered_index_mock::JobQueue();
     size_t memory_ctx = 0;
     TieredIndexParams tiered_params = {.jobQueue = jobQ,
-                                        .submitCb = tiered_index_mock::submit_callback,
-                                        .memoryCtx = &memory_ctx,
-                                        .UpdateMemCb = tiered_index_mock::update_mem_callback};
-    
+                                       .submitCb = tiered_index_mock::submit_callback,
+                                       .memoryCtx = &memory_ctx,
+                                       .UpdateMemCb = tiered_index_mock::update_mem_callback};
+
     TieredRaftIVFFlatParams params_tiered_flat;
     params_tiered_flat.flatParams = {.dim = dim,
                                      .metric = VecSimMetric_L2,

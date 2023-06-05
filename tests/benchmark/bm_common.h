@@ -81,8 +81,8 @@ void BM_VecSimCommon<index_type_t>::RunTopK_RaftIVFFlat(benchmark::State &st, si
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_RaftIVFPQ(benchmark::State &st, size_t iter, size_t k,
-                                                        size_t &correct,
-                                                        unsigned short index_offset) {
+                                                      size_t &correct,
+                                                      unsigned short index_offset) {
     VecSimQueryParams query_params = {.batchSize = 1};
     auto flat_results =
         VecSimIndex_TopKQuery(INDICES[VecSimAlgo_RaftIVFPQ + index_offset],
@@ -160,7 +160,7 @@ void BM_VecSimCommon<index_type_t>::TopK_RaftIVFFlat(benchmark::State &st,
 
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::TopK_RaftIVFPQ(benchmark::State &st,
-                                                     unsigned short index_offset) {
+                                                   unsigned short index_offset) {
     size_t k = st.range(0);
     size_t correct = 0;
     size_t iter = 0;
@@ -201,7 +201,7 @@ void BM_VecSimCommon<index_type_t>::TopK_RaftIVFPQ(benchmark::State &st,
         ->Iterations(10)                                                                           \
         ->Unit(benchmark::kMillisecond)
 
-#define REGISTER_TopK_RaftIVFPQ(BM_CLASS, BM_FUNC)                                               \
+#define REGISTER_TopK_RaftIVFPQ(BM_CLASS, BM_FUNC)                                                 \
     BENCHMARK_REGISTER_F(BM_CLASS, BM_FUNC)                                                        \
         ->Arg(10)                                                                                  \
         ->Arg(100)                                                                                 \
