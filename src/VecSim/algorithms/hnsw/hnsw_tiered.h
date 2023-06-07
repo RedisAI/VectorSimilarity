@@ -301,7 +301,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
     }
     readySwapJobs -= idsToRemove.size();
     this->mainIndexGuard.unlock();
-    this->log("Tiered HNSW index GC: done executing %zu swap jobs", readySwapJobs);
+    this->log("Tiered HNSW index GC: done executing %zu swap jobs", idsToRemove.size());
 }
 
 template <typename DataType, typename DistType>
