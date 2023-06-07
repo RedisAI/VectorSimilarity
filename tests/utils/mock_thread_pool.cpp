@@ -13,7 +13,7 @@ std::bitset<tiered_index_mock::MAX_POOL_SIZE> tiered_index_mock::executions_stat
 int tiered_index_mock::submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs,
                                        JobCallback *CBs, size_t len) {
     {
-        std::unique_lock<std::mutex> lock(queue_guard);
+        std::unique_lock<std::mutex> lock(tiered_index_mock::queue_guard);
         for (size_t i = 0; i < len; i++) {
             // Wrap the job with a struct that contains a weak reference to the related index.
             auto owned_job = RefManagedJob{
@@ -23,19 +23,19 @@ int tiered_index_mock::submit_callback(void *job_queue, void *index_ctx, AsyncJo
         }
     }
     if (len == 1) {
-        queue_cond.notify_one();
+        tiered_index_mock::queue_cond.notify_one();
     } else {
-        queue_cond.notify_all();
+        tiered_index_mock::queue_cond.notify_all();
     }
     return VecSim_OK;
 }
 
 // If `run_thread` is null, treat it as `true`.
 void tiered_index_mock::thread_iteration(JobQueue &jobQ, int thread_id, const bool *run_thread) {
-    std::unique_lock<std::mutex> lock(queue_guard);
+    std::unique_lock<std::mutex> lock(tiered_index_mock::queue_guard);
     // Wake up and acquire the lock (atomically) ONLY if the job queue is not empty at that
     // point, or if the thread should not run anymore (and quit in that case).
-    queue_cond.wait(
+    tiered_index_mock::queue_cond.wait(
         lock, [&jobQ, &run_thread]() { return !jobQ.empty() || (run_thread && !*run_thread); });
     if (run_thread && !*run_thread)
         return;

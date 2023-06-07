@@ -54,9 +54,12 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     ref_count--;
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
-        // VecSimAlgo_HNSW will be destroyed as part of the tiered index release.
+        // Terminate the mock thread pool.
         tiered_index_mock::thread_pool_join(BM_VecSimGeneral::jobQ, BM_VecSimGeneral::run_threads);
-        VecSimIndex_Free(indices[VecSimAlgo_TIERED]);
+
+        /* Note that VecSimAlgo_HNSW will be destroyed as part of the tiered index release, and
+         * the VecSimAlgo_Tiered index ptr will be deleted when its (global) ctx object is
+         * destroyed */
     }
 }
 
@@ -103,7 +106,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     // Create tiered index from the loaded HNSW index.
     auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
     TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = nullptr,
+                                       .jobQueueCtx = &BM_VecSimGeneral::ctx,
                                        .submitCb = tiered_index_mock::submit_callback,
                                        .flatBufferLimit = block_size,
                                        .primaryIndexParams = &primary_index_params,
@@ -111,6 +114,8 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     auto *tiered_index =
         TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
+    BM_VecSimGeneral::ctx.index_strong_ref.reset(tiered_index);
+
     indices.push_back(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
