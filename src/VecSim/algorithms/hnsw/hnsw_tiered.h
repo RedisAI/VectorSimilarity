@@ -283,6 +283,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
         return;
     }
     // Execute swap jobs - acquire hnsw write lock.
+    this->log("Tiered HNSW index GC: start executing %zu swap jobs", readySwapJobs);
     this->mainIndexGuard.lock();
 
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
@@ -300,6 +301,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
     }
     readySwapJobs -= idsToRemove.size();
     this->mainIndexGuard.unlock();
+    this->log("Tiered HNSW index GC: done executing %zu swap jobs", readySwapJobs);
 }
 
 template <typename DataType, typename DistType>

@@ -1642,6 +1642,8 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::increaseCapacity() {
     size_t vectors_to_add = this->blockSize - max_elements_ % this->blockSize;
+    this->log("HNSW index: increase index capacity from %zu to %zu", this->indexSize(),
+              this->indexSize() + vectors_to_add);
     resizeIndexInternal(max_elements_ + vectors_to_add);
 }
 
@@ -1708,6 +1710,8 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
         size_t extra_space_to_free = max_elements_ % this->blockSize;
 
         // Remove one block from the capacity.
+        this->log("HNSW index: decrease index capacity from %zu to %zu", max_elements_,
+                  max_elements_ - this->blockSize - extra_space_to_free);
         this->resizeIndexInternal(max_elements_ - this->blockSize - extra_space_to_free);
     }
 }
