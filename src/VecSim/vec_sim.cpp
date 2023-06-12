@@ -240,6 +240,12 @@ extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, cons
     return index->newBatchIteratorWrapper(queryBlob, queryParams);
 }
 
+extern "C" void VecSimTieredIndex_Clean(VecSimIndex *index) {
+    if (index->basicInfo().isTiered) {
+
+    }
+}
+
 extern "C" void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions) {
     VecSimAllocator::setMemoryFunctions(memoryfunctions);
 }

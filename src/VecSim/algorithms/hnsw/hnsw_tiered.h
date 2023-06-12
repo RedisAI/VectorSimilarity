@@ -204,6 +204,9 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
     }
+    void runGC() override {
+        this->executeReadySwapJobs();
+    }
 };
 
 /**

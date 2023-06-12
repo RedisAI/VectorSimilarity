@@ -176,6 +176,8 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                              VecSimQueryParams *queryParams);
 
+void VecSimTieredIndex_Clean(VecSimIndex *index);
+
 /**
  * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
  * search over the index instead of using batch iterator.
