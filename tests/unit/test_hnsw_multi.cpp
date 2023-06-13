@@ -611,6 +611,8 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
+        // Clean up.
+        this->CastToHNSW(index)->cur_element_count = 0;
         VecSimIndex_Free(index);
     }
 
@@ -853,11 +855,11 @@ TYPED_TEST(HNSWMultiTest, hnsw_get_distance) {
 }
 
 TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
-    size_t dim = 128;
-    size_t n_labels = DEFAULT_BLOCK_SIZE;
+    size_t dim = 256;
     size_t perLabel = 1;
-    size_t bs = DEFAULT_BLOCK_SIZE;
-    size_t M = 32;
+    size_t n_labels = 200;
+    size_t bs = 256;
+    size_t M = 64;
 
     size_t n = n_labels * perLabel;
 
@@ -878,23 +880,23 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
 
     ASSERT_EQ(estimation, actual);
 
-    for (size_t i = 0; i < bs; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, i);
+    // Fill the initial capacity + fill the last block.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
+    }
+    idType cur = n;
+    while (index->indexSize() % bs != 0) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, cur++);
     }
 
-    // Estimate the memory delta of adding a full new block.
-    estimation = EstimateElementSize(params) * (bs);
+    // Estimate the memory delta of adding a single vector that requires a full new block.
+    estimation = EstimateElementSize(params) * bs;
+    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, bs);
 
-    // Note we are adding vectors with ascending values. This causes the numbers of
-    // double connections, which are not taking into account in EstimateElementSize,
-    // to be zero
-    actual = index->getAllocationSize();
-    for (size_t i = 0; i < bs; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + i, bs + i);
-    }
-    actual = index->getAllocationSize() - actual;
-    ASSERT_GE(estimation * 1.02, actual);
-    ASSERT_LE(estimation * 0.98, actual);
+    // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
+    // of the estimation.
+    ASSERT_GE(estimation, actual);
+    ASSERT_LE(estimation, actual * 1.05);
 
     VecSimIndex_Free(index);
 }
@@ -1751,12 +1753,12 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
     // This value is very close to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
-    for (size_t level = 0; level <= this->CastToHNSW_Multi(index)->element_levels_[n]; level++) {
-        idType *neighbors = this->CastToHNSW(index)->getNodeNeighborsAtLevel(n, level);
-        linkListSize size = this->CastToHNSW(index)->getNodeNeighborsCount(neighbors);
-        for (size_t idx = 0; idx < size; idx++) {
-            ASSERT_TRUE((neighbors[idx] / per_label) % 2 != ep_reminder)
-                << "Got a link to " << neighbors[idx] << " on level " << level;
+    for (size_t level = 0; level <= this->CastToHNSW(index)->getMetaDataByInternalId(n)->toplevel;
+         level++) {
+        level_data &meta = this->CastToHNSW(index)->getLevelData(n, level);
+        for (size_t idx = 0; idx < meta.numLinks; idx++) {
+            ASSERT_TRUE((meta.links[idx] / per_label) % 2 != ep_reminder)
+                << "Got a link to " << meta.links[idx] << " on level " << level;
         }
     }
 

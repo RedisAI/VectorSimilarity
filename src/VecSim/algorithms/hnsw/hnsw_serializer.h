@@ -6,7 +6,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
       max_elements_(params->initialCapacity), epsilon_(params->epsilon),
-      element_levels_(max_elements_, this->allocator),
+      vector_blocks(allocator), meta_blocks(allocator), idToMetaData(allocator),
       visited_nodes_handler_pool(1, max_elements_, this->allocator),
       element_neighbors_locks_(max_elements_, this->allocator) {
 
@@ -18,14 +18,14 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // levels value than the loaded index.
     level_generator_.seed(200);
 
-    data_level0_memory_ =
-        (char *)this->allocator->callocate(max_elements_ * size_data_per_element_);
-    if (data_level0_memory_ == nullptr)
-        throw std::runtime_error("Not enough memory");
+    size_t initial_vector_size = max_elements_ / this->blockSize;
+    if (max_elements_ % this->blockSize != 0) {
+        initial_vector_size++;
+    }
+    vector_blocks.reserve(initial_vector_size);
+    meta_blocks.reserve(initial_vector_size);
 
-    linkLists_ = (char **)this->allocator->callocate(sizeof(void *) * max_elements_);
-    if (linkLists_ == nullptr)
-        throw std::runtime_error("Not enough memory: HNSWIndex failed to allocate linklists");
+    idToMetaData.resize(max_elements_);
 }
 
 template <typename DataType, typename DistType>
@@ -61,38 +61,36 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
         if (this->isMarkedDeleted(i)) {
             num_deleted++;
         }
-        for (size_t l = 0; l <= this->element_levels_[i]; l++) {
-            idType *cur_links = this->getNodeNeighborsAtLevel(i, l);
-            linkListSize size = this->getNodeNeighborsCount(cur_links);
+        for (size_t l = 0; l <= getMetaDataByInternalId(i)->toplevel; l++) {
+            level_data &cur = this->getLevelData(i, l);
             std::set<idType> s;
-            for (unsigned int j = 0; j < size; j++) {
+            for (unsigned int j = 0; j < cur.numLinks; j++) {
                 // Check if we found an invalid neighbor.
-                if (cur_links[j] >= this->cur_element_count || cur_links[j] == i) {
+                if (cur.links[j] >= this->cur_element_count || cur.links[j] == i) {
                     return res;
                 }
                 // If the neighbor has deleted, then this connection should be repaired.
-                if (isMarkedDeleted(cur_links[j])) {
+                if (isMarkedDeleted(cur.links[j])) {
                     res.connections_to_repair++;
                 }
-                inbound_connections_num[cur_links[j]]++;
-                s.insert(cur_links[j]);
+                inbound_connections_num[cur.links[j]]++;
+                s.insert(cur.links[j]);
                 connections_checked++;
 
                 // Check if this connection is bidirectional.
-                idType *other_links = this->getNodeNeighborsAtLevel(cur_links[j], l);
-                linkListSize size_other = this->getNodeNeighborsCount(other_links);
-                for (int r = 0; r < size_other; r++) {
-                    if (other_links[r] == (idType)i) {
+                level_data &other = this->getLevelData(cur.links[j], l);
+                for (int r = 0; r < other.numLinks; r++) {
+                    if (other.links[r] == (idType)i) {
                         double_connections++;
                         break;
                     }
                 }
             }
             // Check if a certain neighbor appeared more than once.
-            if (s.size() != size) {
+            if (s.size() != cur.numLinks) {
                 return res;
             }
-            incoming_edges_sets_sizes += this->getIncomingEdgesPtr(i, l)->size();
+            incoming_edges_sets_sizes += cur.incoming_edges->size();
         }
     }
     if (num_deleted != this->num_marked_deleted) {
@@ -126,170 +124,126 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
 
     // Restore index search parameter
     readBinaryPOD(input, this->ef_);
-
-    // epsilon is only restored from v2 up.
+    readBinaryPOD(input, this->epsilon_);
 
     // Restore index meta-data
-    readBinaryPOD(input, this->data_size);
-    readBinaryPOD(input, this->size_data_per_element_);
-    readBinaryPOD(input, this->size_links_per_element_);
-    readBinaryPOD(input, this->size_links_level0_);
-    readBinaryPOD(input, this->label_offset_);
-    readBinaryPOD(input, this->offsetData_);
-    readBinaryPOD(input, this->offsetLevel0_);
-    readBinaryPOD(input, this->incoming_links_offset0);
-    readBinaryPOD(input, this->incoming_links_offset);
+    readBinaryPOD(input, this->element_data_size_);
+    readBinaryPOD(input, this->element_graph_data_size_);
+    readBinaryPOD(input, this->level_data_size_);
     readBinaryPOD(input, this->mult_);
-
-    // skip restoration of level_generator_ data member
-    HandleLevelGenerator(input);
 
     // Restore index state
     readBinaryPOD(input, this->cur_element_count);
-    if (this->m_version == EncodingVersion_V1) {
-        input.ignore(sizeof(idType)); // skip max_id value
-        this->num_marked_deleted = 0;
-    } else {
-        readBinaryPOD(input, this->num_marked_deleted);
-    }
-    readBinaryPOD(input, this->max_level_);
+    readBinaryPOD(input, this->num_marked_deleted);
+    readBinaryPOD(input, this->maxlevel_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::HandleLevelGenerator(std::ifstream &input) {
-    if (this->m_version == EncodingVersion_V1) {
-        // All current v1 files were generated on intel machines, where
-        // sizeof(std::default_random_engine) ==  sizeof(unsigned long)
-        // unlike MacOS where sizeof(std::default_random_engine) ==  sizeof(unsigned int).
-
-        // Skip sizeof(unsigned long) bytes
-        input.ignore(sizeof(unsigned long));
-    }
-    // for V2 and up we don't serialize the level generator, so we just return and
-    // continue to read the file.
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::restoreGraph_V1_fixes() {
-    // Fix offsets from V1 to V2
-    size_t old_size_links_per_element_ = this->size_links_per_element_;
-    this->size_links_per_element_ -= sizeof(idType) - sizeof(linkListSize);
-    this->incoming_links_offset -= sizeof(idType) - sizeof(linkListSize);
-
-    char *data = this->data_level0_memory_;
-    for (idType i = 0; i < this->cur_element_count; i++) {
-        // Restore level 0 number of links
-        // In V1 linkListSize was of the same size as idType, so we need to fix it.
-        // V1 did not have the elementFlags, so we need set all flags to 0.
-        idType lls = *(idType *)data;
-        *(linkListSize *)(data + sizeof(elementFlags)) = (linkListSize)lls;
-        *(elementFlags *)(data) = (elementFlags)0;
-        data += this->size_data_per_element_;
-
-        // Restore level 1+ links
-        // We need to fix the offset of the linkListSize.
-        size_t llSize = this->element_levels_[i] * this->size_links_per_element_;
-        if (llSize) {
-            char *levels_data = (char *)this->allocator->allocate(llSize);
-            for (size_t offset = 0; offset < this->element_levels_[i]; offset++) {
-                // Copy links without the linkListSize
-                // sizeof(linkListSize) == New offset size
-                // sizeof(idType) == Old offset size
-                memcpy(levels_data + offset * this->size_links_per_element_ + sizeof(linkListSize),
-                       this->linkLists_[i] + offset * old_size_links_per_element_ + sizeof(idType),
-                       this->size_links_per_element_ - sizeof(linkListSize));
-                // Copy linkListSize (from idType to linkListSize)
-                *(linkListSize *)(levels_data + offset * this->size_links_per_element_) =
-                    *(idType *)(this->linkLists_[i] + offset * old_size_links_per_element_);
-            }
-            // Free old links and set new links
-            this->allocator->free_allocation(this->linkLists_[i]);
-            this->linkLists_[i] = levels_data;
-        }
-    }
-}
-
-template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
-    // Restore graph layer 0
-    input.read(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
-    for (idType i = 0; i < this->cur_element_count; i++) {
-        auto *incoming_edges = new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-        unsigned int incoming_edges_len;
-        readBinaryPOD(input, incoming_edges_len);
-        for (size_t j = 0; j < incoming_edges_len; j++) {
-            idType next_edge;
-            readBinaryPOD(input, next_edge);
-            incoming_edges->push_back(next_edge);
-        }
-        incoming_edges->shrink_to_fit();
-        this->setIncomingEdgesPtr(i, 0, (void *)incoming_edges);
-    }
-    // Restore the rest of the graph layers, along with the label and max_level lookups.
-    for (idType i = 0; i < this->cur_element_count; i++) {
+    // Restore id to metadata vector
+    labelType label = 0;
+    elementFlags flags = 0;
+    for (idType id = 0; id < this->cur_element_count; id++) {
+        readBinaryPOD(input, label);
+        readBinaryPOD(input, flags);
+        this->idToMetaData[id].label = label;
+        this->idToMetaData[id].flags = flags;
+
         // Restore label lookup by getting the label from data_level0_memory_
-        setVectorId(getExternalLabel(i), i);
+        setVectorId(label, id);
+    }
 
-        linkListSize linkList_size;
-        if (this->m_version == EncodingVersion_V1) {
-            idType lls;
-            readBinaryPOD(input, lls);
-            linkList_size = (linkListSize)lls;
-        } else {
-            readBinaryPOD(input, linkList_size);
-        }
+    // Get number of blocks
+    unsigned int num_blocks = 0;
+    readBinaryPOD(input, num_blocks);
+    this->vector_blocks.reserve(num_blocks);
+    this->meta_blocks.reserve(num_blocks);
 
-        if (linkList_size == 0) {
-            this->element_levels_[i] = 0;
-            this->linkLists_[i] = nullptr;
-        } else {
-            this->element_levels_[i] = linkList_size / this->size_links_per_element_;
-            this->linkLists_[i] = (char *)this->allocator->allocate(linkList_size);
-            if (this->linkLists_[i] == nullptr)
-                throw std::runtime_error(
-                    "Not enough memory: loadIndex failed to allocate linklist");
-            input.read(this->linkLists_[i], linkList_size);
-            for (size_t j = 1; j <= this->element_levels_[i]; j++) {
-                auto *incoming_edges =
-                    new (this->allocator) vecsim_stl::vector<idType>(this->allocator);
-                unsigned int vector_len;
-                readBinaryPOD(input, vector_len);
-                for (size_t k = 0; k < vector_len; k++) {
-                    idType next_edge;
-                    readBinaryPOD(input, next_edge);
-                    incoming_edges->push_back(next_edge);
-                }
-                incoming_edges->shrink_to_fit();
-                this->setIncomingEdgesPtr(i, j, (void *)incoming_edges);
-            }
+    // Get data blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+        this->vector_blocks.emplace_back(this->blockSize, this->element_data_size_,
+                                         this->allocator);
+        unsigned int block_len = 0;
+        readBinaryPOD(input, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            char cur_vec[this->element_data_size_];
+            input.read(cur_vec, this->element_data_size_);
+            this->vector_blocks.back().addElement(cur_vec);
         }
     }
-    if (this->m_version == EncodingVersion_V1) {
-        restoreGraph_V1_fixes();
+
+    // Get meta blocks
+    idType cur_c = 0;
+    for (size_t i = 0; i < num_blocks; i++) {
+        this->meta_blocks.emplace_back(this->blockSize, this->element_graph_data_size_,
+                                       this->allocator);
+        unsigned int block_len = 0;
+        readBinaryPOD(input, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            char cur_meta_data[this->element_graph_data_size_];
+            input.read(cur_meta_data, this->element_graph_data_size_);
+            auto cur_meta = (element_graph_data *)cur_meta_data;
+
+            if (cur_meta->toplevel > 0) {
+                // Allocate space for the other levels
+                cur_meta->others = (level_data *)this->allocator->allocate(this->level_data_size_ *
+                                                                           cur_meta->toplevel);
+                if (cur_meta->others == nullptr) {
+                    throw std::runtime_error(
+                        "Not enough memory: loadIndex failed to allocate element meta data.");
+                }
+                input.read((char *)(cur_meta->others), this->level_data_size_ * cur_meta->toplevel);
+            }
+
+            // Save the incoming edges of the current element.
+            // Level 0
+            unsigned int size = 0;
+            readBinaryPOD(input, size);
+            cur_meta->level0.incoming_edges =
+                new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
+            for (size_t k = 0; k < size; k++) {
+                idType edge;
+                readBinaryPOD(input, edge);
+                (*cur_meta->level0.incoming_edges)[k] = edge;
+            }
+
+            // Levels 1 to maxlevel
+            for (size_t level_offset = 0; level_offset < cur_meta->toplevel; level_offset++) {
+                auto cur = (level_data *)(((char *)cur_meta->others) +
+                                          level_offset * this->level_data_size_);
+                unsigned int size = 0;
+                readBinaryPOD(input, size);
+                cur->incoming_edges =
+                    new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
+                for (size_t k = 0; k < size; k++) {
+                    idType edge;
+                    readBinaryPOD(input, edge);
+                    (*cur->incoming_edges)[k] = edge;
+                }
+            }
+
+            this->meta_blocks.back().addElement(cur_meta_data);
+            cur_c++;
+        }
     }
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexFields_v2(std::ofstream &output) const {
-    // From v2 and up write also algorithm type and vec_sim_index data members.
+void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
+    // Save index type
     writeBinaryPOD(output, VecSimAlgo_HNSWLIB);
 
+    // Save VecSimIndex fields
     writeBinaryPOD(output, this->dim);
     writeBinaryPOD(output, this->vecType);
     writeBinaryPOD(output, this->metric);
     writeBinaryPOD(output, this->blockSize);
     writeBinaryPOD(output, this->isMulti);
-    writeBinaryPOD(output, this->epsilon_);
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const {
-
-    this->saveIndexFields_v2(output);
+    writeBinaryPOD(output, this->max_elements_); // This will be used to restore the index initial
+                                                 // capacity
 
     // Save index build parameters
-    writeBinaryPOD(output, this->max_elements_);
     writeBinaryPOD(output, this->M_);
     writeBinaryPOD(output, this->maxM_);
     writeBinaryPOD(output, this->maxM0_);
@@ -297,17 +251,12 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
 
     // Save index search parameter
     writeBinaryPOD(output, this->ef_);
+    writeBinaryPOD(output, this->epsilon_);
 
     // Save index meta-data
-    writeBinaryPOD(output, this->data_size);
-    writeBinaryPOD(output, this->size_data_per_element_);
-    writeBinaryPOD(output, this->size_links_per_element_);
-    writeBinaryPOD(output, this->size_links_level0_);
-    writeBinaryPOD(output, this->label_offset_);
-    writeBinaryPOD(output, this->offsetData_);
-    writeBinaryPOD(output, this->offsetLevel0_);
-    writeBinaryPOD(output, this->incoming_links_offset0);
-    writeBinaryPOD(output, this->incoming_links_offset);
+    writeBinaryPOD(output, this->element_data_size_);
+    writeBinaryPOD(output, this->element_graph_data_size_);
+    writeBinaryPOD(output, this->level_data_size_);
     writeBinaryPOD(output, this->mult_);
 
     // Save index state
@@ -319,38 +268,59 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
-    // Save level 0 data (graph layer 0 + labels + vectors data)
-    output.write(this->data_level0_memory_, this->max_elements_ * this->size_data_per_element_);
-
-    // Save the incoming edge sets.
-    for (size_t i = 0; i < this->cur_element_count; i++) {
-        auto *incoming_edges_ptr = this->getIncomingEdgesPtr(i, 0);
-        unsigned int set_size = incoming_edges_ptr->size();
-        writeBinaryPOD(output, set_size);
-        for (auto id : *incoming_edges_ptr) {
-            writeBinaryPOD(output, id);
-        }
-        incoming_edges_ptr->shrink_to_fit();
+    // Save id to metadata vector
+    for (idType id = 0; id < this->cur_element_count; id++) {
+        labelType label = this->idToMetaData[id].label;
+        elementFlags flags = this->idToMetaData[id].flags;
+        writeBinaryPOD(output, label);
+        writeBinaryPOD(output, flags);
     }
 
-    // Save all graph layers other than layer 0: for every id of a vector in the graph,
-    // store (<size>, data), where <size> is the data size, and the data is the concatenated
-    // adjacency lists in the graph Then, store the sets of the incoming edges in every level.
-    for (size_t i = 0; i < this->cur_element_count; i++) {
-        linkListSize linkList_size = this->element_levels_[i] > 0
-                                         ? this->size_links_per_element_ * this->element_levels_[i]
-                                         : 0;
-        writeBinaryPOD(output, linkList_size);
-        if (linkList_size)
-            output.write(this->linkLists_[i], linkList_size);
-        for (size_t j = 1; j <= this->element_levels_[i]; j++) {
-            auto *incoming_edges_ptr = this->getIncomingEdgesPtr(i, j);
-            unsigned int set_size = incoming_edges_ptr->size();
-            writeBinaryPOD(output, set_size);
-            for (auto id : *incoming_edges_ptr) {
+    // Save number of blocks
+    unsigned int num_blocks = this->vector_blocks.size();
+    writeBinaryPOD(output, num_blocks);
+
+    // Save data blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+        auto &block = this->vector_blocks[i];
+        unsigned int block_len = block.getLength();
+        writeBinaryPOD(output, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            output.write(block.getElement(j), this->element_data_size_);
+        }
+    }
+
+    // Save meta blocks
+    for (size_t i = 0; i < num_blocks; i++) {
+        auto &block = this->meta_blocks[i];
+        unsigned int block_len = block.getLength();
+        writeBinaryPOD(output, block_len);
+        for (size_t j = 0; j < block_len; j++) {
+            element_graph_data *meta = (element_graph_data *)block.getElement(j);
+            output.write((char *)meta, this->element_graph_data_size_);
+            if (meta->others) // only if there are levels > 0
+                output.write((char *)meta->others, this->level_data_size_ * meta->toplevel);
+
+            // Save the incoming edges of the current element.
+            // Level 0
+            unsigned int size = meta->level0.incoming_edges->size();
+            writeBinaryPOD(output, size);
+            for (idType id : *meta->level0.incoming_edges) {
                 writeBinaryPOD(output, id);
             }
-            incoming_edges_ptr->shrink_to_fit();
+            meta->level0.incoming_edges->shrink_to_fit();
+
+            // Levels 1 to maxlevel
+            for (size_t level_offset = 0; level_offset < meta->toplevel; level_offset++) {
+                auto cur =
+                    (level_data *)(((char *)meta->others) + level_offset * this->level_data_size_);
+                unsigned int size = cur->incoming_edges->size();
+                writeBinaryPOD(output, size);
+                for (idType id : *cur->incoming_edges) {
+                    writeBinaryPOD(output, id);
+                }
+                cur->incoming_edges->shrink_to_fit();
+            }
         }
     }
 }
