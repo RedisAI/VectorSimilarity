@@ -65,8 +65,9 @@ public:
                 raft::neighbors::ivf_pq::build<DataType, std::int64_t>(res_, *build_params_pq_,
                                                                        vector_data_gpu));
         }
-        raft::neighbors::ivf_pq::extend(res_, vector_data_gpu, std::make_optional(label_gpu),
+        raft::neighbors::ivf_pq::extend<DataType, std::int64_t>(res_, vector_data_gpu, std::make_optional(label_gpu),
                                         pq_index_.get());
+        this->counts_ += batch_size;
         return batch_size;
     }
     void search(const void *vector_data, void *neighbors, void *distances, size_t batch_size,
@@ -78,7 +79,7 @@ public:
         auto distances_gpu =
             raft::make_device_matrix_view<float, std::uint32_t>((float *)distances, batch_size, k);
 
-        raft::neighbors::ivf_pq::search(res_, *search_params_pq_, *pq_index_, vector_data_gpu,
+        raft::neighbors::ivf_pq::search<DataType, std::int64_t>(res_, *search_params_pq_, *pq_index_, vector_data_gpu,
                                         neighbors_gpu, distances_gpu);
     }
     VecSimIndexInfo info() const override {
@@ -93,7 +94,7 @@ public:
         info.algo = VecSimAlgo_RaftIVFPQ;
         return info;
     }
-    size_t nLists() override { build_params_pq_->n_lists; }
+    size_t nLists() override { return build_params_pq_->n_lists; }
 
 protected:
     std::unique_ptr<raftIvfPQIndex_t> pq_index_;

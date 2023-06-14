@@ -59,6 +59,8 @@ public:
     inline vecsim_stl::vector<VectorBlock *> getVectorBlocks() const { return vectorBlocks; }
     virtual ~BruteForceIndex();
 
+    virtual inline void resetIndex() = 0;
+
 protected:
     // Private internal function that implements generic single vector insertion.
     virtual void appendVector(const void *vector_data, labelType label);

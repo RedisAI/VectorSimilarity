@@ -24,6 +24,13 @@ public:
     int deleteVector(labelType label) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;
 
+    inline void resetIndex() override {
+        this->labelToIdLookup.clear();
+        this->idToLabelMapping.clear();
+        this->vectorBlocks.clear();
+        this->count = 0;
+    }
+
     inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
         return std::unique_ptr<vecsim_stl::abstract_results_container>(

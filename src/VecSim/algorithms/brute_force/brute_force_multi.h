@@ -22,6 +22,12 @@ public:
 
     ~BruteForceIndex_Multi() {}
 
+    inline void resetIndex() override {
+        this->labelToIdsLookup.clear();
+        this->idToLabelMapping.clear();
+        this->vectorBlocks.clear();
+        this->count = 0;
+    }
     int addVector(const void *vector_data, labelType label, bool overwrite_allowed = true) override;
     int deleteVector(labelType labelType) override;
     double getDistanceFrom(labelType label, const void *vector_data) const override;

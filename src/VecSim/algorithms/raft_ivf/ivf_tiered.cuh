@@ -15,10 +15,11 @@ public:
         : VecSimTieredIndex<DataType, DistType>(ivf_index, tieredParams), ivf_index_(ivf_index) {}
     virtual ~TieredRaftIvfIndex() = default;
 
-    // TODO: Implement the actual methods instead of these temporary ones.
     int addVector(const void *blob, labelType label, bool overwrite_allowed) override {
         updateIvfIndex = true;
-        return this->flatBuffer->addVector(blob, label, overwrite_allowed);
+        auto flat_result = this->flatBuffer->addVector(blob, label, overwrite_allowed);
+        if (this->flatBuffer->indexSize() > this->ivf_index_->nLists() * 2) transferToIvf();
+        return flat_result;
     }
     int deleteVector(labelType id) override {
         updateIvfIndex = true;
@@ -33,8 +34,8 @@ public:
     size_t indexLabelCount() const override { return this->flatBuffer->indexLabelCount(); }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override {
-        // Use flatbuffer if the dataset is small
-        if (this->flatBuffer->indexSize() < this->ivf_index_->nLists())
+        // Use flatbuffer if the dataset is too small to build a raft ivf index
+        if (this->flatBuffer->indexSize() < this->ivf_index_->nLists() && this->ivf_index_->indexSize() == 0)
             return this->flatBuffer->topKQuery(queryBlob, k, queryParams);
 
         if (updateIvfIndex)
@@ -83,8 +84,11 @@ public:
 
             offset += vectorBlocks[block_id]->getLength();
         }
+        this->ivf_index_->get_resources().sync_stream();
         this->ivf_index_->addVectorBatchGpuBuffer(vectorDataGpuBuffer.data_handle(),
                                                   labels_gpu.data_handle(), nVectors);
+        
+        this->flatBuffer->resetIndex();
         updateIvfIndex = false;
     }
 

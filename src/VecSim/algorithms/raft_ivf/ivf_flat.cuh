@@ -32,8 +32,9 @@ public:
                 raft::neighbors::ivf_flat::build<DataType, std::int64_t>(res_, *build_params_flat_,
                                                                          vector_data_gpu));
         }
-        raft::neighbors::ivf_flat::extend(res_, vector_data_gpu, std::make_optional(label_gpu),
+        raft::neighbors::ivf_flat::extend<DataType, std::int64_t>(res_, vector_data_gpu, std::make_optional(label_gpu),
                                           flat_index_.get());
+        this->counts_ += batch_size;
         return batch_size;
     }
 
@@ -46,7 +47,7 @@ public:
         auto distances_gpu =
             raft::make_device_matrix_view<float, std::int64_t>((float *)distances, batch_size, k);
 
-        raft::neighbors::ivf_flat::search(res_, *search_params_flat_, *flat_index_, vector_data_gpu,
+        raft::neighbors::ivf_flat::search<DataType, std::int64_t>(res_, *search_params_flat_, *flat_index_, vector_data_gpu,
                                           neighbors_gpu, distances_gpu);
     }
     VecSimIndexInfo info() const override {
@@ -59,7 +60,7 @@ public:
         info.algo = VecSimAlgo_RaftIVFFlat;
         return info;
     }
-    size_t nLists() override { build_params_flat_->n_lists; }
+    size_t nLists() override { return build_params_flat_->n_lists; }
 
 protected:
     std::unique_ptr<raftIvfFlatIndex_t> flat_index_;

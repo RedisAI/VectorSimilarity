@@ -104,9 +104,8 @@ int RaftIVFIndex::addVectorBatch(const void *vector_data, labelType *labels, siz
 
     this->addVectorBatchGpuBuffer(vector_data_gpu.data_handle(), label_gpu.data_handle(),
                                   batch_size, overwrite_allowed);
-    res_.sync_stream();
 
-    this->counts_ += batch_size;
+    res_.sync_stream();
     return batch_size;
 }
 
