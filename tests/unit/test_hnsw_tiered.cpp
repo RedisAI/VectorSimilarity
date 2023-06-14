@@ -3565,3 +3565,56 @@ TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
     // Cleanup.
     delete index_ctx;
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
+    // Create TieredHNSW index instance with a mock queue.
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto jobQ = JobQueue();
+    auto index_ctx = new IndexExtCtx();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, &jobQ, index_ctx);
+    auto allocator = tiered_index->getAllocator();
+
+    // Test initialization of the pendingSwapJobsThreshold value.
+    ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
+
+    // Insert three block of vectors directly to HNSW.
+    size_t n = DEFAULT_PENDING_SWAP_JOBS_THRESHOLD * 3;
+    std::srand(10); // create pseudo random generator with any arbitrary seed.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vector[dim];
+        for (size_t j = 0; j < dim; j++) {
+            vector[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+        }
+        VecSimIndex_AddVector(tiered_index->backendIndex, vector, i);
+    }
+
+    // Delete all the vectors and wait for the thread pool to finish running the repair jobs.
+    for (size_t i = 0; i < n; i++) {
+        tiered_index->deleteVector(i);
+    }
+    // Launch the BG threads loop that takes jobs from the queue and executes them.
+    bool run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(thread_main_loop, std::ref(jobQ), std::ref(run_thread));
+    }
+    thread_pool_join(jobQ, run_thread);
+
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
+    ASSERT_EQ(jobQ.size(), 0);
+
+    // Run the GC API call, expect that we will clean the defined threshold number of vectors
+    // each time we call the GC.
+    while (tiered_index->indexSize() > 0) {
+        size_t cur_size = tiered_index->indexSize();
+        VecSimTieredIndex_GC(tiered_index);
+        ASSERT_EQ(tiered_index->indexSize(), cur_size - DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
+    }
+
+    delete index_ctx;
+}

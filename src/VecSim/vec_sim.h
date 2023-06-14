@@ -176,7 +176,10 @@ VecSimInfoIterator *VecSimIndex_InfoIterator(VecSimIndex *index);
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                              VecSimQueryParams *queryParams);
 
-void VecSimTieredIndex_Clean(VecSimIndex *index);
+/**
+ * @brief Run async garbage collection for tiered async index.
+ */
+void VecSimTieredIndex_GC(VecSimIndex *index);
 
 /**
  * @brief Return True if heuristics says that it is better to use ad-hoc brute-force

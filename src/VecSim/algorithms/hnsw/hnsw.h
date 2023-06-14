@@ -210,6 +210,9 @@ protected:
     template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
 
+    // Do nothing - relevant for tiered index only.
+    void runGC() {};
+
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
               size_t random_seed = 100, size_t initial_pool_size = 1);
