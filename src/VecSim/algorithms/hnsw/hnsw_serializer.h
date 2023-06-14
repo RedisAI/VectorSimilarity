@@ -127,7 +127,6 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     readBinaryPOD(input, this->epsilon_);
 
     // Restore index meta-data
-    readBinaryPOD(input, this->element_data_size_);
     readBinaryPOD(input, this->element_graph_data_size_);
     readBinaryPOD(input, this->level_data_size_);
     readBinaryPOD(input, this->mult_);
@@ -162,13 +161,12 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
 
     // Get data blocks
     for (size_t i = 0; i < num_blocks; i++) {
-        this->vector_blocks.emplace_back(this->blockSize, this->element_data_size_,
-                                         this->allocator);
+        this->vector_blocks.emplace_back(this->blockSize, this->data_size, this->allocator);
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            char cur_vec[this->element_data_size_];
-            input.read(cur_vec, this->element_data_size_);
+            char cur_vec[this->data_size];
+            input.read(cur_vec, this->data_size);
             this->vector_blocks.back().addElement(cur_vec);
         }
     }
@@ -254,7 +252,6 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->epsilon_);
 
     // Save index meta-data
-    writeBinaryPOD(output, this->element_data_size_);
     writeBinaryPOD(output, this->element_graph_data_size_);
     writeBinaryPOD(output, this->level_data_size_);
     writeBinaryPOD(output, this->mult_);
@@ -286,7 +283,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         unsigned int block_len = block.getLength();
         writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            output.write(block.getElement(j), this->element_data_size_);
+            output.write(block.getElement(j), this->data_size);
         }
     }
 

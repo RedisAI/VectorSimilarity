@@ -37,7 +37,6 @@ public:
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    void increaseCapacity() override;
     vecsim_stl::vector<DistType> computeBlockScores(const DataBlock &block, const void *queryBlob,
                                                     void *timeoutCtx,
                                                     VecSimQueryResult_Code *rc) const;
@@ -93,6 +92,26 @@ protected:
     // Private internal function that implements generic single vector deletion.
     virtual void removeVector(idType id);
 
+    inline void growByBlock() {
+        assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
+        vectorBlocks.emplace_back(this->blockSize, this->data_size, this->allocator);
+        idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
+        idToLabelMapping.shrink_to_fit();
+    }
+
+    inline void shrinkByBlock() {
+        assert(indexCapacity() > 0); // should not be called when index is empty
+
+        // remove last block (should be empty)
+        assert(vectorBlocks.size() > 0 && vectorBlocks.back().getLength() == 0);
+        vectorBlocks.pop_back();
+
+        // remove a block size of labels.
+        assert(idToLabelMapping.size() >= this->blockSize);
+        idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
+        idToLabelMapping.shrink_to_fit();
+    }
+
     inline DataBlock &getVectorVectorBlock(idType id) {
         return vectorBlocks.at(id / this->blockSize);
     }
@@ -129,34 +148,34 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
     : VecSimIndexAbstract<DistType>(abstractInitParams), idToLabelMapping(this->allocator),
       vectorBlocks(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
-    this->idToLabelMapping.resize(params->initialCapacity);
+    // Round up the initial capacity to the nearest multiple of the block size.
+    size_t initialCapacity =
+        params->initialCapacity % this->blockSize
+            ? params->initialCapacity + this->blockSize - params->initialCapacity % this->blockSize
+            : params->initialCapacity;
+    this->idToLabelMapping.resize(initialCapacity);
+    this->vectorBlocks.reserve(initialCapacity / this->blockSize);
 }
 
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
 void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, labelType label) {
-    assert(indexCapacity() > indexSize());
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // Get the last vectors block to store the vector in (we assume that it's not full yet).
-    DataBlock &vectorBlock = this->vectorBlocks.back();
-    assert(&vectorBlock == &getVectorVectorBlock(id));
+    // Get the last vectors block to store the vector in.
+    // If `vectorBlocks` vector is empty or the last vector block is full, create a new block.
+    if (indexSize() > indexCapacity()) {
+        growByBlock();
+    } else if (id % this->blockSize == 0) {
+        this->vectorBlocks.emplace_back(this->blockSize, this->data_size, this->allocator);
+    }
 
     // add vector data to vectorBlock
+    DataBlock &vectorBlock = this->vectorBlocks.back();
+    assert(&vectorBlock == &getVectorVectorBlock(id));
     vectorBlock.addElement(vector_data);
-
-    // if idToLabelMapping is full,
-    // resize and align idToLabelMapping by blockSize
-    size_t idToLabelMapping_size = this->idToLabelMapping.size();
-
-    if (id >= idToLabelMapping_size) {
-        size_t last_block_vectors_count = id % this->blockSize;
-        this->idToLabelMapping.resize(
-            idToLabelMapping_size + this->blockSize - last_block_vectors_count, 0);
-        this->idToLabelMapping.shrink_to_fit();
-    }
 
     // add label to idToLabelMapping
     setVectorLabel(id, label);
@@ -200,17 +219,7 @@ void BruteForceIndex<DataType, DistType>::removeVector(idType id_to_delete) {
 
     // If the last vector block is emtpy.
     if (last_vector_block.getLength() == 0) {
-        this->vectorBlocks.pop_back();
-
-        // Resize and align the idToLabelMapping.
-        size_t idToLabel_size = idToLabelMapping.size();
-        // If the new size is smaller by at least one block comparing to the idToLabelMapping
-        // align to be a multiplication of block size and resize by one block.
-        if (this->count + this->blockSize <= idToLabel_size) {
-            size_t vector_to_align_count = idToLabel_size % this->blockSize;
-            this->idToLabelMapping.resize(idToLabel_size - this->blockSize - vector_to_align_count);
-            this->idToLabelMapping.shrink_to_fit();
-        }
+        shrinkByBlock();
     }
 }
 
@@ -221,13 +230,7 @@ size_t BruteForceIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
-    return this->blockSize * this->vectorBlocks.size();
-}
-
-template <typename DataType, typename DistType>
-void BruteForceIndex<DataType, DistType>::increaseCapacity() {
-    size_t vector_bytes_count = this->dim * VecSimType_sizeof(this->vecType);
-    this->vectorBlocks.emplace_back(this->blockSize, vector_bytes_count, this->allocator);
+    return this->idToLabelMapping.size();
 }
 
 // Compute the score for every vector in the block by using the given distance function.

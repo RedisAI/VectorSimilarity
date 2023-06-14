@@ -112,9 +112,6 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label) {
-    if (index->indexSize() == index->indexCapacity()) {
-        index->increaseCapacity();
-    }
     return index->addVectorWrapper(blob, label);
 }
 

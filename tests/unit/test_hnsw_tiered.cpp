@@ -309,9 +309,6 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         size_t dim = 4;
         TEST_DATA_T vector[dim];
         GenerateVector<TEST_DATA_T>(vector, dim);
-        if (my_index->backendIndex->indexCapacity() == my_index->backendIndex->indexSize()) {
-            my_index->backendIndex->increaseCapacity();
-        }
         my_index->backendIndex->addVector(vector, my_index->backendIndex->indexSize());
     };
 
@@ -1057,7 +1054,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
 
     // The last job should be repairing the single neighbor in level 1.
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, level_one.numLinks);
+    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, level_one.links[0]);
 
     delete index_ctx;
 }
