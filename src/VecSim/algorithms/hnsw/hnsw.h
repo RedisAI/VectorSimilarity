@@ -211,7 +211,7 @@ protected:
     void removeAndSwap(idType internalId);
 
     // Do nothing - relevant for tiered index only.
-    void runGC() {};
+    void runGC(){};
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,

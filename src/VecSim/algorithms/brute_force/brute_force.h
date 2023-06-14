@@ -116,7 +116,7 @@ protected:
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;
 
     // Do nothing - relevant for tiered index only.
-    void runGC() {};
+    void runGC(){};
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/brute_force/brute_force_friend_tests.h"
