@@ -6,7 +6,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
       max_elements_(params->initialCapacity), epsilon_(params->epsilon),
-      vector_blocks(allocator), meta_blocks(allocator), idToMetaData(allocator),
+      vector_blocks(this->allocator), meta_blocks(this->allocator), idToMetaData(this->allocator),
       visited_nodes_handler_pool(1, max_elements_, this->allocator),
       element_neighbors_locks_(max_elements_, this->allocator) {
 
@@ -135,7 +135,7 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // Restore index state
     readBinaryPOD(input, this->cur_element_count);
     readBinaryPOD(input, this->num_marked_deleted);
-    readBinaryPOD(input, this->maxlevel_);
+    readBinaryPOD(input, this->max_level_);
     readBinaryPOD(input, this->entrypoint_node_);
 }
 

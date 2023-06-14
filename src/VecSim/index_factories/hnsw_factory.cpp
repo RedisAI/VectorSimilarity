@@ -99,7 +99,6 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 }
 
 size_t EstimateElementSize(const HNSWParams *params) {
-    size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
     size_t element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * M * 2;

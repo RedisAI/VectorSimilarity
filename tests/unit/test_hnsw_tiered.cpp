@@ -1034,17 +1034,17 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     do {
         vec_id++;
         GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, vec_id, vec_id);
-        if (tiered_index->getHNSWIndex()->element_levels_[vec_id] > 0) {
+        if (tiered_index->getHNSWIndex()->getMetaDataByInternalId(vec_id)->toplevel > 0) {
             num_elements_with_multiple_levels++;
         }
     } while (num_elements_with_multiple_levels < 2);
 
     // Delete the last inserted vector, which is in level 1.
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(vec_id), 1);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->element_levels_[vec_id], 1);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getMetaDataByInternalId(vec_id)->toplevel, 1);
     // This should be an array of length 1.
-    auto *level_one_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(vec_id, 1);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getNodeNeighborsCount(level_one_neighbors), 1);
+    auto &level_one = tiered_index->getHNSWIndex()->getLevelData(vec_id, 1);
+    ASSERT_EQ(level_one.numLinks, 1);
 
     size_t num_repair_jobs = jobQ.size();
     // There should be at least two nodes to repair, the neighbors of next_id in levels 0 and 1
@@ -1057,7 +1057,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
 
     // The last job should be repairing the single neighbor in level 1.
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, *level_one_neighbors);
+    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, level_one.numLinks);
 
     delete index_ctx;
 }
@@ -1088,9 +1088,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
         // Choose the current entry point each time (it should be modified after the deletion).
         idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointState().first;
-        auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
         auto incoming_neighbors =
-            tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
+            tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep);
         ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1);
         ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
@@ -1101,18 +1100,14 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
         while (!jobQ.empty()) {
             idType repair_node_id = ((HNSWRepairJob *)(jobQ.front().job))->node_id;
             auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
-            auto orig_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
-                repair_node_id, repair_node_level);
 
             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
-            auto new_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
-                repair_node_id, repair_node_level);
-            size_t new_neighbors_count =
-                tiered_index->getHNSWIndex()->getNodeNeighborsCount(new_neighbors);
+            level_data &node_meta =
+                tiered_index->getHNSWIndex()->getLevelData(repair_node_id, repair_node_level);
             // This makes sure that the deleted node is no longer in the neighbors set of the
             // repaired node.
-            ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
-                        new_neighbors + new_neighbors_count);
+            ASSERT_TRUE(std::find(node_meta.links, node_meta.links + node_meta.numLinks, ep) ==
+                        node_meta.links + node_meta.numLinks);
             // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
             // still pending and avoid creating new jobs for nodes that already been repaired
             // as they were pointing to deleted elements.

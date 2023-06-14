@@ -412,9 +412,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // except for the bucket count of the labels_lookup hash table that is calculated separately.
     size_t size_total_data_per_element =
         hnswIndex->element_graph_data_size_ + hnswIndex->element_data_size_;
-    expected_mem_delta +=
-        (sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) + size_total_data_per_element + sizeof(std::mutex)) *
-        block_size;
+    expected_mem_delta += (sizeof(tag_t) + sizeof(labelType) + sizeof(elementFlags) +
+                           size_total_data_per_element + sizeof(std::mutex)) *
+                          block_size;
     expected_mem_delta +=
         (hnswIndex->label_lookup_.bucket_count() - prev_bucket_count) * sizeof(size_t);
     // New blocks allocated

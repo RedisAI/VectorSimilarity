@@ -1698,7 +1698,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
 
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
 
-            size_t elem_level = hnsw_index->element_levels_[i];
+            size_t elem_level = hnsw_index->getMetaDataByInternalId(i)->toplevel;
 
             size_t high_levels_memory =
                 elem_level ? size_links_higher_level * elem_level + allocations_overhead : 0;
@@ -1715,7 +1715,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         for (size_t level = 0; level <= hnsw_index->max_level_; level++) {
             size_t curr_visited_at_level_hist = 0;
             for (size_t id = 0; id < n; id++) {
-                if (hnsw_index->element_levels_[id] >= level) {
+                if (hnsw_index->getMetaDataByInternalId(id)->toplevel >= level) {
                     // we expect to generate a new incoming edges vector for each new node at each
                     // level.
                     incoming_edges_memory_overhead +=
@@ -1725,7 +1725,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
                     // The index of the vector at the current level counting backwards.
                     size_t curr_reverse_idx_at_level =
                         nodes_per_level_hist[level] - curr_visited_at_level_hist;
-                    auto incoming_edges = hnsw_index->getIncomingEdgesPtr(id, level);
+                    auto incoming_edges = hnsw_index->getLevelData(id, level).incoming_edges;
                     incoming_edges->shrink_to_fit();
                     size_t incoming_edges_count = incoming_edges->size();
 
@@ -2238,8 +2238,8 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
         vec[i] = 0.0;
     }
     for (size_t i = 0; i < n; i++) {
-        ASSERT_EQ(hnsw_index->getNodeNeighborsCount(hnsw_index->getNodeNeighborsAtLevel(i, 0)),
-                  n - 1);
+        level_data &cur = hnsw_index->getLevelData(i, 0);
+        ASSERT_EQ(cur.numLinks, n - 1);
     }
 
     // Mark element 0 as deleted, and repair all of its neighbors.
@@ -2248,8 +2248,8 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 1; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for element 0 as neighbors.
-        ASSERT_EQ(hnsw_index->getNodeNeighborsCount(hnsw_index->getNodeNeighborsAtLevel(i, 0)),
-                  n - 2);
+        level_data &cur = hnsw_index->getLevelData(i, 0);
+        ASSERT_EQ(cur.numLinks, n - 2);
     }
 
     // Mark elements 1 and 2 as deleted.
@@ -2258,8 +2258,8 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 3; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for elements 0-2 as neighbors.
-        ASSERT_EQ(hnsw_index->getNodeNeighborsCount(hnsw_index->getNodeNeighborsAtLevel(i, 0)),
-                  n - 4);
+        level_data &cur = hnsw_index->getLevelData(i, 0);
+        ASSERT_EQ(cur.numLinks, n - 4);
     }
 
     // For completeness, we also check index integrity.

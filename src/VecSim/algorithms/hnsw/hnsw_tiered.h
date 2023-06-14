@@ -317,8 +317,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
 
         // Go over all the deleted element links in every level and create repair jobs.
-        auto incoming_edges =
-            hnsw_index->safeCollectAllNodeIncomingNeighbors(id, hnsw_index->getElementTopLevel(id));
+        auto incoming_edges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id);
 
         // Protect the id->repair_jobs lookup while we update it with the new jobs.
         this->idToRepairJobsGuard.lock();
@@ -407,7 +406,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
         // graph scans will not occur, as they will try access the entry point's neighbors.
-        state = hnsw_index->storeNewElement(label);
+        state = hnsw_index->storeNewElement(label, blob);
         if (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -430,7 +429,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
         // graph scans will not occur, as they will try access the entry point's neighbors.
-        state = hnsw_index->storeNewElement(label);
+        state = hnsw_index->storeNewElement(label, blob);
         if (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }

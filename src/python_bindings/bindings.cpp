@@ -246,8 +246,8 @@ public:
 
     // @params is required only in V1.
     explicit PyHNSWLibIndex(const std::string &location) {
-        this->index = std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location),
-                                                   VecSimIndex_Free);
+        this->index =
+            std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
     }
 
     void setDefaultEf(size_t ef) {
