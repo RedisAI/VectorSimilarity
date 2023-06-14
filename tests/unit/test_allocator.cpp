@@ -327,8 +327,7 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
      * 2. A node in the labels_lookup has table (+ allocator's header). If rehashing occurred, we
      * account also for the diff in the buckets size (each bucket has sizeof(size_t) overhead).
      * 3. Account for allocating link lists for levels higher than 0, if exists.
-     * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1
-     due
+     * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1 due
      * to the insertion, and the fact that vec1 will re-select its neighbours.
      */
     expected_allocation_delta =
