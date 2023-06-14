@@ -65,7 +65,11 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 }
 
 size_t EstimateInitialSize(const HNSWParams *params) {
-    size_t blockSize = (params->blockSize) ? params->blockSize : DEFAULT_BLOCK_SIZE;
+    size_t blockSize = params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE;
+    size_t initial_cap =
+        params->initialCapacity % blockSize == 0
+            ? params->initialCapacity
+            : params->initialCapacity + blockSize - params->initialCapacity % blockSize;
 
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
@@ -80,19 +84,18 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     est += sizeof(VisitedNodesHandler) + allocations_overhead;
     // The visited nodes pool inner vector buffer (contains one pointer).
     est += sizeof(void *) + allocations_overhead;
-    est += sizeof(tag_t) * params->initialCapacity + allocations_overhead; // visited nodes array
+    est += sizeof(tag_t) * initial_cap + allocations_overhead; // visited nodes array
 
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
-    if (params->initialCapacity) {
-        size_t num_blocks = ceil((float)params->initialCapacity / (float)blockSize);
-        est += sizeof(DataBlock) * num_blocks + sizeof(size_t); // data blocks
-        est += sizeof(DataBlock) * num_blocks + sizeof(size_t); // meta blocks
-        est += (sizeof(labelType) + sizeof(elementFlags)) * params->initialCapacity +
-               sizeof(size_t); // idToMetaData
-        est += sizeof(size_t) * params->initialCapacity +
-               allocations_overhead; // Labels lookup hash table buckets.
-        est +=
-            sizeof(std::mutex) * params->initialCapacity + allocations_overhead; // lock per vector
+    if (initial_cap) {
+        size_t num_blocks = initial_cap / blockSize; // should be divisible by block size
+        est += sizeof(DataBlock) * num_blocks + allocations_overhead;          // data blocks
+        est += sizeof(DataBlock) * num_blocks + allocations_overhead;          // meta blocks
+        est += sizeof(element_meta_data) * initial_cap + allocations_overhead; // idToMetaData
+        // Labels lookup hash table buckets.
+        est += sizeof(size_t) * initial_cap + allocations_overhead;
+        // lock per vector
+        est += sizeof(std::mutex) * initial_cap + allocations_overhead;
     }
 
     return est;

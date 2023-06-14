@@ -129,19 +129,14 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex) {
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
-    // The size and the capacity should be equal.
-    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
-    ASSERT_EQ(hnswIndex->indexCapacity(), VecSimIndex_IndexSize(index));
+
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+    // The size (+extra) and the capacity should be equal.
+    ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
     // The capacity shouldn't be changed.
-    ASSERT_EQ(hnswIndex->indexCapacity(), n);
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap);
 
-    // Add another vector to exceed the initial capacity.
-    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
-
-    // The capacity should be now aligned with the block size.
-    // bs = 3, size = 11 -> capacity = 12
-    // New capacity = initial capacity + blockSize - initial capacity % blockSize.
-    ASSERT_EQ(hnswIndex->indexCapacity(), n + bs - n % bs);
     VecSimIndex_Free(index);
 }
 
@@ -151,21 +146,25 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex_largeInitialCapacity) {
     size_t n = 10;
     size_t bs = 3;
 
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
+    size_t curr_capacity = index->indexCapacity();
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(curr_capacity, n + extra_cap);
 
     // add up to blocksize + 1 = 3 + 1 = 4
     for (size_t i = 0; i < bs + 1; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
 
-    // The capacity shouldn't change, should remain n.
-    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
-    ASSERT_EQ(hnswIndex->indexCapacity(), n);
+    // The capacity shouldn't change, should remain n + extra_cap.
+    ASSERT_EQ(index->indexCapacity(), curr_capacity);
 
     // Delete last vector, to get size % block_size == 0. size = 3
     VecSimIndex_DeleteVector(index, bs);
@@ -174,9 +173,9 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex_largeInitialCapacity) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), bs);
 
     // New capacity = initial capacity - block_size - number_of_vectors_to_align =
-    // 10  - 3 - 10 % 3 (1) = 6
-    size_t curr_capacity = hnswIndex->indexCapacity();
-    ASSERT_EQ(curr_capacity, n - bs - n % bs);
+    // 10 + 2 - 3 = 9
+    curr_capacity = index->indexCapacity();
+    ASSERT_EQ(curr_capacity, n + extra_cap - bs);
 
     // Delete all the vectors to decrease capacity by another bs.
     size_t i = 0;
@@ -184,20 +183,22 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex_largeInitialCapacity) {
         VecSimIndex_DeleteVector(index, i);
         ++i;
     }
-    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
-    // Add and delete a vector to achieve:
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap - 2 * bs);
+    // Add and delete a vector twice to achieve:
     // size % block_size == 0 && size + bs <= capacity(3).
     // the capacity should be resized to zero
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
+    VecSimIndex_DeleteVector(index, 0);
+    ASSERT_EQ(index->indexCapacity(), 0);
 
     // Do it again. This time after adding a vector the capacity is increased by bs.
     // Upon deletion it will be resized to zero again.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
-    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
+    ASSERT_EQ(index->indexCapacity(), bs);
     VecSimIndex_DeleteVector(index, 0);
-    ASSERT_EQ(hnswIndex->indexCapacity(), 0);
+    ASSERT_EQ(index->indexCapacity(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -208,37 +209,37 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex_largerBlockSize) {
     size_t n = 4;
     size_t bs = 6;
 
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    size_t curr_capacity = index->indexCapacity();
+    ASSERT_EQ(curr_capacity, n + extra_cap);
 
     // Add up to initial capacity.
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
 
-    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
     // The capacity shouldn't change.
-    ASSERT_EQ(hnswIndex->indexCapacity(), n);
+    ASSERT_EQ(index->indexCapacity(), curr_capacity);
 
-    // Size equals capacity.
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-
-    // Add another vector - > the capacity is increased to a multiplication of block_size.
-    GenerateAndAddVector<TEST_DATA_T>(index, dim, n);
-    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
-
-    // Size increased by 1.
-    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+    // The capacity should be a multiplication of block_size.
+    ASSERT_EQ(index->indexCapacity(), bs);
 
     // Delete random vector.
     VecSimIndex_DeleteVector(index, 1);
 
     // The capacity should remain the same.
-    ASSERT_EQ(hnswIndex->indexCapacity(), bs);
+    ASSERT_EQ(index->indexCapacity(), bs);
+
+    // Size decreased by 1.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n - 1);
 
     VecSimIndex_Free(index);
 }
@@ -249,12 +250,17 @@ TYPED_TEST(HNSWTest, emptyIndex) {
     size_t n = 20;
     size_t bs = 6;
 
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs};
 
     VecSimIndex *index = this->CreateNewIndex(params);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    size_t curr_capacity = index->indexCapacity();
+    ASSERT_EQ(curr_capacity, n + extra_cap);
 
     // Try to remove from an empty index - should fail because label doesn't exist.
     VecSimIndex_DeleteVector(index, 0);
@@ -264,11 +270,11 @@ TYPED_TEST(HNSWTest, emptyIndex) {
 
     // Try to remove it.
     VecSimIndex_DeleteVector(index, 1);
-    // The capacity should change to be aligned with the block size.
 
-    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnswIndex = this->CastToHNSW(index);
-    size_t new_capacity = hnswIndex->indexCapacity();
-    ASSERT_EQ(new_capacity, n - n % bs - bs);
+    // The capacity should be aligned with the block size.
+    size_t new_capacity = index->indexCapacity();
+    ASSERT_EQ(new_capacity, curr_capacity - bs);
+    ASSERT_EQ(new_capacity % bs, 0);
 
     // Size equals 0.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
@@ -276,7 +282,7 @@ TYPED_TEST(HNSWTest, emptyIndex) {
     // Try to remove it again.
     // The capacity should remain unchanged, as we are trying to delete a label that doesn't exist.
     VecSimIndex_DeleteVector(index, 1);
-    ASSERT_EQ(hnswIndex->indexCapacity(), new_capacity);
+    ASSERT_EQ(index->indexCapacity(), new_capacity);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
@@ -1683,9 +1689,8 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         // Calculate expected allocations overhead after adding n vectors
         size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
-        // meta data per node at higher levels (level0 meta data was already allcoated at index
-        // construction)
-        size_t size_links_higher_level = sizeof(linkListSize) + M * sizeof(idType) + sizeof(void *);
+        // meta data per node per level
+        size_t size_links_per_level = hnsw_index->level_data_size_;
 
         size_t size_label_lookup_node = getLabelsLookupNodeSize();
 
@@ -1701,7 +1706,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
             size_t elem_level = hnsw_index->getMetaDataByInternalId(i)->toplevel;
 
             size_t high_levels_memory =
-                elem_level ? size_links_higher_level * elem_level + allocations_overhead : 0;
+                elem_level ? size_links_per_level * elem_level + allocations_overhead : 0;
             metadata_overhead_estimation += size_label_lookup_node + high_levels_memory;
             for (size_t j = 0; j <= elem_level; j++) {
                 nodes_per_level_hist[j] += 1;
@@ -1764,6 +1769,12 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         }
 
         size_t total_estimation = metadata_overhead_estimation + incoming_edges_memory_overhead;
+        // Additional allocations for the data blocks (vector+meta).
+        total_estimation += hnsw_index->vector_blocks.size() *
+                            (hnsw_index->blockSize *
+                                 (hnsw_index->element_graph_data_size_ + hnsw_index->data_size) +
+                             2 * allocations_overhead);
+
         size_t add_vectors_memory_delta = index->getAllocationSize() - initial_memory;
 
         ASSERT_EQ(total_estimation, add_vectors_memory_delta);
