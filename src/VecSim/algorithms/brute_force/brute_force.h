@@ -164,7 +164,6 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // Get the last vectors block to store the vector in.
     // If `vectorBlocks` vector is empty or the last vector block is full, create a new block.
     if (indexSize() > indexCapacity()) {
         growByBlock();
@@ -172,9 +171,11 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
         this->vectorBlocks.emplace_back(this->blockSize, this->data_size, this->allocator);
     }
 
-    // add vector data to vectorBlock
+    // Get the last vectors block to store the vector in.
     DataBlock &vectorBlock = this->vectorBlocks.back();
     assert(&vectorBlock == &getVectorVectorBlock(id));
+
+    // add vector data to vectorBlock
     vectorBlock.addElement(vector_data);
 
     // add label to idToLabelMapping
