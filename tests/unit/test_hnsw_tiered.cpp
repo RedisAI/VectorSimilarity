@@ -172,28 +172,23 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     // Estimate memory delta for filling up the first block and adding another block.
     size_t estimation = VecSimIndex_EstimateElementSize(&params) * bs;
 
-    size_t memory_before = index->getAllocationSize();
-
-    // Note we are adding vectors with ascending values. This causes the numbers of
-    // incoming edges, which are not taking into account in EstimateElementSize,
-    // to be zero
-    for (size_t i = 0; i < bs; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + bs, i + bs);
-        thread_iteration(jobQ);
-    }
-
-    size_t delta = index->getAllocationSize() - memory_before;
+    size_t before = index->getAllocationSize();
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + n, bs + n);
+    thread_iteration(jobQ);
+    size_t actual = index->getAllocationSize() - before;
 
     // Flat index should be empty, hence the index size includes only hnsw size.
     ASSERT_EQ(index->indexSize(), hnsw_index->indexSize());
-    // We added 2 * bs vectors
-    ASSERT_EQ(index->indexSize(), 2 * bs);
-    // Which is the current maximum capacity.
-    ASSERT_EQ(index->indexSize(), index->indexCapacity());
-    ASSERT_EQ(index->indexSize(), hnsw_index->indexCapacity());
+    ASSERT_EQ(index->indexCapacity(), hnsw_index->indexCapacity());
+    // We added n + 1 vectors
+    ASSERT_EQ(index->indexSize(), n + 1);
+    // We should have 2 blocks now
+    ASSERT_EQ(index->indexCapacity(), 2 * bs);
 
-    ASSERT_GE(estimation * 1.02, delta);
-    ASSERT_LE(estimation * 0.98, delta);
+    // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
+    // of the estimation.
+    ASSERT_GE(estimation, actual);
+    ASSERT_LE(estimation, actual * 1.05);
 
     delete index_ctx;
 }
@@ -1813,6 +1808,8 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
                                ->label_lookup_.reserve(0);
 
     size_t initial_mem = tiered_index->getAllocationSize();
+    size_t initial_mem_backend = tiered_index->backendIndex->getAllocationSize();
+    size_t initial_mem_frontend = tiered_index->frontendIndex->getAllocationSize();
 
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
@@ -1845,9 +1842,12 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // started inserting vectors.
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
-    // Call this just to trigger an update of the memory context.
-    EXPECT_EQ(tiered_index->deleteVector(0), 0);
+    // Manually shrink the vectors so that memory would be as it was before we started inserting
+    tiered_index->getHNSWIndex()->vector_blocks.shrink_to_fit();
+    tiered_index->getHNSWIndex()->meta_blocks.shrink_to_fit();
 
+    EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
+    EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
     EXPECT_EQ(tiered_index->getAllocationSize(), initial_mem);
 
     delete index_ctx;
