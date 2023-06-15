@@ -44,7 +44,7 @@ public:
     inline size_t getLength() const { return length; }
 
 private:
-    // Element size in bytes (dim * sizeof(data_type))
+    // Element size in bytes
     size_t element_bytes_count;
     // Current block length.
     size_t length;

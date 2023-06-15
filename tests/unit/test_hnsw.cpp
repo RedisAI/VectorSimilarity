@@ -115,7 +115,7 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
 /**** resizing cases ****/
 
 // Add up to capacity.
-TYPED_TEST(HNSWTest, resizeNAlignIndex) {
+TYPED_TEST(HNSWTest, resizeIndex) {
     size_t dim = 4;
     size_t n = 10;
     size_t bs = 3;
@@ -141,7 +141,7 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex) {
 }
 
 // Case 1: initial capacity is larger than block size, and it is not aligned.
-TYPED_TEST(HNSWTest, resizeNAlignIndex_largeInitialCapacity) {
+TYPED_TEST(HNSWTest, resizeIndex_largeInitialCapacity) {
     size_t dim = 4;
     size_t n = 10;
     size_t bs = 3;
@@ -204,7 +204,7 @@ TYPED_TEST(HNSWTest, resizeNAlignIndex_largeInitialCapacity) {
 }
 
 // Case 2: initial capacity is smaller than block_size.
-TYPED_TEST(HNSWTest, resizeNAlignIndex_largerBlockSize) {
+TYPED_TEST(HNSWTest, resizeIndex_largerBlockSize) {
     size_t dim = 4;
     size_t n = 4;
     size_t bs = 6;
@@ -1588,6 +1588,9 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     size_t bs = 256;
     size_t M = 64;
 
+    // Initial capacity is rounded up to the block size.
+    size_t extra_cap = n % bs == 0 ? 0 : bs - n % bs;
+
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = bs, .M = M};
 
@@ -1601,7 +1604,7 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
     estimation +=
-        (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - (n + extra_cap)) * sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 
@@ -1616,7 +1619,9 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
 
     // Estimate the memory delta of adding a single vector that requires a full new block.
     estimation = EstimateElementSize(params) * bs;
-    actual = GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, bs);
+    size_t before = index->getAllocationSize();
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, bs);
+    actual = index->getAllocationSize() - before;
 
     // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
     // of the estimation.
