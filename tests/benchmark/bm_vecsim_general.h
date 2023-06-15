@@ -49,7 +49,7 @@ protected:
     static tiered_index_mock::JobQueue jobQ;
     static const size_t thread_pool_size;
     static bool run_threads;
-    static tiered_index_mock::IndexExtCtx ctx;
+    static tiered_index_mock::IndexExtCtx *ctx;
 
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
@@ -84,7 +84,6 @@ protected:
 
     // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
-        //        return std::string(getenv("ROOT")) + "/" + file_name;
-        return std::string("/home/alon/Code/VectorSimilarity") + "/" + file_name;
+        return std::string(getenv("ROOT")) + "/" + file_name;
     }
 };

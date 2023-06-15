@@ -58,8 +58,10 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
         tiered_index_mock::thread_pool_join(BM_VecSimGeneral::jobQ, BM_VecSimGeneral::run_threads);
 
         /* Note that VecSimAlgo_HNSW will be destroyed as part of the tiered index release, and
-         * the VecSimAlgo_Tiered index ptr will be deleted when its (global) ctx object is
-         * destroyed */
+         * the VecSimAlgo_Tiered index ptr will be deleted when ctx object is destroyed.
+         * Also, we must hold the allocator so it won't deallocate itself */
+        auto allocator = BM_VecSimGeneral::ctx->index_strong_ref->getAllocator();
+        delete BM_VecSimGeneral::ctx;
     }
 }
 
@@ -105,8 +107,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     // Create tiered index from the loaded HNSW index.
     auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
+    BM_VecSimGeneral::ctx = new tiered_index_mock::IndexExtCtx();
     TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = &BM_VecSimGeneral::ctx,
+                                       .jobQueueCtx = BM_VecSimGeneral::ctx,
                                        .submitCb = tiered_index_mock::submit_callback,
                                        .flatBufferLimit = block_size,
                                        .primaryIndexParams = &primary_index_params,
@@ -114,13 +117,13 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     auto *tiered_index =
         TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
-    BM_VecSimGeneral::ctx.index_strong_ref.reset(tiered_index);
+    BM_VecSimGeneral::ctx->index_strong_ref.reset(tiered_index);
 
     indices.push_back(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     run_threads = true;
-    for (size_t i = 0; i < thread_pool_size; i++) {
+    for (size_t i = 0; i < tiered_index_mock::THREAD_POOL_SIZE; i++) {
         tiered_index_mock::thread_pool.emplace_back(tiered_index_mock::thread_main_loop,
                                                     std::ref(BM_VecSimGeneral::jobQ),
                                                     std::ref(run_threads), i);
