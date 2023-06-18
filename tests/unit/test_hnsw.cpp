@@ -1603,8 +1603,8 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    estimation +=
-        (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - (n + extra_cap)) * sizeof(size_t);
+    estimation += (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - (n + extra_cap)) *
+                  sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 

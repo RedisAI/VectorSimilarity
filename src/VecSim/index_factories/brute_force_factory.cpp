@@ -84,9 +84,15 @@ size_t EstimateInitialSize(const BFParams *params) {
     // Parameters related part.
 
     if (params->initialCapacity) {
-        est += params->initialCapacity * sizeof(labelType) + allocations_overhead;
-    }
+        size_t aligned_cap = params->initialCapacity % params->blockSize
+                                 ? params->initialCapacity -
+                                       params->initialCapacity % params->blockSize +
+                                       params->blockSize
+                                 : params->initialCapacity;
+        est += aligned_cap * sizeof(labelType) + allocations_overhead;
 
+        est += sizeof(DataBlock) * aligned_cap / params->blockSize + allocations_overhead;
+    }
     return est;
 }
 

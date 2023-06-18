@@ -878,8 +878,8 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    estimation +=
-        (this->CastToHNSW_Multi(index)->label_lookup_.bucket_count() - (n + extra_cap)) * sizeof(size_t);
+    estimation += (this->CastToHNSW_Multi(index)->label_lookup_.bucket_count() - (n + extra_cap)) *
+                  sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
 
@@ -982,7 +982,7 @@ TYPED_TEST(HNSWMultiTest, resize_index_largeInitialCapacity) {
         VecSimIndex_DeleteVector(index, i);
         ++i;
     }
-    ASSERT_EQ(index->indexCapacity(),n + extra_cap - 2 * bs);
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap - 2 * bs);
     // Add and delete a vector twice to achieve:
     // size % block_size == 0 && size + bs <= capacity(3).
     // the capacity should be resized to zero

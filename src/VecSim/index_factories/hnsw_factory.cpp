@@ -128,8 +128,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
 
     // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
     // labels lookup hash map.
-    size_t size_meta_data =
-        sizeof(tag_t) + sizeof(element_meta_data) + size_label_lookup_node;
+    size_t size_meta_data = sizeof(tag_t) + sizeof(element_meta_data) + size_label_lookup_node;
     size_t size_lock = sizeof(std::mutex);
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:

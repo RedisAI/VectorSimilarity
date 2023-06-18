@@ -154,8 +154,6 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     VecSimIndex_DeleteVector(bfIndex, 2);
     int deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
     expectedAllocationDelta -=
-        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -=
         sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead; // Free the vector in the vector block
     expectedAllocationDelta -= sizeof(labelType);             // resize idToLabelMapping
     expectedAllocationDelta -=
