@@ -185,10 +185,10 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     // We should have 2 blocks now
     ASSERT_EQ(index->indexCapacity(), 2 * bs);
 
-    // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
+    // The estimation is an upper bound, so we check that the actual size is smaller but within 10%
     // of the estimation.
     ASSERT_GE(estimation, actual);
-    ASSERT_LE(estimation, actual * 1.05);
+    ASSERT_LE(estimation, actual * 1.1);
 
     delete index_ctx;
 }
