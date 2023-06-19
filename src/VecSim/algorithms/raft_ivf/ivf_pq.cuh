@@ -50,6 +50,7 @@ public:
         default:
             assert(!"Unexpected codebook kind value");
         }
+        search_params_pq_->n_probes = params_pq->nProbes;
         search_params_pq_->preferred_shmem_carveout = params_pq->preferredShmemCarveout;
     }
 
@@ -67,7 +68,6 @@ public:
         }
         raft::neighbors::ivf_pq::extend<DataType, std::int64_t>(res_, vector_data_gpu, std::make_optional(label_gpu),
                                         pq_index_.get());
-        this->counts_ += batch_size;
         return batch_size;
     }
     void search(const void *vector_data, void *neighbors, void *distances, size_t batch_size,
@@ -87,7 +87,7 @@ public:
         info.raftIvfPQInfo.dim = this->dim;
         info.raftIvfPQInfo.type = this->vecType;
         info.raftIvfPQInfo.metric = this->metric;
-        info.raftIvfPQInfo.indexSize = this->counts_;
+        info.raftIvfPQInfo.indexSize = this->indexSize();
         info.raftIvfPQInfo.nLists = build_params_pq_->n_lists;
         info.raftIvfPQInfo.pqBits = build_params_pq_->pq_bits;
         info.raftIvfPQInfo.pqDim = build_params_pq_->pq_dim;
@@ -95,7 +95,7 @@ public:
         return info;
     }
     size_t nLists() override { return build_params_pq_->n_lists; }
-
+    size_t indexSize() const override { return pq_index_.get() == nullptr ? 0 : pq_index_->size(); }
 protected:
     std::unique_ptr<raftIvfPQIndex_t> pq_index_;
     // Build params are kept as class member because the build step on Raft side happens on

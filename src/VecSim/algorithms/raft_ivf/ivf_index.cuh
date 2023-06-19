@@ -32,8 +32,8 @@ public:
     template <typename T>
     RaftIVFIndex(const T *params, std::shared_ptr<VecSimAllocator> allocator)
         : VecSimIndexAbstract<float>(allocator, params->dim, params->type, params->metric,
-                                     params->blockSize, params->multi),
-          counts_(0) {}
+                                     params->blockSize, params->multi)
+          {}
     int addVector(const void *vector_data, labelType label,
                   bool overwrite_allowed = true) override {
         return this->addVectorBatch(vector_data, &label, 1, overwrite_allowed);
@@ -50,7 +50,6 @@ public:
         assert(!"getDistanceFrom not implemented");
         return INVALID_SCORE;
     }
-    size_t indexSize() const override { return counts_; }
     size_t indexCapacity() const override {
         // Not implemented
         return 0;
@@ -59,7 +58,7 @@ public:
         // Not implemented
     }
     inline size_t indexLabelCount() const override {
-        return counts_; // TODO: Return unique counts
+        return this->indexSize(); // TODO: Return unique counts
     }
     VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
                                      VecSimQueryParams *queryParams) override;
@@ -84,7 +83,6 @@ protected:
     virtual void search(const void *vector_data, void *neighbors, void *distances,
                         size_t batch_size, size_t k) = 0;
     raft::device_resources res_;
-    idType counts_;
 };
 
 int RaftIVFIndex::addVectorBatch(const void *vector_data, labelType *labels, size_t batch_size,
@@ -113,12 +111,13 @@ int RaftIVFIndex::addVectorBatch(const void *vector_data, labelType *labels, siz
 VecSimQueryResult_List RaftIVFIndex::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) {
     VecSimQueryResult_List result_list = {0};
-    if (this->counts_ == 0) {
+    auto nVectors = this->indexSize();
+    if (nVectors == 0) {
         result_list.results = array_new<VecSimQueryResult>(0);
         return result_list;
     }
-    if (k > this->counts_)
-        k = this->counts_; // Safeguard K
+    if (k > nVectors)
+        k = nVectors; // Safeguard K
     auto vector_data_gpu =
         raft::make_device_matrix<DataType, std::uint32_t>(res_, queryParams->batchSize, this->dim);
     auto neighbors_gpu =

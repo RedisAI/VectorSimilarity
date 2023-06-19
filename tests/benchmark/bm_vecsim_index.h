@@ -113,6 +113,7 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     params_tiered_flat.flatParams = {.dim = dim,
                                      .metric = VecSimMetric_L2,
                                      .nLists = 1024,
+                                     .adaptiveCenters = true,
                                      .kmeans_nIters = 20,
                                      .kmeans_trainsetFraction = 0.5,
                                      .nProbes = 20};

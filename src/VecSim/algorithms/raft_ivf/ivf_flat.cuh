@@ -34,7 +34,6 @@ public:
         }
         raft::neighbors::ivf_flat::extend<DataType, std::int64_t>(res_, vector_data_gpu, std::make_optional(label_gpu),
                                           flat_index_.get());
-        this->counts_ += batch_size;
         return batch_size;
     }
 
@@ -55,12 +54,13 @@ public:
         info.raftIvfFlatInfo.dim = this->dim;
         info.raftIvfFlatInfo.type = this->vecType;
         info.raftIvfFlatInfo.metric = this->metric;
-        info.raftIvfFlatInfo.indexSize = this->counts_;
+        info.raftIvfFlatInfo.indexSize = this->indexSize();
         info.raftIvfFlatInfo.nLists = build_params_flat_->n_lists;
         info.algo = VecSimAlgo_RaftIVFFlat;
         return info;
     }
     size_t nLists() override { return build_params_flat_->n_lists; }
+    size_t indexSize() const override { return flat_index_.get() == nullptr ? 0 : flat_index_->size(); }
 
 protected:
     std::unique_ptr<raftIvfFlatIndex_t> flat_index_;
