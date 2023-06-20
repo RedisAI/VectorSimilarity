@@ -221,6 +221,11 @@ public:
     virtual inline void setLastSearchMode(VecSearchMode mode) = 0;
 
     /**
+     * @brief Run async garbage collection for tiered async index.
+     */
+    virtual void runGC() = 0;
+
+    /**
      * @brief Allow 3rd party timeout callback to be used for limiting runtime of a query.
      *
      * @param callback timeoutCallbackFunction function. should get void* and return int.
