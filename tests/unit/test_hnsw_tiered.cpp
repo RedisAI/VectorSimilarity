@@ -1757,13 +1757,10 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             for (auto &it : tiered_index->idToSwapJob) {
                 EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
             }
-            // Delete another vector to trigger swapping of vectors that hadn't been swapped yet.
-            // If the number of swap jobs is lower than the threshold, none of them are going to be
-            // executed, but otherwise, ALL of them should be executed.
-            size_t pending_swap_jobs = tiered_index->idToSwapJob.size();
-            EXPECT_EQ(tiered_index->deleteVector(0), 0);
-            ASSERT_LE(tiered_index->idToSwapJob.size(), maxSwapJobs);
-            ASSERT_EQ(tiered_index->idToSwapJob.size(), tiered_index->indexSize());
+            // Trigger swapping of vectors that hadn't been swapped yet.
+            tiered_index->executeReadySwapJobs();
+            ASSERT_LE(tiered_index->idToSwapJob.size(), 0);
+            ASSERT_EQ(tiered_index->indexSize(), 0);
 
             delete index_ctx;
         }
