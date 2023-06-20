@@ -227,4 +227,6 @@ protected:
 
         return this->newBatchIterator(query_to_send, queryParams);
     }
+
+    void runGC() override {} // Do nothing, relevant for tiered index only.
 };

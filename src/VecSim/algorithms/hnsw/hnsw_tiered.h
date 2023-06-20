@@ -716,10 +716,11 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
-    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute every
-    // job for which all of its pending repair jobs were executed (otherwise finish and return).
+    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute a
+    // batch of jobs for which all of its pending repair jobs were executed (otherwise finish and
+    // return).
     if (readySwapJobs >= this->pendingSwapJobsThreshold) {
-        this->executeReadySwapJobs();
+        this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
     }
 
     // Insert job to the queue and signal the workers' updater.
@@ -768,7 +769,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         // Apply ready swap jobs if number of deleted vectors reached the threshold
         // (under exclusive lock of the main index guard).
         if (readySwapJobs >= this->pendingSwapJobsThreshold) {
-            this->executeReadySwapJobs();
+            this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
         }
     } else {
         // delete in place.

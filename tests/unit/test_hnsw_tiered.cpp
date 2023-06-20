@@ -1685,19 +1685,10 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         for (auto &it : tiered_index->idToSwapJob) {
             EXPECT_EQ(it.second->pending_repair_jobs_counter.load(), 0);
         }
-        // Delete another vector to trigger swapping of vectors that hadn't been swapped yet.
-        // If the number of swap jobs is lower than the threshold, none of them are going to be
-        // executed, but otherwise, ALL of them should be executed.
-        size_t pending_swap_jobs = tiered_index->idToSwapJob.size();
-        EXPECT_EQ(tiered_index->deleteVector(0), 0);
-        if (pending_swap_jobs > maxSwapJobs) {
-            ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
-            EXPECT_EQ(tiered_index->indexSize(), 0);
-        } else {
-            ASSERT_LE(tiered_index->idToSwapJob.size(), maxSwapJobs);
-            ASSERT_EQ(tiered_index->idToSwapJob.size(), tiered_index->indexSize());
-        }
-        EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), tiered_index->indexSize());
+        // Trigger swapping of vectors that hadn't been swapped yet.
+        tiered_index->executeReadySwapJobs();
+        ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+        EXPECT_EQ(tiered_index->indexSize(), 0);
 
         delete index_ctx;
     }
@@ -1840,14 +1831,20 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     thread_iteration(jobQ);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
     // Insert another vector and remove it. expect it to have no neighbors.
-    // Threshold for is set to be >= 1, so now we expect that all the deleted vectors (which has no
-    // pending repair jobs) will be swapped.
+    // Threshold for is set to be 1, so now we expect that a single deleted vector (which has no
+    // pending repair jobs) will be swapped - and 2 will remain.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
     EXPECT_EQ(tiered_index->deleteVector(2), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
+    EXPECT_EQ(tiered_index->indexSize(), 2);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    EXPECT_EQ(jobQ.size(), 0);
+
+    // Now swap the rest of the jobs.
+    tiered_index->executeReadySwapJobs();
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 0);
     EXPECT_EQ(tiered_index->indexSize(), 0);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
-    EXPECT_EQ(jobQ.size(), 0);
 
     // Reserve manually 0 buckets in the hash tables so that memory would be as it was before we
     // started inserting vectors.
