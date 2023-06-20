@@ -65,7 +65,7 @@ struct AddVectorCtx {
     int currMaxLevel;
 };
 
-#pragma pack(2)
+//#pragma pack(2)
 
 struct level_data {
     linkListSize numLinks;
@@ -104,7 +104,7 @@ struct element_graph_data {
     }
 };
 
-#pragma pack() // restore default packing
+//#pragma pack() // restore default packing
 
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
