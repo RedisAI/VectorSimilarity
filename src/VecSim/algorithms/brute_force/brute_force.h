@@ -97,6 +97,7 @@ protected:
         vectorBlocks.emplace_back(this->blockSize, this->data_size, this->allocator);
         idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
         idToLabelMapping.shrink_to_fit();
+        resizeLabelLookup(idToLabelMapping.size());
     }
 
     inline void shrinkByBlock() {
@@ -110,6 +111,7 @@ protected:
         assert(idToLabelMapping.size() >= this->blockSize);
         idToLabelMapping.resize(idToLabelMapping.size() - this->blockSize);
         idToLabelMapping.shrink_to_fit();
+        resizeLabelLookup(idToLabelMapping.size());
     }
 
     inline DataBlock &getVectorVectorBlock(idType id) {
@@ -130,6 +132,7 @@ protected:
     // inline label to id setters that need to be implemented by derived class
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
+    virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
 
     virtual inline VecSimBatchIterator *
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const = 0;

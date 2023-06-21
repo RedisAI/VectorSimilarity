@@ -71,6 +71,10 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
+    inline void resizeLabelLookup(size_t new_max_elements) override {
+        labelToIdLookup.reserve(new_max_elements);
+    }
+
     inline bool isLabelExists(labelType label) override {
         return labelToIdLookup.find(label) != labelToIdLookup.end();
     }

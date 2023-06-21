@@ -97,6 +97,7 @@ size_t EstimateInitialSize(const BFParams *params) {
 }
 
 size_t EstimateElementSize(const BFParams *params) {
-    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
+    // counting the vector size + idToLabel entry + LabelToIds entry (map reservation)
+    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType) + sizeof(void *);
 }
 }; // namespace BruteForceFactory

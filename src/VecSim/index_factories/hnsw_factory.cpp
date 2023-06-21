@@ -109,26 +109,13 @@ size_t EstimateElementSize(const HNSWParams *params) {
     size_t size_total_data_per_element =
         element_graph_data_size_ + params->dim * VecSimType_sizeof(params->type);
 
-    size_t size_label_lookup_node;
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
-    if (params->multi) {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map,
-        // and a new element to the vector in the map. These two allocations both results in a new
-        // allocation and therefore another VecSimAllocator::allocation_header_size.
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>::value_type) +
-            sizeof(size_t);
-    } else {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
-        // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) + sizeof(size_t);
-    }
+    // when reserving space for new labels in the lookup hash table, each entry is a pointer to a
+    // label node (bucket).
+    size_t size_label_lookup_entry = sizeof(void *);
 
     // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
     // labels lookup hash map.
-    size_t size_meta_data = sizeof(tag_t) + sizeof(element_meta_data) + size_label_lookup_node;
+    size_t size_meta_data = sizeof(tag_t) + sizeof(element_meta_data) + size_label_lookup_entry;
     size_t size_lock = sizeof(std::mutex);
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:

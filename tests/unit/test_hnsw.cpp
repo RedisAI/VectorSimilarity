@@ -1623,10 +1623,9 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, bs);
     actual = index->getAllocationSize() - before;
 
-    // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
-    // of the estimation.
-    ASSERT_GE(estimation, actual);
-    ASSERT_LE(estimation, actual * 1.05);
+    // We check that the actual size is within 1% of the estimation.
+    ASSERT_GE(estimation, actual * 0.99);
+    ASSERT_LE(estimation, actual * 1.01);
 
     VecSimIndex_Free(index);
 }

@@ -56,6 +56,10 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
+    inline void resizeLabelLookup(size_t new_max_elements) override {
+        labelToIdsLookup.reserve(new_max_elements);
+    }
+
     inline bool isLabelExists(labelType label) override {
         return labelToIdsLookup.find(label) != labelToIdsLookup.end();
     }
