@@ -93,7 +93,8 @@ private:
     // lock is assumed to be held exclusive here.
     void executeSwapJob(HNSWSwapJob *job, vecsim_stl::vector<idType> &idsToRemove);
 
-    void executeReadySwapJobs();
+    // Execute the ready swap jobs, run no more than 'maxSwapsToRun' jobs (run all of them for -1).
+    void executeReadySwapJobs(size_t maxSwapsToRun = -1);
 
     // Wrappers static functions to be sent as callbacks upon creating the jobs (since members
     // functions cannot serve as callback, this serve as the "gateway" to the appropriate index).
@@ -204,6 +205,10 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override {
         return this->backendIndex->setLastSearchMode(mode);
     }
+    void runGC() override {
+        // Run no more than pendingSwapJobsThreshold value jobs.
+        this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
+    }
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
 #endif
@@ -278,7 +283,7 @@ HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
+void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToRun) {
 
     // Execute swap jobs - acquire hnsw write lock.
     this->mainIndexGuard.lock();
@@ -291,6 +296,9 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs() {
             // Swap job is ready for execution - execute and delete it.
             this->executeSwapJob(swap_job, idsToRemove);
             delete swap_job;
+        }
+        if (maxJobsToRun > 0 && idsToRemove.size() >= maxJobsToRun) {
+            break;
         }
     }
     for (idType id : idsToRemove) {
@@ -711,10 +719,11 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
-    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute every
-    // job for which all of its pending repair jobs were executed (otherwise finish and return).
+    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute a
+    // batch of jobs for which all of its pending repair jobs were executed (otherwise finish and
+    // return).
     if (readySwapJobs >= this->pendingSwapJobsThreshold) {
-        this->executeReadySwapJobs();
+        this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
     }
 
     // Insert job to the queue and signal the workers' updater.
@@ -763,7 +772,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         // Apply ready swap jobs if number of deleted vectors reached the threshold
         // (under exclusive lock of the main index guard).
         if (readySwapJobs >= this->pendingSwapJobsThreshold) {
-            this->executeReadySwapJobs();
+            this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
         }
     } else {
         // delete in place.
