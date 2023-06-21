@@ -45,12 +45,6 @@ protected:
     static const char *hnsw_index_file;
     static const char *test_queries_file;
 
-    // Tiered index mock attributes
-    static tiered_index_mock::JobQueue jobQ;
-    static const size_t thread_pool_size;
-    static bool run_threads;
-    static tiered_index_mock::IndexExtCtx *ctx;
-
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
 

@@ -1,5 +1,4 @@
 #include "benchmark/bm_batch_iterator.h"
-#include "benchmark/bm_initialization/bm_tiered_initialize.h"
 
 bool BM_VecSimGeneral::is_multi = true;
 

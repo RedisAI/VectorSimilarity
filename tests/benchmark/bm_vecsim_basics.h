@@ -62,7 +62,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     }
     memory_delta = index->getAllocationSize() - memory_delta;
     // For tiered index, wait for all threads to finish indexing
-    tiered_index_mock::thread_pool_wait(BM_VecSimGeneral::jobQ);
+    tieredIndexMock::thread_pool_wait();
 
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
@@ -105,14 +105,14 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
         added_vec_count += vec_per_label;
         label++;
         if (label == initial_label_count + BM_VecSimGeneral::block_size) {
-            tiered_index_mock::thread_pool_wait(BM_VecSimGeneral::jobQ);
+            tieredIndexMock::thread_pool_wait();
         }
     }
 
     size_t memory_delta = (INDICES[st.range(0)])->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
-    st.counters["num_threads"] = BM_VecSimGeneral::thread_pool_size;
+    st.counters["num_threads"] = tieredIndexMock::THREAD_POOL_SIZE;
 
     size_t index_size_after = VecSimIndex_IndexSize(INDICES[st.range(0)]);
     assert(index_size_after == N_VECTORS + added_vec_count);
@@ -154,7 +154,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
     }
     memory_delta = index->getAllocationSize() - memory_before;
 
-    tiered_index_mock::thread_pool_wait(BM_VecSimGeneral::jobQ);
+    tieredIndexMock::thread_pool_wait();
     // Remove the rest of the vectors that hadn't been swapped yet for tiered index.
     if (VecSimIndex_BasicInfo(index).algo == VecSimAlgo_TIERED) {
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(index)->executeReadySwapJobs();
@@ -170,7 +170,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
             VecSimIndex_AddVector(index, removed_labels_data[label_idx][vec_idx].data(), label_idx);
         }
     }
-    tiered_index_mock::thread_pool_wait(BM_VecSimGeneral::jobQ);
+    tieredIndexMock::thread_pool_wait();
     size_t cur_index_size = VecSimIndex_IndexSize(index);
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
@@ -200,7 +200,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
         // Delete label
         VecSimIndex_DeleteVector(tiered_index, label_to_remove++);
         if (label_to_remove == BM_VecSimGeneral::block_size) {
-            tiered_index_mock::thread_pool_wait(BM_VecSimGeneral::jobQ);
+            tieredIndexMock::thread_pool_wait();
         }
     }
 
@@ -208,7 +208,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // of deleted vectors.
     int memory_delta = tiered_index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
-    st.counters["num_threads"] = (double)BM_VecSimGeneral::thread_pool_size;
+    st.counters["num_threads"] = (double)tieredIndexMock::THREAD_POOL_SIZE;
     st.counters["num_zombies"] = tiered_index->idToSwapJob.size();
 
     // Remove the rest of the vectors that hadn't been swapped yet.
@@ -229,7 +229,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
                                   label_idx);
         }
     }
-    tiered_index_mock::thread_pool_wait(BM_VecSimGeneral::jobQ);
+    tieredIndexMock::thread_pool_wait();
     assert(VecSimIndex_IndexSize(tiered_index) == N_VECTORS);
 }
 

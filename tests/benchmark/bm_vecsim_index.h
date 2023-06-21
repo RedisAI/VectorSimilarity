@@ -55,13 +55,13 @@ BM_VecSimIndex<index_type_t>::~BM_VecSimIndex() {
     if (ref_count == 0) {
         VecSimIndex_Free(indices[VecSimAlgo_BF]);
         // Terminate the mock thread pool.
-        tiered_index_mock::thread_pool_join(BM_VecSimGeneral::jobQ, BM_VecSimGeneral::run_threads);
+        tieredIndexMock::thread_pool_join();
 
         /* Note that VecSimAlgo_HNSW will be destroyed as part of the tiered index release, and
          * the VecSimAlgo_Tiered index ptr will be deleted when ctx object is destroyed.
          * Also, we must hold the allocator so it won't deallocate itself */
-        auto allocator = BM_VecSimGeneral::ctx->index_strong_ref->getAllocator();
-        delete BM_VecSimGeneral::ctx;
+        auto allocator = tieredIndexMock::ctx->index_strong_ref->getAllocator();
+        delete tieredIndexMock::ctx;
     }
 }
 
@@ -107,26 +107,24 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
 
     // Create tiered index from the loaded HNSW index.
     auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
-    BM_VecSimGeneral::ctx = new tiered_index_mock::IndexExtCtx();
-    TieredIndexParams tiered_params = {.jobQueue = &jobQ,
-                                       .jobQueueCtx = BM_VecSimGeneral::ctx,
-                                       .submitCb = tiered_index_mock::submit_callback,
+    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    TieredIndexParams tiered_params = {.jobQueue = &tieredIndexMock::jobQ,
+                                       .jobQueueCtx = tieredIndexMock::ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
                                        .flatBufferLimit = block_size,
                                        .primaryIndexParams = &primary_index_params,
                                        .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
 
     auto *tiered_index =
         TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(&tiered_params, hnsw_index);
-    BM_VecSimGeneral::ctx->index_strong_ref.reset(tiered_index);
+    tieredIndexMock::ctx->index_strong_ref.reset(tiered_index);
 
     indices.push_back(tiered_index);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    run_threads = true;
-    for (size_t i = 0; i < tiered_index_mock::THREAD_POOL_SIZE; i++) {
-        tiered_index_mock::thread_pool.emplace_back(tiered_index_mock::thread_main_loop,
-                                                    std::ref(BM_VecSimGeneral::jobQ),
-                                                    std::ref(run_threads), i);
+    tieredIndexMock::run_thread = true;
+    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
+        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
     }
 
     // Add the same vectors to Flat index.

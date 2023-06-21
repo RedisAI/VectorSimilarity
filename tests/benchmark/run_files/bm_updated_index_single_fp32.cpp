@@ -1,5 +1,4 @@
 #include "benchmark/bm_updated_index.h"
-#include "benchmark/bm_initialization/bm_tiered_initialize.h"
 
 /**************************************
   Basic tests for updated single value index.

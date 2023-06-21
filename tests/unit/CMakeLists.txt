@@ -28,7 +28,7 @@ if(FP64_TESTS)
 	add_definitions(-DFP64_TESTS)
 endif()
 
-add_executable(test_hnsw test_hnsw.cpp test_hnsw_multi.cpp test_hnsw_tiered.cpp test_utils.cpp ../utils/mock_thread_pool.cpp)
+add_executable(test_hnsw ../utils/mock_thread_pool.cpp test_hnsw.cpp test_hnsw_multi.cpp test_hnsw_tiered.cpp test_utils.cpp)
 add_executable(test_hnsw_parallel test_hnsw_parallel.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp test_utils.cpp)
 add_executable(test_allocator test_allocator.cpp test_utils.cpp)
