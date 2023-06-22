@@ -357,47 +357,47 @@ protected:
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::setEf(size_t ef) {
-    ef = ef;
+    this->ef = ef;
 }
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getEf() const {
-    return ef;
+    return this->ef;
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::setEpsilon(double epsilon) {
-    epsilon = epsilon;
+    this->epsilon = epsilon;
 }
 
 template <typename DataType, typename DistType>
 double HNSWIndex<DataType, DistType>::getEpsilon() const {
-    return epsilon;
+    return this->epsilon;
 }
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexSize() const {
-    return curElementCount;
+    return this->curElementCount;
 }
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::indexCapacity() const {
-    return maxElements;
+    return this->maxElements;
 }
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getEfConstruction() const {
-    return efConstruction;
+    return this->efConstruction;
 }
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getM() const {
-    return M;
+    return this->M;
 }
 
 template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getMaxLevel() const {
-    return maxLevel;
+    return this->maxLevel;
 }
 
 template <typename DataType, typename DistType>
@@ -2223,7 +2223,7 @@ HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     void *timeoutCtx = nullptr;
 
     // Get original efRuntime and store it.
-    size_t query_ef = ef;
+    size_t query_ef = this->ef;
 
     if (queryParams) {
         timeoutCtx = queryParams->timeoutCtx;

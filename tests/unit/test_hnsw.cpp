@@ -652,7 +652,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
     auto actual_element_count = this->CastToHNSW(index)->curElementCount;
     this->CastToHNSW(index)->curElementCount = 1e6;
-    auto &label_lookup = this->CastToHNSW_Single(index)->label_lookup_;
+    auto &label_lookup = this->CastToHNSW_Single(index)->labelLookup;
     for (size_t i = 0; i < 1e6; i++) {
         label_lookup[i] = i;
     }
@@ -1505,7 +1505,7 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
         // Set the index size artificially to be the required one.
         this->CastToHNSW(index)->curElementCount = index_size;
         for (size_t i = 0; i < index_size; i++) {
-            this->CastToHNSW_Single(index)->label_lookup_[i] = i;
+            this->CastToHNSW_Single(index)->labelLookup[i] = i;
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
@@ -1603,7 +1603,7 @@ TYPED_TEST(HNSWTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    estimation += (this->CastToHNSW_Single(index)->label_lookup_.bucket_count() - (n + extra_cap)) *
+    estimation += (this->CastToHNSW_Single(index)->labelLookup.bucket_count() - (n + extra_cap)) *
                   sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);

@@ -155,10 +155,10 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     auto hnsw_index = this->CastToHNSW(index);
     if (isMulti == false) {
         auto hnsw = reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     } else { // if its a multi value index cast to HNSW_Multi
         auto hnsw = reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     }
 
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
@@ -1801,10 +1801,10 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->idToSwapJob.reserve(0);
     TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
-                               ->label_lookup_.reserve(0)
+                               ->labelLookup.reserve(0)
                          : reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
-                               ->label_lookup_.reserve(0);
+                               ->labelLookup.reserve(0);
 
     size_t initial_mem = tiered_index->getAllocationSize();
     size_t initial_mem_backend = tiered_index->backendIndex->getAllocationSize();

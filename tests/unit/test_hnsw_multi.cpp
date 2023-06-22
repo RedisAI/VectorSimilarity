@@ -161,7 +161,7 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(element_label);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -201,7 +201,7 @@ TYPED_TEST(HNSWMultiTest, indexing_same_vector) {
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
         ASSERT_EQ(element_label, i);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(element_label);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -494,7 +494,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     this->CastToHNSW(index)->curElementCount = 1e6;
     vecsim_stl::vector<idType> vec(index->getAllocator());
     for (size_t i = 0; i < 1e5; i++) {
-        this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
+        this->CastToHNSW_Multi(index)->labelLookup.emplace(i, vec);
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
@@ -606,7 +606,7 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
         this->CastToHNSW(index)->curElementCount = index_size;
         vecsim_stl::vector<idType> vec(index->getAllocator());
         for (size_t i = 0; i < label_count; i++) {
-            this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
+            this->CastToHNSW_Multi(index)->labelLookup.emplace(i, vec);
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
@@ -704,10 +704,10 @@ TYPED_TEST(HNSWMultiTest, removeVectorWithSwaps) {
 
     // Artificially reorder the internal ids to test that we make the right changes
     // when we have an id that appears twice in the array upon deleting the ids one by one.
-    ASSERT_EQ(index->label_lookup_.at(second_label).size(), n / 2);
-    index->label_lookup_.at(second_label)[0] = 4;
-    index->label_lookup_.at(second_label)[1] = 2;
-    index->label_lookup_.at(second_label)[2] = 5;
+    ASSERT_EQ(index->labelLookup.at(second_label).size(), n / 2);
+    index->labelLookup.at(second_label)[0] = 4;
+    index->labelLookup.at(second_label)[1] = 2;
+    index->labelLookup.at(second_label)[2] = 5;
 
     // Expect that the ids array of the second label will behave as following:
     // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
@@ -716,7 +716,7 @@ TYPED_TEST(HNSWMultiTest, removeVectorWithSwaps) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
 
     // Check that the internal ids of the first label are as expected.
-    auto ids = index->label_lookup_.at(first_label);
+    auto ids = index->labelLookup.at(first_label);
     ASSERT_EQ(ids.size(), n / 2);
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 0) != ids.end());
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 1) != ids.end());
@@ -878,7 +878,7 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    estimation += (this->CastToHNSW_Multi(index)->label_lookup_.bucket_count() - (n + extra_cap)) *
+    estimation += (this->CastToHNSW_Multi(index)->labelLookup.bucket_count() - (n + extra_cap)) *
                   sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
@@ -1723,7 +1723,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     auto verify_res = [&](size_t id, double score, size_t idx) {
         ASSERT_EQ(id, idx);
         ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(id);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -1770,7 +1770,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
         ASSERT_NE(id % 2, ep_reminder);
         ASSERT_EQ(id, idx * 2);
         ASSERT_EQ(score, dim * per_label * per_label * id * id);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(id);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.

@@ -314,7 +314,7 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     // Next, insertion of vec5 should make 0->1 unidirectional, thus adding 0 to 1's incoming edges
     // set.
     TEST_DATA_T vec5[] = {0.5f, 0.0f};
-    size_t buckets_num_before = hnswIndex->label_lookup_.bucket_count();
+    size_t buckets_num_before = hnswIndex->labelLookup.bucket_count();
     before = allocator->getAllocationSize();
     VecSimIndex_AddVector(hnswIndex, vec5, 5);
     allocation_delta = allocator->getAllocationSize() - before;
@@ -331,7 +331,7 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     expected_allocation_delta =
         (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
         hashTableNodeSize;
-    size_t buckets_diff = hnswIndex->label_lookup_.bucket_count() - buckets_num_before;
+    size_t buckets_diff = hnswIndex->labelLookup.bucket_count() - buckets_num_before;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
     if (vec_max_level > 0) {
         expected_allocation_delta +=
@@ -387,7 +387,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(hnswIndex->checkIntegrity().unidirectional_connections, 0);
 
     // Add another vector, expect resizing of the index to contain two blocks.
-    size_t prev_bucket_count = hnswIndex->label_lookup_.bucket_count();
+    size_t prev_bucket_count = hnswIndex->labelLookup.bucket_count();
     size_t mem_delta = allocator->getAllocationSize();
     GenerateAndAddVector<TEST_DATA_T>(hnswIndex, d, block_size, block_size);
     mem_delta = allocator->getAllocationSize() - mem_delta;
@@ -411,7 +411,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
                            size_total_data_per_element + sizeof(std::mutex)) *
                           block_size;
     expected_mem_delta +=
-        (hnswIndex->label_lookup_.bucket_count() - prev_bucket_count) * sizeof(size_t);
+        (hnswIndex->labelLookup.bucket_count() - prev_bucket_count) * sizeof(size_t);
     // New blocks allocated
     expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead);
     expected_mem_delta +=
@@ -443,7 +443,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     ASSERT_EQ(hnswIndex->indexCapacity(), 0);
     // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
-    size_t hash_table_memory = hnswIndex->label_lookup_.bucket_count() * sizeof(size_t);
+    size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
     // Data block vectors do not shrink on resize so extra memory is expected.
     size_t block_vectors_memory = sizeof(DataBlock) * (hnswIndex->metaBlocks.capacity() +
                                                        hnswIndex->vectorBlocks.capacity()) +
