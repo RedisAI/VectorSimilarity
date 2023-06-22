@@ -4,20 +4,6 @@
 
 size_t BM_VecSimGeneral::block_size = 1024;
 
-struct SearchJobMock : public AsyncJob {
-    size_t ef;
-    size_t iter;
-    size_t k;
-    VecSimQueryResult_List *all_results;
-
-    SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCB,
-                  VecSimIndex *index_, size_t ef_, size_t iter_, size_t k_,
-                  VecSimQueryResult_List *all_results_)
-        : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCB, index_), ef(ef_), iter(iter_),
-          k(k_), all_results(all_results_) {}
-    ~SearchJobMock() {}
-};
-
 // Class for common bm for basic index and updated index.
 template <typename index_type_t>
 class BM_VecSimCommon : public BM_VecSimIndex<index_type_t> {
@@ -135,31 +121,32 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     VecSimQueryResult_List all_results[total_iters];
 
     auto parallel_knn_search = [](AsyncJob *job) {
-        auto *search_job = reinterpret_cast<SearchJobMock *>(job);
+        auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         size_t cur_iter = search_job->iter;
-        auto hnsw_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_TIERED],
-                                                  QUERIES[cur_iter % N_QUERIES].data(),
-                                                  search_job->k, &query_params, BY_SCORE);
+        auto hnsw_results =
+            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_TIERED], QUERIES[cur_iter % N_QUERIES].data(),
+                                  search_job->k, &query_params, BY_SCORE);
         search_job->all_results[cur_iter] = hnsw_results;
         delete job;
     };
 
     for (auto _ : st) {
         auto search_job = new (tiered_index->getAllocator())
-            SearchJobMock(tiered_index->getAllocator(), parallel_knn_search, tiered_index, ef,
-                          iter++, k, all_results);
+            tieredIndexMock::SearchJobMock(tiered_index->getAllocator(), parallel_knn_search,
+                                           tiered_index, k, ef, iter++, all_results);
         tiered_index->submitSingleJob(search_job);
         if (iter == total_iters) {
-            BM_VecSimGeneral::thread_pool_wait();
+            tieredIndexMock::thread_pool_wait();
         }
     }
 
     // Measure recall
     for (iter = 0; iter < total_iters; iter++) {
-        auto bf_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
-                                                QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+        auto bf_results =
+            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_BF + index_offset],
+                                  QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
 
         VecSimQueryResult_Free(bf_results);
@@ -167,7 +154,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     }
 
     st.counters["Recall"] = (float)correct / (float)(k * iter);
-    st.counters["num_threads"] = (double)BM_VecSimGeneral::thread_pool_size;
+    st.counters["num_threads"] = (double)tieredIndexMock::THREAD_POOL_SIZE;
 }
 
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \
@@ -200,5 +187,5 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         ->Args({200, 100})                                                                         \
         ->Args({500, 500})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(50)                                                                          \
+        ->Iterations(50)                                                                           \
         ->Unit(benchmark::kMillisecond)

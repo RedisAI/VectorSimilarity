@@ -14,6 +14,7 @@ BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, FLAT))->Iterations(1)
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW), fp64_index_t)
 (benchmark::State &st) { Memory_HNSW(st); }
 BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, HNSW))->Iterations(1);
+
 // Memory Tiered
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered), fp64_index_t)
 (benchmark::State &st) { Memory_Tiered(st); }
@@ -38,6 +39,11 @@ REGISTER_TopK_BF(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF));
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW), fp64_index_t)
 (benchmark::State &st) { TopK_HNSW(st); }
 REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW));
+
+// TopK Tiered HNSW
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered), fp32_index_t)
+(benchmark::State &st) { TopK_Tiered(st); }
+REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered));
 
 // Range BF
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, BF), fp64_index_t)

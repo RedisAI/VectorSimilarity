@@ -729,7 +729,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             ASSERT_EQ(score, dim * (id - element) * (id - element));
         };
         runTopKSearchTest(job->index, query, k, verify_res);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -746,7 +746,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-            allocator, parallel_knn_search, tiered_index, query, k, n, dim, successful_searches);
+            allocator, parallel_knn_search, tiered_index, k, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -822,7 +822,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         // and returns the correct number of valid results.
         auto verify_res = [&](size_t id, double score, size_t res_index) {};
         runTopKSearchTest(job->index, query, k, verify_res);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -832,7 +832,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 4 + (i % 1000) * M_PI);
         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-            allocator, parallel_knn_search, tiered_index, query, k, n, dim, successful_searches);
+            allocator, parallel_knn_search, tiered_index, k, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -1352,7 +1352,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
 
         ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
 
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -1362,8 +1362,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, i);
         auto search_job = new (allocator)
-            tieredIndexMock::SearchJobMock(allocator, parallel_adhoc_search, tiered_index, query, 1,
-                                           n_labels, dim, successful_searches);
+            tieredIndexMock::SearchJobMock(allocator, parallel_adhoc_search, tiered_index, 1, query,
+                                           n_labels, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -2563,7 +2563,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
         } while (++iteration < 10 && VecSimBatchIterator_HasNext(tiered_iterator));
 
         VecSimBatchIterator_Free(tiered_iterator);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -2580,8 +2580,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
         // make sure there are `n_res / 2` vectors in the index in each "side" of the query vector.
         GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - n_res)) + (n_res / 2));
         auto search_job = new (allocator)
-            tieredIndexMock::SearchJobMock(allocator, parallel_10_batches, tiered_index, query,
-                                           cur_res_per_batch, n, dim, successful_searches);
+            tieredIndexMock::SearchJobMock(allocator, parallel_10_batches, tiered_index,
+                                           cur_res_per_batch, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -3453,7 +3453,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
             ASSERT_EQ(score, dim * (id - element) * (id - element));
         };
         runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -3467,7 +3467,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, ((n - i) % (n_labels - (2 * k))) + k);
         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-            allocator, parallel_range_search, tiered_index, query, k, n, dim, successful_searches);
+            allocator, parallel_range_search, tiered_index, k, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
