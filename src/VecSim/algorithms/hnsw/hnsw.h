@@ -65,7 +65,16 @@ struct AddVectorCtx {
     int currMaxLevel;
 };
 
-//#pragma pack(2)
+// Use this to compress element_meta_data structure.
+#pragma pack(2)
+
+struct element_meta_data {
+    labelType label;
+    elementFlags flags;
+
+    element_meta_data(labelType label = SIZE_MAX) noexcept : label(label), flags(IN_PROCESS) {}
+};
+#pragma pack() // restore default packing
 
 struct level_data {
     linkListSize numLinks;
@@ -76,16 +85,10 @@ struct level_data {
         : numLinks(0), incoming_edges(new (allocator) vecsim_stl::vector<idType>(allocator)) {}
 };
 
-struct element_meta_data {
-    labelType label;
-    elementFlags flags;
-
-    element_meta_data(labelType label = SIZE_MAX) noexcept : label(label), flags(IN_PROCESS) {}
-};
-
+// Note that we cannot use #pragma pack(2) here, as it will cause corruptions upon using the mutex.
 struct element_graph_data {
-    size_t toplevel;
     std::mutex neighbors_guard;
+    size_t toplevel;
     level_data *others;
     level_data level0;
 
@@ -103,8 +106,6 @@ struct element_graph_data {
         }
     }
 };
-
-//#pragma pack() // restore default packing
 
 template <typename DataType, typename DistType>
 class HNSWIndex : public VecSimIndexAbstract<DistType>,
@@ -519,7 +520,6 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(element_graph_data *node_dat
     node_data->neighbors_guard.unlock();
 }
 
-
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::lockNodeLinks(idType node_id) const {
     auto *node_data = getMetaDataByInternalId(node_id);
@@ -589,9 +589,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
 
-//    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
     lockNodeLinks(cur_meta);
-//    lockNodeLinks(curNodeId);
     level_data &node_meta = getLevelData(cur_meta, layer);
 
     if (node_meta.numLinks > 0) {
@@ -617,7 +615,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
                 continue;
 
             // Pre-fetch current candidate meta data
-//            __builtin_prefetch(getMetaDataAddress(candidate_id));
+            //            __builtin_prefetch(getMetaDataAddress(candidate_id));
 
             elements_tags[candidate_id] = visited_tag;
 
@@ -647,7 +645,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
         if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
             // Pre-fetch current candidate meta data
-//            __builtin_prefetch(getMetaDataAddress(candidate_id));
+            __builtin_prefetch(getMetaDataAddress(candidate_id));
 
             elements_tags[candidate_id] = visited_tag;
 
@@ -671,7 +669,6 @@ void HNSWIndex<DataType, DistType>::processCandidate(
         }
     }
     unlockNodeLinks(cur_meta);
-//    unlockNodeLinks(curNodeId);
 }
 
 // template <typename DataType, typename DistType>
@@ -856,10 +853,9 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     tag_t visited_tag, std::unique_ptr<vecsim_stl::abstract_results_container> &results,
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
 
-//    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
+    //    std::unique_lock<std::mutex> lock(element_neighbors_locks_[curNodeId]);
     auto *cur_meta = getMetaDataByInternalId(curNodeId);
     lockNodeLinks(cur_meta);
-//    lockNodeLinks(curNodeId);
 
     level_data &node_meta = getLevelData(cur_meta, layer);
     if (node_meta.numLinks > 0) {
@@ -921,7 +917,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         }
     }
     unlockNodeLinks(cur_meta);
-//    unlockNodeLinks(curNodeId);
     __builtin_prefetch(this->meta_blocks.data() + (candidate_set.top().second / this->blockSize));
 }
 
@@ -1133,10 +1128,6 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
 
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
-//    std::unique_lock<std::mutex> locks[nodes_to_update_count];
-//    for (size_t i = 0; i < nodes_to_update_count; i++) {
-//        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
-//    }
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         lockNodeLinks(nodes_to_update[i]);
     }
@@ -1216,7 +1207,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     idType next_closest_entry_point = selected_neighbors.back().second;
     auto *new_node_meta = getMetaDataByInternalId(new_node_id);
     level_data &new_node_level_data = getLevelData(new_node_meta, level);
-    assert(new_node_level_data.numLinks == 0 && "The newly inserted element should have blank link list");
+    assert(new_node_level_data.numLinks == 0 &&
+           "The newly inserted element should have blank link list");
 
     for (auto &neighbor_data : selected_neighbors) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
@@ -1573,19 +1565,17 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
     for (size_t level = 0; level <= node_metadata->toplevel; level++) {
         // Save the node neighbor's in the current level while holding its neighbors lock.
         std::vector<idType> neighbors_copy;
-//        std::unique_lock<std::mutex> element_lock(element_neighbors_locks_[node_id]);
         lockNodeLinks(node_metadata);
-        auto &cur_meta = getLevelData(node_metadata, level);
+        auto &node_level_data = getLevelData(node_metadata, level);
         // Store the deleted element's neighbours.
-        neighbors_copy.assign(cur_meta.links, cur_meta.links + cur_meta.numLinks);
-//        element_lock.unlock();
+        neighbors_copy.assign(node_level_data.links,
+                              node_level_data.links + node_level_data.numLinks);
         unlockNodeLinks(node_metadata);
 
         // Go over the neighbours and collect tho ones that also points back to the removed node.
         for (auto neighbour_id : neighbors_copy) {
             // Hold the neighbor's lock while we are going over its neighbors.
             auto *neighbor_metadata = getMetaDataByInternalId(neighbour_id);
-//            std::unique_lock<std::mutex> neighbor_lock(element_neighbors_locks_[neighbour_id]);
             lockNodeLinks(neighbor_metadata);
             level_data &neighbour_level_data = getLevelData(neighbor_metadata, level);
 
@@ -1601,12 +1591,11 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
 
         // Next, collect the rest of incoming edges (the ones that are not bidirectional) in the
         // current level to repair them.
-        unlockNodeLinks(node_metadata);
-        // TODO: retake the reference?
-
-        for (auto incoming_edge : *cur_meta.incoming_edges) {
+        lockNodeLinks(node_metadata);
+        for (auto incoming_edge : *node_level_data.incoming_edges) {
             incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
         }
+        unlockNodeLinks(node_metadata);
     }
     return incoming_neighbors;
 }
@@ -1619,8 +1608,8 @@ void HNSWIndex<DataType, DistType>::_resizeIndexCommon(size_t new_max_elements) 
     visited_nodes_handler_pool.resize(new_max_elements);
     idToMetaData.resize(new_max_elements);
     idToMetaData.shrink_to_fit();
-//    vecsim_stl::vector<std::mutex>(new_max_elements, this->allocator)
-//        .swap(element_neighbors_locks_);
+    //    vecsim_stl::vector<std::mutex>(new_max_elements, this->allocator)
+    //        .swap(element_neighbors_locks_);
 
     max_elements_ = new_max_elements;
 }
@@ -1668,9 +1657,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     nodes_to_update.push_back(node_id);
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
-//    std::unique_lock<std::mutex> locks[nodes_to_update_count];
     for (size_t i = 0; i < nodes_to_update_count; i++) {
-//        locks[i] = std::unique_lock<std::mutex>(element_neighbors_locks_[nodes_to_update[i]]);
         lockNodeLinks(nodes_to_update[i]);
     }
 
@@ -1893,8 +1880,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                         : params->initialCapacity),
       vector_blocks(this->allocator), meta_blocks(this->allocator),
       idToMetaData(max_elements_, this->allocator),
-      visited_nodes_handler_pool(pool_initial_size, max_elements_, this->allocator)
-{
+      visited_nodes_handler_pool(pool_initial_size, max_elements_, this->allocator) {
 
     size_t M = params->M ? params->M : HNSW_DEFAULT_M;
     if (M > UINT16_MAX / 2)
@@ -2233,7 +2219,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         // Pre-fetch the neighbours list of the top candidate (the one that is going
         // to be processed in the next iteration) into memory cache, to improve performance.
         auto cur_meta_data = getMetaDataByInternalId(curr_el_pair.second);
-//        __builtin_prefetch(cur_meta_data);
+        __builtin_prefetch(cur_meta_data);
 
         if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
