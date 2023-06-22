@@ -6,7 +6,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
       maxElements(params->initialCapacity), epsilon(params->epsilon), vectorBlocks(this->allocator),
-      metaBlocks(this->allocator), idToMetaData(this->allocator),
+      graphDataBlocks(this->allocator), idToMetaData(this->allocator),
       visitedNodesHandlerPool(1, maxElements, this->allocator),
       elementNeighborsLocks(maxElements, this->allocator) {
 
@@ -23,7 +23,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
         initial_vector_size++;
     }
     vectorBlocks.reserve(initial_vector_size);
-    metaBlocks.reserve(initial_vector_size);
+    graphDataBlocks.reserve(initial_vector_size);
 
     idToMetaData.resize(maxElements);
 }
@@ -157,7 +157,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     unsigned int num_blocks = 0;
     readBinaryPOD(input, num_blocks);
     this->vectorBlocks.reserve(num_blocks);
-    this->metaBlocks.reserve(num_blocks);
+    this->graphDataBlocks.reserve(num_blocks);
 
     // Get data blocks
     for (size_t i = 0; i < num_blocks; i++) {
@@ -174,7 +174,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     // Get meta blocks
     idType cur_c = 0;
     for (size_t i = 0; i < num_blocks; i++) {
-        this->metaBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+        this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
+                                           this->allocator);
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
@@ -220,7 +221,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
                 }
             }
 
-            this->metaBlocks.back().addElement(cur_meta_data);
+            this->graphDataBlocks.back().addElement(cur_meta_data);
             cur_c++;
         }
     }
@@ -288,7 +289,7 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
 
     // Save meta blocks
     for (size_t i = 0; i < num_blocks; i++) {
-        auto &block = this->metaBlocks[i];
+        auto &block = this->graphDataBlocks[i];
         unsigned int block_len = block.getLength();
         writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {

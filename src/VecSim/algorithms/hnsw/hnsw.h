@@ -48,6 +48,8 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
+////////////////////////////////////// Auxilary HNSW structs //////////////////////////////////////
+
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
@@ -111,7 +113,7 @@ struct ElementGraphData {
     ~ElementGraphData() = delete; // Should be destroyed using `destroyMetadata`
 };
 
-////////////////////////////////// END OF PACKING SECTION //////////////////////////////////////////
+//////////////////////////////////// HNSW index implementation ////////////////////////////////////
 #pragma pack() // restore default packing
 
 template <typename DataType, typename DistType>
@@ -149,7 +151,7 @@ protected:
 
     // Index data
     vecsim_stl::vector<DataBlock> vectorBlocks;
-    vecsim_stl::vector<DataBlock> metaBlocks;
+    vecsim_stl::vector<DataBlock> graphDataBlocks;
     vecsim_stl::vector<ElementMetaData> idToMetaData;
 
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
@@ -237,7 +239,7 @@ protected:
     inline void growByBlock();
     inline void shrinkByBlock();
     // DO NOT USE DIRECTLY. Use `[grow|shrink]ByBlock` instead.
-    inline void _resizeIndexCommon(size_t new_max_elements);
+    inline void resizeIndexCommon(size_t new_max_elements);
 
     // Protected internal function that implements generic single vector deletion.
     void removeVectorInPlace(idType id);
@@ -415,7 +417,7 @@ const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_i
 template <typename DataType, typename DistType>
 ElementGraphData *
 HNSWIndex<DataType, DistType>::getGraphDataByInternalId(idType internal_id) const {
-    return (ElementGraphData *)metaBlocks[internal_id / this->blockSize].getElement(
+    return (ElementGraphData *)graphDataBlocks[internal_id / this->blockSize].getElement(
         internal_id % this->blockSize);
 }
 
@@ -426,7 +428,7 @@ const DataBlock &HNSWIndex<DataType, DistType>::getVectorVectorBlock(idType inte
 
 template <typename DataType, typename DistType>
 const DataBlock &HNSWIndex<DataType, DistType>::getVectorMetaBlock(idType internal_id) const {
-    return metaBlocks.at(internal_id / this->blockSize);
+    return graphDataBlocks.at(internal_id / this->blockSize);
 }
 
 template <typename DataType, typename DistType>
@@ -724,7 +726,8 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 //                 lowerBound = top_candidates.top().first;
 //         }
 //     }
-//     next_meta_block = this->metaBlocks.data() + (candidate_set.top().second / this->blockSize);
+//     next_meta_block = this->graphDataBlocks.data() + (candidate_set.top().second /
+//     this->blockSize);
 // }
 
 // template <typename DataType, typename DistType>
@@ -833,7 +836,8 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 //             }
 //         }
 //     }
-//     next_meta_block = this->metaBlocks.data() + (candidate_set.top().second / this->blockSize);
+//     next_meta_block = this->graphDataBlocks.data() + (candidate_set.top().second /
+//     this->blockSize);
 //     __builtin_prefetch(next_meta_block);
 // }
 
@@ -905,7 +909,8 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             }
         }
     }
-    __builtin_prefetch(this->metaBlocks.data() + (candidate_set.top().second / this->blockSize));
+    __builtin_prefetch(this->graphDataBlocks.data() +
+                       (candidate_set.top().second / this->blockSize));
 }
 
 // template <typename DataType, typename DistType>
@@ -1357,7 +1362,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
         idType cur_id = 0;
-        for (DataBlock &meta_block : metaBlocks) {
+        for (DataBlock &meta_block : graphDataBlocks) {
             size_t size = meta_block.getLength();
             for (size_t i = 0; i < size; i++) {
                 auto meta = (ElementGraphData *)meta_block.getElement(i);
@@ -1570,7 +1575,7 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::_resizeIndexCommon(size_t new_max_elements) {
+void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     assert(new_max_elements % this->blockSize == 0 &&
            "new_max_elements must be a multiple of blockSize");
     resizeLabelLookup(new_max_elements);
@@ -1587,13 +1592,13 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
     size_t new_max_elements = maxElements + this->blockSize;
 
     // Validations
-    assert(vectorBlocks.size() == metaBlocks.size());
+    assert(vectorBlocks.size() == graphDataBlocks.size());
     assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
 
     vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
-    metaBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+    graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
 
-    _resizeIndexCommon(new_max_elements);
+    resizeIndexCommon(new_max_elements);
 }
 
 template <typename DataType, typename DistType>
@@ -1602,14 +1607,14 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
     size_t new_max_elements = maxElements - this->blockSize;
 
     // Validations
-    assert(vectorBlocks.size() == metaBlocks.size());
+    assert(vectorBlocks.size() == graphDataBlocks.size());
     assert(vectorBlocks.size() > 0);
     assert(vectorBlocks.back().getLength() == 0);
 
     vectorBlocks.pop_back();
-    metaBlocks.pop_back();
+    graphDataBlocks.pop_back();
 
-    _resizeIndexCommon(new_max_elements);
+    resizeIndexCommon(new_max_elements);
 }
 
 template <typename DataType, typename DistType>
@@ -1841,7 +1846,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                       ? params->initialCapacity + this->blockSize -
                             params->initialCapacity % this->blockSize
                       : params->initialCapacity),
-      vectorBlocks(this->allocator), metaBlocks(this->allocator),
+      vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
       idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator),
       elementNeighborsLocks(maxElements, this->allocator) {
@@ -1873,7 +1878,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     size_t initial_vector_size = this->maxElements / this->blockSize;
     vectorBlocks.reserve(initial_vector_size);
-    metaBlocks.reserve(initial_vector_size);
+    graphDataBlocks.reserve(initial_vector_size);
 }
 
 template <typename DataType, typename DistType>
@@ -1927,7 +1932,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     // If we are deleting the last element, we already destroyed it's metadata.
     DataBlock &last_vector_block = vectorBlocks.back();
     auto last_element_data = last_vector_block.removeAndFetchLastElement();
-    DataBlock &last_meta_block = metaBlocks.back();
+    DataBlock &last_meta_block = graphDataBlocks.back();
     auto last_element_meta = (ElementGraphData *)last_meta_block.removeAndFetchLastElement();
 
     // Swap the last id with the deleted one, and invalidate the last id data.
@@ -2039,12 +2044,13 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
         // If we had an initial capacity, we might have to allocate new blocks for the data and
         // meta-data.
         this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
-        this->metaBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+        this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
+                                           this->allocator);
     }
 
     // Insert the new element to the data block
     this->vectorBlocks.back().addElement(vector_data);
-    this->metaBlocks.back().addElement(cur_meta);
+    this->graphDataBlocks.back().addElement(cur_meta);
     // We mark id as in process *before* we set it in the label lookup, otherwise we might check
     // that the label exist with safeCheckIfLabelExistsInIndex and see that IN_PROCESS flag is
     // clear.

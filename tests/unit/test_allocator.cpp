@@ -417,7 +417,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     expected_mem_delta +=
         (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
     expected_mem_delta +=
-        (hnswIndex->metaBlocks.capacity() - hnswIndex->metaBlocks.size()) * sizeof(DataBlock);
+        (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
+        sizeof(DataBlock);
 
     ASSERT_EQ(expected_mem_delta, mem_delta);
 
@@ -431,7 +432,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     expected_allocation_size +=
         (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
     expected_allocation_size +=
-        (hnswIndex->metaBlocks.capacity() - hnswIndex->metaBlocks.size()) * sizeof(DataBlock);
+        (hnswIndex->graphDataBlocks.capacity() - hnswIndex->graphDataBlocks.size()) *
+        sizeof(DataBlock);
     ASSERT_EQ(allocator->getAllocationSize(), expected_allocation_size);
 
     // Remove the rest of the vectors, and validate that the memory returns to its initial state.
@@ -445,7 +447,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
     // Data block vectors do not shrink on resize so extra memory is expected.
-    size_t block_vectors_memory = sizeof(DataBlock) * (hnswIndex->metaBlocks.capacity() +
+    size_t block_vectors_memory = sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() +
                                                        hnswIndex->vectorBlocks.capacity()) +
                                   2 * vecsimAllocationOverhead;
     // Current memory should be back as it was initially. The label_lookup hash table is an
