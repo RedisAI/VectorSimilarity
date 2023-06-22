@@ -95,8 +95,6 @@ def measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_quer
     correct = 0
     bf_total_time = 0
     hnsw_total_time = 0
-    print(os.getpid())
-    input("Press Enter to continue...")
     for target_vector in X_test[:num_queries]:
         start = time.time()
         hnsw_labels, _ = hnsw_index.knn_query(target_vector, k)

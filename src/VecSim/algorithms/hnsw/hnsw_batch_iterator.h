@@ -100,7 +100,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
         DistType curr_node_dist = candidates.top().first;
         idType curr_node_id = candidates.top().second;
 
-        __builtin_prefetch(this->index->getMetaDataByInternalId(curr_node_id));
+        __builtin_prefetch(this->index->getGraphDataByInternalId(curr_node_id));
         __builtin_prefetch(this->index->getMetaDataAddress(curr_node_id));
         // If the closest element in the candidates set is further than the furthest element in the
         // top candidates set, and we have enough results, we finish the search.
@@ -118,7 +118,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
         this->index->lockNodeLinks(curr_node_id);
-        level_data &node_meta = this->index->getLevelData(curr_node_id, 0);
+        LevelData &node_meta = this->index->getLevelData(curr_node_id, 0);
         if (node_meta.numLinks > 0) {
 
             // Pre-fetch first candidate tag address.

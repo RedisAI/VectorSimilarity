@@ -89,9 +89,9 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (initial_cap) {
         size_t num_blocks = initial_cap / blockSize; // should be divisible by block size
-        est += sizeof(DataBlock) * num_blocks + allocations_overhead;          // data blocks
-        est += sizeof(DataBlock) * num_blocks + allocations_overhead;          // meta blocks
-        est += sizeof(element_meta_data) * initial_cap + allocations_overhead; // idToMetaData
+        est += sizeof(DataBlock) * num_blocks + allocations_overhead;        // data blocks
+        est += sizeof(DataBlock) * num_blocks + allocations_overhead;        // meta blocks
+        est += sizeof(ElementMetaData) * initial_cap + allocations_overhead; // idToMetaData
         // Labels lookup hash table buckets.
         est += sizeof(size_t) * initial_cap + allocations_overhead;
         // lock per vector
@@ -104,10 +104,10 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 size_t EstimateElementSize(const HNSWParams *params) {
 
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * M * 2;
+    size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
     size_t size_total_data_per_element =
-        element_graph_data_size_ + params->dim * VecSimType_sizeof(params->type);
+        elementGraphDataSize + params->dim * VecSimType_sizeof(params->type);
 
     // when reserving space for new labels in the lookup hash table, each entry is a pointer to a
     // label node (bucket).
@@ -115,7 +115,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
 
     // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
     // labels lookup hash map.
-    size_t size_meta_data = sizeof(tag_t) + sizeof(element_meta_data) + size_label_lookup_entry;
+    size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) + size_label_lookup_entry;
     size_t size_lock = sizeof(std::mutex);
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:

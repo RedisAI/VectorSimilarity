@@ -470,7 +470,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -478,20 +478,20 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
-    this->CastToHNSW(index)->cur_element_count = 1e6;
+    auto actual_element_count = this->CastToHNSW(index)->curElementCount;
+    this->CastToHNSW(index)->curElementCount = 1e6;
     vecsim_stl::vector<idType> vec(index->getAllocator());
     for (size_t i = 0; i < 1e5; i++) {
         this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
@@ -499,7 +499,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -508,11 +508,11 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    this->CastToHNSW(index)->cur_element_count = actual_element_count;
+    this->CastToHNSW(index)->curElementCount = actual_element_count;
     VecSimIndex_Free(index);
 }
 
@@ -603,7 +603,7 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         // Set the index size artificially to be the required one.
-        this->CastToHNSW(index)->cur_element_count = index_size;
+        this->CastToHNSW(index)->curElementCount = index_size;
         vecsim_stl::vector<idType> vec(index->getAllocator());
         for (size_t i = 0; i < label_count; i++) {
             this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
@@ -612,7 +612,7 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
         // Clean up.
-        this->CastToHNSW(index)->cur_element_count = 0;
+        this->CastToHNSW(index)->curElementCount = 0;
         VecSimIndex_Free(index);
     }
 
@@ -1507,12 +1507,12 @@ TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     // enforce max level to be 0
-    this->CastToHNSW(index)->mult_ = 0;
+    this->CastToHNSW(index)->mult = 0;
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     // enforce entry point to be 0
-    this->CastToHNSW(index)->entrypoint_node_ = 0;
+    this->CastToHNSW(index)->entrypointNode = 0;
 
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, n);
@@ -1756,9 +1756,9 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
     // This value is very close to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
-    for (size_t level = 0; level <= this->CastToHNSW(index)->getMetaDataByInternalId(n)->toplevel;
+    for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
-        level_data &meta = this->CastToHNSW(index)->getLevelData(n, level);
+        LevelData &meta = this->CastToHNSW(index)->getLevelData(n, level);
         for (size_t idx = 0; idx < meta.numLinks; idx++) {
             ASSERT_TRUE((meta.links[idx] / per_label) % 2 != ep_reminder)
                 << "Got a link to " << meta.links[idx] << " on level " << level;

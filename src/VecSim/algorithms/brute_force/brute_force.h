@@ -94,7 +94,7 @@ protected:
 
     inline void growByBlock() {
         assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
-        vectorBlocks.emplace_back(this->blockSize, this->data_size, this->allocator);
+        vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
         idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
@@ -167,11 +167,13 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
     // Give the vector new id and increase count.
     idType id = this->count++;
 
-    // If `vectorBlocks` vector is empty or the last vector block is full, create a new block.
+    // Resize the index if needed.
     if (indexSize() > indexCapacity()) {
         growByBlock();
     } else if (id % this->blockSize == 0) {
-        this->vectorBlocks.emplace_back(this->blockSize, this->data_size, this->allocator);
+        // If we we didn't reach the initial capacity but the last block is full, add a new block
+        // only.
+        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
     }
 
     // Get the last vectors block to store the vector in.
@@ -263,7 +265,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     VecSimQueryResult_List rl = {0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
-    this->last_mode = STANDARD_KNN;
+    this->lastMode = STANDARD_KNN;
 
     if (0 == k) {
         rl.results = array_new<VecSimQueryResult>(0);
@@ -313,7 +315,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
                                                 VecSimQueryParams *queryParams) const {
     auto rl = (VecSimQueryResult_List){0};
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
-    this->last_mode = RANGE_QUERY;
+    this->lastMode = RANGE_QUERY;
 
     // Compute scores in every block and save results that are within the range.
     auto res_container =
@@ -457,7 +459,7 @@ bool BruteForceIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, s
         }
     }
     // Set the mode - if this isn't the initial check, we switched mode form batches to ad-hoc.
-    this->last_mode =
+    this->lastMode =
         res ? (initial_check ? HYBRID_ADHOC_BF : HYBRID_BATCHES_TO_ADHOC_BF) : HYBRID_BATCHES;
     return res;
 }

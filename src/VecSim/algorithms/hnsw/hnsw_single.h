@@ -12,7 +12,7 @@
 template <typename DataType, typename DistType>
 class HNSWIndex_Single : public HNSWIndex<DataType, DistType> {
 private:
-    // Index global state - this should be guarded by the index_data_guard_ lock in
+    // Index global state - this should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
     vecsim_stl::unordered_map<labelType, idType> label_lookup_;
 
@@ -32,14 +32,14 @@ public:
     HNSWIndex_Single(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                      size_t random_seed = 100, size_t initial_pool_size = 1)
         : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
-          label_lookup_(this->max_elements_, this->allocator) {}
+          label_lookup_(this->maxElements, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Single(std::ifstream &input, const HNSWParams *params,
                      const AbstractIndexInitParams &abstractInitParams,
                      Serializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
-          label_lookup_(this->max_elements_, this->allocator) {}
+          label_lookup_(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -47,7 +47,7 @@ public:
         auto id = label_lookup_.at(label);
 
         auto vec = std::vector<DataType>(this->dim);
-        memcpy(vec.data(), this->getDataByInternalId(id), this->data_size);
+        memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
         vectors_output.push_back(vec);
     }
 #endif
@@ -111,17 +111,17 @@ double
 HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
                                                               const void *vector_data) const {
     if (Safe)
-        this->index_data_guard_.lock_shared();
+        this->indexDataGuard.lock_shared();
 
     auto it = label_lookup_.find(label);
     if (it == label_lookup_.end()) {
         if (Safe)
-            this->index_data_guard_.unlock_shared();
+            this->indexDataGuard.unlock_shared();
         return INVALID_SCORE;
     }
     idType id = it->second;
     if (Safe)
-        this->index_data_guard_.unlock_shared();
+        this->indexDataGuard.unlock_shared();
 
     return this->dist_func(vector_data, this->getDataByInternalId(id), this->dim);
 }
@@ -192,7 +192,7 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
-    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
@@ -206,7 +206,7 @@ std::vector<idType> HNSWIndex_Single<DataType, DistType>::markDelete(labelType l
 template <typename DataType, typename DistType>
 inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
     labelType label, bool also_done_processing) const {
-    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
     auto it = label_lookup_.find(label);
     bool exists = it != label_lookup_.end();
     // If we want to make sure that the vector stored under the label was already indexed,

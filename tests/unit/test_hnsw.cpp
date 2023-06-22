@@ -630,7 +630,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -638,20 +638,20 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
-    this->CastToHNSW(index)->cur_element_count = 1e6;
+    auto actual_element_count = this->CastToHNSW(index)->curElementCount;
+    this->CastToHNSW(index)->curElementCount = 1e6;
     auto &label_lookup = this->CastToHNSW_Single(index)->label_lookup_;
     for (size_t i = 0; i < 1e6; i++) {
         label_lookup[i] = i;
@@ -659,7 +659,7 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -668,11 +668,11 @@ TYPED_TEST(HNSWTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    this->CastToHNSW(index)->cur_element_count = actual_element_count;
+    this->CastToHNSW(index)->curElementCount = actual_element_count;
     VecSimIndex_Free(index);
 }
 TYPED_TEST(HNSWTest, test_query_runtime_params_default_build_args) {
@@ -1503,7 +1503,7 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         // Set the index size artificially to be the required one.
-        this->CastToHNSW(index)->cur_element_count = index_size;
+        this->CastToHNSW(index)->curElementCount = index_size;
         for (size_t i = 0; i < index_size; i++) {
             this->CastToHNSW_Single(index)->label_lookup_[i] = i;
         }
@@ -1511,7 +1511,7 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
         // Clean-up.
-        this->CastToHNSW(index)->cur_element_count = 0;
+        this->CastToHNSW(index)->curElementCount = 0;
         VecSimIndex_Free(index);
     }
 
@@ -1694,7 +1694,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
         // meta data per node per level
-        size_t size_links_per_level = hnsw_index->level_data_size_;
+        size_t size_links_per_level = hnsw_index->levelDataSize;
 
         size_t size_label_lookup_node = getLabelsLookupNodeSize();
 
@@ -1707,7 +1707,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
 
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i);
 
-            size_t elem_level = hnsw_index->getMetaDataByInternalId(i)->toplevel;
+            size_t elem_level = hnsw_index->getGraphDataByInternalId(i)->toplevel;
 
             size_t high_levels_memory =
                 elem_level ? size_links_per_level * elem_level + allocations_overhead : 0;
@@ -1718,13 +1718,13 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         }
 
         size_t incoming_edges_total_count = 0;
-        std::vector<size_t> incoming_per_level_hist(hnsw_index->max_level_ + 1, 0);
+        std::vector<size_t> incoming_per_level_hist(hnsw_index->maxLevel + 1, 0);
 
         size_t incoming_edges_memory_overhead = 0;
-        for (size_t level = 0; level <= hnsw_index->max_level_; level++) {
+        for (size_t level = 0; level <= hnsw_index->maxLevel; level++) {
             size_t curr_visited_at_level_hist = 0;
             for (size_t id = 0; id < n; id++) {
-                if (hnsw_index->getMetaDataByInternalId(id)->toplevel >= level) {
+                if (hnsw_index->getGraphDataByInternalId(id)->toplevel >= level) {
                     // we expect to generate a new incoming edges vector for each new node at each
                     // level.
                     incoming_edges_memory_overhead +=
@@ -1734,9 +1734,9 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
                     // The index of the vector at the current level counting backwards.
                     size_t curr_reverse_idx_at_level =
                         nodes_per_level_hist[level] - curr_visited_at_level_hist;
-                    auto incoming_edges = hnsw_index->getLevelData(id, level).incoming_edges;
-                    incoming_edges->shrink_to_fit();
-                    size_t incoming_edges_count = incoming_edges->size();
+                    auto incomingEdges = hnsw_index->getLevelData(id, level).incomingEdges;
+                    incomingEdges->shrink_to_fit();
+                    size_t incoming_edges_count = incomingEdges->size();
 
                     // if it is level 0 or there are less than M nodes at this level, none of them
                     // should have incoming edges.
@@ -1774,10 +1774,10 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
 
         size_t total_estimation = metadata_overhead_estimation + incoming_edges_memory_overhead;
         // Additional allocations for the data blocks (vector+meta).
-        total_estimation += hnsw_index->vector_blocks.size() *
-                            (hnsw_index->blockSize *
-                                 (hnsw_index->element_graph_data_size_ + hnsw_index->data_size) +
-                             2 * allocations_overhead);
+        total_estimation +=
+            hnsw_index->vectorBlocks.size() *
+            (hnsw_index->blockSize * (hnsw_index->elementGraphDataSize + hnsw_index->dataSize) +
+             2 * allocations_overhead);
 
         size_t add_vectors_memory_delta = index->getAllocationSize() - initial_memory;
 
@@ -2163,9 +2163,9 @@ TYPED_TEST(HNSWTest, markDelete) {
 
     // Add a new vector, make sure it has no link to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
-    for (size_t level = 0; level <= this->CastToHNSW(index)->getMetaDataByInternalId(n)->toplevel;
+    for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
-        level_data &cur = this->CastToHNSW(index)->getLevelData(n, level);
+        LevelData &cur = this->CastToHNSW(index)->getLevelData(n, level);
         for (size_t idx = 0; idx < cur.numLinks; idx++) {
             ASSERT_TRUE(cur.links[idx] % 2 != ep_reminder)
                 << "Got a link to " << cur.links[idx] << " on level " << level;
@@ -2207,7 +2207,7 @@ TYPED_TEST(HNSWTest, allMarkedDeletedLevel) {
     // Add vectors to the index until we have 10 multi-layered vectors.
     do {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, max_id, max_id);
-        if (this->CastToHNSW(index)->getMetaDataByInternalId(max_id)->toplevel > 0) {
+        if (this->CastToHNSW(index)->getGraphDataByInternalId(max_id)->toplevel > 0) {
             num_multi_layered++;
         }
         max_id++;
@@ -2215,7 +2215,7 @@ TYPED_TEST(HNSWTest, allMarkedDeletedLevel) {
 
     // Mark all vectors with multi-layers as deleted.
     for (labelType label = 0; label < max_id; label++) {
-        if (this->CastToHNSW(index)->getMetaDataByInternalId(label)->toplevel > 0) {
+        if (this->CastToHNSW(index)->getGraphDataByInternalId(label)->toplevel > 0) {
             this->CastToHNSW(index)->markDelete(label);
         }
     }
@@ -2225,7 +2225,7 @@ TYPED_TEST(HNSWTest, allMarkedDeletedLevel) {
     // Re-add a new vector until its level is equal to the max level of the index.
     do {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, max_id, max_id);
-    } while (this->CastToHNSW(index)->getMetaDataByInternalId(max_id)->toplevel < max_level);
+    } while (this->CastToHNSW(index)->getGraphDataByInternalId(max_id)->toplevel < max_level);
 
     // If we passed the previous loop, it means that we successfully added a vector without invalid
     // memory access.
@@ -2253,7 +2253,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
         vec[i] = 0.0;
     }
     for (size_t i = 0; i < n; i++) {
-        level_data &cur = hnsw_index->getLevelData(i, 0);
+        LevelData &cur = hnsw_index->getLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 1);
     }
 
@@ -2263,7 +2263,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 1; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for element 0 as neighbors.
-        level_data &cur = hnsw_index->getLevelData(i, 0);
+        LevelData &cur = hnsw_index->getLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 2);
     }
 
@@ -2273,7 +2273,7 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     for (size_t i = 3; i < n; i++) {
         hnsw_index->repairNodeConnections(i, 0);
         // After the repair expect that to have all nodes except for elements 0-2 as neighbors.
-        level_data &cur = hnsw_index->getLevelData(i, 0);
+        LevelData &cur = hnsw_index->getLevelData(i, 0);
         ASSERT_EQ(cur.numLinks, n - 4);
     }
 

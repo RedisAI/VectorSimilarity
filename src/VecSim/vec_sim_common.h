@@ -161,7 +161,7 @@ typedef struct {
  *
  */
 typedef enum {
-    EMPTY_MODE,      // Default value to initialize the "last_mode" field with.
+    EMPTY_MODE,      // Default value to initialize the "lastMode" field with.
     STANDARD_KNN,    // Run k-nn query over the entire vector index.
     HYBRID_ADHOC_BF, // Measure ad-hoc the distance for every result that passes the filters,
                      // and take the top k results.
@@ -212,7 +212,7 @@ typedef struct {
     size_t indexSize;               // Current count of vectors.
     size_t indexLabelCount;         // Current unique count of labels.
     uint64_t memory;                // Index memory consumption.
-    VecSearchMode last_mode;        // The mode in which the last query ran.
+    VecSearchMode lastMode;         // The mode in which the last query ran.
 } CommonInfo;
 
 typedef struct {

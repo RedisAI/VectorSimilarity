@@ -13,7 +13,7 @@
 template <typename DataType, typename DistType>
 class HNSWIndex_Multi : public HNSWIndex<DataType, DistType> {
 private:
-    // Index global state - this should be guarded by the index_data_guard_ lock in
+    // Index global state - this should be guarded by the indexDataGuard lock in
     // multithreaded scenario.
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>> label_lookup_;
 
@@ -49,14 +49,14 @@ public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                     size_t random_seed = 100, size_t initial_pool_size = 1)
         : HNSWIndex<DataType, DistType>(params, abstractInitParams, random_seed, initial_pool_size),
-          label_lookup_(this->max_elements_, this->allocator) {}
+          label_lookup_(this->maxElements, this->allocator) {}
 #ifdef BUILD_TESTS
     // Ctor to be used before loading a serialized index. Can be used from v2 and up.
     HNSWIndex_Multi(std::ifstream &input, const HNSWParams *params,
                     const AbstractIndexInitParams &abstractInitParams,
                     Serializer::EncodingVersion version)
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, version),
-          label_lookup_(this->max_elements_, this->allocator) {}
+          label_lookup_(this->maxElements, this->allocator) {}
 
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
@@ -65,7 +65,7 @@ public:
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
-            memcpy(vec.data(), this->getDataByInternalId(id), this->data_size);
+            memcpy(vec.data(), this->getDataByInternalId(id), this->dataSize);
             vectors_output.push_back(vec);
         }
     }
@@ -131,11 +131,11 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
 
     // Check if the label exists in the index, return invalid score if not.
     if (Safe)
-        this->index_data_guard_.lock_shared();
+        this->indexDataGuard.lock_shared();
     auto it = this->label_lookup_.find(label);
     if (it == this->label_lookup_.end()) {
         if (Safe)
-            this->index_data_guard_.unlock_shared();
+            this->indexDataGuard.unlock_shared();
         return dist;
     }
 
@@ -143,7 +143,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
     // Get a copy if `Safe` is true, otherwise get a reference.
     decltype(auto) IDs = getCopyOrReference<Safe>(it->second);
     if (Safe)
-        this->index_data_guard_.unlock_shared();
+        this->indexDataGuard.unlock_shared();
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
@@ -229,7 +229,7 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
 template <typename DataType, typename DistType>
 std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType label) {
     std::vector<idType> idsToDelete;
-    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
     auto search = label_lookup_.find(label);
     if (search == label_lookup_.end()) {
         return idsToDelete;
@@ -246,7 +246,7 @@ std::vector<idType> HNSWIndex_Multi<DataType, DistType>::markDelete(labelType la
 template <typename DataType, typename DistType>
 inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(
     labelType label, bool also_done_processing) const {
-    std::unique_lock<std::shared_mutex> index_data_lock(this->index_data_guard_);
+    std::unique_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
     auto search_res = label_lookup_.find(label);
     bool exists = search_res != label_lookup_.end();
     // If we want to make sure that the vector(s) stored under the label were already indexed,

@@ -316,11 +316,11 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
 
         // Go over all the deleted element links in every level and create repair jobs.
-        auto incoming_edges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id);
+        auto incomingEdges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id);
 
         // Protect the id->repair_jobs lookup while we update it with the new jobs.
         this->idToRepairJobsGuard.lock();
-        for (pair<idType, ushort> &node : incoming_edges) {
+        for (pair<idType, ushort> &node : incomingEdges) {
             bool repair_job_exists = false;
             HNSWRepairJob *repair_job = nullptr;
             if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
@@ -348,8 +348,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                 idToRepairJobs.at(node.first).push_back(repair_job);
             }
         }
-        swap_job->setRepairJobsNum(incoming_edges.size());
-        if (incoming_edges.size() == 0) {
+        swap_job->setRepairJobsNum(incomingEdges.size());
+        if (incomingEdges.size() == 0) {
             // No pending repair jobs, so swap jobs is ready from the beginning.
             readySwapJobs++;
         }

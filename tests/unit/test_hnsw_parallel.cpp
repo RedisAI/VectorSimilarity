@@ -45,14 +45,14 @@ protected:
             if (!hnsw_index->isMarkedDeleted(element_id)) {
                 continue;
             }
-            element_graph_data *element_data = hnsw_index->getMetaDataByInternalId(element_id);
+            ElementGraphData *element_data = hnsw_index->getGraphDataByInternalId(element_id);
             for (size_t level = 0; level <= element_data->toplevel; level++) {
-                level_data &cur_level_data = hnsw_index->getLevelData(element_data, level);
+                LevelData &cur_level_data = hnsw_index->getLevelData(element_data, level);
 
                 // Go over the neighbours of the element in a specific level.
                 for (size_t i = 0; i < cur_level_data.numLinks; i++) {
                     idType cur_neighbor = cur_level_data.links[i];
-                    level_data &neighbor_level_data = hnsw_index->getLevelData(cur_neighbor, level);
+                    LevelData &neighbor_level_data = hnsw_index->getLevelData(cur_neighbor, level);
                     for (size_t j = 0; j < neighbor_level_data.numLinks; j++) {
                         // If the edge is bidirectional, do repair for this neighbor
                         if (neighbor_level_data.links[j] == element_id) {
@@ -63,7 +63,7 @@ protected:
                 }
                 // Next, go over the rest of incoming edges (the ones that are not bidirectional)
                 // and make repairs.
-                for (auto incoming_edge : *cur_level_data.incoming_edges) {
+                for (auto incoming_edge : *cur_level_data.incomingEdges) {
                     jobQ.emplace_back(incoming_edge, level);
                 }
             }
@@ -133,7 +133,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t max_elements = this->CastToHNSW(index)->max_elements_;
+    size_t max_elements = this->CastToHNSW(index)->maxElements;
     size_t expected_memory =
         memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
                             (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
@@ -310,7 +310,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t max_elements = this->CastToHNSW(index)->max_elements_;
+    size_t max_elements = this->CastToHNSW(index)->maxElements;
     size_t expected_memory =
         memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
                             (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
