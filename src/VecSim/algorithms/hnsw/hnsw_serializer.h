@@ -114,7 +114,6 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     // Restore index build parameters
     readBinaryPOD(input, this->M);
-    readBinaryPOD(input, this->M);
     readBinaryPOD(input, this->M0);
     readBinaryPOD(input, this->efConstruction);
 
@@ -238,7 +237,6 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
                                                // capacity
 
     // Save index build parameters
-    writeBinaryPOD(output, this->M);
     writeBinaryPOD(output, this->M);
     writeBinaryPOD(output, this->M0);
     writeBinaryPOD(output, this->efConstruction);

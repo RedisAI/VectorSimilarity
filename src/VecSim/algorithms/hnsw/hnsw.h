@@ -1017,6 +1017,9 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
 
     candidatesMaxHeap<DistType> queue_closest(this->allocator);
     vecsim_stl::vector<pair<DistType, idType>> return_list(this->allocator);
+    vecsim_stl::vector<const void *> cached_vectors(this->allocator);
+    return_list.reserve(M);
+    cached_vectors.reserve(M);
     while (top_candidates.size() > 0) {
         // the distance is saved negatively to have the queue ordered such that first is closer
         // (higher).
@@ -1024,27 +1027,26 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
         top_candidates.pop();
     }
 
-    while (queue_closest.size()) {
-        if (return_list.size() >= M)
-            break;
+    while (queue_closest.size() && return_list.size() < M) {
         pair<DistType, idType> current_pair = queue_closest.top();
         DistType candidate_to_query_dist = -current_pair.first;
         queue_closest.pop();
         bool good = true;
+        const void *curr_vector = getDataByInternalId(current_pair.second);
 
         // a candidate is "good" to become a neighbour, unless we find
         // another item that was already selected to the neighbours set which is closer
         // to both q and the candidate than the distance between the candidate and q.
-        for (pair<DistType, idType> second_pair : return_list) {
+        for (size_t i = 0; i < return_list.size(); i++) {
             DistType candidate_to_selected_dist =
-                this->distFunc(getDataByInternalId(second_pair.second),
-                               getDataByInternalId(current_pair.second), this->dim);
+                this->distFunc(cached_vectors[i], curr_vector, this->dim);
             if (candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
             }
         }
         if (good) {
+            cached_vectors.push_back(curr_vector);
             return_list.push_back(current_pair);
         }
     }
@@ -1067,9 +1069,10 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     candidates.emplace(neighbor_data.first, new_node_id);
 
     idType selected_neighbor = neighbor_data.second;
+    const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
     for (size_t j = 0; j < neighbor_meta.numLinks; j++) {
         candidates.emplace(this->distFunc(getDataByInternalId(neighbor_meta.links[j]),
-                                          getDataByInternalId(selected_neighbor), this->dim),
+                                          selected_neighbor_data, this->dim),
                            neighbor_meta.links[j]);
     }
 
@@ -1248,14 +1251,15 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
     // put the deleted element's neighbours in the candidates.
     candidatesMaxHeap<DistType> candidates(this->allocator);
+    auto neighbours_data = getDataByInternalId(neighbour_id);
     for (size_t j = 0; j < element_meta.numLinks; j++) {
         // Don't put the neighbor itself in his own candidates
         if (element_meta.links[j] == neighbour_id) {
             continue;
         }
-        candidates.emplace(this->distFunc(getDataByInternalId(element_meta.links[j]),
-                                          getDataByInternalId(neighbour_id), this->dim),
-                           element_meta.links[j]);
+        candidates.emplace(
+            this->distFunc(getDataByInternalId(element_meta.links[j]), neighbours_data, this->dim),
+            element_meta.links[j]);
     }
 
     // add the deleted element's neighbour's original neighbors in the candidates.
@@ -1269,7 +1273,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             neighbour_meta.links[j] == element_internal_id) {
             continue;
         }
-        candidates.emplace(this->distFunc(getDataByInternalId(neighbour_id),
+        candidates.emplace(this->distFunc(neighbours_data,
                                           getDataByInternalId(neighbour_meta.links[j]), this->dim),
                            neighbour_meta.links[j]);
     }
@@ -1706,14 +1710,16 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
     candidatesMaxHeap<DistType> neighbors_candidates(this->allocator);
     // Use bitmaps for fast accesses:
-    // node_orig_neighbours_set is used to diffrentiate between the neighboes that will *not* be
-    // selected by the heuritics - only the ones that were originally neighbors should be removed.
+    // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
+    // selected by the heuristics - only the ones that were originally neighbors should be removed.
     vecsim_stl::vector<bool> node_orig_neighbours_set(maxElements, false, this->allocator);
     // neighbors_candidates_set is used to store the nodes that were already collected as
     // candidates, so we will not collect them again as candidates if we run into them from another
     // path.
     vecsim_stl::vector<bool> neighbors_candidates_set(maxElements, false, this->allocator);
     vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
+
+    const void *node_data = getDataByInternalId(node_id);
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
@@ -1728,10 +1734,9 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[node_meta.links[j]] = true;
-            neighbors_candidates.emplace(this->distFunc(getDataByInternalId(node_id),
-                                                        getDataByInternalId(node_meta.links[j]),
-                                                        this->dim),
-                                         node_meta.links[j]);
+            neighbors_candidates.emplace(
+                this->distFunc(node_data, getDataByInternalId(node_meta.links[j]), this->dim),
+                node_meta.links[j]);
         }
     }
     // If there are not deleted neighbors at that point the repair job has already been made by
@@ -1765,10 +1770,9 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[neighbor_meta.links[j]] = true;
-            neighbors_candidates.emplace(this->distFunc(getDataByInternalId(node_id),
-                                                        getDataByInternalId(neighbor_meta.links[j]),
-                                                        this->dim),
-                                         neighbor_meta.links[j]);
+            neighbors_candidates.emplace(
+                this->distFunc(node_data, getDataByInternalId(neighbor_meta.links[j]), this->dim),
+                neighbor_meta.links[j]);
         }
     }
 
