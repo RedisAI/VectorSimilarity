@@ -202,7 +202,7 @@ double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(labelType labe
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+        DistType d = this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
         dist = (dist < d) ? dist : d;
     }
 

@@ -193,5 +193,5 @@ double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType lab
     }
     idType id = optionalId->second;
 
-    return this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+    return this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
 }

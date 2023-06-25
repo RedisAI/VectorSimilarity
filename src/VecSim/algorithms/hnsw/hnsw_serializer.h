@@ -5,8 +5,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          const AbstractIndexInitParams &abstractInitParams,
                                          Serializer::EncodingVersion version)
     : VecSimIndexAbstract<DistType>(abstractInitParams), Serializer(version),
-      maxElements(params->initialCapacity), epsilon(params->epsilon), vectorBlocks(this->allocator),
-      graphDataBlocks(this->allocator), idToMetaData(this->allocator),
+      maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
+      epsilon(params->epsilon), vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
+      idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(1, maxElements, this->allocator),
       elementNeighborsLocks(maxElements, this->allocator) {
 
@@ -19,13 +20,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     levelGenerator.seed(200);
 
     size_t initial_vector_size = maxElements / this->blockSize;
-    if (maxElements % this->blockSize != 0) {
-        initial_vector_size++;
-    }
     vectorBlocks.reserve(initial_vector_size);
     graphDataBlocks.reserve(initial_vector_size);
-
-    idToMetaData.resize(maxElements);
 }
 
 template <typename DataType, typename DistType>

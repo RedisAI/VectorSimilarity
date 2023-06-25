@@ -152,10 +152,7 @@ BruteForceIndex<DataType, DistType>::BruteForceIndex(
       vectorBlocks(this->allocator), count(0) {
     assert(VecSimType_sizeof(this->vecType) == sizeof(DataType));
     // Round up the initial capacity to the nearest multiple of the block size.
-    size_t initialCapacity =
-        params->initialCapacity % this->blockSize
-            ? params->initialCapacity + this->blockSize - params->initialCapacity % this->blockSize
-            : params->initialCapacity;
+    size_t initialCapacity = RoundUpInitialCapacity(params->initialCapacity, this->blockSize);
     this->idToLabelMapping.resize(initialCapacity);
     this->vectorBlocks.reserve(initialCapacity / this->blockSize);
 }
@@ -252,7 +249,7 @@ BruteForceIndex<DataType, DistType>::computeBlockScores(const DataBlock &block,
             *rc = VecSim_QueryResult_TimedOut;
             return scores;
         }
-        scores[i] = this->dist_func(block.getElement(i), queryBlob, this->dim);
+        scores[i] = this->distFunc(block.getElement(i), queryBlob, this->dim);
     }
     *rc = VecSim_QueryResult_OK;
     return scores;

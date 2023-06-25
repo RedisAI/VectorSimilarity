@@ -147,7 +147,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
-        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+        DistType d = this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
         dist = std::fmin(dist, d);
     }
 

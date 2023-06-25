@@ -123,7 +123,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     if (Safe)
         this->indexDataGuard.unlock_shared();
 
-    return this->dist_func(vector_data, this->getDataByInternalId(id), this->dim);
+    return this->distFunc(vector_data, this->getDataByInternalId(id), this->dim);
 }
 
 template <typename DataType, typename DistType>

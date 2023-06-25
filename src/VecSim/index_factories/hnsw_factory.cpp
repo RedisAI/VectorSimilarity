@@ -66,10 +66,7 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 
 size_t EstimateInitialSize(const HNSWParams *params) {
     size_t blockSize = params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE;
-    size_t initial_cap =
-        params->initialCapacity % blockSize == 0
-            ? params->initialCapacity
-            : params->initialCapacity + blockSize - params->initialCapacity % blockSize;
+    size_t initial_cap = RoundUpInitialCapacity(params->initialCapacity, blockSize);
 
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 

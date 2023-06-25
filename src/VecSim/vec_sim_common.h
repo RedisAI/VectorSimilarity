@@ -303,6 +303,12 @@ typedef enum {
     VecSim_QueryResult_TimedOut,
 } VecSimQueryResult_Code;
 
+// Round up to the nearest multiplication of blockSize.
+static inline size_t RoundUpInitialCapacity(size_t initialCapacity, size_t blockSize) {
+    return initialCapacity % blockSize ? initialCapacity + blockSize - initialCapacity % blockSize
+                                       : initialCapacity;
+}
+
 #define VECSIM_TIMEOUT(ctx) (__builtin_expect(VecSimIndexInterface::timeoutCallback(ctx), false))
 
 #ifdef __cplusplus

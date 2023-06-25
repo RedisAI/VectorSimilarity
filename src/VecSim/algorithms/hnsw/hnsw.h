@@ -110,7 +110,7 @@ struct ElementGraphData {
             }
         }
     }
-    ~ElementGraphData() = delete; // Should be destroyed using `destroyMetadata`
+    ~ElementGraphData() = delete; // Should be destroyed using `destroyGraphData`
 };
 
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
@@ -223,7 +223,7 @@ protected:
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       LevelData &element_meta, LevelData &neighbour_meta,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
-    inline void destroyMetadata(ElementGraphData *em);
+    inline void destroyGraphData(ElementGraphData *em);
     inline void replaceEntryPoint();
 
     template <bool has_marked_deleted>
@@ -255,9 +255,21 @@ protected:
     template <bool has_marked_deleted>
     void removeAndSwap(idType internalId);
 
-    inline const DataBlock &getVectorVectorBlock(idType id) const;
-    inline const DataBlock &getVectorMetaBlock(idType id) const;
     inline size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
+
+    // Flagging API
+    template <Flags FLAG>
+    inline void markAs(idType internalId) {
+        __atomic_fetch_or(&idToMetaData[internalId].flags, FLAG, 0);
+    }
+    template <Flags FLAG>
+    inline void unmarkAs(idType internalId) {
+        __atomic_fetch_and(&idToMetaData[internalId].flags, ~FLAG, 0);
+    }
+    template <Flags FLAG>
+    inline bool isMarkAs(idType internalId) const {
+        return idToMetaData[internalId].flags & FLAG;
+    }
 
 public:
     HNSWIndex(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
@@ -308,7 +320,6 @@ public:
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
     inline bool isInProcess(idType internalId) const;
-    inline void markInProcess(idType internalId);
     inline void unmarkInProcess(idType internalId);
     AddVectorCtx storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapDeletedElement(idType internalId);
@@ -422,16 +433,6 @@ HNSWIndex<DataType, DistType>::getGraphDataByInternalId(idType internal_id) cons
 }
 
 template <typename DataType, typename DistType>
-const DataBlock &HNSWIndex<DataType, DistType>::getVectorVectorBlock(idType internal_id) const {
-    return vectorBlocks.at(internal_id / this->blockSize);
-}
-
-template <typename DataType, typename DistType>
-const DataBlock &HNSWIndex<DataType, DistType>::getVectorMetaBlock(idType internal_id) const {
-    return graphDataBlocks.at(internal_id / this->blockSize);
-}
-
-template <typename DataType, typename DistType>
 size_t HNSWIndex<DataType, DistType>::getRandomLevel(double reverse_size) {
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     double r = -log(distribution(levelGenerator)) * reverse_size;
@@ -476,34 +477,26 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         }
         // Atomically set the deletion mark flag (note that other parallel threads may set the flags
         // at the same time (for changing the IN_PROCESS flag).
-        __atomic_fetch_or(&idToMetaData[internalId].flags, DELETE_MARK, 0);
+        markAs<DELETE_MARK>(internalId);
         this->numMarkedDeleted++;
     }
 }
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
-    return idToMetaData[internalId].flags & DELETE_MARK;
+    return isMarkAs<DELETE_MARK>(internalId);
 }
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
-    return idToMetaData[internalId].flags & IN_PROCESS;
-}
-
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::markInProcess(idType internalId) {
-    // Atomically set the IN_PROCESS mark flag. Even though other threads shouldn't modify the flags
-    // at that time (we're holding index global data guard, so this element cannot be marked as
-    // deleted in parallel), we do it for safety.
-    __atomic_fetch_or(&idToMetaData[internalId].flags, IN_PROCESS, 0);
+    return isMarkAs<IN_PROCESS>(internalId);
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
     // Atomically unset the IN_PROCESS mark flag (note that other parallel threads may set the flags
     // at the same time (for marking the element with MARK_DELETE flag).
-    __atomic_fetch_and(&idToMetaData[internalId].flags, ~IN_PROCESS, 0);
+    unmarkAs<IN_PROCESS>(internalId);
 }
 
 template <typename DataType, typename DistType>
@@ -613,7 +606,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->dist_func(query_data, cur_data, this->dim);
+            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
 
                 candidate_set.emplace(-cur_dist, candidate_id);
@@ -643,7 +636,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->dist_func(query_data, cur_data, this->dim);
+            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
@@ -707,7 +700,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 //         visited_nodes->tagNode(candidate_id, visited_tag);
 
 //         const char *cur_data = cur_block->getElement(getVectorRelativeIndex(candidate_id));
-//         DistType cur_dist = this->dist_func(query_data, cur_data, this->dim);
+//         DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
 //         if (lowerBound > cur_dist || top_candidates.size() < ef) {
 
 //             candidate_set.emplace(-cur_dist, candidate_id);
@@ -784,7 +777,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
 //             visited_nodes->tagNode(candidate_id, visited_tag);
 
-//             DistType dist1 = this->dist_func(getDataByInternalId(candidate_id), query_data,
+//             DistType dist1 = this->distFunc(getDataByInternalId(candidate_id), query_data,
 //             this->dim); if (lowerBound > dist1 || top_candidates.size() < ef) {
 
 //                 candidate_set.emplace(-dist1, candidate_id);
@@ -817,7 +810,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
 
 //             visited_nodes->tagNode(candidate_id, visited_tag);
 
-//             DistType dist1 = this->dist_func(getDataByInternalId(candidate_id), query_data,
+//             DistType dist1 = this->distFunc(getDataByInternalId(candidate_id), query_data,
 //             this->dim); if (lowerBound > dist1 || top_candidates.size() < ef) {
 //                 candidate_set.emplace(-dist1, candidate_id);
 
@@ -878,7 +871,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->dist_func(query_data, cur_data, this->dim);
+            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
             if (cur_dist < dyn_range) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
@@ -898,7 +891,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             elements_tags[candidate_id] = visited_tag;
 
-            DistType cur_dist = this->dist_func(query_data, cur_data, this->dim);
+            DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
             if (cur_dist < dyn_range) {
                 candidate_set.emplace(-cur_dist, candidate_id);
 
@@ -955,7 +948,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 //         visited_nodes->tagNode(candidate_id, visited_tag);
 
 //         const char *cur_data = cur_block->getElement(getVectorRelativeIndex(candidate_id));
-//         DistType candidate_dist = this->dist_func(query_data, cur_data, this->dim);
+//         DistType candidate_dist = this->distFunc(query_data, cur_data, this->dim);
 //         if (candidate_dist < dyn_range) {
 //             candidate_set.emplace(-candidate_dist, candidate_id);
 
@@ -982,7 +975,7 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     DistType lowerBound;
     if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
-        DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+        DistType dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
         lowerBound = dist;
         top_candidates.emplace(dist, ep_id);
         candidate_set.emplace(-dist, ep_id);
@@ -1044,8 +1037,8 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
         // to both q and the candidate than the distance between the candidate and q.
         for (pair<DistType, idType> second_pair : return_list) {
             DistType candidate_to_selected_dist =
-                this->dist_func(getDataByInternalId(second_pair.second),
-                                getDataByInternalId(current_pair.second), this->dim);
+                this->distFunc(getDataByInternalId(second_pair.second),
+                               getDataByInternalId(current_pair.second), this->dim);
             if (candidate_to_selected_dist < candidate_to_query_dist) {
                 good = false;
                 break;
@@ -1075,8 +1068,8 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
 
     idType selected_neighbor = neighbor_data.second;
     for (size_t j = 0; j < neighbor_meta.numLinks; j++) {
-        candidates.emplace(this->dist_func(getDataByInternalId(neighbor_meta.links[j]),
-                                           getDataByInternalId(selected_neighbor), this->dim),
+        candidates.emplace(this->distFunc(getDataByInternalId(neighbor_meta.links[j]),
+                                          getDataByInternalId(selected_neighbor), this->dim),
                            neighbor_meta.links[j]);
     }
 
@@ -1260,8 +1253,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         if (element_meta.links[j] == neighbour_id) {
             continue;
         }
-        candidates.emplace(this->dist_func(getDataByInternalId(element_meta.links[j]),
-                                           getDataByInternalId(neighbour_id), this->dim),
+        candidates.emplace(this->distFunc(getDataByInternalId(element_meta.links[j]),
+                                          getDataByInternalId(neighbour_id), this->dim),
                            element_meta.links[j]);
     }
 
@@ -1276,8 +1269,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
             neighbour_meta.links[j] == element_internal_id) {
             continue;
         }
-        candidates.emplace(this->dist_func(getDataByInternalId(neighbour_id),
-                                           getDataByInternalId(neighbour_meta.links[j]), this->dim),
+        candidates.emplace(this->distFunc(getDataByInternalId(neighbour_id),
+                                          getDataByInternalId(neighbour_meta.links[j]), this->dim),
                            neighbour_meta.links[j]);
     }
 
@@ -1471,7 +1464,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::destroyMetadata(ElementGraphData *egd) {
+void HNSWIndex<DataType, DistType>::destroyGraphData(ElementGraphData *egd) {
     delete egd->level0.incomingEdges;
     LevelData *cur_ld = egd->others;
     for (size_t i = 0; i < egd->toplevel; i++) {
@@ -1515,7 +1508,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
             if (isInProcess(candidate)) {
                 continue;
             }
-            DistType d = this->dist_func(vector_data, getDataByInternalId(candidate), this->dim);
+            DistType d = this->distFunc(vector_data, getDataByInternalId(candidate), this->dim);
             if (d < curDist) {
                 curDist = d;
                 bestCand = candidate;
@@ -1735,9 +1728,9 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[node_meta.links[j]] = true;
-            neighbors_candidates.emplace(this->dist_func(getDataByInternalId(node_id),
-                                                         getDataByInternalId(node_meta.links[j]),
-                                                         this->dim),
+            neighbors_candidates.emplace(this->distFunc(getDataByInternalId(node_id),
+                                                        getDataByInternalId(node_meta.links[j]),
+                                                        this->dim),
                                          node_meta.links[j]);
         }
     }
@@ -1772,10 +1765,10 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[neighbor_meta.links[j]] = true;
-            neighbors_candidates.emplace(
-                this->dist_func(getDataByInternalId(node_id),
-                                getDataByInternalId(neighbor_meta.links[j]), this->dim),
-                neighbor_meta.links[j]);
+            neighbors_candidates.emplace(this->distFunc(getDataByInternalId(node_id),
+                                                        getDataByInternalId(neighbor_meta.links[j]),
+                                                        this->dim),
+                                         neighbor_meta.links[j]);
         }
     }
 
@@ -1842,10 +1835,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const AbstractIndexInitParams &abstractInitParams,
                                          size_t random_seed, size_t pool_initial_size)
     : VecSimIndexAbstract<DistType>(abstractInitParams), VecSimIndexTombstone(),
-      maxElements(params->initialCapacity % this->blockSize
-                      ? params->initialCapacity + this->blockSize -
-                            params->initialCapacity % this->blockSize
-                      : params->initialCapacity),
+      maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
       vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
       idToMetaData(maxElements, this->allocator),
       visitedNodesHandlerPool(pool_initial_size, maxElements, this->allocator),
@@ -1884,7 +1874,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::~HNSWIndex() {
     for (idType id = 0; id < curElementCount; id++) {
-        destroyMetadata(getGraphDataByInternalId(id));
+        destroyGraphData(getGraphDataByInternalId(id));
     }
 }
 
@@ -1920,7 +1910,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     }
 
     // Free the element's resources
-    destroyMetadata(element_metadata);
+    destroyGraphData(element_metadata);
 
     // We can say now that the element has removed completely from index.
     --curElementCount;
@@ -2102,7 +2092,7 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
         int max_common_level;
         if (element_max_level < prev_max_level) {
             max_common_level = element_max_level;
-            cur_dist = this->dist_func(vector_data, getDataByInternalId(curr_element), this->dim);
+            cur_dist = this->distFunc(vector_data, getDataByInternalId(curr_element), this->dim);
             for (int level = prev_max_level; level > element_max_level; level--) {
                 // this is done for the levels which are above the max level
                 // to which we are going to insert the new element. We do
@@ -2145,7 +2135,7 @@ idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data
     if (curr_element == INVALID_ID)
         return curr_element; // index is empty.
 
-    DistType cur_dist = this->dist_func(query_data, getDataByInternalId(curr_element), this->dim);
+    DistType cur_dist = this->distFunc(query_data, getDataByInternalId(curr_element), this->dim);
     for (size_t level = max_level; level > 0 && curr_element != INVALID_ID; level--) {
         greedySearchLevel<true>(query_data, level, curr_element, cur_dist, timeoutCtx, rc);
     }
@@ -2169,7 +2159,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     if (!has_marked_deleted || !isMarkedDeleted(ep_id)) {
         // If ep is not marked as deleted, get its distance and set lower bound and heaps
         // accordingly
-        DistType dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+        DistType dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
         lowerBound = dist;
         top_candidates->emplace(dist, getExternalLabel(ep_id));
         candidate_set.emplace(-dist, ep_id);
@@ -2293,7 +2283,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         dynamic_range_search_boundaries = dynamic_range = ep_dist;
     } else {
         // If ep is not marked as deleted, get its distance and set ranges accordingly
-        ep_dist = this->dist_func(data_point, getDataByInternalId(ep_id), this->dim);
+        ep_dist = this->distFunc(data_point, getDataByInternalId(ep_id), this->dim);
         dynamic_range = ep_dist;
         if (ep_dist <= radius) {
             // Entry-point is within the radius - add it to the results.
