@@ -16,14 +16,21 @@ struct DataBlock : public VecsimBaseObject {
 public:
     DataBlock(size_t blockSize, size_t elementBytesCount,
               std::shared_ptr<VecSimAllocator> allocator);
+    // Move constructor
+    // We need to implement this because we want to have a vector of DataBlocks, and we want it to
+    // use the move constructor upon resizing (instead of the copy constructor). We also need to
+    // mark it as noexcept so the vector will use it.
     DataBlock(DataBlock &&other) noexcept;
     ~DataBlock() noexcept;
-
+    // Delete copy constructor so we won't have a vector of DataBlocks that uses the copy
+    // constructor
     DataBlock(const DataBlock &other) = delete;
 
     DataBlock &operator=(DataBlock &&other) noexcept {
+        allocator = other.allocator;
         element_bytes_count = other.element_bytes_count;
         length = other.length;
+        // take ownership of the data
         data = other.data;
         other.data = nullptr;
         return *this;
