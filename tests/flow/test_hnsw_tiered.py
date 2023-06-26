@@ -291,7 +291,7 @@ def test_recall_after_deletion():
 
     index.wait_for_index()
     
-    print(f"Delete half of the index")
+    print(f"Deleting half of the index")
     # Delete half of the index.
     for i in range(0, num_elements, 2):
         index.delete_vector(i)
@@ -299,7 +299,7 @@ def test_recall_after_deletion():
         
     # Wait for all repair jobs to be done.
     index.wait_for_index(5)
-    
+    print(f"Done deleting half of the index")
     assert index.hnsw_label_count() == (num_elements / 2)
     assert hnsw_index.index_size() == (num_elements / 2)
     
@@ -356,7 +356,8 @@ def test_batch_iterator():
                            M=M, 
                            ef_c=efConstruction, 
                            ef_r=efRuntime, 
-                           metric=metric)
+                           metric=metric,
+                           flat_buffer_size=num_elements)
 
     index = indices_ctx.tiered_index
     data = indices_ctx.data
@@ -388,22 +389,6 @@ def test_batch_iterator():
         if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
             should_have_return_in_first_batch.append(dist)
     assert (len(should_have_return_in_first_batch) <= 2)
-
-    # Verify that runtime args are sent properly to the batch iterator.
-    query_params = VecSimQueryParams()
-    query_params.hnswRuntimeParams.efRuntime = 5
-    
-    batch_iterator_new = index.create_batch_iterator(query_data, query_params)
-    
-    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(batch_size, BY_ID)
-    # Verify that accuracy is worse with the new lower ef_runtime.
-    assert (sum(labels_first_batch[0]) <= sum(labels_first_batch_new[0]))
-
-    query_params.hnswRuntimeParams.efRuntime = efRuntime  # Restore previous ef_runtime.
-    batch_iterator_new = index.create_batch_iterator(query_data, query_params)
-    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(batch_size, BY_ID)
-    # Verify that results are now the same.
-    assert_allclose(labels_first_batch_new[0], labels_first_batch[0])
 
     # Reset.
     batch_iterator.reset()

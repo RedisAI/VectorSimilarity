@@ -372,11 +372,23 @@ private:
 
 public:
     explicit PyTieredIndex() {
-
+        if (tieredIndexMock::thread_pool.size() > 0) {
+            tieredIndexMock::thread_pool_join();
+        }
+        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        tieredIndexMock::run_thread = true;
         for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-            tieredIndexMock::run_thread = true;
             tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
         }
+    }
+
+    virtual ~PyTieredIndex () {
+        tieredIndexMock::thread_pool_join();
+        assert(tieredIndexMock::jobQ.empty());
+        std::cout << "destructing tiered index" << std::endl;
+        // We must hold the allocator so it won't deallocate itself
+        auto allocator = tieredIndexMock::ctx->index_strong_ref->getAllocator();
+        delete tieredIndexMock::ctx;
     }
 
     void WaitForIndex(size_t waiting_duration = 10) {
@@ -397,13 +409,13 @@ class PyTiered_HNSWIndex : public PyTieredIndex {
 public:
     explicit PyTiered_HNSWIndex(const HNSWParams &hnsw_params,
                                 const TieredHNSWParams &tiered_hnsw_params,
-                                size_t buffer_limit = 1024) {
+                                size_t buffer_limit) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
         VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
 
-        // Create TieredIndexParams
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        // Create TieredIndexParams. Assume that tieredIndexMock::ctx was allocated in the base
+        // class constructor, and that the thread pool was created.
         TieredIndexParams tiered_params = {
             .jobQueue = &tieredIndexMock::jobQ,
             .jobQueueCtx = tieredIndexMock::ctx,
@@ -417,17 +429,15 @@ public:
         // Create VecSimParams for TieredIndexParams
         VecSimParams params = {.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
 
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), [](auto *index){
+            std::cout << "destructing tiered index - deleter" << std::endl;
+            // We must hold the allocator so it won't deallocate itself
+            auto allocator = tieredIndexMock::ctx->index_strong_ref->getAllocator();
+            delete tieredIndexMock::ctx;
+        });
 
         // Set the created tiered index in the index external context.
         tieredIndexMock::ctx->index_strong_ref = this->index;
-    }
-
-    ~PyTiered_HNSWIndex() {
-        tieredIndexMock::thread_pool_join();
-        // We must hold the allocator so it won't deallocate itself */
-        auto allocator = tieredIndexMock::ctx->index_strong_ref->getAllocator();
-        delete tieredIndexMock::ctx;
     }
 
     size_t HNSWLabelCount() {
@@ -541,9 +551,9 @@ PYBIND11_MODULE(VecSim, m) {
              py::arg("radius"), py::arg("query_param") = nullptr, py::arg("num_threads") = -1);
 
     py::class_<PyTieredIndex, PyVecSimIndex>(m, "TieredIndex")
-        .def("wait_for_index", &PyTiered_HNSWIndex::WaitForIndex, py::arg("waiting_duration") = 10)
-        .def("get_curr_bf_size", &PyTiered_HNSWIndex::getFlatIndexSize)
-        .def("get_buffer_limit", &PyTiered_HNSWIndex::getBufferLimit)
+        .def("wait_for_index", &PyTieredIndex::WaitForIndex, py::arg("waiting_duration") = 10)
+        .def("get_curr_bf_size", &PyTieredIndex::getFlatIndexSize)
+        .def("get_buffer_limit", &PyTieredIndex::getBufferLimit)
         .def_static("get_threads_num", &PyTieredIndex::GetThreadsNum);
 
     py::class_<PyTiered_HNSWIndex, PyTieredIndex>(m, "Tiered_HNSWIndex")
