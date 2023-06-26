@@ -189,7 +189,6 @@ public:
     double getDistanceFrom(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
-    void increaseCapacity() override {}
     VecSimIndexInfo info() const override;
     VecSimIndexBasicInfo basicInfo() const override;
     VecSimInfoIterator *infoIterator() const override;
@@ -317,12 +316,11 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         auto *swap_job = new (this->allocator) HNSWSwapJob(this->allocator, id);
 
         // Go over all the deleted element links in every level and create repair jobs.
-        auto incoming_edges =
-            hnsw_index->safeCollectAllNodeIncomingNeighbors(id, hnsw_index->getElementTopLevel(id));
+        auto incomingEdges = hnsw_index->safeCollectAllNodeIncomingNeighbors(id);
 
         // Protect the id->repair_jobs lookup while we update it with the new jobs.
         this->idToRepairJobsGuard.lock();
-        for (pair<idType, ushort> &node : incoming_edges) {
+        for (pair<idType, ushort> &node : incomingEdges) {
             bool repair_job_exists = false;
             HNSWRepairJob *repair_job = nullptr;
             if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
@@ -350,8 +348,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                 idToRepairJobs.at(node.first).push_back(repair_job);
             }
         }
-        swap_job->setRepairJobsNum(incoming_edges.size());
-        if (incoming_edges.size() == 0) {
+        swap_job->setRepairJobsNum(incomingEdges.size());
+        if (incomingEdges.size() == 0) {
             // No pending repair jobs, so swap jobs is ready from the beginning.
             readySwapJobs++;
         }
@@ -399,15 +397,13 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         hnsw_index->unlockIndexDataGuard();
         this->mainIndexGuard.lock();
         hnsw_index->lockIndexDataGuard();
-        // Check if resizing is still required (another thread might have done it in the meantime
-        // while we release the shared lock).
-        if (hnsw_index->indexCapacity() == hnsw_index->indexSize()) {
-            hnsw_index->increaseCapacity();
-        }
+
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
         // graph scans will not occur, as they will try access the entry point's neighbors.
-        state = hnsw_index->storeNewElement(label);
+        // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
+        // we hold the main index lock for exclusive access.
+        state = hnsw_index->storeNewElement(label, blob);
         if (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -430,7 +426,9 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
         // graph scans will not occur, as they will try access the entry point's neighbors.
-        state = hnsw_index->storeNewElement(label);
+        // At this point we are certain that the index has enough capacity for the new element, and
+        // this call will not resize the index.
+        state = hnsw_index->storeNewElement(label, blob);
         if (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -682,8 +680,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                 ->getIdOfLabel(label);
         // If we are adding a new element (rather than updating an exiting one) we may need to
         // increase index capacity.
-    } else if (this->frontendIndex->indexCapacity() == this->frontendIndex->indexSize()) {
-        this->frontendIndex->increaseCapacity();
     }
     // If this label already exists, this will do overwrite.
     this->frontendIndex->addVector(blob, label);

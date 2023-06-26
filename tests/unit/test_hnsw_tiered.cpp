@@ -155,10 +155,10 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     auto hnsw_index = this->CastToHNSW(index);
     if (isMulti == false) {
         auto hnsw = reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     } else { // if its a multi value index cast to HNSW_Multi
         auto hnsw = reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     }
 
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
@@ -172,28 +172,22 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     // Estimate memory delta for filling up the first block and adding another block.
     size_t estimation = VecSimIndex_EstimateElementSize(&params) * bs;
 
-    size_t memory_before = index->getAllocationSize();
-
-    // Note we are adding vectors with ascending values. This causes the numbers of
-    // incoming edges, which are not taking into account in EstimateElementSize,
-    // to be zero
-    for (size_t i = 0; i < bs; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i + bs, i + bs);
-        thread_iteration(jobQ);
-    }
-
-    size_t delta = index->getAllocationSize() - memory_before;
+    size_t before = index->getAllocationSize();
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + n, bs + n);
+    thread_iteration(jobQ);
+    size_t actual = index->getAllocationSize() - before;
 
     // Flat index should be empty, hence the index size includes only hnsw size.
     ASSERT_EQ(index->indexSize(), hnsw_index->indexSize());
-    // We added 2 * bs vectors
-    ASSERT_EQ(index->indexSize(), 2 * bs);
-    // Which is the current maximum capacity.
-    ASSERT_EQ(index->indexSize(), index->indexCapacity());
-    ASSERT_EQ(index->indexSize(), hnsw_index->indexCapacity());
+    ASSERT_EQ(index->indexCapacity(), hnsw_index->indexCapacity());
+    // We added n + 1 vectors
+    ASSERT_EQ(index->indexSize(), n + 1);
+    // We should have 2 blocks now
+    ASSERT_EQ(index->indexCapacity(), 2 * bs);
 
-    ASSERT_GE(estimation * 1.02, delta);
-    ASSERT_LE(estimation * 0.98, delta);
+    // We check that the actual size is within 1% of the estimation.
+    ASSERT_GE(estimation, actual * 0.99);
+    ASSERT_LE(estimation, actual * 1.01);
 
     delete index_ctx;
 }
@@ -309,9 +303,6 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
         size_t dim = 4;
         TEST_DATA_T vector[dim];
         GenerateVector<TEST_DATA_T>(vector, dim);
-        if (my_index->backendIndex->indexCapacity() == my_index->backendIndex->indexSize()) {
-            my_index->backendIndex->increaseCapacity();
-        }
         my_index->backendIndex->addVector(vector, my_index->backendIndex->indexSize());
     };
 
@@ -1034,17 +1025,17 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     do {
         vec_id++;
         GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, vec_id, vec_id);
-        if (tiered_index->getHNSWIndex()->element_levels_[vec_id] > 0) {
+        if (tiered_index->getHNSWIndex()->getGraphDataByInternalId(vec_id)->toplevel > 0) {
             num_elements_with_multiple_levels++;
         }
     } while (num_elements_with_multiple_levels < 2);
 
     // Delete the last inserted vector, which is in level 1.
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(vec_id), 1);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->element_levels_[vec_id], 1);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getGraphDataByInternalId(vec_id)->toplevel, 1);
     // This should be an array of length 1.
-    auto *level_one_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(vec_id, 1);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getNodeNeighborsCount(level_one_neighbors), 1);
+    auto &level_one = tiered_index->getHNSWIndex()->getLevelData(vec_id, 1);
+    ASSERT_EQ(level_one.numLinks, 1);
 
     size_t num_repair_jobs = jobQ.size();
     // There should be at least two nodes to repair, the neighbors of next_id in levels 0 and 1
@@ -1057,7 +1048,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
 
     // The last job should be repairing the single neighbor in level 1.
     ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->level, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, *level_one_neighbors);
+    ASSERT_EQ(((HNSWRepairJob *)(jobQ.front().job))->node_id, level_one.links[0]);
 
     delete index_ctx;
 }
@@ -1088,9 +1079,8 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
     while (tiered_index->getHNSWIndex()->getNumMarkedDeleted() < n) {
         // Choose the current entry point each time (it should be modified after the deletion).
         idType ep = tiered_index->getHNSWIndex()->safeGetEntryPointState().first;
-        auto ep_level = tiered_index->getHNSWIndex()->getMaxLevel();
         auto incoming_neighbors =
-            tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep, ep_level);
+            tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep);
         ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1);
         ASSERT_EQ(jobQ.size(), incoming_neighbors.size());
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
@@ -1101,18 +1091,14 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
         while (!jobQ.empty()) {
             idType repair_node_id = ((HNSWRepairJob *)(jobQ.front().job))->node_id;
             auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
-            auto orig_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
-                repair_node_id, repair_node_level);
 
             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
-            auto new_neighbors = tiered_index->getHNSWIndex()->getNodeNeighborsAtLevel(
-                repair_node_id, repair_node_level);
-            size_t new_neighbors_count =
-                tiered_index->getHNSWIndex()->getNodeNeighborsCount(new_neighbors);
+            LevelData &node_meta =
+                tiered_index->getHNSWIndex()->getLevelData(repair_node_id, repair_node_level);
             // This makes sure that the deleted node is no longer in the neighbors set of the
             // repaired node.
-            ASSERT_TRUE(std::find(new_neighbors, new_neighbors + new_neighbors_count, ep) ==
-                        new_neighbors + new_neighbors_count);
+            ASSERT_TRUE(std::find(node_meta.links, node_meta.links + node_meta.numLinks, ep) ==
+                        node_meta.links + node_meta.numLinks);
             // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
             // still pending and avoid creating new jobs for nodes that already been repaired
             // as they were pointing to deleted elements.
@@ -1815,12 +1801,14 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->idToSwapJob.reserve(0);
     TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
-                               ->label_lookup_.reserve(0)
+                               ->labelLookup.reserve(0)
                          : reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
-                               ->label_lookup_.reserve(0);
+                               ->labelLookup.reserve(0);
 
     size_t initial_mem = tiered_index->getAllocationSize();
+    size_t initial_mem_backend = tiered_index->backendIndex->getAllocationSize();
+    size_t initial_mem_frontend = tiered_index->frontendIndex->getAllocationSize();
 
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
@@ -1853,9 +1841,12 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // started inserting vectors.
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
-    // Call this just to trigger an update of the memory context.
-    EXPECT_EQ(tiered_index->deleteVector(0), 0);
+    // Manually shrink the vectors so that memory would be as it was before we started inserting
+    tiered_index->getHNSWIndex()->vectorBlocks.shrink_to_fit();
+    tiered_index->getHNSWIndex()->graphDataBlocks.shrink_to_fit();
 
+    EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
+    EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
     EXPECT_EQ(tiered_index->getAllocationSize(), initial_mem);
 
     delete index_ctx;
@@ -2911,7 +2902,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
             // Search mode.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimSearchMode_ToString(info.commonInfo.last_mode));
+                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);

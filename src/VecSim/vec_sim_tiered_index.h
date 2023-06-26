@@ -268,7 +268,7 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     info.commonInfo.indexSize =
         frontendInfo.commonInfo.indexSize + backendInfo.commonInfo.indexSize;
     info.commonInfo.memory = this->getAllocationSize();
-    info.commonInfo.last_mode = backendInfo.commonInfo.last_mode;
+    info.commonInfo.lastMode = backendInfo.commonInfo.lastMode;
 
     VecSimIndexBasicInfo basic_info{.algo = backendInfo.commonInfo.basicInfo.algo,
                                     .blockSize = backendInfo.commonInfo.basicInfo.blockSize,

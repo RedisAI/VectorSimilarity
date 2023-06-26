@@ -95,11 +95,6 @@ public:
     virtual size_t indexCapacity() const = 0;
 
     /**
-     * @brief Change the index capacity (without changing its data), by adding another block.
-     */
-    virtual void increaseCapacity() = 0;
-
-    /**
      * @brief Return the number of unique labels in the index (which are not deleted).
      *
      * @return index label count.
