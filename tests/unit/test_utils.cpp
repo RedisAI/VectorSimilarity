@@ -117,7 +117,7 @@ void compareCommonInfo(CommonInfo info1, CommonInfo info2) {
     ASSERT_EQ(info1.memory, info2.memory);
     ASSERT_EQ(info1.basicInfo.blockSize, info2.basicInfo.blockSize);
     ASSERT_EQ(info1.basicInfo.isMulti, info2.basicInfo.isMulti);
-    ASSERT_EQ(info1.last_mode, info2.last_mode);
+    ASSERT_EQ(info1.lastMode, info2.lastMode);
     ASSERT_EQ(info1.indexLabelCount, info2.indexLabelCount);
 }
 void compareFlatInfo(bfInfoStruct info1, bfInfoStruct info2) {}
@@ -184,7 +184,7 @@ void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Search mode.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimSearchMode_ToString(info.commonInfo.last_mode));
+                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
@@ -238,7 +238,7 @@ void compareHNSWIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *in
             // Search mode.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimSearchMode_ToString(info.commonInfo.last_mode));
+                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);

@@ -20,7 +20,7 @@ template <typename DataType, typename DistType>
 class HNSW_BatchIterator : public VecSimBatchIterator {
 protected:
     const HNSWIndex<DataType, DistType> *index;
-    dist_func_t<DistType> dist_func;
+    dist_func_t<DistType> distFunc;
     size_t dim;
     VisitedNodesHandler *visited_list; // Pointer to the hnsw visitedList structure.
     tag_t visited_tag;                 // Used to mark nodes that were scanned.
@@ -76,7 +76,7 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
       index(index), depleted(false), top_candidates_extras(this->allocator),
       candidates(this->allocator) {
 
-    this->dist_func = index->getDistFunc();
+    this->distFunc = index->getDistFunc();
     this->dim = index->getDim();
     this->entry_point = INVALID_ID; // temporary until we store the entry point to level 0.
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
@@ -100,7 +100,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
         DistType curr_node_dist = candidates.top().first;
         idType curr_node_id = candidates.top().second;
 
-        __builtin_prefetch(this->index->getMetaDataByInternalId(curr_node_id));
+        __builtin_prefetch(this->index->getGraphDataByInternalId(curr_node_id));
         __builtin_prefetch(this->index->getMetaDataAddress(curr_node_id));
         // If the closest element in the candidates set is further than the furthest element in the
         // top candidates set, and we have enough results, we finish the search.
@@ -117,22 +117,23 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        this->index->lockNodeLinks(curr_node_id);
-        level_data &node_meta = this->index->getLevelData(curr_node_id, 0);
-        if (node_meta.numLinks > 0) {
+        auto *node_graph_data = this->index->getGraphDataByInternalId(curr_node_id);
+        this->index->lockNodeLinks(node_graph_data);
+        LevelData &node_level_data = this->index->getLevelData(node_graph_data, 0);
+        if (node_level_data.numLinks > 0) {
 
             // Pre-fetch first candidate tag address.
-            __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[0]);
+            __builtin_prefetch(visited_list->getElementsTags() + node_level_data.links[0]);
             // // Pre-fetch first candidate data block address.
-            __builtin_prefetch(index->getDataByInternalId(node_meta.links[0]));
+            __builtin_prefetch(index->getDataByInternalId(node_level_data.links[0]));
 
-            for (linkListSize j = 0; j < node_meta.numLinks - 1; j++) {
-                idType candidate_id = node_meta.links[j];
+            for (linkListSize j = 0; j < node_level_data.numLinks - 1; j++) {
+                idType candidate_id = node_level_data.links[j];
 
                 // Pre-fetch next candidate tag address.
-                __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[j + 1]);
+                __builtin_prefetch(visited_list->getElementsTags() + node_level_data.links[j + 1]);
                 // Pre-fetch next candidate data block address.
-                __builtin_prefetch(index->getDataByInternalId(node_meta.links[j + 1]));
+                __builtin_prefetch(index->getDataByInternalId(node_level_data.links[j + 1]));
 
                 if (this->hasVisitedNode(candidate_id)) {
                     continue;
@@ -141,19 +142,19 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
                 DistType candidate_dist =
-                    dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
+                    distFunc(this->getQueryBlob(), (const void *)candidate_data, dim);
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
             // Running the last candidate outside the loop to avoid prefetching invalid candidate
-            idType candidate_id = node_meta.links[node_meta.numLinks - 1];
+            idType candidate_id = node_level_data.links[node_level_data.numLinks - 1];
 
             if (!this->hasVisitedNode(candidate_id)) {
                 this->visitNode(candidate_id);
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
                 DistType candidate_dist =
-                    dist_func(this->getQueryBlob(), (const void *)candidate_data, dim);
+                    distFunc(this->getQueryBlob(), (const void *)candidate_data, dim);
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -177,8 +178,8 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
         if (!index->isMarkedDeleted(this->entry_point)) {
-            this->lower_bound = dist_func(this->getQueryBlob(),
-                                          this->index->getDataByInternalId(this->entry_point), dim);
+            this->lower_bound = distFunc(this->getQueryBlob(),
+                                         this->index->getDataByInternalId(this->entry_point), dim);
         } else {
             this->lower_bound = std::numeric_limits<DistType>::max();
         }

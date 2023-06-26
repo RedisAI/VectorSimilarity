@@ -155,10 +155,10 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     auto hnsw_index = this->CastToHNSW(index);
     if (isMulti == false) {
         auto hnsw = reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     } else { // if its a multi value index cast to HNSW_Multi
         auto hnsw = reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(hnsw_index);
-        initial_size_estimation += (hnsw->label_lookup_.bucket_count() - n) * sizeof(size_t);
+        initial_size_estimation += (hnsw->labelLookup.bucket_count() - n) * sizeof(size_t);
     }
 
     ASSERT_EQ(initial_size_estimation, index->getAllocationSize());
@@ -185,10 +185,9 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     // We should have 2 blocks now
     ASSERT_EQ(index->indexCapacity(), 2 * bs);
 
-    // The estimation is an upper bound, so we check that the actual size is smaller but within 10%
-    // of the estimation.
-    ASSERT_GE(estimation, actual);
-    ASSERT_LE(estimation, actual * 1.1);
+    // We check that the actual size is within 1% of the estimation.
+    ASSERT_GE(estimation, actual * 0.99);
+    ASSERT_LE(estimation, actual * 1.01);
 
     delete index_ctx;
 }
@@ -1026,14 +1025,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     do {
         vec_id++;
         GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, vec_id, vec_id);
-        if (tiered_index->getHNSWIndex()->getMetaDataByInternalId(vec_id)->toplevel > 0) {
+        if (tiered_index->getHNSWIndex()->getGraphDataByInternalId(vec_id)->toplevel > 0) {
             num_elements_with_multiple_levels++;
         }
     } while (num_elements_with_multiple_levels < 2);
 
     // Delete the last inserted vector, which is in level 1.
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(vec_id), 1);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getMetaDataByInternalId(vec_id)->toplevel, 1);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getGraphDataByInternalId(vec_id)->toplevel, 1);
     // This should be an array of length 1.
     auto &level_one = tiered_index->getHNSWIndex()->getLevelData(vec_id, 1);
     ASSERT_EQ(level_one.numLinks, 1);
@@ -1094,7 +1093,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
             auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
 
             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
-            level_data &node_meta =
+            LevelData &node_meta =
                 tiered_index->getHNSWIndex()->getLevelData(repair_node_id, repair_node_level);
             // This makes sure that the deleted node is no longer in the neighbors set of the
             // repaired node.
@@ -1802,10 +1801,10 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->idToSwapJob.reserve(0);
     TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
-                               ->label_lookup_.reserve(0)
+                               ->labelLookup.reserve(0)
                          : reinterpret_cast<HNSWIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
-                               ->label_lookup_.reserve(0);
+                               ->labelLookup.reserve(0);
 
     size_t initial_mem = tiered_index->getAllocationSize();
     size_t initial_mem_backend = tiered_index->backendIndex->getAllocationSize();
@@ -1843,8 +1842,8 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
     // Manually shrink the vectors so that memory would be as it was before we started inserting
-    tiered_index->getHNSWIndex()->vector_blocks.shrink_to_fit();
-    tiered_index->getHNSWIndex()->meta_blocks.shrink_to_fit();
+    tiered_index->getHNSWIndex()->vectorBlocks.shrink_to_fit();
+    tiered_index->getHNSWIndex()->graphDataBlocks.shrink_to_fit();
 
     EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
     EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
@@ -2903,7 +2902,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
             // Search mode.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_STRING);
             ASSERT_STREQ(infoField->fieldValue.stringValue,
-                         VecSimSearchMode_ToString(info.commonInfo.last_mode));
+                         VecSimSearchMode_ToString(info.commonInfo.lastMode));
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::INDEX_SIZE_STRING)) {
             // Index size.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);

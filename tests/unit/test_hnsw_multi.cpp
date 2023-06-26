@@ -161,7 +161,7 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(element_label);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -201,7 +201,7 @@ TYPED_TEST(HNSWMultiTest, indexing_same_vector) {
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
         ASSERT_EQ(element_label, i);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(element_label);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(element_label);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -470,7 +470,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(STANDARD_KNN, info.commonInfo.last_mode);
+    ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -478,28 +478,28 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimQueryResult_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(RANGE_QUERY, info.commonInfo.last_mode);
+    ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_ADHOC_BF, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
     // Set the index size artificially so that BATCHES mode will be selected by the heuristics.
-    auto actual_element_count = this->CastToHNSW(index)->cur_element_count;
-    this->CastToHNSW(index)->cur_element_count = 1e6;
+    auto actual_element_count = this->CastToHNSW(index)->curElementCount;
+    this->CastToHNSW(index)->curElementCount = 1e6;
     vecsim_stl::vector<idType> vec(index->getAllocator());
     for (size_t i = 0; i < 1e5; i++) {
-        this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
+        this->CastToHNSW_Multi(index)->labelLookup.emplace(i, vec);
     }
     ASSERT_FALSE(VecSimIndex_PreferAdHocSearch(index, 10, 1, true));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
@@ -508,11 +508,11 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     ASSERT_TRUE(VecSimIndex_PreferAdHocSearch(index, 1, 10, false));
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
-    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.last_mode);
+    ASSERT_EQ(HYBRID_BATCHES_TO_ADHOC_BF, info.commonInfo.lastMode);
     compareHNSWIndexInfoToIterator(info, infoIter);
     VecSimInfoIterator_Free(infoIter);
 
-    this->CastToHNSW(index)->cur_element_count = actual_element_count;
+    this->CastToHNSW(index)->curElementCount = actual_element_count;
     VecSimIndex_Free(index);
 }
 
@@ -603,16 +603,16 @@ TYPED_TEST(HNSWMultiTest, preferAdHocOptimization) {
         VecSimIndex *index = this->CreateNewIndex(params);
 
         // Set the index size artificially to be the required one.
-        this->CastToHNSW(index)->cur_element_count = index_size;
+        this->CastToHNSW(index)->curElementCount = index_size;
         vecsim_stl::vector<idType> vec(index->getAllocator());
         for (size_t i = 0; i < label_count; i++) {
-            this->CastToHNSW_Multi(index)->label_lookup_.emplace(i, vec);
+            this->CastToHNSW_Multi(index)->labelLookup.emplace(i, vec);
         }
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
         // Clean up.
-        this->CastToHNSW(index)->cur_element_count = 0;
+        this->CastToHNSW(index)->curElementCount = 0;
         VecSimIndex_Free(index);
     }
 
@@ -704,10 +704,10 @@ TYPED_TEST(HNSWMultiTest, removeVectorWithSwaps) {
 
     // Artificially reorder the internal ids to test that we make the right changes
     // when we have an id that appears twice in the array upon deleting the ids one by one.
-    ASSERT_EQ(index->label_lookup_.at(second_label).size(), n / 2);
-    index->label_lookup_.at(second_label)[0] = 4;
-    index->label_lookup_.at(second_label)[1] = 2;
-    index->label_lookup_.at(second_label)[2] = 5;
+    ASSERT_EQ(index->labelLookup.at(second_label).size(), n / 2);
+    index->labelLookup.at(second_label)[0] = 4;
+    index->labelLookup.at(second_label)[1] = 2;
+    index->labelLookup.at(second_label)[2] = 5;
 
     // Expect that the ids array of the second label will behave as following:
     // [|4, 2, 5] -> [4, |2, 4] -> [4, 2, |2] (where | marks the current position).
@@ -716,7 +716,7 @@ TYPED_TEST(HNSWMultiTest, removeVectorWithSwaps) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n / 2);
 
     // Check that the internal ids of the first label are as expected.
-    auto ids = index->label_lookup_.at(first_label);
+    auto ids = index->labelLookup.at(first_label);
     ASSERT_EQ(ids.size(), n / 2);
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 0) != ids.end());
     ASSERT_TRUE(std::find(ids.begin(), ids.end(), 1) != ids.end());
@@ -878,7 +878,7 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     // labels_lookup hash table has additional memory, since STL implementation chooses "an
     // appropriate prime number" higher than n as the number of allocated buckets (for n=1000, 1031
     // buckets are created)
-    estimation += (this->CastToHNSW_Multi(index)->label_lookup_.bucket_count() - (n + extra_cap)) *
+    estimation += (this->CastToHNSW_Multi(index)->labelLookup.bucket_count() - (n + extra_cap)) *
                   sizeof(size_t);
 
     ASSERT_EQ(estimation, actual);
@@ -898,10 +898,9 @@ TYPED_TEST(HNSWMultiTest, testSizeEstimation) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, bs, bs);
     actual = index->getAllocationSize() - before;
 
-    // The estimation is an upper bound, so we check that the actual size is smaller but within 5%
-    // of the estimation.
-    ASSERT_GE(estimation, actual);
-    ASSERT_LE(estimation, actual * 1.05);
+    // We check that the actual size is within 1% of the estimation.
+    ASSERT_GE(estimation, actual * 0.99);
+    ASSERT_LE(estimation, actual * 1.01);
 
     VecSimIndex_Free(index);
 }
@@ -1508,12 +1507,12 @@ TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     VecSimIndex *index = this->CreateNewIndex(params);
 
     // enforce max level to be 0
-    this->CastToHNSW(index)->mult_ = 0;
+    this->CastToHNSW(index)->mult = 0;
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i % n_labels, i);
     }
     // enforce entry point to be 0
-    this->CastToHNSW(index)->entrypoint_node_ = 0;
+    this->CastToHNSW(index)->entrypointNode = 0;
 
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, n);
@@ -1724,7 +1723,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     auto verify_res = [&](size_t id, double score, size_t idx) {
         ASSERT_EQ(id, idx);
         ASSERT_EQ(score, dim * per_label * per_label * idx * idx);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(id);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.
@@ -1757,9 +1756,9 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     // Add a new vector, make sure it has no link to a deleted vector (id/per_label should be even)
     // This value is very close to a deleted vector
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
-    for (size_t level = 0; level <= this->CastToHNSW(index)->getMetaDataByInternalId(n)->toplevel;
+    for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
-        level_data &meta = this->CastToHNSW(index)->getLevelData(n, level);
+        LevelData &meta = this->CastToHNSW(index)->getLevelData(n, level);
         for (size_t idx = 0; idx < meta.numLinks; idx++) {
             ASSERT_TRUE((meta.links[idx] / per_label) % 2 != ep_reminder)
                 << "Got a link to " << meta.links[idx] << " on level " << level;
@@ -1771,7 +1770,7 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
         ASSERT_NE(id % 2, ep_reminder);
         ASSERT_EQ(id, idx * 2);
         ASSERT_EQ(score, dim * per_label * per_label * id * id);
-        auto ids = this->CastToHNSW_Multi(index)->label_lookup_.at(id);
+        auto ids = this->CastToHNSW_Multi(index)->labelLookup.at(id);
         for (size_t j = 0; j < ids.size(); j++) {
             // Verifying that each vector is labeled correctly.
             // ID is calculated according to insertion order.

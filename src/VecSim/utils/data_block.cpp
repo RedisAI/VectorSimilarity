@@ -16,7 +16,7 @@ DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,
 DataBlock::DataBlock(DataBlock &&other) noexcept
     : VecsimBaseObject(other.allocator), element_bytes_count(other.element_bytes_count),
       length(other.length), data(other.data) {
-    other.data = nullptr;
+    other.data = nullptr; // take ownership of the data
 }
 
 DataBlock::~DataBlock() noexcept { this->allocator->free_allocation(data); }

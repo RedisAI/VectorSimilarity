@@ -66,10 +66,7 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 
 size_t EstimateInitialSize(const HNSWParams *params) {
     size_t blockSize = params->blockSize ? params->blockSize : DEFAULT_BLOCK_SIZE;
-    size_t initial_cap =
-        params->initialCapacity % blockSize == 0
-            ? params->initialCapacity
-            : params->initialCapacity + blockSize - params->initialCapacity % blockSize;
+    size_t initial_cap = RoundUpInitialCapacity(params->initialCapacity, blockSize);
 
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
@@ -89,9 +86,9 @@ size_t EstimateInitialSize(const HNSWParams *params) {
     // Implicit allocation calls - allocates memory + a header only with positive capacity.
     if (initial_cap) {
         size_t num_blocks = initial_cap / blockSize; // should be divisible by block size
-        est += sizeof(DataBlock) * num_blocks + allocations_overhead;          // data blocks
-        est += sizeof(DataBlock) * num_blocks + allocations_overhead;          // meta blocks
-        est += sizeof(element_meta_data) * initial_cap + allocations_overhead; // idToMetaData
+        est += sizeof(DataBlock) * num_blocks + allocations_overhead;        // data blocks
+        est += sizeof(DataBlock) * num_blocks + allocations_overhead;        // meta blocks
+        est += sizeof(ElementMetaData) * initial_cap + allocations_overhead; // idToMetaData
         // Labels lookup hash table buckets.
         est += sizeof(size_t) * initial_cap + allocations_overhead;
     }
@@ -102,31 +99,18 @@ size_t EstimateInitialSize(const HNSWParams *params) {
 size_t EstimateElementSize(const HNSWParams *params) {
 
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
-    size_t element_graph_data_size_ = sizeof(element_graph_data) + sizeof(idType) * M * 2;
+    size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
     size_t size_total_data_per_element =
-        element_graph_data_size_ + params->dim * VecSimType_sizeof(params->type);
+        elementGraphDataSize + params->dim * VecSimType_sizeof(params->type);
 
-    size_t size_label_lookup_node;
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
-
-    if (params->multi) {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map,
-        // and a new element to the vector in the map. These two allocations both results in a new
-        // allocation and therefore another VecSimAllocator::allocation_header_size.
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, vecsim_stl::vector<idType>>::value_type) +
-            sizeof(size_t);
-    } else {
-        // For each new insertion (of a new label), we add a new node to the label_lookup_ map. This
-        // results in a new allocation and therefore another VecSimAllocator::allocation_header_size
-        size_label_lookup_node =
-            sizeof(vecsim_stl::unordered_map<labelType, idType>::value_type) + sizeof(size_t);
-    }
+    // when reserving space for new labels in the lookup hash table, each entry is a pointer to a
+    // label node (bucket).
+    size_t size_label_lookup_entry = sizeof(void *);
 
     // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
     // labels lookup hash map.
-    size_t size_meta_data = sizeof(tag_t) + sizeof(element_meta_data) + size_label_lookup_node;
+    size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) + size_label_lookup_entry;
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of

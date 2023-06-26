@@ -71,6 +71,10 @@ protected:
         labelToIdLookup.at(label) = new_id;
     }
 
+    inline void resizeLabelLookup(size_t new_max_elements) override {
+        labelToIdLookup.reserve(new_max_elements);
+    }
+
     inline bool isLabelExists(labelType label) override {
         return labelToIdLookup.find(label) != labelToIdLookup.end();
     }
@@ -189,5 +193,5 @@ double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType lab
     }
     idType id = optionalId->second;
 
-    return this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+    return this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
 }
