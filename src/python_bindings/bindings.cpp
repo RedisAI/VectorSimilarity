@@ -382,12 +382,9 @@ public:
         }
     }
 
-    virtual ~PyTieredIndex () {
+    virtual ~PyTieredIndex() {
         tieredIndexMock::thread_pool_join();
         assert(tieredIndexMock::jobQ.empty());
-        std::cout << "destructing tiered index" << std::endl;
-        // We must hold the allocator so it won't deallocate itself
-        auto allocator = tieredIndexMock::ctx->index_strong_ref->getAllocator();
         delete tieredIndexMock::ctx;
     }
 
@@ -408,8 +405,7 @@ public:
 class PyTiered_HNSWIndex : public PyTieredIndex {
 public:
     explicit PyTiered_HNSWIndex(const HNSWParams &hnsw_params,
-                                const TieredHNSWParams &tiered_hnsw_params,
-                                size_t buffer_limit) {
+                                const TieredHNSWParams &tiered_hnsw_params, size_t buffer_limit) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
         VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
@@ -429,12 +425,7 @@ public:
         // Create VecSimParams for TieredIndexParams
         VecSimParams params = {.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
 
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), [](auto *index){
-            std::cout << "destructing tiered index - deleter" << std::endl;
-            // We must hold the allocator so it won't deallocate itself
-            auto allocator = tieredIndexMock::ctx->index_strong_ref->getAllocator();
-            delete tieredIndexMock::ctx;
-        });
+        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
 
         // Set the created tiered index in the index external context.
         tieredIndexMock::ctx->index_strong_ref = this->index;
