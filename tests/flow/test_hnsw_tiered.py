@@ -176,13 +176,17 @@ def search_insert(is_multi: bool, num_per_label=1):
     correct = 0
     k = 10
     searches_number = 0
-    print(f"HNSW labels number = {index.hnsw_label_count()}")
-    # run knn query every 1 s. 
+    # run knn query every 1 s.
     total_tiered_search_time = 0
     prev_bf_size = num_labels
+    cur_hnsw_label_count = index.hnsw_label_count()
+    if cur_hnsw_label_count == num_labels:
+        print("All vectors were already indexed into HNSW - cannot test search while indexing")
+        return
+
     print("Start running queries while indexing is done in the background")
-    print(index.hnsw_label_count())
-    while index.hnsw_label_count() < num_labels:
+    print(f"HNSW labels number = {cur_hnsw_label_count}")
+    while cur_hnsw_label_count < num_labels:
         # For each run get the current hnsw size and the query time.
         bf_curr_size = index.get_curr_bf_size()
         query_start = time.time()
@@ -202,6 +206,7 @@ def search_insert(is_multi: bool, num_per_label=1):
         time.sleep(1)
         searches_number += 1
         prev_bf_size = bf_curr_size
+        cur_hnsw_label_count = index.hnsw_label_count()
     
     # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
     index.wait_for_index(1)

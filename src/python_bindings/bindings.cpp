@@ -372,8 +372,9 @@ private:
 
 public:
     explicit PyTieredIndex() {
-        if (tieredIndexMock::thread_pool.size() > 0) {
-            tieredIndexMock::thread_pool_join();
+        if (tieredIndexMock::ctx != nullptr || !tieredIndexMock::jobQ.empty() ||
+            tieredIndexMock::thread_pool.size() > 0) {
+            throw std::runtime_error("Previous tests did not ended successfully - aborting test");
         }
         tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
         tieredIndexMock::run_thread = true;
@@ -384,8 +385,8 @@ public:
 
     virtual ~PyTieredIndex() {
         tieredIndexMock::thread_pool_join();
-        assert(tieredIndexMock::jobQ.empty());
         delete tieredIndexMock::ctx;
+        tieredIndexMock::ctx = nullptr;
     }
 
     void WaitForIndex(size_t waiting_duration = 10) {
