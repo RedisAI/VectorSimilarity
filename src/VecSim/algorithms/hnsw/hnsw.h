@@ -520,14 +520,12 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(ElementGraphData *node_data)
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::lockNodeLinks(idType node_id) const {
-    auto *node_data = getGraphDataByInternalId(node_id);
-    node_data->neighborsGuard.lock();
+    lockNodeLinks(getGraphDataByInternalId(node_id));
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
-    auto *node_data = getGraphDataByInternalId(node_id);
-    node_data->neighborsGuard.unlock();
+    unlockNodeLinks(getGraphDataByInternalId(node_id));
 }
 
 /**
@@ -1214,12 +1212,12 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 
     for (auto &neighbor_data : selected_neighbors) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
-        auto *neighbor_meta = getGraphDataByInternalId(selected_neighbor);
+        auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
         if (new_node_id < selected_neighbor) {
             lockNodeLinks(new_node_meta);
-            lockNodeLinks(neighbor_meta);
+            lockNodeLinks(neighbor_graph_data);
         } else {
-            lockNodeLinks(neighbor_meta);
+            lockNodeLinks(neighbor_graph_data);
             lockNodeLinks(new_node_meta);
         }
 
@@ -1233,18 +1231,18 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             // The new node cannot add more neighbors
             this->log("Couldn't add all chosen neighbors upon inserting a new node");
             unlockNodeLinks(new_node_meta);
-            unlockNodeLinks(neighbor_meta);
+            unlockNodeLinks(neighbor_graph_data);
             break;
         }
 
         // If one of the two nodes has already deleted - skip the operation.
         if (isMarkedDeleted(new_node_id) || isMarkedDeleted(selected_neighbor)) {
             unlockNodeLinks(new_node_meta);
-            unlockNodeLinks(neighbor_meta);
+            unlockNodeLinks(neighbor_graph_data);
             continue;
         }
 
-        LevelData &neighbor_level_data = getLevelData(selected_neighbor, level);
+        LevelData &neighbor_level_data = getLevelData(neighbor_graph_data, level);
 
         // if the neighbor's neighbors list has the capacity to add the new node, make the update
         // and finish.
@@ -1252,7 +1250,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
             new_node_level_data.links[new_node_level_data.numLinks++] = selected_neighbor;
             neighbor_level_data.links[neighbor_level_data.numLinks++] = new_node_id;
             unlockNodeLinks(new_node_meta);
-            unlockNodeLinks(neighbor_meta);
+            unlockNodeLinks(neighbor_graph_data);
             continue;
         }
 
@@ -1349,9 +1347,11 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
-    idType old_entry = entrypointNode;
+    idType old_entry_point = entrypointNode;
+    auto *old_ep_graph_data = getGraphDataByInternalId(old_entry_point);
+
     // Sets an (arbitrary) new entry point, after deleting the current entry point.
-    while (old_entry == entrypointNode) {
+    while (old_entry_point == entrypointNode) {
         // Use volatile for this variable, so that in case we would have to busy wait for this
         // element to finish its indexing, the compiler will not use optimizations. Otherwise,
         // the compiler might evaluate 'isInProcess(candidate_in_process)' once instead of calling
@@ -1360,15 +1360,15 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         volatile idType candidate_in_process = INVALID_ID;
 
         // Go over the entry point's neighbors at the top level.
-        lockNodeLinks(entrypointNode);
-        LevelData &old_entry_meta = getLevelData(old_entry, maxLevel);
+        lockNodeLinks(old_ep_graph_data);
+        LevelData &old_entry_meta = getLevelData(old_ep_graph_data, maxLevel);
         // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
         // if exists.
         for (size_t i = 0; i < old_entry_meta.numLinks; i++) {
             if (!isMarkedDeleted(old_entry_meta.links[i])) {
                 if (!isInProcess(old_entry_meta.links[i])) {
                     entrypointNode = old_entry_meta.links[i];
-                    unlockNodeLinks(old_entry);
+                    unlockNodeLinks(old_ep_graph_data);
                     return;
                 } else {
                     // Store this candidate which is currently being inserted into the graph in
@@ -1377,7 +1377,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
                 }
             }
         }
-        unlockNodeLinks(entrypointNode);
+        unlockNodeLinks(old_ep_graph_data);
 
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
@@ -1386,7 +1386,8 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             size_t size = meta_block.getLength();
             for (size_t i = 0; i < size; i++) {
                 auto meta = (ElementGraphData *)meta_block.getElement(i);
-                if (meta->toplevel == maxLevel && cur_id != old_entry && !isMarkedDeleted(cur_id)) {
+                if (meta->toplevel == maxLevel && cur_id != old_entry_point &&
+                    !isMarkedDeleted(cur_id)) {
                     // Found a non element in the current max level.
                     if (!isInProcess(cur_id)) {
                         entrypointNode = cur_id;
@@ -1412,7 +1413,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         }
         // If we didn't find any vector at the top level, decrease the maxLevel and try again,
         // until we find a new entry point, or the index is empty.
-        assert(old_entry == entrypointNode);
+        assert(old_entry_point == entrypointNode);
         maxLevel--;
         if ((int)maxLevel < 0) {
             maxLevel = HNSW_INVALID_LEVEL;
@@ -1801,8 +1802,8 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             }
             neighbors_candidates_set[neighbor_level_data.links[j]] = true;
             neighbors_candidates.emplace(
-                this->distFunc(getDataByInternalId(node_id),
-                               getDataByInternalId(neighbor_level_data.links[j]), this->dim),
+                this->distFunc(node_data, getDataByInternalId(neighbor_level_data.links[j]),
+                               this->dim),
                 neighbor_level_data.links[j]);
         }
         unlockNodeLinks(neighbor_meta);
