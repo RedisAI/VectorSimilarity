@@ -166,7 +166,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     }
 
     // Get meta blocks
-    ElementGraphData *cur_meta;
+    ElementGraphData *cur_egt;
     char tmpData[this->elementGraphDataSize];
     size_t toplevel = 0;
     for (size_t i = 0; i < num_blocks; i++) {
@@ -186,13 +186,13 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
                 this->log("Error - allocating memory for new element failed due to low memory");
                 throw e;
             }
-            // Add the current meta data to the current block, and update cur_meta to point to it.
+            // Add the current meta data to the current block, and update cur_egt to point to it.
             this->graphDataBlocks.back().addElement(tmpData);
-            cur_meta = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
+            cur_egt = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
 
             // Restore the current meta data
             for (size_t k = 0; k <= toplevel; k++) {
-                restoreLevel(input, getLevelData(cur_meta, k));
+                restoreLevel(input, getLevelData(cur_egt, k));
             }
         }
     }

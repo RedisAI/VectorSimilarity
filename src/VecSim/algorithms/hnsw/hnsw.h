@@ -2050,15 +2050,14 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     // variable, since it has a flexible array member.
     char tmpData[this->elementGraphDataSize];
     memset(tmpData, 0, this->elementGraphDataSize);
+    ElementGraphData *cur_egd = (ElementGraphData *)tmpData;
     // Allocate memory (inside `ElementGraphData` constructor) for the links in higher levels and
     // initialize this memory to zeros. The reason for doing it here is that we might mark this
     // vector as deleted BEFORE we finish its indexing. In that case, we will collect the incoming
     // edges to this element in every level, and try to access its link lists in higher levels.
     // Therefore, we allocate it here and initialize it with zeros, (otherwise we might crash...)
-    ElementGraphData *cur_meta;
     try {
-        cur_meta =
-            new (tmpData) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
+        new (cur_egd) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
     } catch (std::runtime_error &e) {
         this->log("Error - allocating memory for new element failed due to low memory");
         throw e;
@@ -2076,7 +2075,7 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
 
     // Insert the new element to the data block
     this->vectorBlocks.back().addElement(vector_data);
-    this->graphDataBlocks.back().addElement(cur_meta);
+    this->graphDataBlocks.back().addElement(cur_egd);
     // We mark id as in process *before* we set it in the label lookup, otherwise we might check
     // that the label exist with safeCheckIfLabelExistsInIndex and see that IN_PROCESS flag is
     // clear.
