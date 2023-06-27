@@ -2060,7 +2060,7 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
         cur_meta =
             new (tmpData) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
     } catch (std::runtime_error &e) {
-        this->log("Error - allocating memory for links in higher level failed due to low memory");
+        this->log("Error - allocating memory for new element failed due to low memory");
         throw e;
     }
 

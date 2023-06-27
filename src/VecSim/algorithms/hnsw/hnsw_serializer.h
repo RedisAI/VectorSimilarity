@@ -121,8 +121,8 @@ void HNSWIndex<DataType, DistType>::restoreIndexFields(std::ifstream &input) {
     readBinaryPOD(input, this->epsilon);
 
     // Restore index meta-data
-    readBinaryPOD(input, this->elementGraphDataSize);
-    readBinaryPOD(input, this->levelDataSize);
+    this->elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * this->M0;
+    this->levelDataSize = sizeof(LevelData) + sizeof(idType) * this->M;
     readBinaryPOD(input, this->mult);
 
     // Restore index state
@@ -166,58 +166,54 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
     }
 
     // Get meta blocks
-    idType cur_c = 0;
+    ElementGraphData *cur_meta;
+    char tmpData[this->elementGraphDataSize];
+    size_t toplevel = 0;
     for (size_t i = 0; i < num_blocks; i++) {
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
                                            this->allocator);
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            char cur_meta_data[this->elementGraphDataSize];
-            input.read(cur_meta_data, this->elementGraphDataSize);
-            auto cur_meta = (ElementGraphData *)cur_meta_data;
-
-            if (cur_meta->toplevel > 0) {
-                // Allocate space for the other levels
-                cur_meta->others = (LevelData *)this->allocator->allocate(this->levelDataSize *
-                                                                          cur_meta->toplevel);
-                if (cur_meta->others == nullptr) {
-                    throw std::runtime_error(
-                        "Not enough memory: loadIndex failed to allocate element meta data.");
-                }
-                input.read((char *)(cur_meta->others), this->levelDataSize * cur_meta->toplevel);
+            // Reset tmpData
+            memset(tmpData, 0, this->elementGraphDataSize);
+            // Read the current meta data top level
+            readBinaryPOD(input, toplevel);
+            // Allocate space and structs for the current meta data
+            try {
+                new (tmpData) ElementGraphData(toplevel, this->levelDataSize, this->allocator);
+            } catch (std::runtime_error &e) {
+                this->log("Error - allocating memory for new element failed due to low memory");
+                throw e;
             }
+            // Add the current meta data to the current block, and update cur_meta to point to it.
+            this->graphDataBlocks.back().addElement(tmpData);
+            cur_meta = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
 
-            // Save the incoming edges of the current element.
-            // Level 0
-            unsigned int size = 0;
-            readBinaryPOD(input, size);
-            cur_meta->level0.incomingEdges =
-                new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
-            for (size_t k = 0; k < size; k++) {
-                idType edge;
-                readBinaryPOD(input, edge);
-                (*cur_meta->level0.incomingEdges)[k] = edge;
+            // Restore the current meta data
+            for (size_t k = 0; k <= toplevel; k++) {
+                restoreLevel(input, getLevelData(cur_meta, k));
             }
-
-            // Levels 1 to maxlevel
-            for (size_t level_offset = 0; level_offset < cur_meta->toplevel; level_offset++) {
-                auto cur =
-                    (LevelData *)(((char *)cur_meta->others) + level_offset * this->levelDataSize);
-                unsigned int size = 0;
-                readBinaryPOD(input, size);
-                cur->incomingEdges =
-                    new (this->allocator) vecsim_stl::vector<idType>(size, this->allocator);
-                for (size_t k = 0; k < size; k++) {
-                    idType edge;
-                    readBinaryPOD(input, edge);
-                    (*cur->incomingEdges)[k] = edge;
-                }
-            }
-
-            this->graphDataBlocks.back().addElement(cur_meta_data);
-            cur_c++;
         }
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, LevelData &data) {
+    // Restore the links of the current element
+    readBinaryPOD(input, data.numLinks);
+    for (size_t i = 0; i < data.numLinks; i++) {
+        readBinaryPOD(input, data.links[i]);
+    }
+
+    // Restore the incoming edges of the current element
+    unsigned int size;
+    readBinaryPOD(input, size);
+    data.incomingEdges->reserve(size);
+    idType id = INVALID_ID;
+    for (size_t i = 0; i < size; i++) {
+        readBinaryPOD(input, id);
+        data.incomingEdges->push_back(id);
     }
 }
 
@@ -245,8 +241,6 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->epsilon);
 
     // Save index meta-data
-    writeBinaryPOD(output, this->elementGraphDataSize);
-    writeBinaryPOD(output, this->levelDataSize);
     writeBinaryPOD(output, this->mult);
 
     // Save index state
@@ -287,30 +281,31 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {
             ElementGraphData *meta = (ElementGraphData *)block.getElement(j);
-            output.write((char *)meta, this->elementGraphDataSize);
-            if (meta->others) // only if there are levels > 0
-                output.write((char *)meta->others, this->levelDataSize * meta->toplevel);
+            writeBinaryPOD(output, meta->toplevel);
 
-            // Save the incoming edges of the current element.
-            // Level 0
-            unsigned int size = meta->level0.incomingEdges->size();
-            writeBinaryPOD(output, size);
-            for (idType id : *meta->level0.incomingEdges) {
-                writeBinaryPOD(output, id);
-            }
-            meta->level0.incomingEdges->shrink_to_fit();
-
-            // Levels 1 to maxlevel
-            for (size_t level_offset = 0; level_offset < meta->toplevel; level_offset++) {
-                auto cur =
-                    (LevelData *)(((char *)meta->others) + level_offset * this->levelDataSize);
-                unsigned int size = cur->incomingEdges->size();
-                writeBinaryPOD(output, size);
-                for (idType id : *cur->incomingEdges) {
-                    writeBinaryPOD(output, id);
-                }
-                cur->incomingEdges->shrink_to_fit();
+            // Save all the levels of the current element
+            for (size_t level = 0; level <= meta->toplevel; level++) {
+                saveLevel(output, getLevelData(meta, level));
             }
         }
     }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, LevelData &data) const {
+    // Save the links of the current element
+    writeBinaryPOD(output, data.numLinks);
+    for (size_t i = 0; i < data.numLinks; i++) {
+        writeBinaryPOD(output, data.links[i]);
+    }
+
+    // Save the incoming edges of the current element
+    unsigned int size = data.incomingEdges->size();
+    writeBinaryPOD(output, size);
+    for (idType id : *data.incomingEdges) {
+        writeBinaryPOD(output, id);
+    }
+
+    // Shrink the incoming edges vector for integrity check
+    data.incomingEdges->shrink_to_fit();
 }

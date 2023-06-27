@@ -20,6 +20,9 @@ void saveIndexFields(std::ofstream &output) const;
 
 void saveGraph(std::ofstream &output) const;
 
+void saveLevel(std::ofstream &output, LevelData &data) const;
+void restoreLevel(std::ifstream &input, LevelData &data);
+
 // Functions for index loading.
 void restoreIndexFields(std::ifstream &input);
 void fieldsValidation() const;
