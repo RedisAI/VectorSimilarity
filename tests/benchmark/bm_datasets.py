@@ -116,7 +116,9 @@ def run_benchmark(dataset_name, is_multi, data_type, ef_construction, M, ef_valu
 
     print("\nRunning benchmark for:", dataset_name)
     dataset = get_data_set(dataset_name)
-    index_file_name = os.path.join('data', '%s-M=%s-ef=%s.hnsw' % (dataset_name, M, ef_construction))
+    nickname, dim, metric = dataset_name.split('-')
+    metric = 'cosine' if metric == 'angular' else metric
+    index_file_name = os.path.join('data', '%s-%s-dim%s-M%s-efc%s.hnsw_v3' % (nickname, metric, dim, M, ef_construction))
     hnsw_index = load_or_create_hnsw_index(dataset, index_file_name, is_multi, data_type, ef_construction, M)
 
     for ef_runtime in ef_values:
