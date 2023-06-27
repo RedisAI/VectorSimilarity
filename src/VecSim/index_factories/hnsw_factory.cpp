@@ -91,8 +91,6 @@ size_t EstimateInitialSize(const HNSWParams *params) {
         est += sizeof(ElementMetaData) * initial_cap + allocations_overhead; // idToMetaData
         // Labels lookup hash table buckets.
         est += sizeof(size_t) * initial_cap + allocations_overhead;
-        // lock per vector
-        est += sizeof(std::mutex) * initial_cap + allocations_overhead;
     }
 
     return est;
@@ -113,7 +111,6 @@ size_t EstimateElementSize(const HNSWParams *params) {
     // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
     // labels lookup hash map.
     size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) + size_label_lookup_entry;
-    size_t size_lock = sizeof(std::mutex);
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of
@@ -122,7 +119,7 @@ size_t EstimateElementSize(const HNSWParams *params) {
      * 2. The incoming edges that aren't bidirectional are stored in a dynamic array
      * (vecsim_stl::vector) Those edges' memory *is omitted completely* from this estimation.
      */
-    return size_meta_data + size_total_data_per_element + size_lock;
+    return size_meta_data + size_total_data_per_element;
 }
 
 #ifdef BUILD_TESTS

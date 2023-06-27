@@ -117,22 +117,23 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
         // Take the current node out of the candidates queue and go over his neighbours.
         candidates.pop();
-        this->index->lockNodeLinks(curr_node_id);
-        LevelData &node_meta = this->index->getLevelData(curr_node_id, 0);
-        if (node_meta.numLinks > 0) {
+        auto *node_graph_data = this->index->getGraphDataByInternalId(curr_node_id);
+        this->index->lockNodeLinks(node_graph_data);
+        LevelData &node_level_data = this->index->getLevelData(node_graph_data, 0);
+        if (node_level_data.numLinks > 0) {
 
             // Pre-fetch first candidate tag address.
-            __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[0]);
+            __builtin_prefetch(visited_list->getElementsTags() + node_level_data.links[0]);
             // // Pre-fetch first candidate data block address.
-            __builtin_prefetch(index->getDataByInternalId(node_meta.links[0]));
+            __builtin_prefetch(index->getDataByInternalId(node_level_data.links[0]));
 
-            for (linkListSize j = 0; j < node_meta.numLinks - 1; j++) {
-                idType candidate_id = node_meta.links[j];
+            for (linkListSize j = 0; j < node_level_data.numLinks - 1; j++) {
+                idType candidate_id = node_level_data.links[j];
 
                 // Pre-fetch next candidate tag address.
-                __builtin_prefetch(visited_list->getElementsTags() + node_meta.links[j + 1]);
+                __builtin_prefetch(visited_list->getElementsTags() + node_level_data.links[j + 1]);
                 // Pre-fetch next candidate data block address.
-                __builtin_prefetch(index->getDataByInternalId(node_meta.links[j + 1]));
+                __builtin_prefetch(index->getDataByInternalId(node_level_data.links[j + 1]));
 
                 if (this->hasVisitedNode(candidate_id)) {
                     continue;
@@ -146,7 +147,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
                 candidates.emplace(candidate_dist, candidate_id);
             }
             // Running the last candidate outside the loop to avoid prefetching invalid candidate
-            idType candidate_id = node_meta.links[node_meta.numLinks - 1];
+            idType candidate_id = node_level_data.links[node_level_data.numLinks - 1];
 
             if (!this->hasVisitedNode(candidate_id)) {
                 this->visitNode(candidate_id);

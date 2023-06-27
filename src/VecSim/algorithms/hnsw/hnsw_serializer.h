@@ -8,8 +8,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
       maxElements(RoundUpInitialCapacity(params->initialCapacity, this->blockSize)),
       epsilon(params->epsilon), vectorBlocks(this->allocator), graphDataBlocks(this->allocator),
       idToMetaData(maxElements, this->allocator),
-      visitedNodesHandlerPool(1, maxElements, this->allocator),
-      elementNeighborsLocks(maxElements, this->allocator) {
+      visitedNodesHandlerPool(1, maxElements, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
