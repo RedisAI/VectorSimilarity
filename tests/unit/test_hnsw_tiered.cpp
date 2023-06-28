@@ -1093,12 +1093,12 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
             auto repair_node_level = ((HNSWRepairJob *)(jobQ.front().job))->level;
 
             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
-            LevelData &node_meta =
+            LevelData &node_level =
                 tiered_index->getHNSWIndex()->getLevelData(repair_node_id, repair_node_level);
             // This makes sure that the deleted node is no longer in the neighbors set of the
             // repaired node.
-            ASSERT_TRUE(std::find(node_meta.links, node_meta.links + node_meta.numLinks, ep) ==
-                        node_meta.links + node_meta.numLinks);
+            ASSERT_TRUE(std::find(node_level.links, node_level.links + node_level.numLinks, ep) ==
+                        node_level.links + node_level.numLinks);
             // Remove the job from the id -> repair_jobs lookup, so we won't think that it is
             // still pending and avoid creating new jobs for nodes that already been repaired
             // as they were pointing to deleted elements.
