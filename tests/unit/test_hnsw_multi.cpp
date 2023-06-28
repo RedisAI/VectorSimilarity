@@ -1758,10 +1758,10 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n - per_label + 1);
     for (size_t level = 0; level <= this->CastToHNSW(index)->getGraphDataByInternalId(n)->toplevel;
          level++) {
-        LevelData &meta = this->CastToHNSW(index)->getLevelData(n, level);
-        for (size_t idx = 0; idx < meta.numLinks; idx++) {
-            ASSERT_TRUE((meta.links[idx] / per_label) % 2 != ep_reminder)
-                << "Got a link to " << meta.links[idx] << " on level " << level;
+        LevelData &level_data = this->CastToHNSW(index)->getLevelData(n, level);
+        for (size_t idx = 0; idx < level_data.numLinks; idx++) {
+            ASSERT_TRUE((level_data.links[idx] / per_label) % 2 != ep_reminder)
+                << "Got a link to " << level_data.links[idx] << " on level " << level;
         }
     }
 

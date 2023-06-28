@@ -165,7 +165,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         }
     }
 
-    // Get meta blocks
+    // Get graph data blocks
     ElementGraphData *cur_egt;
     char tmpData[this->elementGraphDataSize];
     size_t toplevel = 0;
@@ -177,20 +177,20 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
         for (size_t j = 0; j < block_len; j++) {
             // Reset tmpData
             memset(tmpData, 0, this->elementGraphDataSize);
-            // Read the current meta data top level
+            // Read the current element top level
             readBinaryPOD(input, toplevel);
-            // Allocate space and structs for the current meta data
+            // Allocate space and structs for the current element
             try {
                 new (tmpData) ElementGraphData(toplevel, this->levelDataSize, this->allocator);
             } catch (std::runtime_error &e) {
                 this->log("Error - allocating memory for new element failed due to low memory");
                 throw e;
             }
-            // Add the current meta data to the current block, and update cur_egt to point to it.
+            // Add the current element to the current block, and update cur_egt to point to it.
             this->graphDataBlocks.back().addElement(tmpData);
             cur_egt = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
 
-            // Restore the current meta data
+            // Restore the current element's graph data
             for (size_t k = 0; k <= toplevel; k++) {
                 restoreLevel(input, getLevelData(cur_egt, k));
             }
@@ -274,18 +274,18 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
         }
     }
 
-    // Save meta blocks
+    // Save graph data blocks
     for (size_t i = 0; i < num_blocks; i++) {
         auto &block = this->graphDataBlocks[i];
         unsigned int block_len = block.getLength();
         writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            ElementGraphData *meta = (ElementGraphData *)block.getElement(j);
-            writeBinaryPOD(output, meta->toplevel);
+            ElementGraphData *cur_element = (ElementGraphData *)block.getElement(j);
+            writeBinaryPOD(output, cur_element->toplevel);
 
             // Save all the levels of the current element
-            for (size_t level = 0; level <= meta->toplevel; level++) {
-                saveLevel(output, getLevelData(meta, level));
+            for (size_t level = 0; level <= cur_element->toplevel; level++) {
+                saveLevel(output, getLevelData(cur_element, level));
             }
         }
     }
