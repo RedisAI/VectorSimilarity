@@ -106,8 +106,9 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
     hnsw_index->setEf(ef_r);
 
     // Create tiered index from the loaded HNSW index.
-    auto primary_index_params =
-        VecSimParams{.algo = VecSimAlgo_HNSWLIB, .hnswParams = params, .logCtx = nullptr};
+    auto primary_index_params = VecSimParams{.algo = VecSimAlgo_HNSWLIB,
+                                             .algoParams = {.hnswParams = HNSWParams{params}},
+                                             .logCtx = nullptr};
     tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
     TieredIndexParams tiered_params = {.jobQueue = &tieredIndexMock::jobQ,
                                        .jobQueueCtx = tieredIndexMock::ctx,

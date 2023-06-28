@@ -66,17 +66,19 @@ int GenerateAndAddVector(VecSimIndex *index, size_t dim, size_t id, data_t value
 }
 
 inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
-    VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+    VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                        .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
     return params;
 }
 
 inline VecSimParams CreateParams(const BFParams &bf_params) {
-    VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+    VecSimParams params{.algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bf_params}}};
     return params;
 }
 
 inline VecSimParams CreateParams(const TieredIndexParams &tiered_params) {
-    VecSimParams params{.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
+    VecSimParams params{.algo = VecSimAlgo_TIERED,
+                        .algoParams = {.tieredParams = TieredIndexParams{tiered_params}}};
     return params;
 }
 

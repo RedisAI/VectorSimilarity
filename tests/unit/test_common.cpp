@@ -435,7 +435,8 @@ TEST(CommonAPITest, testlog) {
     log.prefix = "test log prefix: ";
 
     BFParams bfParams = {.dim = 1, .metric = VecSimMetric_L2, .initialCapacity = 0, .blockSize = 5};
-    VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bfParams, .logCtx = &log};
+    VecSimParams params = {
+        .algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bfParams}}, .logCtx = &log};
     auto *index =
         dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
     VecSim_SetLogCallbackFunction(test_log_impl);

@@ -136,7 +136,7 @@ struct VecSimParams {
         HNSWParams hnswParams;
         BFParams bfParams;
         TieredIndexParams tieredParams;
-    };
+    } algoParams;
     void *logCtx; // External context that stores the index log.
 };
 

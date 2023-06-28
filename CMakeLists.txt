@@ -24,8 +24,6 @@ include(cmake/san.cmake)
 # ----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
-set(CMAKE_CXX_STANDARD 20)
-
 # Only do these if this is the main project, and not if it is included through add_subdirectory
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 

@@ -28,11 +28,11 @@ namespace TieredHNSWFactory {
 template <typename DataType, typename DistType>
 VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistType> *hnsw_index) {
     // Initialize brute force index.
-    BFParams bf_params = {.type = params->primaryIndexParams->hnswParams.type,
-                          .dim = params->primaryIndexParams->hnswParams.dim,
-                          .metric = params->primaryIndexParams->hnswParams.metric,
-                          .multi = params->primaryIndexParams->hnswParams.multi,
-                          .blockSize = params->primaryIndexParams->hnswParams.blockSize};
+    BFParams bf_params = {.type = params->primaryIndexParams->algoParams.hnswParams.type,
+                          .dim = params->primaryIndexParams->algoParams.hnswParams.dim,
+                          .metric = params->primaryIndexParams->algoParams.hnswParams.metric,
+                          .multi = params->primaryIndexParams->algoParams.hnswParams.multi,
+                          .blockSize = params->primaryIndexParams->algoParams.hnswParams.blockSize};
 
     AbstractIndexInitParams abstractInitParams = {.allocator = hnsw_index->getAllocator(),
                                                   .dim = bf_params.dim,
