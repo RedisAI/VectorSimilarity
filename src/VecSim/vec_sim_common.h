@@ -130,13 +130,15 @@ typedef struct {
     } specificParams;
 } TieredIndexParams;
 
+typedef union {
+    HNSWParams hnswParams;
+    BFParams bfParams;
+    TieredIndexParams tieredParams;
+} AlgoParams;
+
 struct VecSimParams {
     VecSimAlgo algo; // Algorithm to use.
-    union {
-        HNSWParams hnswParams;
-        BFParams bfParams;
-        TieredIndexParams tieredParams;
-    } algoParams;
+    AlgoParams algoParams;
     void *logCtx; // External context that stores the index log.
 };
 
