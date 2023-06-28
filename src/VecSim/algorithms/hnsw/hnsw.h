@@ -175,8 +175,8 @@ protected:
                                  idType *removed_links, size_t *removed_links_num);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
     inline void
-    processCandidate(idType curNodeId, ElementGraphData *cur_meta, const void *data_point,
-                     size_t layer, size_t ef, tag_t *elements_tags, tag_t visited_tag,
+    processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
+                     tag_t *elements_tags, tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType &lowerBound) const;
     template <bool has_marked_deleted>
@@ -264,7 +264,7 @@ protected:
         __atomic_fetch_and(&idToMetaData[internalId].flags, ~FLAG, 0);
     }
     template <Flags FLAG>
-    inline bool isMarkAs(idType internalId) const {
+    inline bool isMarkedAs(idType internalId) const {
         return idToMetaData[internalId].flags & FLAG;
     }
 
@@ -348,11 +348,6 @@ public:
     virtual void getDataByLabel(labelType label,
                                 std::vector<std::vector<DataType>> &vectors_output) const = 0;
 #endif
-    // wrapper for all kind of calculations for profiling
-    // template <unsigned int level>
-    // inline void my_prefetch(const void *ptr) const {
-    //     __builtin_prefetch(ptr, 0, level);
-    // }
 
 protected:
     // inline label to id setters that need to be implemented by derived class
@@ -483,12 +478,12 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isMarkedDeleted(idType internalId) const {
-    return isMarkAs<DELETE_MARK>(internalId);
+    return isMarkedAs<DELETE_MARK>(internalId);
 }
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::isInProcess(idType internalId) const {
-    return isMarkAs<IN_PROCESS>(internalId);
+    return isMarkedAs<IN_PROCESS>(internalId);
 }
 
 template <typename DataType, typename DistType>
@@ -580,11 +575,11 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted, typename Identifier>
 void HNSWIndex<DataType, DistType>::processCandidate(
-    idType curNodeId, ElementGraphData *cur_meta, const void *query_data, size_t layer, size_t ef,
-    tag_t *elements_tags, tag_t visited_tag,
-    vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+    idType curNodeId, const void *query_data, size_t layer, size_t ef, tag_t *elements_tags,
+    tag_t visited_tag, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
 
+    ElementGraphData *cur_meta = getGraphDataByInternalId(curNodeId);
     lockNodeLinks(cur_meta);
     LevelData &node_meta = getLevelData(cur_meta, layer);
 
@@ -610,9 +605,6 @@ void HNSWIndex<DataType, DistType>::processCandidate(
             if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
                 continue;
 
-            // Pre-fetch current candidate meta data
-            __builtin_prefetch(getMetaDataAddress(candidate_id));
-
             elements_tags[candidate_id] = visited_tag;
 
             DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
@@ -635,13 +627,11 @@ void HNSWIndex<DataType, DistType>::processCandidate(
             }
         }
 
-        // Running the last candidate outside the loop to avoid prefetching invalid candidate
+        // Running the last neighbor outside the loop to avoid prefetching invalid neighbor
         idType candidate_id = node_meta.links[node_meta.numLinks - 1];
         cur_data = next_data;
 
         if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
-            // Pre-fetch current candidate meta data
-            __builtin_prefetch(getMetaDataAddress(candidate_id));
 
             elements_tags[candidate_id] = visited_tag;
 
@@ -666,183 +656,6 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     }
     unlockNodeLinks(cur_meta);
 }
-
-// template <typename DataType, typename DistType>
-// template <bool has_marked_deleted, typename Identifier>
-// const void HNSWIndex<DataType, DistType>::processCandidate(
-//     idType curNodeId, ElementGraphData *cur_meta, const void *query_data, size_t layer, size_t
-//     ef, VisitedNodesHandler *visited_nodes, tag_t visited_tag,
-//     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
-//     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound,
-//     const DataBlock *&next_meta_block) const {
-
-// #ifdef ENABLE_PARALLELIZATION
-//     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
-// #endif
-
-//     LevelData &node_meta = getLevelData(cur_meta, layer);
-
-//     const DataBlock *cur_block, *next_block;
-
-//     // Pre-fetch first candidate data block address.
-//     next_block = this->vectorBlocks.data() + (node_meta.links[0] / this->blockSize);
-//     // __builtin_prefetch(next_block);
-
-//     // Pre-fetch first candidate tag address.
-//     __builtin_prefetch(elements_tags + node_meta.links[0]);
-
-//     for (linkListSize j = 0; j < node_meta.numLinks; j++) {
-//         idType candidate_id = node_meta.links[j];
-
-//         // Pre-fetch next candidate tag address.
-//         __builtin_prefetch(elements_tags + node_meta.links[j + 1]);
-//         // Pre-fetch next candidate data block address.
-//         cur_block = next_block;
-//         next_block = vectorBlocks.data() + (node_meta.links[j + 1] / this->blockSize);
-//         // __builtin_prefetch(next_block);
-
-//         if (visited_nodes->getNodeTag(candidate_id) == visited_tag)
-//             continue;
-
-//         // Pre-fetch current candidate meta data
-//         __builtin_prefetch(getMetaDataAddress(candidate_id));
-
-//         visited_nodes->tagNode(candidate_id, visited_tag);
-
-//         const char *cur_data = cur_block->getElement(getVectorRelativeIndex(candidate_id));
-//         DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
-//         if (lowerBound > cur_dist || top_candidates.size() < ef) {
-
-//             candidate_set.emplace(-cur_dist, candidate_id);
-
-//             // Insert the candidate to the top candidates heap only if it is not marked as
-//             // deleted.
-//             if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-//                 emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-//             if (top_candidates.size() > ef)
-//                 top_candidates.pop();
-
-//             // If we have marked deleted elements, we need to verify that `top_candidates` is
-//             // not empty (since we might have not added any non-deleted element yet).
-//             if (!has_marked_deleted || !top_candidates.empty())
-//                 lowerBound = top_candidates.top().first;
-//         }
-//     }
-//     next_meta_block = this->graphDataBlocks.data() + (candidate_set.top().second /
-//     this->blockSize);
-// }
-
-// template <typename DataType, typename DistType>
-// template <bool has_marked_deleted, typename Identifier>
-// const void HNSWIndex<DataType, DistType>::processCandidate(
-//     idType curNodeId, ElementGraphData *cur_meta, const void *query_data, size_t layer, size_t
-//     ef, VisitedNodesHandler *visited_nodes, tag_t visited_tag,
-//     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
-//     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound, const DataBlock
-//     *&next_meta_block) const {
-
-// #ifdef ENABLE_PARALLELIZATION
-//     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
-// #endif
-
-//     // Strongly prefetch query data.
-//     // __builtin_prefetch(query_data);
-
-//     LevelData &node_meta = getLevelData(cur_meta, layer);
-//     if (node_meta.numLinks > 0) {
-
-//         // Pre-fetch first candidate tag address.
-//         __builtin_prefetch(elements_tags + node_meta.links[0]);
-//         // Pre-fetch first candidate meta data
-//         // __builtin_prefetch(this->idToMetaData.data() + node_meta.links[0]);
-
-//         // const char *curr_data, *next_data;
-//         // next_data = getDataByInternalId(node_meta.links[0]);
-//         // __builtin_prefetch(next_data);
-
-//         for (linkListSize j = 0; j < node_meta.numLinks - 1; j++) {
-
-//             idType candidate_id = node_meta.links[j];
-//             // curr_data = next_data;
-//             // Pre-fetch next candidate tag address.
-//             __builtin_prefetch(elements_tags + node_meta.links[j + 1]);
-//             // __builtin_prefetch(next_data);
-//             // next_data = getDataByInternalId(node_meta.links[j + 1]);
-//             // __builtin_prefetch(next_data);
-//             __builtin_prefetch(getMetaDataAddress(node_meta.links[j + 1]));
-//             __builtin_prefetch(vectorBlocks.data() + (node_meta.links[j + 1] /
-//             this->blockSize));
-
-//             if (visited_nodes->getNodeTag(candidate_id) == visited_tag)
-//                 continue;
-//             // Pre-fetch current candidate meta data
-//             // __builtin_prefetch(getMetaDataAddress(candidate_id));
-
-//             // __builtin_prefetch(curr_data);
-//             // __builtin_prefetch(query_data);
-
-//             // // Pre-fetch current candidate meta data
-//             // __builtin_prefetch(this->idToMetaData.data() + candidate_id);
-
-//             visited_nodes->tagNode(candidate_id, visited_tag);
-
-//             DistType dist1 = this->distFunc(getDataByInternalId(candidate_id), query_data,
-//             this->dim); if (lowerBound > dist1 || top_candidates.size() < ef) {
-
-//                 candidate_set.emplace(-dist1, candidate_id);
-
-//                 // Insert the candidate to the top candidates heap only if it is not marked as
-//                 // deleted.
-//                 if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-//                     emplaceToHeap(top_candidates, dist1, candidate_id);
-
-//                 if (top_candidates.size() > ef)
-//                     top_candidates.pop();
-
-//                 // If we have marked deleted elements, we need to verify that `top_candidates` is
-//                 // not empty (since we might have not added any non-deleted element yet).
-//                 if (!has_marked_deleted || !top_candidates.empty())
-//                     lowerBound = top_candidates.top().first;
-//             }
-//         }
-
-//         // Running the last candidate outside the loop to avoid prefetching invalid candidate
-//         idType candidate_id = node_meta.links[node_meta.numLinks - 1];
-//         // curr_data = next_data;
-//         __builtin_prefetch(getMetaDataAddress(candidate_id));
-
-//         if (visited_nodes->getNodeTag(candidate_id) != visited_tag) {
-//             // Pre-fetch current candidate meta data
-//             // __builtin_prefetch(this->idToMetaData.data() + candidate_id);
-//             // const char *curr_data = getDataByInternalId(candidate_id);
-//             // __builtin_prefetch(curr_data);
-
-//             visited_nodes->tagNode(candidate_id, visited_tag);
-
-//             DistType dist1 = this->distFunc(getDataByInternalId(candidate_id), query_data,
-//             this->dim); if (lowerBound > dist1 || top_candidates.size() < ef) {
-//                 candidate_set.emplace(-dist1, candidate_id);
-
-//                 // Insert the candidate to the top candidates heap only if it is not marked as
-//                 // deleted.
-//                 if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-//                     emplaceToHeap(top_candidates, dist1, candidate_id);
-
-//                 if (top_candidates.size() > ef)
-//                     top_candidates.pop();
-
-//                 // If we have marked deleted elements, we need to verify that `top_candidates` is
-//                 // not empty (since we might have not added any non-deleted element yet).
-//                 if (!has_marked_deleted || !top_candidates.empty())
-//                     lowerBound = top_candidates.top().first;
-//             }
-//         }
-//     }
-//     next_meta_block = this->graphDataBlocks.data() + (candidate_set.top().second /
-//     this->blockSize);
-//     __builtin_prefetch(next_meta_block);
-// }
 
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
@@ -856,10 +669,10 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     LevelData &node_meta = getLevelData(cur_meta, layer);
     if (node_meta.numLinks > 0) {
 
+        const char *cur_data, *next_data;
         // Pre-fetch first candidate tag address.
         __builtin_prefetch(elements_tags + node_meta.links[0]);
         // Pre-fetch first candidate data block address.
-        const char *cur_data, *next_data;
         next_data = getDataByInternalId(node_meta.links[0]);
         __builtin_prefetch(next_data);
 
@@ -875,9 +688,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
 
             if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
                 continue;
-
-            // Pre-fetch current candidate meta data
-            __builtin_prefetch(getMetaDataAddress(candidate_id));
 
             elements_tags[candidate_id] = visited_tag;
 
@@ -896,8 +706,6 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         cur_data = next_data;
 
         if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
-            // Pre-fetch current candidate meta data
-            __builtin_prefetch(getMetaDataAddress(candidate_id));
 
             elements_tags[candidate_id] = visited_tag;
 
@@ -913,64 +721,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
         }
     }
     unlockNodeLinks(cur_meta);
-    __builtin_prefetch(this->graphDataBlocks.data() +
-                       (candidate_set.top().second / this->blockSize));
 }
-
-// template <typename DataType, typename DistType>
-// template <bool has_marked_deleted>
-// void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
-//     idType curNodeId, const void *query_data, size_t layer, double epsilon,
-//     VisitedNodesHandler *visited_nodes, tag_t visited_tag,
-//     std::unique_ptr<vecsim_stl::abstract_results_container> &results,
-//     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
-
-// #ifdef ENABLE_PARALLELIZATION
-//     std::unique_lock<std::mutex> lock(link_list_locks_[curNodeId]);
-// #endif
-
-//     LevelData &node_meta = getLevelData(curNodeId, layer);
-
-//     const DataBlock *cur_block, *next_block;
-
-//     // Pre-fetch first candidate data block address.
-//     next_block = this->vectorBlocks.data() + (node_meta.links[0] / this->blockSize);
-//     // __builtin_prefetch(next_block);
-
-//     // Pre-fetch first candidate tag address.
-//     __builtin_prefetch(elements_tags + node_meta.links[0]);
-
-//     for (linkListSize j = 0; j < node_meta.numLinks; j++) {
-//         idType candidate_id = node_meta.links[j];
-
-//         // Pre-fetch next candidate tag address.
-//         __builtin_prefetch(elements_tags + node_meta.links[j + 1]);
-//         // Pre-fetch next candidate data block address.
-//         cur_block = next_block;
-//         // __builtin_prefetch(next_data);
-//         next_block = this->vectorBlocks.data() + (node_meta.links[j + 1] / this->blockSize);
-//         // __builtin_prefetch(next_block);
-
-//         if (visited_nodes->getNodeTag(candidate_id) == visited_tag)
-//             continue;
-//         // Pre-fetch current candidate meta data
-//         __builtin_prefetch(getMetaDataAddress(candidate_id));
-
-//         visited_nodes->tagNode(candidate_id, visited_tag);
-
-//         const char *cur_data = cur_block->getElement(getVectorRelativeIndex(candidate_id));
-//         DistType candidate_dist = this->distFunc(query_data, cur_data, this->dim);
-//         if (candidate_dist < dyn_range) {
-//             candidate_set.emplace(-candidate_dist, candidate_id);
-
-//             // If the new candidate is in the requested radius, add it to the results set.
-//             if (candidate_dist <= radius &&
-//                 (!has_marked_deleted || !isMarkedDeleted(candidate_id))) {
-//                 results->emplace(getExternalLabel(candidate_id), candidate_dist);
-//             }
-//         }
-//     }
-// }
 
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
@@ -999,20 +750,15 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
-        // Pre-fetch the neighbours list of the top candidate (the one that is going
-        // to be processed in the next iteration) into memory cache, to improve performance.
-        auto curr_el_meta = getGraphDataByInternalId(curr_el_pair.second);
-        __builtin_prefetch(curr_el_meta);
 
         if ((-curr_el_pair.first) > lowerBound && top_candidates.size() >= ef) {
             break;
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, curr_el_meta, data_point, layer,
-                                             ef, visited_nodes_handler->getElementsTags(),
-                                             visited_tag, top_candidates, candidate_set,
-                                             lowerBound);
+        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, layer, ef,
+                                             visited_nodes_handler->getElementsTags(), visited_tag,
+                                             top_candidates, candidate_set, lowerBound);
     }
 
     returnVisitedList(visited_nodes_handler);
@@ -2210,11 +1956,6 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
 
-        // Pre-fetch the neighbours list of the top candidate (the one that is going
-        // to be processed in the next iteration) into memory cache, to improve performance.
-        auto cur_meta_data = getGraphDataByInternalId(curr_el_pair.second);
-        __builtin_prefetch(cur_meta_data);
-
         if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
@@ -2225,7 +1966,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         candidate_set.pop();
 
-        processCandidate<has_marked_deleted>(curr_el_pair.second, cur_meta_data, data_point, 0, ef,
+        processCandidate<has_marked_deleted>(curr_el_pair.second, data_point, 0, ef,
                                              visited_nodes_handler->getElementsTags(), visited_tag,
                                              *top_candidates, candidate_set, lowerBound);
     }
@@ -2335,10 +2076,6 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
         pair<DistType, idType> curr_el_pair = candidate_set.top();
         // If the best candidate is outside the dynamic range in more than epsilon (relatively) - we
         // finish the search.
-
-        // Pre-fetch the neighbours list of the top candidate (the one that is going
-        // to be processed in the next iteration) into memory cache, to improve performance.
-        __builtin_prefetch(getGraphDataByInternalId(curr_el_pair.second));
 
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
