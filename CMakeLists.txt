@@ -61,7 +61,7 @@ if(VECSIM_BUILD_TESTS)
 	option(BENCHMARK_ENABLE_TESTING "" OFF)
 	FetchContent_Declare(
 		google_benchmark
-		URL https://github.com/google/benchmark/archive/refs/tags/v1.7.0.zip
+		URL https://github.com/google/benchmark/archive/refs/tags/v1.8.0.zip
 	)
 	FetchContent_MakeAvailable(google_benchmark)
 
