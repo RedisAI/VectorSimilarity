@@ -26,7 +26,7 @@ NewIndex_ChooseMultiOrSingle(const BFParams *params,
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
 
-    const BFParams *bfParams = &params->bfParams;
+    const BFParams *bfParams = &params->algoParams.bfParams;
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = bfParams->dim,
@@ -39,7 +39,7 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params)
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params) {
-    const BFParams *bfParams = &params->bfParams;
+    const BFParams *bfParams = &params->algoParams.bfParams;
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
     return NewIndex(bfParams, NewAbstractInitParams(params));
 }
@@ -56,7 +56,7 @@ VecSimIndex *NewIndex(const BFParams *bfparams, const AbstractIndexInitParams &a
 }
 
 VecSimIndex *NewIndex(const BFParams *bfparams) {
-    VecSimParams params = {.bfParams = *bfparams};
+    VecSimParams params = {.algoParams{.bfParams = BFParams{*bfparams}}};
     return NewIndex(&params);
 }
 

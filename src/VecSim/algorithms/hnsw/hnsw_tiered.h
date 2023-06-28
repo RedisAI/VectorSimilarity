@@ -209,6 +209,9 @@ public:
         // Run no more than pendingSwapJobsThreshold value jobs.
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
     }
+#ifdef BUILD_TESTS
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
+#endif
 };
 
 /**
@@ -1098,4 +1101,12 @@ VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
     info.isTiered = true;
     info.algo = VecSimAlgo_HNSWLIB;
     return info;
-};
+}
+
+#ifdef BUILD_TESTS
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::getDataByLabel(
+    labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
+    this->getHNSWIndex()->getDataByLabel(label, vectors_output);
+}
+#endif
