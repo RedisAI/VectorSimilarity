@@ -9,19 +9,15 @@ def test_sanity_bf():
         def __init__(self, data_type, metric, dist_func, np_fuc):
             dim = 16
             num_elements = 10
-            params = VecSimParams()
             bfparams = BFParams()
 
-            params.algo = VecSimAlgo_BF
             bfparams.initialCapacity = num_elements
             bfparams.blockSize = num_elements
             bfparams.dim = dim
             bfparams.type = data_type
             bfparams.metric = metric
 
-            params.bfParams = bfparams
-
-            self.index = VecSimIndex(params)
+            self.index = BFIndex(bfparams)
 
             self.metric = metric
             self.type = data_type

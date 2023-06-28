@@ -21,11 +21,11 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
         HNSWFactory::NewIndex(params->primaryIndexParams));
     // initialize brute force index
 
-    BFParams bf_params = {.type = params->primaryIndexParams->hnswParams.type,
-                          .dim = params->primaryIndexParams->hnswParams.dim,
-                          .metric = params->primaryIndexParams->hnswParams.metric,
-                          .multi = params->primaryIndexParams->hnswParams.multi,
-                          .blockSize = params->primaryIndexParams->hnswParams.blockSize};
+    BFParams bf_params = {.type = params->primaryIndexParams->algoParams.hnswParams.type,
+                          .dim = params->primaryIndexParams->algoParams.hnswParams.dim,
+                          .metric = params->primaryIndexParams->algoParams.hnswParams.metric,
+                          .multi = params->primaryIndexParams->algoParams.hnswParams.multi,
+                          .blockSize = params->primaryIndexParams->algoParams.hnswParams.blockSize};
 
     std::shared_ptr<VecSimAllocator> flat_allocator = VecSimAllocator::newVecsimAllocator();
     AbstractIndexInitParams abstractInitParams = {.allocator = flat_allocator,
@@ -47,7 +47,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_params_output) {
-    HNSWParams hnsw_params = params->primaryIndexParams->hnswParams;
+    HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
     // Add size estimation of VecSimTieredIndex sub indexes.
     size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params);
@@ -70,7 +70,7 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params, BFParams &bf_
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
     // Tiered index that contains HNSW index as primary index
-    VecSimType type = params->primaryIndexParams->hnswParams.type;
+    VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
     if (type == VecSimType_FLOAT32) {
         return TieredHNSWFactory::NewIndex<float>(params);
     } else if (type == VecSimType_FLOAT64) {
@@ -83,7 +83,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
     // Tiered index that contains HNSW index as primary index
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        VecSimType type = params->primaryIndexParams->hnswParams.type;
+        VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
         if (type == VecSimType_FLOAT32) {
             return TieredHNSWFactory::NewIndex<float>(params);
         } else if (type == VecSimType_FLOAT64) {
@@ -108,7 +108,7 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
 size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->hnswParams);
+        est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
     }
     return est;
 }

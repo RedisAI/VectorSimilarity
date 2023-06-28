@@ -26,7 +26,7 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
             break;
         }
         case VecSimAlgo_TIERED: {
-            index = TieredFactory::NewIndex(&params->tieredParams);
+            index = TieredFactory::NewIndex(&params->algoParams.tieredParams);
             break;
         }
         }
@@ -39,11 +39,11 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 size_t EstimateInitialSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWFactory::EstimateInitialSize(&params->hnswParams);
+        return HNSWFactory::EstimateInitialSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceFactory::EstimateInitialSize(&params->bfParams);
+        return BruteForceFactory::EstimateInitialSize(&params->algoParams.bfParams);
     case VecSimAlgo_TIERED:
-        return TieredFactory::EstimateInitialSize(&params->tieredParams);
+        return TieredFactory::EstimateInitialSize(&params->algoParams.tieredParams);
     }
     return -1;
 }
@@ -51,11 +51,11 @@ size_t EstimateInitialSize(const VecSimParams *params) {
 size_t EstimateElementSize(const VecSimParams *params) {
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
-        return HNSWFactory::EstimateElementSize(&params->hnswParams);
+        return HNSWFactory::EstimateElementSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
-        return BruteForceFactory::EstimateElementSize(&params->bfParams);
+        return BruteForceFactory::EstimateElementSize(&params->algoParams.bfParams);
     case VecSimAlgo_TIERED:
-        return TieredFactory::EstimateElementSize(&params->tieredParams);
+        return TieredFactory::EstimateElementSize(&params->algoParams.tieredParams);
     }
     return -1;
 }
