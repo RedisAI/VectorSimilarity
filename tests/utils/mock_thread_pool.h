@@ -48,16 +48,20 @@ public:
         size_t iter;                         // For benchmarks, the number of iteration
         VecSimQueryResult_List *all_results; // For benchmarks, an array to store the results in
 
-        // Note that some members are not relevant for certain use-cases of the SearchJobMock,
-        // so we use default values that indicates that the member is in use only if an actual
-        // value is sent to the contractor (for example, we use dim in some unit tests, but in
-        // benchmarks this is irrelevant).
+        /* Note that some members are not relevant for certain use-cases of the SearchJobMock,
+           so we use default values that indicates that the member is in use only if an actual
+           value is sent to the contractor (for example, we use dim in some unit tests, but in
+           benchmarks this is irrelevant). */
+
+        // To be used currently in unit tests.
         SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCB,
                       VecSimIndex *index_, size_t k_, void *query_, size_t n_, size_t dim_,
                       std::atomic_int *successful_searches_)
             : AsyncJob(allocator, HNSW_SEARCH_JOB, searchCB, index_), query(query_), k(k_), n(n_),
               dim(dim_), successful_searches(successful_searches_), ef(-1), iter(-1),
               all_results(nullptr) {}
+
+        // To be used currently in micro-benchmarks tests.
         SearchJobMock(std::shared_ptr<VecSimAllocator> allocator, JobCallback searchCB,
                       VecSimIndex *index_, size_t k_, size_t ef_, size_t iter_,
                       VecSimQueryResult_List *all_results_)

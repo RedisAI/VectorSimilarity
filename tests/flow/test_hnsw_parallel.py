@@ -88,12 +88,6 @@ g_test_index.insert_random_vectors()
 g_test_index_multi = TestIndex(dim, num_elements, metric, data_type, multi_=True)
 g_test_index_multi.insert_random_vectors_multi(per_label)
 
-
-# Compute the expected speedup as a function of the expected parallel section rate of the code by Amdahl's law
-def expected_speedup(expected_parallel_rate, n_threads):
-    return 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)
-
-
 def test_parallel_search():
     k = 10
     num_queries = 10000

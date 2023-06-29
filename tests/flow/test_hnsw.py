@@ -162,6 +162,7 @@ def test_batch_iterator():
     labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(10, BY_ID)
     # Verify that results are now the same.
     assert_allclose(distances_first_batch_new[0], distances_first_batch[0])
+    assert_equal(labels_first_batch_new[0], labels_first_batch[0])
 
     # Reset
     batch_iterator.reset()

@@ -81,9 +81,11 @@ void tieredIndexMock::thread_pool_join() {
 
 void tieredIndexMock::thread_pool_wait(size_t waiting_duration) {
     while (true) {
+        std::unique_lock<std::mutex> lock(queue_guard);
         if (jobQ.empty() && executions_status.count() == 0) {
             break;
         }
+        lock.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(waiting_duration));
     }
 }

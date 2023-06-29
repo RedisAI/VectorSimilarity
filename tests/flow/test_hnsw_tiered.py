@@ -131,7 +131,8 @@ def create_tiered_index(is_multi: bool, num_per_label=1):
     
     # Measure insertion to tiered index.
     print(f"Insert {num_elements} vectors into the flat buffer took {round_ms(bf_dur)} ms")
-    print(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num} threads took {round_ms(tiered_index_time)} ms")
+    print(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num}"
+          f" threads took {round_ms(tiered_index_time)} ms")
     
     # Measure total memory of the tiered index.
     tiered_memory = bytes_to_mega(index.index_memory())
@@ -157,7 +158,7 @@ def create_tiered_index(is_multi: bool, num_per_label=1):
 def search_insert(is_multi: bool, num_per_label=1):
     data_size = 100000
     indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
-                           flat_buffer_size=data_size*num_per_label, M=64)
+                           flat_buffer_size=data_size, M=64)
     index = indices_ctx.tiered_index
 
     num_labels = indices_ctx.num_labels
