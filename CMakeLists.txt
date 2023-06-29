@@ -24,8 +24,6 @@ include(cmake/san.cmake)
 # ----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
-set(CMAKE_CXX_STANDARD 20)
-
 # Only do these if this is the main project, and not if it is included through add_subdirectory
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -63,7 +61,7 @@ if(VECSIM_BUILD_TESTS)
 	option(BENCHMARK_ENABLE_TESTING "" OFF)
 	FetchContent_Declare(
 		google_benchmark
-		URL https://github.com/google/benchmark/archive/refs/tags/v1.7.0.zip
+		URL https://github.com/google/benchmark/archive/refs/tags/v1.8.0.zip
 	)
 	FetchContent_MakeAvailable(google_benchmark)
 

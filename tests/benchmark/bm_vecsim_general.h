@@ -60,12 +60,13 @@ protected:
     }
 
     static inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
-        VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+        VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                            .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
         return params;
     }
 
     static inline VecSimParams CreateParams(const BFParams &bf_params) {
-        VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+        VecSimParams params{.algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bf_params}}};
         return params;
     }
 

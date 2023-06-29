@@ -239,7 +239,8 @@ private:
 
 public:
     explicit PyHNSWLibIndex(const HNSWParams &hnsw_params) {
-        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+        VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
+                               .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 
@@ -409,7 +410,8 @@ public:
                                 const TieredHNSWParams &tiered_hnsw_params, size_t buffer_limit) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
-        VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+        VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB,
+                                             .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
 
         // Create TieredIndexParams. Assume that tieredIndexMock::ctx was allocated in the base
         // class constructor, and that the thread pool was created.
@@ -424,7 +426,8 @@ public:
         tiered_params.specificParams.tieredHnswParams = tiered_hnsw_params;
 
         // Create VecSimParams for TieredIndexParams
-        VecSimParams params = {.algo = VecSimAlgo_TIERED, .tieredParams = tiered_params};
+        VecSimParams params = {.algo = VecSimAlgo_TIERED,
+                               .algoParams = {.tieredParams = TieredIndexParams{tiered_params}}};
 
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
 
@@ -440,7 +443,8 @@ public:
 class PyBFIndex : public PyVecSimIndex {
 public:
     explicit PyBFIndex(const BFParams &bf_params) {
-        VecSimParams params = {.algo = VecSimAlgo_BF, .bfParams = bf_params};
+        VecSimParams params = {.algo = VecSimAlgo_BF,
+                               .algoParams = {.bfParams = BFParams{bf_params}}};
         this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
     }
 };
@@ -494,11 +498,15 @@ PYBIND11_MODULE(VecSim, m) {
         .def(py::init())
         .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold);
 
+    py::class_<AlgoParams>(m, "AlgoParams")
+        .def(py::init())
+        .def_readwrite("hnswParams", &AlgoParams::hnswParams)
+        .def_readwrite("bfParams", &AlgoParams::bfParams);
+
     py::class_<VecSimParams>(m, "VecSimParams")
         .def(py::init())
         .def_readwrite("algo", &VecSimParams::algo)
-        .def_readwrite("hnswParams", &VecSimParams::hnswParams)
-        .def_readwrite("bfParams", &VecSimParams::bfParams);
+        .def_readwrite("algoParams", &VecSimParams::algoParams);
 
     py::class_<VecSimQueryParams> queryParams(m, "VecSimQueryParams");
 
