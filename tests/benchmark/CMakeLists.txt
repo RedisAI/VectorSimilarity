@@ -33,10 +33,10 @@ endforeach()
 # that are not supported by the hardware.
 set(DATA_TYPE fp32 fp64)
 
-foreach(data_type IN LISTS DATA_TYPE)
-	add_library(bm_spaces_class_${data_type} spaces_benchmarks/bm_spaces_class_${data_type}.cpp)
-	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
-endforeach(data_type IN LISTS DATA_TYPE)
+# foreach(data_type IN LISTS DATA_TYPE)
+# 	add_library(bm_spaces_class_${data_type} spaces_benchmarks/bm_spaces_class_${data_type}.cpp)
+# 	target_link_libraries(bm_spaces_class_${data_type} benchmark::benchmark)
+# endforeach(data_type IN LISTS DATA_TYPE)
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # Passed this line we have optimization enabled by the compiler.                        #
@@ -83,7 +83,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
-foreach(data_type IN LISTS DATA_TYPE)
-	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
-	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark bm_spaces_class_${data_type})
-endforeach()
+# foreach(data_type IN LISTS DATA_TYPE)
+# 	add_executable(bm_spaces_${data_type} spaces_benchmarks/bm_spaces_${data_type}.cpp)
+# 	target_link_libraries(bm_spaces_${data_type} VectorSimilarity benchmark::benchmark bm_spaces_class_${data_type})
+# endforeach()
