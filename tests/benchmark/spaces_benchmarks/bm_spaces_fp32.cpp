@@ -23,7 +23,8 @@
 // INITIALIZE_EXACT_BM(FP32, AVX512_F, IP, 4, FP32_InnerProductSIMD4Ext_AVX512);
 // INITIALIZE_RESIDUAL_BM(FP32, AVX512_F, IP, 16_Residuals,
 //                        FP32_InnerProductSIMD16ExtResiduals_AVX512);
-// INITIALIZE_RESIDUAL_BM(FP32, AVX512_F, IP, 4_Residuals, FP32_InnerProductSIMD4ExtResiduals_AVX512);
+// INITIALIZE_RESIDUAL_BM(FP32, AVX512_F, IP, 4_Residuals,
+// FP32_InnerProductSIMD4ExtResiduals_AVX512);
 #endif // AVX512F
 
 // AVX functions

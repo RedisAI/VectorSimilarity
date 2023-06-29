@@ -6,10 +6,11 @@
 
 #include "VecSim/spaces/space_includes.h"
 
-#define DIM_MOD_4_IS(mask, val) (((mask & 0x000F) == (((1 << val) - 1) << 0)) || \
-                                 ((mask & 0x00F0) == (((1 << val) - 1) << 4)) || \
-                                 ((mask & 0x0F00) == (((1 << val) - 1) << 8)) || \
-                                 ((mask & 0xF000) == (((1 << val) - 1) << 12)))
+#define DIM_MOD_4_IS(mask, val)                                                                    \
+    (((mask & 0x000F) == (((1 << val) - 1) << 0)) ||                                               \
+     ((mask & 0x00F0) == (((1 << val) - 1) << 4)) ||                                               \
+     ((mask & 0x0F00) == (((1 << val) - 1) << 8)) ||                                               \
+     ((mask & 0xF000) == (((1 << val) - 1) << 12)))
 
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m128 &sum_prod) {
     __m128 v1 = _mm_loadu_ps(pVect1);

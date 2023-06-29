@@ -17,8 +17,10 @@ static inline void InnerProductStep(double *&pVect1, double *&pVect2, __m256d &s
 // TODO: verify if this is the correct way to implement this function
 template <__mmask8 mask>
 static inline __m256d my_mm256_maskz_loadu_pd(const double *p) {
-    __m128i indices = _mm_set_epi32(3, 2, 1, 0); // Set the indices for loading 4 double values
-    __m256d vec_mask = _mm256_blend_pd(_mm256_set1_pd(-1), _mm256_setzero_pd(), mask); // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
+    // Set the indices for loading 4 double values
+    __m128i indices = _mm_set_epi32(3, 2, 1, 0);
+    // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
+    __m256d vec_mask = _mm256_blend_pd(_mm256_set1_pd(-1), _mm256_setzero_pd(), mask);
 
     __m256d loaded_values = _mm256_mask_i32gather_pd(_mm256_setzero_pd(), p, indices, vec_mask, 4);
 
