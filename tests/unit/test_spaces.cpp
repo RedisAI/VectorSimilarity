@@ -12,7 +12,6 @@
 #include "VecSim/spaces/IP/IP_SSE.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_AVX512.h"
-#include "VecSim/spaces/IP/IP_AVX512DQ.h"
 #include "VecSim/spaces/L2/L2.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
