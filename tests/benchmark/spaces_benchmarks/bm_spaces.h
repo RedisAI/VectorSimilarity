@@ -13,15 +13,33 @@
 
 #include "bm_spaces_class.h"
 
+#include "VecSim/spaces/space_chooser.h"
+
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
-#define BENCHMARK_DISTANCE_F(type_prefix, arch, settings, func)                                    \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##settings)                         \
+#define BENCHMARK_DISTANCE_F_FP32(arch, settings, base_func)                                       \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, FP32_##arch##_##settings)                                  \
     (benchmark::State & st) {                                                                      \
         if (opt < ARCH_OPT_##arch) {                                                               \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
             return;                                                                                \
         }                                                                                          \
+        auto func = base_func<0>; /* for getting the type */                                       \
+        CHOOSE_IMPLEMENTATION(func, dim, 16, base_func);                                           \
+        for (auto _ : st) {                                                                        \
+            func(v1, v2, dim);                                                                     \
+        }                                                                                          \
+    }
+
+#define BENCHMARK_DISTANCE_F_FP64(arch, settings, base_func)                                       \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, FP64_##arch##_##settings)                                  \
+    (benchmark::State & st) {                                                                      \
+        if (opt < ARCH_OPT_##arch) {                                                               \
+            st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
+            return;                                                                                \
+        }                                                                                          \
+        auto func = base_func<0>; /* for getting the type */                                       \
+        CHOOSE_IMPLEMENTATION(func, dim, 8, base_func);                                            \
         for (auto _ : st) {                                                                        \
             func(v1, v2, dim);                                                                     \
         }                                                                                          \
@@ -29,10 +47,10 @@
 
 // Dimensions for functions that satisfy optimizations on dim % 16 == 0 (fp32) or dim % 8 == 0
 // (fp64)
-#define EXACT_PARAMS_MODULU16DIM Arg(16)->Arg(128)->Arg(400)
+#define EXACT_512BIT_PARAMS Arg(16)->Arg(128)->Arg(400)
 
 // Dimensions for functions that satisfy optimizations on dim % 4 == 0 (fp32) or dim % 2 == 0 (fp64)
-#define EXACT_PARAMS_MODULU4DIM Arg(28)->Arg(140)->Arg(412)
+#define EXACT_128BIT_PARAMS Arg(28)->Arg(140)->Arg(412)
 
 // For residual functions, taking dimensions that are 16 multiplications +-1, to show which of
 // 16_residual (for fp64 - 8_residual) and 4_residual (for fp64 - 2_residual) is better in which
@@ -46,8 +64,11 @@
             ->ArgName("Dimension")                                                                 \
             ->Unit(benchmark::kNanosecond)
 
-#define INITIALIZE_EXACT_BM(type_prefix, arch, metric, dim_opt, func)                              \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_PARAMS_MODULU##dim_opt##DIM
+#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt, func)                       \
+    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_128BIT_PARAMS
+
+#define INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, metric, dim_opt, func)                       \
+    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_512BIT_PARAMS
 
 #define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt, func)                           \
     INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->RESIDUAL_PARAMS
