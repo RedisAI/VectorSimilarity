@@ -17,31 +17,33 @@ static inline void L2SqrStep(double *&pVect1, double *&pVect2, __m256d &sum) {
     sum = _mm256_add_pd(sum, _mm256_mul_pd(diff, diff));
 }
 
-template <__mmask8 mask>
+template <unsigned char residual> // 0..7
 double FP64_L2SqrSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    const double *pEnd1 = pVect1 + qty - 8;
+    const double *pEnd1 = pVect1 + qty;
 
     __m256d sum = _mm256_setzero_pd();
 
-    while (pVect1 <= pEnd1) {
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
-    }
-
-    if (mask > 0xF) {
-        L2SqrStep(pVect1, pVect2, sum);
-    }
-
     // _mm256_maskz_loadu_pd is not available in AVX
-    __mmask8 constexpr mask4 = (mask >= 0xF) ? (mask >> 4) : mask;
-    if (mask4 != 0) {
+    if (residual % 4) {
+        __mmask8 constexpr mask4 = (1 << (residual % 4)) - 1;
         __m256d v1 = my_mm256_maskz_loadu_pd<mask4>(pVect1);
+        pVect1 += residual % 4;
         __m256d v2 = my_mm256_maskz_loadu_pd<mask4>(pVect2);
+        pVect2 += residual % 4;
         __m256d diff = _mm256_sub_pd(v1, v2);
         sum = _mm256_add_pd(sum, _mm256_mul_pd(diff, diff));
+    }
+
+    if (residual >= 4) {
+        L2SqrStep(pVect1, pVect2, sum);
+    }
+
+    while (pVect1 < pEnd1) {
+        L2SqrStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum);
     }
 
     double PORTABLE_ALIGN32 TmpRes[4];
