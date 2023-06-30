@@ -5,6 +5,7 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/AVX_utils.h"
 
 static inline void L2SqrStep(float *&pVect1, float *&pVect2, __m256 &sum) {
     __m256 v1 = _mm256_loadu_ps(pVect1);
@@ -14,19 +15,6 @@ static inline void L2SqrStep(float *&pVect1, float *&pVect2, __m256 &sum) {
     __m256 diff = _mm256_sub_ps(v1, v2);
     // sum = _mm256_fmadd_ps(diff, diff, sum);
     sum = _mm256_add_ps(sum, _mm256_mul_ps(diff, diff));
-}
-
-// TODO: verify that this is correct
-template <__mmask8 mask>
-static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
-    // Set the indices for loading 8 float values
-    __m256i indices = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
-    // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
-    __m256 vec_mask = _mm256_blend_ps(_mm256_set1_ps(-1), _mm256_setzero_ps(), mask);
-
-    __m256 loaded_values = _mm256_mask_i32gather_ps(_mm256_setzero_ps(), p, indices, vec_mask, 4);
-
-    return loaded_values;
 }
 
 template <__mmask16 mask>
@@ -44,11 +32,11 @@ float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
         L2SqrStep(pVect1, pVect2, sum);
     }
 
-    if (mask > ((1 << 8) - 1)) {
+    if (mask > 0xFF) {
         L2SqrStep(pVect1, pVect2, sum);
     }
 
-    __mmask8 constexpr mask8 = mask & (mask >> 8);
+    __mmask8 constexpr mask8 = (mask >= 0xFF) ? (mask >> 8) : mask;
     if (mask8 != 0) {
         __m256 v1 = my_mm256_maskz_loadu_ps<mask8>(pVect1);
         __m256 v2 = my_mm256_maskz_loadu_ps<mask8>(pVect2);

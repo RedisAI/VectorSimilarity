@@ -21,15 +21,15 @@ float FP32_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v
 
     const float *pEnd1 = pVect1 + qty - 16;
 
-    __m512 v1, v2, sum512 = _mm512_setzero_ps();
+    __m512 sum512 = _mm512_setzero_ps();
 
     while (pVect1 <= pEnd1) {
         InnerProductStep(pVect1, pVect2, sum512);
     }
 
     if (mask != 0) {
-        v1 = _mm512_maskz_loadu_ps(mask, pVect1);
-        v2 = _mm512_maskz_loadu_ps(mask, pVect2);
+        __m512 v1 = _mm512_maskz_loadu_ps(mask, pVect1);
+        __m512 v2 = _mm512_maskz_loadu_ps(mask, pVect2);
         sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(v1, v2));
     }
 

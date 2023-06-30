@@ -5,6 +5,7 @@
  */
 
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/AVX_utils.h"
 
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m256 &sum256) {
     __m256 v1 = _mm256_loadu_ps(pVect1);
@@ -12,18 +13,6 @@ static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m256 &sum2
     __m256 v2 = _mm256_loadu_ps(pVect2);
     pVect2 += 8;
     sum256 = _mm256_add_ps(sum256, _mm256_mul_ps(v1, v2));
-}
-
-template <__mmask8 mask>
-static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
-    // Set the indices for loading 8 float values
-    __m256i indices = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
-    // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
-    __m256 vec_mask = _mm256_blend_ps(_mm256_set1_ps(-1), _mm256_setzero_ps(), mask);
-
-    __m256 loaded_values = _mm256_mask_i32gather_ps(_mm256_setzero_ps(), p, indices, vec_mask, 4);
-
-    return loaded_values;
 }
 
 template <__mmask16 mask>
@@ -45,7 +34,7 @@ float FP32_InnerProductSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, s
         InnerProductStep(pVect1, pVect2, sum256);
     }
 
-    __mmask8 constexpr mask8 = mask & (mask >> 8);
+    __mmask8 constexpr mask8 = (mask >= 0xFF) ? (mask >> 8) : mask;
     if (mask8 != 0) {
         __m256 v1 = my_mm256_maskz_loadu_ps<mask8>(pVect1);
         __m256 v2 = my_mm256_maskz_loadu_ps<mask8>(pVect2);
