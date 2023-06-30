@@ -32,14 +32,12 @@ add_executable(test_hnsw ../utils/mock_thread_pool.cpp test_hnsw.cpp test_hnsw_m
 add_executable(test_hnsw_parallel test_hnsw_parallel.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp test_utils.cpp)
 add_executable(test_allocator test_allocator.cpp test_utils.cpp)
-# add_executable(test_spaces test_spaces.cpp)
 add_executable(test_common test_common.cpp test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_allocator PUBLIC gtest_main VectorSimilarity)
-# target_link_libraries(test_spaces PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_common PUBLIC gtest_main VectorSimilarity)
 
 include(GoogleTest)
@@ -48,5 +46,55 @@ gtest_discover_tests(test_hnsw)
 gtest_discover_tests(test_hnsw_parallel)
 gtest_discover_tests(test_bruteforce)
 gtest_discover_tests(test_allocator)
-# gtest_discover_tests(test_spaces)
 gtest_discover_tests(test_common)
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# Passed this line we have optimization enabled by the compiler.                        #
+# Adding files to complie after this line will have an effect on the resulted binaries. #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+include(CheckCXXCompilerFlag)
+
+# TODO: Remove this once cpu_features get support for M1
+if(NOT APPLE)
+	include(${root}/cmake/cpu_features.cmake)
+elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
+	include(${root}/cmake/cpu_features.cmake)
+else()
+	add_definitions(-DM1)
+endif()
+
+if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+	# build SSE/AVX* code only on x64 processors.
+	# Check that the compiler supports instructions flag.
+	# This will add the relevant flag both the the space selector and the optimization.
+	CHECK_CXX_COMPILER_FLAG(-mavx512f CXX_AVX512F)
+	CHECK_CXX_COMPILER_FLAG(-mavx512dq CXX_AVX512DQ)
+	CHECK_CXX_COMPILER_FLAG(-mavx CXX_AVX)
+	CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
+
+	if(CXX_AVX512F)
+		add_compile_options(-mavx512f)
+		message("Building with AVX512")
+	endif()
+
+	if(CXX_AVX512DQ)
+		add_compile_options(-mavx512dq)
+		message("Building with AVX512 DQ (Doubleword and Quadword) extension")
+	endif()
+
+	if(CXX_AVX)
+		add_compile_options(-mavx)
+		message("Building with AVX")
+	endif()
+
+	if(CXX_SSE)
+		add_compile_options(-msse)
+		message("Building with SSE")
+	endif()
+endif()
+
+
+add_executable(test_spaces test_spaces.cpp)
+target_link_libraries(test_spaces PUBLIC gtest_main VectorSimilarity)
+gtest_discover_tests(test_spaces)

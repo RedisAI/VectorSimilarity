@@ -23,15 +23,18 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-        CHOOSE_IMPLEMENTATION(dim, 16, FP32_InnerProductSIMD16Ext_AVX512);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16Ext_AVX512);
+        break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-        CHOOSE_IMPLEMENTATION(dim, 16, FP32_InnerProductSIMD16Ext_AVX);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16Ext_AVX);
+        break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-        CHOOSE_IMPLEMENTATION(dim, 16, FP32_InnerProductSIMD16Ext_SSE);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16Ext_SSE);
+        break;
 #endif
     case ARCH_OPT_NONE:
         break;
@@ -50,15 +53,18 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-        CHOOSE_IMPLEMENTATION(dim, 8, FP64_InnerProductSIMD8Ext_AVX512);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8Ext_AVX512);
+        break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-        CHOOSE_IMPLEMENTATION(dim, 8, FP64_InnerProductSIMD8Ext_AVX);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8Ext_AVX);
+        break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-        CHOOSE_IMPLEMENTATION(dim, 8, FP64_InnerProductSIMD8Ext_SSE);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8Ext_SSE);
+        break;
 #endif
     case ARCH_OPT_NONE:
         break;
