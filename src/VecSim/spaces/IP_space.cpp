@@ -10,14 +10,7 @@
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
 
-#define CASES16(X, func) C4(X, func, 0) C4(X, func, 1) C4(X, func, 2) C4(X, func, 3)
-#define CASES8(X, func)  C4(X, func, 0) C4(X, func, 1)
-#define C4(X, func, N)                                                                             \
-    X((4 * N), func) X((4 * N + 1), func) X((4 * N + 2), func) X((4 * N + 3), func)
-#define X(N, func)                                                                                 \
-    case (N):                                                                                      \
-        ret_dist_func = func<(1 << (N)) - 1>;                                                      \
-        break;
+#include "VecSim/spaces/space_chooser.h"
 
 namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
@@ -30,22 +23,15 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-    {
-        switch (dim % 16) { CASES16(X, FP32_InnerProductSIMD16Ext_AVX512); }
-    } break;
+        CHOOSE_IMPLEMENTATION(dim, 16, FP32_InnerProductSIMD16Ext_AVX512);
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-    {
-        switch (dim % 16) { CASES16(X, FP32_InnerProductSIMD16Ext_AVX); }
-    } break;
-
+        CHOOSE_IMPLEMENTATION(dim, 16, FP32_InnerProductSIMD16Ext_AVX);
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-    {
-        switch (dim % 16) { CASES16(X, FP32_InnerProductSIMD16Ext_SSE); }
-    } break;
+        CHOOSE_IMPLEMENTATION(dim, 16, FP32_InnerProductSIMD16Ext_SSE);
 #endif
     case ARCH_OPT_NONE:
         break;
@@ -64,22 +50,15 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-    {
-        switch (dim % 8) { CASES8(X, FP64_InnerProductSIMD8Ext_AVX512); }
-    } break;
+        CHOOSE_IMPLEMENTATION(dim, 8, FP64_InnerProductSIMD8Ext_AVX512);
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-    {
-        switch (dim % 8) { CASES8(X, FP64_InnerProductSIMD8Ext_AVX); }
-    } break;
-
+        CHOOSE_IMPLEMENTATION(dim, 8, FP64_InnerProductSIMD8Ext_AVX);
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-    {
-        switch (dim % 8) { CASES8(X, FP64_InnerProductSIMD8Ext_SSE); }
-    } break;
+        CHOOSE_IMPLEMENTATION(dim, 8, FP64_InnerProductSIMD8Ext_SSE);
 #endif
     case ARCH_OPT_NONE:
         break;
@@ -90,4 +69,4 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 
 } // namespace spaces
 
-#undef X
+#include "VecSim/spaces/space_chooser_cleanup.h"
