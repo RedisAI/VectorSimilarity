@@ -10,7 +10,7 @@
     X((4 * N), func) X((4 * N + 1), func) X((4 * N + 2), func) X((4 * N + 3), func)
 #define X(N, func)                                                                                 \
     case (N):                                                                                      \
-        __ret_dist_func = func<(1 << (N)) - 1>;                                                    \
+        __ret_dist_func = func<(N)>;                                                               \
         break;
 
 #define CASES16(X, func) C4(X, func, 0) C4(X, func, 1) C4(X, func, 2) C4(X, func, 3)

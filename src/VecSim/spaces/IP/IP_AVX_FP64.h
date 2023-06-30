@@ -15,30 +15,32 @@ static inline void InnerProductStep(double *&pVect1, double *&pVect2, __m256d &s
     sum256 = _mm256_add_pd(sum256, _mm256_mul_pd(v1, v2));
 }
 
-template <__mmask8 mask>
+template <unsigned char residual> // 0..7
 double FP64_InnerProductSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    const double *pEnd1 = pVect1 + qty - 8;
+    const double *pEnd1 = pVect1 + qty;
 
     __m256d sum256 = _mm256_setzero_pd();
 
-    while (pVect1 <= pEnd1) {
-        InnerProductStep(pVect1, pVect2, sum256);
-        InnerProductStep(pVect1, pVect2, sum256);
-    }
-
-    if (mask >= 0x0F) {
-        InnerProductStep(pVect1, pVect2, sum256);
-    }
-
-    // _mm256_maskz_loadu_pd is not available in AVX
-    __mmask8 constexpr mask4 = (mask >= 0xF) ? (mask >> 4) : mask;
-    if (mask4 != 0) {
-        __m256d v1 = my_mm256_maskz_loadu_pd<mask4>(pVect1);
-        __m256d v2 = my_mm256_maskz_loadu_pd<mask4>(pVect2);
+    if (residual % 4) {
+        // _mm256_maskz_loadu_pd is not available in AVX
+        __mmask8 constexpr mask = (1 << (residual % 4)) - 1;
+        __m256d v1 = my_mm256_maskz_loadu_pd<mask>(pVect1);
+        pVect1 += residual % 4;
+        __m256d v2 = my_mm256_maskz_loadu_pd<mask>(pVect2);
+        pVect2 += residual % 4;
         sum256 = _mm256_add_pd(sum256, _mm256_mul_pd(v1, v2));
+    }
+
+    if (residual >= 4) {
+        InnerProductStep(pVect1, pVect2, sum256);
+    }
+
+    while (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum256);
+        InnerProductStep(pVect1, pVect2, sum256);
     }
 
     double PORTABLE_ALIGN32 TmpRes[4];
