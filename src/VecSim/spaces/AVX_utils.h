@@ -7,7 +7,6 @@
 #pragma once
 #include "space_includes.h"
 
-// TODO: verify that this is correct
 template <__mmask8 mask>
 static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
     // Set the indices for loading 8 float values
@@ -20,7 +19,6 @@ static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
     return loaded_values;
 }
 
-// TODO: verify that this is correct
 template <__mmask8 mask>
 static inline __m256d my_mm256_maskz_loadu_pd(const double *p) {
     // Set the indices for loading 4 double values
