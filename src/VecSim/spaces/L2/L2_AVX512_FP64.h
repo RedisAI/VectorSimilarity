@@ -32,8 +32,7 @@ double FP64_L2SqrSIMD8Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
         __m512d v2 = _mm512_maskz_loadu_pd(mask, pVect2);
         pVect2 += residual;
         __m512d diff = _mm512_sub_pd(v1, v2);
-        // sum = _mm512_fmadd_pd(diff, diff, sum);
-        sum = _mm512_add_pd(sum, _mm512_mul_pd(diff, diff));
+        sum = _mm512_mul_pd(diff, diff);
     }
 
     // In each iteration we calculate 8 doubles = 512 bits.

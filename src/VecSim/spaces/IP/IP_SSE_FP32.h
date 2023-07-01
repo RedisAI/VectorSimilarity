@@ -23,24 +23,23 @@ float FP32_InnerProductSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, s
 
     __m128 sum_prod = _mm_setzero_ps();
 
-    if (residual % 4 == 3) {
-        __m128 v1 = _mm_load_ss(pVect1);
-        __m128 v2 = _mm_load_ss(pVect2);
-        v1 = _mm_loadh_pi(v1, (__m64 *)(pVect1 + 1));
-        v2 = _mm_loadh_pi(v2, (__m64 *)(pVect2 + 1));
-        sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(v1, v2));
-    } else if (residual % 4 == 2) {
-        __m128 v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
-        __m128 v2 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect2);
-        sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(v1, v2));
-    } else if (residual % 4 == 1) {
-        __m128 v1 = _mm_load_ss(pVect1);
-        __m128 v2 = _mm_load_ss(pVect2);
-        sum_prod = _mm_add_ps(sum_prod, _mm_mul_ps(v1, v2));
-    }
     if (residual % 4) {
+        __m128 v1, v2;
+        if (residual % 4 == 3) {
+            v1 = _mm_load_ss(pVect1);
+            v2 = _mm_load_ss(pVect2);
+            v1 = _mm_loadh_pi(v1, (__m64 *)(pVect1 + 1));
+            v2 = _mm_loadh_pi(v2, (__m64 *)(pVect2 + 1));
+        } else if (residual % 4 == 2) {
+            v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
+            v2 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect2);
+        } else if (residual % 4 == 1) {
+            v1 = _mm_load_ss(pVect1);
+            v2 = _mm_load_ss(pVect2);
+        }
         pVect1 += residual % 4;
         pVect2 += residual % 4;
+        sum_prod = _mm_mul_ps(v1, v2);
     }
 
     if (residual >= 12)
