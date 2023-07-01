@@ -32,9 +32,9 @@ float FP32_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v
         sum512 = _mm512_mul_ps(v1, v2);
     }
 
-    while (pVect1 < pEnd1) {
+    do {
         InnerProductStep(pVect1, pVect2, sum512);
-    }
+    } while (pVect1 < pEnd1);
 
     return 1.0f - _mm512_reduce_add_ps(sum512);
 }

@@ -9,24 +9,18 @@
 
 template <__mmask8 mask>
 static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
-    // Set the indices for loading 8 float values
-    __m256i indices = _mm256_set_epi32(7, 6, 5, 4, 3, 2, 1, 0);
+    __m256 data = _mm256_loadu_ps(p);
     // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
-    __m256 vec_mask = _mm256_blend_ps(_mm256_setzero_ps(), _mm256_set1_ps(-1), mask);
+    __m256 masked_data = _mm256_blend_ps(_mm256_setzero_ps(), data, mask);
 
-    __m256 loaded_values = _mm256_mask_i32gather_ps(_mm256_setzero_ps(), p, indices, vec_mask, 4);
-
-    return loaded_values;
+    return masked_data;
 }
 
 template <__mmask8 mask>
 static inline __m256d my_mm256_maskz_loadu_pd(const double *p) {
-    // Set the indices for loading 4 double values
-    __m128i indices = _mm_set_epi32(3, 2, 1, 0);
+    __m256d data = _mm256_loadu_pd(p);
     // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
-    __m256d vec_mask = _mm256_blend_pd(_mm256_setzero_pd(), _mm256_set1_pd(-1), mask);
+    __m256d masked_data = _mm256_blend_pd(_mm256_setzero_pd(), data, mask);
 
-    __m256d loaded_values = _mm256_mask_i32gather_pd(_mm256_setzero_pd(), p, indices, vec_mask, 8);
-
-    return loaded_values;
+    return masked_data;
 }

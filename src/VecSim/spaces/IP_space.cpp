@@ -16,6 +16,9 @@ namespace spaces {
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
+    if (dim < 16) {
+        return ret_dist_func;
+    }
 #if defined(M1)
 #elif defined(__x86_64__)
 
@@ -46,6 +49,9 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
+    if (dim < 8) {
+        return ret_dist_func;
+    }
 #if defined(M1)
 #elif defined(__x86_64__)
 

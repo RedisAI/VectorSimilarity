@@ -41,10 +41,10 @@ double FP64_L2SqrSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
         L2SqrStep(pVect1, pVect2, sum);
     }
 
-    while (pVect1 < pEnd1) {
+    do {
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
-    }
+    } while (pVect1 < pEnd1);
 
     double PORTABLE_ALIGN32 TmpRes[4];
     _mm256_store_pd(TmpRes, sum);
