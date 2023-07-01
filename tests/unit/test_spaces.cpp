@@ -14,8 +14,6 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 
-#include "VecSim/spaces/space_chooser.h"
-
 class SpacesTest : public ::testing::Test {
 
 protected:
@@ -92,14 +90,7 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 #include "cpu_features_macros.h"
 #ifdef CPU_FEATURES_ARCH_X86_64
 
-#include "VecSim/spaces/IP/IP_SSE.h"
-#include "VecSim/spaces/IP/IP_AVX.h"
-#include "VecSim/spaces/IP/IP_AVX512.h"
-#include "VecSim/spaces/L2/L2_SSE.h"
-#include "VecSim/spaces/L2/L2_AVX.h"
-#include "VecSim/spaces/L2/L2_AVX512.h"
-
-using spaces::dist_func_t;
+using namespace spaces;
 
 class FP32SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -117,15 +108,20 @@ TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
     float baseline = FP32_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_DQ:
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_DQ);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512DQ with dim " << dim;
     case ARCH_OPT_AVX512_F:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 16, FP32_L2SqrSIMD16Ext_AVX512);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512";
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_F);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_AVX:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 16, FP32_L2SqrSIMD16Ext_AVX);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX";
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_AVX);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
     case ARCH_OPT_SSE:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 16, FP32_L2SqrSIMD16Ext_SSE);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE";
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_NONE:
+        arch_opt_func = L2_FP32_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP32_L2Sqr, arch_opt_func);
         break;
     default:
         FAIL();
@@ -146,15 +142,20 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
     float baseline = FP32_InnerProduct(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_DQ:
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_DQ);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512DQ with dim " << dim;
     case ARCH_OPT_AVX512_F:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 16, FP32_InnerProductSIMD16Ext_AVX512);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512";
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_F);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_AVX:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 16, FP32_InnerProductSIMD16Ext_AVX);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX";
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
     case ARCH_OPT_SSE:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 16, FP32_InnerProductSIMD16Ext_SSE);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE";
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_SSE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_NONE:
+        arch_opt_func = IP_FP32_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP32_InnerProduct, arch_opt_func);
         break;
     default:
         FAIL();
@@ -179,15 +180,20 @@ TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
     double baseline = FP64_L2Sqr(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_DQ:
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_DQ);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512DQ with dim " << dim;
     case ARCH_OPT_AVX512_F:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 8, FP64_L2SqrSIMD8Ext_AVX512);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512";
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_F);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_AVX:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 8, FP64_L2SqrSIMD8Ext_AVX);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX";
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_AVX);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
     case ARCH_OPT_SSE:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 8, FP64_L2SqrSIMD8Ext_SSE);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE";
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_NONE:
+        arch_opt_func = L2_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP64_L2Sqr, arch_opt_func);
         break;
     default:
         FAIL();
@@ -208,15 +214,20 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
     double baseline = FP64_InnerProduct(v, v2, dim);
     switch (optimization) {
     case ARCH_OPT_AVX512_DQ:
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_DQ);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512DQ with dim " << dim;
     case ARCH_OPT_AVX512_F:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 8, FP64_InnerProductSIMD8Ext_AVX512);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512";
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_F);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX512 with dim " << dim;
     case ARCH_OPT_AVX:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 8, FP64_InnerProductSIMD8Ext_AVX);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX";
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "AVX with dim " << dim;
     case ARCH_OPT_SSE:
-        CHOOSE_IMPLEMENTATION(arch_opt_func, dim, 8, FP64_InnerProductSIMD8Ext_SSE);
-        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE";
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_SSE);
+        ASSERT_EQ(baseline, arch_opt_func(v, v2, dim)) << "SSE with dim " << dim;
+    case ARCH_OPT_NONE:
+        arch_opt_func = IP_FP64_GetDistFunc(dim, ARCH_OPT_NONE);
+        ASSERT_EQ(FP64_InnerProduct, arch_opt_func);
         break;
     default:
         FAIL();
@@ -228,5 +239,3 @@ INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest, testing::Rang
 #endif // CPU_FEATURES_ARCH_X86_64
 
 #endif // M1/X86_64
-
-#include "VecSim/spaces/space_chooser_cleanup.h"
