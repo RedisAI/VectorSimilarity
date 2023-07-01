@@ -41,12 +41,12 @@ double FP64_L2SqrSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, size_t q
         L2SqrStep(pVect1, pVect2, sum);
 
     // In each iteration we calculate 8 doubles = 512 bits in total.
-    while (pVect1 < pEnd1) {
+    do {
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
-    }
+    } while (pVect1 < pEnd1);
 
     // TmpRes must be 16 bytes aligned
     double PORTABLE_ALIGN16 TmpRes[2];
