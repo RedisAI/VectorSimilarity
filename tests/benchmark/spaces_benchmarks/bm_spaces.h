@@ -10,36 +10,23 @@
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/space_aux.h"
+#include "VecSim/spaces/IP_space.h"
+#include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/L2/L2.h"
 
 #include "bm_spaces_class.h"
 
-#include "VecSim/spaces/space_chooser.h"
-
 // Defining the generic benchmark flow: if there is support for the optimization, benchmark the
 // function.
-#define BENCHMARK_DISTANCE_F_FP32(arch, settings, base_func)                                       \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, FP32_##arch##_##settings)                                  \
+#define BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                   \
+    BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)               \
     (benchmark::State & st) {                                                                      \
         if (opt < ARCH_OPT_##arch) {                                                               \
             st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
             return;                                                                                \
         }                                                                                          \
-        auto func = base_func<0>; /* for getting the type */                                       \
-        CHOOSE_IMPLEMENTATION(func, dim, 16, base_func);                                           \
-        for (auto _ : st) {                                                                        \
-            func(v1, v2, dim);                                                                     \
-        }                                                                                          \
-    }
-
-#define BENCHMARK_DISTANCE_F_FP64(arch, settings, base_func)                                       \
-    BENCHMARK_DEFINE_F(BM_VecSimSpaces, FP64_##arch##_##settings)                                  \
-    (benchmark::State & st) {                                                                      \
-        if (opt < ARCH_OPT_##arch) {                                                               \
-            st.SkipWithError("This benchmark requires " #arch ", which is not available");         \
-            return;                                                                                \
-        }                                                                                          \
-        auto func = base_func<0>; /* for getting the type */                                       \
-        CHOOSE_IMPLEMENTATION(func, dim, 8, base_func);                                            \
+        auto func = spaces::metric##_##type_prefix##_GetDistFunc(dim, ARCH_OPT_##arch);            \
         for (auto _ : st) {                                                                        \
             func(v1, v2, dim);                                                                     \
         }                                                                                          \
@@ -58,25 +45,23 @@
 #define RESIDUAL_PARAMS                                                                            \
     Arg(16 - 1)->Arg(16 + 1)->Arg(128 - 1)->Arg(128 + 1)->Arg(400 - 1)->Arg(400 + 1)
 
-#define INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)                                    \
-    BENCHMARK_DISTANCE_F_##type_prefix(arch, metric##_##dim_opt, func)                             \
-        BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)         \
-            ->ArgName("Dimension")                                                                 \
-            ->Unit(benchmark::kNanosecond)
+#define INITIALIZE_BM(type_prefix, arch, metric, dim_opt)                                          \
+    BENCHMARK_DISTANCE_F(type_prefix, arch, metric, dim_opt)                                       \
+    BENCHMARK_REGISTER_F(BM_VecSimSpaces, type_prefix##_##arch##_##metric##_##dim_opt)             \
+        ->ArgName("Dimension")                                                                     \
+        ->Unit(benchmark::kNanosecond)
 
-#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt, func)                       \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_128BIT_PARAMS
+#define INITIALIZE_EXACT_128BIT_BM(type_prefix, arch, metric, dim_opt)                             \
+    INITIALIZE_BM(type_prefix, arch, metric, dim_opt)->EXACT_128BIT_PARAMS
 
-#define INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, metric, dim_opt, func)                       \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->EXACT_512BIT_PARAMS
+#define INITIALIZE_EXACT_512BIT_BM(type_prefix, arch, metric, dim_opt)                             \
+    INITIALIZE_BM(type_prefix, arch, metric, dim_opt)->EXACT_512BIT_PARAMS
 
-#define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt, func)                           \
-    INITIALIZE_BM(type_prefix, arch, metric, dim_opt, func)->RESIDUAL_PARAMS
+#define INITIALIZE_RESIDUAL_BM(type_prefix, arch, metric, dim_opt)                                 \
+    INITIALIZE_BM(type_prefix, arch, metric, dim_opt)->RESIDUAL_PARAMS
 
 // Naive algorithms
 
-#include "VecSim/spaces/L2/L2.h"
-#include "VecSim/spaces/IP/IP.h"
 #define BENCHMARK_DEFINE_NAIVE(type_prefix, metric)                                                \
     BENCHMARK_DEFINE_F(BM_VecSimSpaces, type_prefix##_NAIVE_##metric)                              \
     (benchmark::State & st) {                                                                      \
