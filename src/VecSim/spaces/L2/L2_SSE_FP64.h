@@ -30,7 +30,7 @@ double FP64_L2SqrSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, size_t q
         __m128d v2 = _mm_load_sd(pVect2);
         pVect2++;
         __m128d diff = _mm_sub_pd(v1, v2);
-        sum = _mm_add_pd(sum, _mm_mul_pd(diff, diff));
+        sum = _mm_mul_pd(diff, diff);
     }
 
     if (residual >= 6)

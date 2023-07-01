@@ -30,7 +30,7 @@ double FP64_InnerProductSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, s
         pVect1++;
         __m128d v2 = _mm_load_sd(pVect2);
         pVect2++;
-        sum_prod = _mm_add_pd(sum_prod, _mm_mul_pd(v1, v2));
+        sum_prod = _mm_mul_pd(v1, v2);
     }
 
     if (residual >= 6)

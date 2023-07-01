@@ -32,8 +32,7 @@ float FP32_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
         __m512 v2 = _mm512_maskz_loadu_ps(mask, pVect2);
         pVect2 += residual;
         __m512 diff = _mm512_sub_ps(v1, v2);
-        // sum = _mm512_fmadd_ps(diff, diff, sum);
-        sum = _mm512_add_ps(sum, _mm512_mul_ps(diff, diff));
+        sum = _mm512_mul_ps(diff, diff);
     }
 
     // In each iteration we calculate 16 floats = 512 bits.

@@ -34,7 +34,7 @@ double FP64_L2SqrSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
         __m256d v2 = my_mm256_maskz_loadu_pd<mask4>(pVect2);
         pVect2 += residual % 4;
         __m256d diff = _mm256_sub_pd(v1, v2);
-        sum = _mm256_add_pd(sum, _mm256_mul_pd(diff, diff));
+        sum = _mm256_mul_pd(diff, diff);
     }
 
     if (residual >= 4) {

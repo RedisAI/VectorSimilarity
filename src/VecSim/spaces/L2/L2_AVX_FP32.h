@@ -33,7 +33,7 @@ float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
         __m256 v2 = my_mm256_maskz_loadu_ps<mask8>(pVect2);
         pVect2 += residual % 8;
         __m256 diff = _mm256_sub_ps(v1, v2);
-        sum = _mm256_add_ps(sum, _mm256_mul_ps(diff, diff));
+        sum = _mm256_mul_ps(diff, diff);
     }
 
     if (residual >= 8) {

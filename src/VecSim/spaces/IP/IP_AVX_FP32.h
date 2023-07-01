@@ -30,7 +30,7 @@ float FP32_InnerProductSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, s
         pVect1 += residual % 8;
         __m256 v2 = my_mm256_maskz_loadu_ps<mask>(pVect2);
         pVect2 += residual % 8;
-        sum256 = _mm256_add_ps(sum256, _mm256_mul_ps(v1, v2));
+        sum256 = _mm256_mul_ps(v1, v2);
     }
 
     if (residual >= 8) {

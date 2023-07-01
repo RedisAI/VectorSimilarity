@@ -31,7 +31,7 @@ double FP64_InnerProductSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, s
         pVect1 += residual % 4;
         __m256d v2 = my_mm256_maskz_loadu_pd<mask>(pVect2);
         pVect2 += residual % 4;
-        sum256 = _mm256_add_pd(sum256, _mm256_mul_pd(v1, v2));
+        sum256 = _mm256_mul_pd(v1, v2);
     }
 
     if (residual >= 4) {

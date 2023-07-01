@@ -29,7 +29,7 @@ float FP32_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v
         pVect1 += residual;
         __m512 v2 = _mm512_maskz_loadu_ps(mask, pVect2);
         pVect2 += residual;
-        sum512 = _mm512_add_ps(sum512, _mm512_mul_ps(v1, v2));
+        sum512 = _mm512_mul_ps(v1, v2);
     }
 
     while (pVect1 < pEnd1) {
