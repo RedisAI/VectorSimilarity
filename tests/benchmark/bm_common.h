@@ -138,7 +138,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
                                            tiered_index, k, ef, iter++, all_results);
         tiered_index->submitSingleJob(search_job);
         if (iter == total_iters) {
-            tieredIndexMock::thread_pool_wait();
+            BM_VecSimGeneral::mock_thread_pool.thread_pool_wait();
         }
     }
 
@@ -154,7 +154,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     }
 
     st.counters["Recall"] = (float)correct / (float)(k * iter);
-    st.counters["num_threads"] = (double)tieredIndexMock::THREAD_POOL_SIZE;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.THREAD_POOL_SIZE;
 }
 
 #define REGISTER_TopK_BF(BM_CLASS, BM_FUNC)                                                        \

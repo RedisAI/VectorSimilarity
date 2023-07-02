@@ -112,16 +112,10 @@ class IndexCtx:
 def create_tiered_index(is_multi: bool, num_per_label=1):
     indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label)
     num_elements = indices_ctx.num_labels
-    
-    threads_num = TieredIndex.get_threads_num()
-    
-    # Initialize time measurements to apply assert at the end.
-    tiered_index_time = 0
-    hnsw_index_time = 0
-    
-    # Create the tiered index
+
     index = indices_ctx.tiered_index
-    
+    threads_num = index.get_threads_num()
+
     _, bf_dur, end_add_time = indices_ctx.populate_index(index)
     
     index.wait_for_index()
@@ -183,7 +177,7 @@ def search_insert(is_multi: bool, num_per_label=1):
     cur_hnsw_label_count = index.hnsw_label_count()
     if cur_hnsw_label_count == num_labels:
         print("All vectors were already indexed into HNSW - cannot test search while indexing")
-        return
+        assert False
 
     print("Start running queries while indexing is done in the background")
     print(f"HNSW labels number = {cur_hnsw_label_count}")

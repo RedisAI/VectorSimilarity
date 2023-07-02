@@ -5,33 +5,59 @@
  * We use a simple std::queue to simulate the job queue.
  */
 
-size_t tieredIndexMock::THREAD_POOL_SIZE = MIN(8, std::thread::hardware_concurrency());
-std::mutex tieredIndexMock::queue_guard;
-std::condition_variable tieredIndexMock::queue_cond;
-std::vector<std::thread> tieredIndexMock::thread_pool;
-std::bitset<tieredIndexMock::MAX_POOL_SIZE> tieredIndexMock::executions_status;
-tieredIndexMock::JobQueue tieredIndexMock::jobQ;
-bool tieredIndexMock::run_thread = false;
-tieredIndexMock::IndexExtCtx *tieredIndexMock::ctx = nullptr;
+tieredIndexMock::tieredIndexMock() : run_thread(true) {
+    THREAD_POOL_SIZE = MIN(8, std::thread::hardware_concurrency());
+    ctx = new IndexExtCtx(this);
+}
 
-int tieredIndexMock::submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs,
-                                     JobCallback *CBs, size_t len) {
+tieredIndexMock::~tieredIndexMock() {
+    if (!thread_pool.empty()) {
+        thread_pool_join();
+    }
+    if (ctx) {
+        // We must hold the allocator, so it won't deallocate itself.
+        auto allocator = ctx->index_strong_ref->getAllocator();
+        delete ctx;
+    }
+}
+
+void tieredIndexMock::reset_ctx(IndexExtCtx *new_ctx) {
+    if (!thread_pool.empty()) {
+        thread_pool_join();
+    }
+    delete ctx;
+    ctx = new_ctx;
+}
+
+int tieredIndexMock::submit_callback_internal(AsyncJob **jobs, JobCallback *CBs, size_t jobs_len) {
     {
-        std::unique_lock<std::mutex> lock(queue_guard);
-        for (size_t i = 0; i < len; i++) {
+        std::unique_lock<std::mutex> lock(this->queue_guard);
+        for (size_t i = 0; i < jobs_len; i++) {
             // Wrap the job with a struct that contains a weak reference to the related index.
-            auto owned_job = RefManagedJob{
-                .job = jobs[i],
-                .index_weak_ref = reinterpret_cast<IndexExtCtx *>(index_ctx)->index_strong_ref};
-            static_cast<JobQueue *>(job_queue)->push(owned_job);
+            auto owned_job =
+                RefManagedJob{.job = jobs[i], .index_weak_ref = this->ctx->index_strong_ref};
+            this->jobQ.push(owned_job);
         }
     }
-    if (len == 1) {
+    if (jobs_len == 1) {
         queue_cond.notify_one();
     } else {
         queue_cond.notify_all();
     }
     return VecSim_OK;
+}
+
+int tieredIndexMock::submit_callback(void *job_queue, void *index_ctx, AsyncJob **jobs,
+                                     JobCallback *CBs, size_t len) {
+    return reinterpret_cast<IndexExtCtx *>(index_ctx)->mock_thread_pool->submit_callback_internal(
+        jobs, CBs, len);
+}
+
+void tieredIndexMock::init_threads() {
+    run_thread = true;
+    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+        thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i, std::ref(*this));
+    }
 }
 
 // If `run_thread` is null, treat it as `true`.
@@ -56,9 +82,9 @@ void tieredIndexMock::thread_iteration(int thread_id, const bool *run_thread_ptr
 // Main loop for background worker threads that execute the jobs form the job queue.
 // run_thread uses as a signal to the thread that indicates whether it should keep running or
 // stop and terminate the thread.
-void tieredIndexMock::thread_main_loop(int thread_id) {
-    while (run_thread) {
-        tieredIndexMock::thread_iteration(thread_id, &run_thread);
+void tieredIndexMock::thread_main_loop(int thread_id, tieredIndexMock &mock_thread_pool) {
+    while (mock_thread_pool.run_thread) {
+        mock_thread_pool.thread_iteration(thread_id, &(mock_thread_pool.run_thread));
     }
 }
 

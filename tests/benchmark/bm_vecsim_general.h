@@ -40,6 +40,7 @@ protected:
     static size_t n_vectors;
 
     static bool is_multi;
+    static tieredIndexMock mock_thread_pool;
 
     static size_t n_queries;
     static const char *hnsw_index_file;
@@ -79,6 +80,7 @@ protected:
 
     // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
-        return std::string(getenv("ROOT")) + "/" + file_name;
+        //        return std::string(getenv("ROOT")) + "/" + file_name;
+        return std::string("/home/alon/Code/VectorSimilarity") + "/" + file_name;
     }
 };
