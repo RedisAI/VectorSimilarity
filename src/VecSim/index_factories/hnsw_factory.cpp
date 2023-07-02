@@ -25,7 +25,7 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
 }
 
 static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params) {
-    const HNSWParams *hnswParams = &params->hnswParams;
+    const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams = {.allocator =
                                                       VecSimAllocator::newVecsimAllocator(),
                                                   .dim = hnswParams->dim,
@@ -38,7 +38,7 @@ static AbstractIndexInitParams NewAbstractInitParams(const VecSimParams *params)
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params) {
-    const HNSWParams *hnswParams = &params->hnswParams;
+    const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(params);
     if (hnswParams->type == VecSimType_FLOAT32) {
         return NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams);
@@ -51,7 +51,7 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 }
 
 VecSimIndex *NewIndex(const HNSWParams *params) {
-    VecSimParams vecSimParams = {.hnswParams = *params};
+    VecSimParams vecSimParams = {.algoParams = {.hnswParams = HNSWParams{*params}}};
     return NewIndex(&vecSimParams);
 }
 
@@ -177,7 +177,8 @@ VecSimIndex *NewIndex(const std::string &location) {
     HNSWParams params;
     InitializeParams(input, params);
 
-    VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB, .hnswParams = params};
+    VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
+                                 .algoParams = {.hnswParams = HNSWParams{params}}};
     AbstractIndexInitParams abstractInitParams = NewAbstractInitParams(&vecsimParams);
     if (params.type == VecSimType_FLOAT32) {
         return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams, version);

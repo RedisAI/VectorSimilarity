@@ -1,4 +1,3 @@
-
 #include "benchmark/bm_updated_index.h"
 
 /**************************************

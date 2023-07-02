@@ -19,8 +19,9 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	if(${benchmark} MATCHES "spaces*")
 		continue()
 	endif()
-
-	add_executable(bm_${benchmark} run_files/bm_${benchmark}.cpp bm_vecsim_general.cpp)
+	# NOTE: mock_thread_pool.cpp should appear *before* the benchmark files, so we can ensure that the thread pool
+	# globals are initialized before we use them in the benchmark classes (as globals initialization is done by order).
+	add_executable(bm_${benchmark} ../utils/mock_thread_pool.cpp bm_vecsim_general.cpp run_files/bm_${benchmark}.cpp)
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark)
 endforeach()
 
