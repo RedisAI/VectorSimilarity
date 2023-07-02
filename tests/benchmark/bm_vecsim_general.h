@@ -71,6 +71,6 @@ protected:
 
     // Adds the library's root path to @file_name
     static inline std::string AttachRootPath(std::string file_name) {
-        return std::string("/home/guy/Code/VectorSimilarity") + "/" + file_name;
+        return std::string(getenv("ROOT")) + "/" + file_name;
     }
 };
