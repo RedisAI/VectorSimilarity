@@ -3,19 +3,25 @@
  *Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
  *the Server Side Public License v1 (SSPLv1).
  */
+#pragma once
 
 #include <benchmark/benchmark.h>
 #include <random>
 #include <unistd.h>
 #include <istream>
+#include <thread>
+#include <condition_variable>
+#include <bitset>
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_interface.h"
+#include "VecSim/vec_sim_tiered_index.h"
 #include "VecSim/query_results.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "bm_definitions.h"
+#include "utils/mock_thread_pool.h"
 
 // This class includes every static data member that is:
 // 1. Common for fp32 and fp64 data sets.
@@ -38,6 +44,7 @@ protected:
     static size_t n_queries;
     static const char *hnsw_index_file;
     static const char *test_queries_file;
+
     BM_VecSimGeneral() = default;
     virtual ~BM_VecSimGeneral() = default;
 
@@ -53,12 +60,13 @@ protected:
     }
 
     static inline VecSimParams CreateParams(const HNSWParams &hnsw_params) {
-        VecSimParams params{.algo = VecSimAlgo_HNSWLIB, .hnswParams = hnsw_params};
+        VecSimParams params{.algo = VecSimAlgo_HNSWLIB,
+                            .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
         return params;
     }
 
     static inline VecSimParams CreateParams(const BFParams &bf_params) {
-        VecSimParams params{.algo = VecSimAlgo_BF, .bfParams = bf_params};
+        VecSimParams params{.algo = VecSimAlgo_BF, .algoParams = {.bfParams = BFParams{bf_params}}};
         return params;
     }
 

@@ -91,6 +91,7 @@ public:
 
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
+
 #ifdef BUILD_TESTS
     inline VecSimIndexAbstract<DistType> *getFlatbufferIndex() { return this->frontendIndex; }
 #endif

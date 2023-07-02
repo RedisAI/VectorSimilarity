@@ -182,6 +182,11 @@ VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *que
                                              VecSimQueryParams *queryParams);
 
 /**
+ * @brief Run async garbage collection for tiered async index.
+ */
+void VecSimTieredIndex_GC(VecSimIndex *index);
+
+/**
  * @brief Return True if heuristics says that it is better to use ad-hoc brute-force
  * search over the index instead of using batch iterator.
  *

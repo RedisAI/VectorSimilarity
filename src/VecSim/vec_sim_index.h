@@ -103,6 +103,7 @@ public:
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getDataSize() const { return dataSize; }
+    inline size_t getBlockSize() const { return blockSize; }
 
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                               VecSimQueryParams *queryParams) const = 0;
@@ -227,4 +228,6 @@ protected:
 
         return this->newBatchIterator(query_to_send, queryParams);
     }
+
+    void runGC() override {} // Do nothing, relevant for tiered index only.
 };
