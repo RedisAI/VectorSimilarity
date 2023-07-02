@@ -23,22 +23,22 @@ BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered))->Iterations(
 // AddLabel
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_ADD_LABEL, fp32_index_t)
 (benchmark::State &st) { AddLabel(st); }
-// REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
-// REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
-//
-//// DeleteLabel Registration. Definition is placed in the .cpp file.
-// REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
-// REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));
-//
-//// TopK BF
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF), fp32_index_t)
-//(benchmark::State &st) { TopK_BF(st); }
-// REGISTER_TopK_BF(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF));
-//
-//// TopK HNSW
-// BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW), fp32_index_t)
-//(benchmark::State &st) { TopK_HNSW(st); }
-// REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW));
+REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_BF);
+REGISTER_AddLabel(BM_ADD_LABEL, VecSimAlgo_HNSWLIB);
+
+// DeleteLabel Registration. Definition is placed in the .cpp file.
+REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, BF));
+REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, HNSW));
+
+// TopK BF
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF), fp32_index_t)
+(benchmark::State &st) { TopK_BF(st); }
+REGISTER_TopK_BF(BM_VecSimCommon, BM_FUNC_NAME(TopK, BF));
+
+// TopK HNSW
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW), fp32_index_t)
+(benchmark::State &st) { TopK_HNSW(st); }
+REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW));
 
 // TopK Tiered HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered), fp32_index_t)
