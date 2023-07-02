@@ -1,11 +1,40 @@
+# HNSW index serializer for the benchmark.
+# This script is used to serialize datasets to the HNSW index format. The serialized files are used
+# by the C++ and Python benchmarks. Note that the serialized files that are used by the Python
+# benchmarks by default have the same names as the serialized files this script generates.
+# You can use `bm_datasets.py` to generate the datasets it uses.
+
 import numpy as np
 from VecSim import *
 import h5py
 import os
 
-# location = os.path.join(os.path.abspath('.'), 'tests', 'benchmark', 'data', '')
-location = os.path.join(os.path.abspath('.'), '')
+CUR_SERIALIZING_VERSION = 3
+
+location = os.path.abspath('.')
 print('at: ', location)
+if location.endswith('/data'):
+    location = os.path.join(location, '')
+elif location.endswith('/VectorSimilarity'):
+    location = os.path.join(location, 'tests', 'benchmark', 'data', '')
+else:
+    print('unexpected location: ', location)
+    print('expected to be in `./VectorSimilarity/tests/benchmark/data` or `./VectorSimilarity`')
+    exit(1)
+print('working at: ', location)
+
+# Default files to serialize. Each file is expected to be a ditcionary with the following attributes:
+# REQUIRED:
+#   filename:        HDF5 file, that contains the train and test sets. Should be in the data directory.
+#   metric:          metric of the vectors in the file, from the VecSimMetric enum.
+# OPTIONAL:
+#   nickname:        the prefix of the output file, defaults to filename.
+#   dim:             dimension of the vectors in the file, defaults to the length of the first vector.
+#   type:            type of the vectors in the file, from the VecSimType enum. defaults to VecSimType_FLOAT32.
+#   M:               M parameter of the HNSW index, defaults to 64.
+#   efConstruction:  efConstruction parameter of the HNSW index, defaults to 512.
+#   multi:           whether the vectors in the file are multi-value or not, defaults to False.
+#   skipRaw:         whether to skip exporting the test set to a raw file, defaults to False (raw file is exported).
 
 DEFAULT_FILES = [
     {
@@ -88,7 +117,7 @@ def serialize(files=DEFAULT_FILES):
         nickname = file.get('nickname', filename)
         print('working on: ', filename)
 
-        with h5py.File(filename + '.hdf5', 'r') as f:
+        with h5py.File(os.path.join(location, filename + '.hdf5'), 'r') as f:
             hnswparams = HNSWParams()
 
             hnswparams.multi = file.get('multi', False)
@@ -111,7 +140,7 @@ def serialize(files=DEFAULT_FILES):
                 test = f['test']
                 if hnswparams.type == VecSimType_FLOAT64:
                     test = test.astype(np.float64)
-                with open(serialized_raw_name + '-test_vectors.raw', 'wb') as testfile:
+                with open(os.path.join(location, serialized_raw_name + '-test_vectors.raw'), 'wb') as testfile:
                     for vec in test:
                         testfile.write(vec.tobytes())
             else:
@@ -133,15 +162,22 @@ def serialize(files=DEFAULT_FILES):
         # Finished indexing, going back an indentation level so we close the input file
 
         print('lastly, serializing the index')
-        output = os.path.join(location, serialized_file_name + '.hnsw_v3')
+        output = os.path.join(location, serialized_file_name + '.hnsw_v' + str(CUR_SERIALIZING_VERSION))
         index.save_index(output)
         print('saved to: ', output)
 
         # Sanity check - attempt to load the index
         index = HNSWIndex(output)
+        index.check_integrity()
 
         # Release memory before next iteration
         del index
 
 if __name__ == '__main__':
-    serialize()
+    serialize([{
+        'filename': 'glove-25-angular',
+        'nickname': 'glove',
+        'M': 4,
+        'efConstruction': 100,
+        'metric': VecSimMetric_Cosine,
+        'skipRaw': True,}])
