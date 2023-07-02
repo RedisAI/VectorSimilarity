@@ -6,16 +6,9 @@
 
 #pragma once
 
-#ifndef NO_MANUAL_VECTORIZATION
-#ifdef __SSE__
-#define USE_SSE
-#ifdef __AVX__
-#define USE_AVX
-#endif
-#endif
-#endif
+#include "VecSim/utils/alignment.h"
 
-#if defined(USE_AVX) || defined(USE_SSE)
+#if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
 #if defined(__GNUC__)
 #include <x86intrin.h>
 #elif defined(__clang__)
@@ -25,14 +18,4 @@
 #include <stdexcept>
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-#define PORTABLE_ALIGN16 __attribute__((aligned(16)))
-#define PORTABLE_ALIGN32 __attribute__((aligned(32)))
-#define PORTABLE_ALIGN64 __attribute__((aligned(64)))
-#elif defined(_MSC_VER)
-#define PORTABLE_ALIGN16 __declspec(align(16))
-#define PORTABLE_ALIGN32 __declspec(align(32))
-#define PORTABLE_ALIGN64 __declspec(align(64))
-#endif
-
-#endif // USE_AVX || USE_SSE
+#endif // __AVX512F__ || __AVX__ || __SSE__

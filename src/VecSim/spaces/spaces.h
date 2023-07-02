@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include "VecSim/vec_sim_common.h"   // enum VecSimMetric
-#include "VecSim/spaces/space_aux.h" //enum  Arch_Optimization
+#include "VecSim/vec_sim_common.h" // enum VecSimMetric
+
 namespace spaces {
 
 template <typename RET_TYPE>

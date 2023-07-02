@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
 #include <cassert>
@@ -166,19 +167,15 @@ public:
             .fieldType = INFOFIELD_STRING,
             .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.lastMode)}}});
     }
-    const void *processBlob(const void *original_blob, void *processed_blob) const {
+    void processBlob(const void *original_blob, void *processed_blob) const {
+        // copy original blob to the output blob
+        memcpy(processed_blob, original_blob, this->data_size);
+
         // if the metric is cosine, we need to normalize
         if (this->metric == VecSimMetric_Cosine) {
-            // copy original blob to the output blob
-            memcpy(processed_blob, original_blob, this->dataSize);
             // normalize the copy in place
             normalize_func(processed_blob, this->dim);
-
-            return processed_blob;
         }
-
-        // Else no process is needed, return the original blob
-        return original_blob;
     }
 
     /**
@@ -197,35 +194,35 @@ public:
 
 protected:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        char processed_blob[this->dataSize];
-        const void *vector_to_add = processBlob(blob, processed_blob);
+        char PORTABLE_ALIGN processed_blob[this->data_size];
+        processBlob(blob, processed_blob);
 
-        return this->addVector(vector_to_add, label, auxiliaryCtx);
+        return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const override {
-        char processed_blob[this->dataSize];
-        const void *query_to_send = processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN processed_blob[this->data_size];
+        processBlob(queryBlob, processed_blob);
 
-        return this->topKQuery(query_to_send, k, queryParams);
+        return this->topKQuery(processed_blob, k, queryParams);
     }
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryResult_Order order) const override {
-        char processed_blob[this->dataSize];
-        const void *query_to_send = processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN processed_blob[this->data_size];
+        processBlob(queryBlob, processed_blob);
 
-        return this->rangeQuery(query_to_send, radius, queryParams, order);
+        return this->rangeQuery(processed_blob, radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        char processed_blob[this->dataSize];
-        const void *query_to_send = processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN processed_blob[this->data_size];
+        processBlob(queryBlob, processed_blob);
 
-        return this->newBatchIterator(query_to_send, queryParams);
+        return this->newBatchIterator(processed_blob, queryParams);
     }
 
     void runGC() override {} // Do nothing, relevant for tiered index only.
