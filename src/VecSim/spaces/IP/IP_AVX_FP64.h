@@ -38,10 +38,10 @@ double FP64_InnerProductSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, s
         InnerProductStep(pVect1, pVect2, sum256);
     }
 
-    while (pVect1 < pEnd1) {
+    do {
         InnerProductStep(pVect1, pVect2, sum256);
         InnerProductStep(pVect1, pVect2, sum256);
-    }
+    } while (pVect1 < pEnd1);
 
     double PORTABLE_ALIGN32 TmpRes[4];
     _mm256_store_pd(TmpRes, sum256);

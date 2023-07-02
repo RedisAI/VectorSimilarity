@@ -41,12 +41,12 @@ double FP64_InnerProductSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, s
         InnerProductStep(pVect1, pVect2, sum_prod);
 
     // In each iteration we calculate 8 doubles = 512 bits in total.
-    while (pVect1 < pEnd1) {
+    do {
         InnerProductStep(pVect1, pVect2, sum_prod);
         InnerProductStep(pVect1, pVect2, sum_prod);
         InnerProductStep(pVect1, pVect2, sum_prod);
         InnerProductStep(pVect1, pVect2, sum_prod);
-    }
+    } while (pVect1 < pEnd1);
 
     double PORTABLE_ALIGN16 TmpRes[2];
     _mm_store_pd(TmpRes, sum_prod);

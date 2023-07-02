@@ -41,10 +41,10 @@ float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
     }
 
     // In each iteration we calculate 16 floats = 512 bits.
-    while (pVect1 < pEnd1) {
+    do {
         L2SqrStep(pVect1, pVect2, sum);
         L2SqrStep(pVect1, pVect2, sum);
-    }
+    } while (pVect1 < pEnd1);
 
     float PORTABLE_ALIGN32 TmpRes[8];
     _mm256_store_ps(TmpRes, sum);

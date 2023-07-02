@@ -36,9 +36,9 @@ float FP32_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
     }
 
     // In each iteration we calculate 16 floats = 512 bits.
-    while (pVect1 < pEnd1) {
+    do {
         L2SqrStep(pVect1, pVect2, sum);
-    }
+    } while (pVect1 < pEnd1);
 
     return _mm512_reduce_add_ps(sum);
 }
