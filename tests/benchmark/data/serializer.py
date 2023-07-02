@@ -174,10 +174,4 @@ def serialize(files=DEFAULT_FILES):
         del index
 
 if __name__ == '__main__':
-    serialize([{
-        'filename': 'glove-25-angular',
-        'nickname': 'glove',
-        'M': 4,
-        'efConstruction': 100,
-        'metric': VecSimMetric_Cosine,
-        'skipRaw': True,}])
+    serialize()
