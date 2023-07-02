@@ -37,9 +37,10 @@ void *VecSimAllocator::allocate(size_t size) {
 }
 
 void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
-    unsigned char *ptr = (unsigned char *)vecsim_malloc(size + allocation_header_size + alignment);
+    size += alignment; // Add enough space for alignment.
+    unsigned char *ptr = (unsigned char *)vecsim_malloc(size + allocation_header_size);
     if (ptr) {
-        *this->allocated.get() += size + allocation_header_size + alignment;
+        this->allocated += size + allocation_header_size;
         size_t remainder = (((size_t)ptr) + allocation_header_size) % alignment;
         unsigned char offset = alignment - remainder;
         unsigned char *ret = (unsigned char *)(ptr + allocation_header_size) + offset;
@@ -58,7 +59,7 @@ void VecSimAllocator::free_allocation_aligned(void *p) {
     unsigned char offset = ptr[-1];
     size_t allocated = *(size_t *)(ptr - 1 - allocation_header_size);
 
-    *this->allocated.get() -= (allocated + offset + allocation_header_size);
+    this->allocated -= (allocated + allocation_header_size);
     vecsim_free(ptr - offset - allocation_header_size);
 }
 

@@ -1037,8 +1037,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
 
     // The last job should be repairing the single neighbor in level 1.
     ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id,
-              level_one.links[0]);
+    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id, level_one.links[0]);
 
     delete tieredIndexMock::ctx;
 }

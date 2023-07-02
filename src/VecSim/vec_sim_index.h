@@ -53,7 +53,9 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     dist_func_t<DistType>
-        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
+        distFunc;            // Index's distance function. Chosen by the type, metric and dimension.
+    unsigned char alignment; // Alignment hint for the allocator, according to the vector machine
+                             // architecture.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
@@ -86,7 +88,7 @@ public:
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
           isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, &distFunc);
+        spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
         normalize_func =
             vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }
@@ -104,6 +106,7 @@ public:
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getDataSize() const { return dataSize; }
+    inline size_t getBlockSize() const { return blockSize; }
 
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                               VecSimQueryParams *queryParams) const = 0;
@@ -169,7 +172,7 @@ public:
     }
     void processBlob(const void *original_blob, void *processed_blob) const {
         // copy original blob to the output blob
-        memcpy(processed_blob, original_blob, this->data_size);
+        memcpy(processed_blob, original_blob, this->dataSize);
 
         // if the metric is cosine, we need to normalize
         if (this->metric == VecSimMetric_Cosine) {
@@ -194,7 +197,7 @@ public:
 
 protected:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        char PORTABLE_ALIGN processed_blob[this->data_size];
+        char PORTABLE_ALIGN processed_blob[this->dataSize];
         processBlob(blob, processed_blob);
 
         return this->addVector(processed_blob, label, auxiliaryCtx);
@@ -202,7 +205,7 @@ protected:
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const override {
-        char PORTABLE_ALIGN processed_blob[this->data_size];
+        char PORTABLE_ALIGN processed_blob[this->dataSize];
         processBlob(queryBlob, processed_blob);
 
         return this->topKQuery(processed_blob, k, queryParams);
@@ -211,7 +214,7 @@ protected:
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryResult_Order order) const override {
-        char PORTABLE_ALIGN processed_blob[this->data_size];
+        char PORTABLE_ALIGN processed_blob[this->dataSize];
         processBlob(queryBlob, processed_blob);
 
         return this->rangeQuery(processed_blob, radius, queryParams, order);
@@ -219,7 +222,7 @@ protected:
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        char PORTABLE_ALIGN processed_blob[this->data_size];
+        char PORTABLE_ALIGN processed_blob[this->dataSize];
         processBlob(queryBlob, processed_blob);
 
         return this->newBatchIterator(processed_blob, queryParams);

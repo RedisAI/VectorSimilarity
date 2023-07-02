@@ -8,10 +8,10 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include <cstring>
 
-DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,
+DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount, unsigned char alignment,
                      std::shared_ptr<VecSimAllocator> allocator)
     : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0),
-      data((char *)this->allocator->allocate(blockSize * elementBytesCount)) {}
+      data((char *)this->allocator->allocate_aligned(blockSize * elementBytesCount, alignment)) {}
 
 DataBlock::DataBlock(DataBlock &&other) noexcept
     : VecsimBaseObject(other.allocator), element_bytes_count(other.element_bytes_count),
@@ -19,7 +19,7 @@ DataBlock::DataBlock(DataBlock &&other) noexcept
     other.data = nullptr; // take ownership of the data
 }
 
-DataBlock::~DataBlock() noexcept { this->allocator->free_allocation(data); }
+DataBlock::~DataBlock() noexcept { this->allocator->free_allocation_aligned(data); }
 
 void DataBlock::addElement(const void *element) {
 

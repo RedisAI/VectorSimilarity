@@ -14,9 +14,14 @@
 
 namespace spaces {
 
-dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
-
+dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment) {
+    unsigned char dummy;
+    if (alignment == nullptr) {
+        alignment = &dummy;
+    }
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
+    *alignment = 4;
     if (dim < 16) {
         return ret_dist_func;
     }
@@ -28,16 +33,19 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16Ext_AVX512);
+        *alignment = 64;
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16Ext_AVX);
+        *alignment = 32;
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16Ext_SSE);
+        *alignment = 16;
         break;
 #endif
     case ARCH_OPT_NONE:
@@ -48,9 +56,14 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     return ret_dist_func;
 }
 
-dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
-
+dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                        unsigned char *alignment) {
+    unsigned char dummy;
+    if (alignment == nullptr) {
+        alignment = &dummy;
+    }
     dist_func_t<double> ret_dist_func = FP64_L2Sqr;
+    *alignment = 8;
     if (dim < 8) {
         return ret_dist_func;
     }
@@ -62,16 +75,19 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8Ext_AVX512);
+        *alignment = 64;
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8Ext_AVX);
+        *alignment = 32;
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8Ext_SSE);
+        *alignment = 16;
         break;
 #endif
     case ARCH_OPT_NONE:

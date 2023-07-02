@@ -28,11 +28,11 @@ namespace TieredHNSWFactory {
 template <typename DataType, typename DistType>
 VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistType> *hnsw_index) {
     // Initialize brute force index.
-    BFParams bf_params = {.type = params->primaryIndexParams->algoParams.hnswParams.type,
-                          .dim = params->primaryIndexParams->algoParams.hnswParams.dim,
-                          .metric = params->primaryIndexParams->algoParams.hnswParams.metric,
-                          .multi = params->primaryIndexParams->algoParams.hnswParams.multi,
-                          .blockSize = params->primaryIndexParams->algoParams.hnswParams.blockSize};
+    BFParams bf_params = {.type = hnsw_index->getType(),
+                          .dim = hnsw_index->getDim(),
+                          .metric = hnsw_index->getMetric(),
+                          .multi = hnsw_index->isMultiValue(),
+                          .blockSize = hnsw_index->getBlockSize()};
 
     AbstractIndexInitParams abstractInitParams = {.allocator = hnsw_index->getAllocator(),
                                                   .dim = bf_params.dim,
@@ -40,7 +40,7 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
                                                   .metric = bf_params.metric,
                                                   .blockSize = bf_params.blockSize,
                                                   .multi = bf_params.multi,
-                                                  .logCtx = params->primaryIndexParams->logCtx};
+                                                  .logCtx = nullptr};
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams));
 
