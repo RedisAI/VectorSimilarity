@@ -69,6 +69,8 @@ public:
         data.push_back(T()); // dummy element
     }
 
+    template<typename... Args>
+	inline void emplace(Args&&... args);
     inline void insert(const T &value);
     inline T pop_min();
     inline T pop_max();
@@ -264,6 +266,13 @@ void min_max_heap<T, Compare>::trickle_down(size_t idx) {
 template <typename T, typename Compare>
 void min_max_heap<T, Compare>::insert(const T &value) {
     data.push_back(value);
+    bubble_up_new();
+}
+
+template <typename T, typename Compare>
+template<typename... Args>
+void min_max_heap<T, Compare>::emplace(Args&&... args) {
+    data.emplace_back(std::forward<Args>(args)...);
     bubble_up_new();
 }
 

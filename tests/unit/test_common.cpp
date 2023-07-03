@@ -299,7 +299,7 @@ TYPED_TEST(UtilsTests, MinMaxHeap) {
 
     // Insert some data in random order again
     for (size_t i = 0; i < n; ++i) {
-        mmh.insert(i * prime % n);
+        mmh.emplace(i * prime % n);
     }
 
     ASSERT_EQ(mmh.size(), n);
