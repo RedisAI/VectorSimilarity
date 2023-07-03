@@ -1777,7 +1777,7 @@ TYPED_TEST(HNSWTest, testIncomingEdgesSize) {
         total_estimation +=
             hnsw_index->vectorBlocks.size() *
             (hnsw_index->blockSize * (hnsw_index->elementGraphDataSize + hnsw_index->dataSize) +
-             2 * allocations_overhead);
+             2 * (allocations_overhead + hnsw_index->alignment));
 
         size_t add_vectors_memory_delta = index->getAllocationSize() - initial_memory;
 
