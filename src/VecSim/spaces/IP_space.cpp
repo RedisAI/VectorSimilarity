@@ -6,9 +6,11 @@
 
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
+#if defined(__x86_64__)
 #include "VecSim/spaces/IP/IP_AVX512.h"
 #include "VecSim/spaces/IP/IP_AVX.h"
 #include "VecSim/spaces/IP/IP_SSE.h"
+#endif
 
 #include "VecSim/spaces/implementation_chooser.h"
 

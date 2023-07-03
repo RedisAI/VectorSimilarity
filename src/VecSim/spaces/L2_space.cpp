@@ -6,9 +6,11 @@
 
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
+#if defined(__x86_64__)
 #include "VecSim/spaces/L2/L2_AVX512.h"
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
+#endif
 
 #include "VecSim/spaces/implementation_chooser.h"
 
