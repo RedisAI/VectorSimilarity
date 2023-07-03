@@ -9,6 +9,7 @@
 #include "VecSim/query_result_struct.h"
 #include "VecSim/utils/arr_cpp.h"
 #include "VecSim/utils/updatable_heap.h"
+#include "VecSim/utils/minmax_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"
 #include "VecSim/utils/vecsim_results_container.h"
@@ -257,6 +258,81 @@ TYPED_TEST(UtilsTests, Max_Updatable_Heap) {
     heap.pop();
     ASSERT_EQ(heap.size(), 0);
     ASSERT_TRUE(heap.empty());
+}
+
+TYPED_TEST(UtilsTests, MinMaxHeap) {
+    size_t n = 100;
+    size_t prime = 31; // prime number with gcd(n, prime) = 1
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+
+    vecsim_stl::min_max_heap<size_t> mmh(allocator);
+
+    // Initial state checks
+    ASSERT_EQ(mmh.size(), 0);
+    ASSERT_TRUE(mmh.empty());
+
+    // Insert some data in random order
+    for (size_t i = 0; i < n; ++i) {
+        mmh.insert(i * prime % n);
+    }
+
+    ASSERT_EQ(mmh.size(), n);
+    ASSERT_FALSE(mmh.empty());
+    ASSERT_EQ(mmh.peek_min(), 0);
+    ASSERT_EQ(mmh.peek_max(), n - 1);
+
+    for (size_t i = 0; i < n / 2; ++i) {
+        ASSERT_EQ(mmh.size(), n - i * 2);
+        ASSERT_EQ(mmh.pop_min(), i);
+        ASSERT_EQ(mmh.pop_max(), n - 1 - i);
+    }
+
+    ASSERT_EQ(mmh.size(), 0);
+    ASSERT_TRUE(mmh.empty());
+
+    // Insert some data in random order again
+    for (size_t i = 0; i < n; ++i) {
+        mmh.insert(i * prime % n);
+    }
+
+    ASSERT_EQ(mmh.size(), n);
+    ASSERT_FALSE(mmh.empty());
+
+    // Clear the heap
+    mmh.clear();
+
+    ASSERT_EQ(mmh.size(), 0);
+    ASSERT_TRUE(mmh.empty());
+
+    // Insert some data in random order last time
+    for (size_t i = 0; i < n; ++i) {
+        mmh.insert(i * prime % n);
+    }
+
+    ASSERT_EQ(mmh.size(), n);
+    ASSERT_FALSE(mmh.empty());
+
+    // Exchange min value with a larger value (than the current max)
+    for (size_t i = 0; i < n; ++i) {
+        ASSERT_EQ(mmh.exchange_min(i + n), i);
+    }
+    // Expect the heap to have the same size
+    ASSERT_EQ(mmh.size(), n);
+    ASSERT_FALSE(mmh.empty());
+    // Expect the heap to have n...2n-1 values
+    for (size_t i = 0; i < n; ++i) {
+        ASSERT_EQ(mmh.exchange_max(i), 2 * n - 1 - i);
+    }
+    // Expect the heap to have the same size
+    ASSERT_EQ(mmh.size(), n);
+    ASSERT_FALSE(mmh.empty());
+    // Expect the heap to have 0...n-1 values again
+    for (size_t i = 0; i < n; ++i) {
+        ASSERT_EQ(mmh.pop_min(), i);
+    }
+
+    ASSERT_EQ(mmh.size(), 0);
+    ASSERT_TRUE(mmh.empty());
 }
 
 TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
