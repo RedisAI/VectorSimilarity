@@ -92,6 +92,16 @@ TEST_F(SpacesTest, double_ip_no_optimization_func_test) {
 
 using namespace spaces;
 
+TEST_F(SpacesTest, smallDimChooser) {
+    size_t dim = 5;
+
+    // Verify that small dimensions gets the no optimization function
+    ASSERT_EQ(L2_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_DQ), FP32_L2Sqr);
+    ASSERT_EQ(L2_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_DQ), FP64_L2Sqr);
+    ASSERT_EQ(IP_FP32_GetDistFunc(dim, ARCH_OPT_AVX512_DQ), FP32_InnerProduct);
+    ASSERT_EQ(IP_FP64_GetDistFunc(dim, ARCH_OPT_AVX512_DQ), FP64_InnerProduct);
+}
+
 class FP32SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP32SpacesOptimizationTest, FP32L2SqrTest) {
