@@ -47,12 +47,12 @@ private:
     template <bool min>
     inline size_t choose_from_3(size_t a, size_t b, size_t c) const {
         return (min ? compare(a, b) : compare(b, a)) ? choose_from_2<min>(a, c)
-                                                         : choose_from_2<min>(b, c);
+                                                     : choose_from_2<min>(b, c);
     }
     template <bool min>
     inline size_t choose_from_4(size_t a, size_t b, size_t c, size_t d) const {
         return (min ? compare(a, b) : compare(b, a)) ? choose_from_3<min>(a, c, d)
-                                                         : choose_from_3<min>(b, c, d);
+                                                     : choose_from_3<min>(b, c, d);
     }
     template <bool min>
     inline size_t index_best_child_grandchild(size_t index) const;
@@ -241,20 +241,19 @@ void min_max_heap<T, Compare>::trickle_down(size_t idx) {
     size_t best = index_best_child_grandchild<min>(idx);
     if (best == -1)
         return;
-    auto cmp = compare;
 
     if (best > right_child(idx)) {
         // best is a grandchild
-        if (min ? cmp(idx, best) : cmp(best, idx)) {
+        if (min ? compare(best, idx) : compare(idx, best)) {
             swap(idx, best);
-            if (min ? cmp(parent(best), best) : cmp(best, parent(best))) {
+            if (min ? compare(parent(best), best) : compare(best, parent(best))) {
                 swap(best, parent(best));
             }
             trickle_down<min>(best);
         }
     } else {
         // best is a child
-        if (min ? cmp(idx, best) : cmp(best, idx))
+        if (min ? compare(best, idx) : compare(idx, best))
             swap(idx, best);
     }
 }
@@ -291,7 +290,7 @@ T min_max_heap<T, Compare>::pop_max() {
         return max;
     }
 
-    size_t max_idx = compare(data[3], data[2]) ? 2 : 3;
+    size_t max_idx = choose_from_2<false>(2, 3); // choose max of children
 
     T max = data[max_idx];
     data[max_idx] = data.back();
@@ -338,22 +337,21 @@ T min_max_heap<T, Compare>::exchange_max(const T &value) {
         T max = data[2];
         data[2] = value;
         // if the new value is smaller than the parent (root), perform a single-step bubble up
-        if (compare(data[2], data[1]))
-            std::swap(data[1], data[2]);
+        if (compare(2, 1))
+            swap(1, 2);
         return max;
     }
 
     default: {
-        size_t max_idx = compare(data[3], data[2]) ? 2 : 3;
+        size_t max_idx = choose_from_2<false>(2, 3); // choose max of children
         T max = data[max_idx];
         data[max_idx] = value;
         // if the new value is smaller than the parent (root), perform a single-step bubble up
-        if (compare(data[max_idx], data[1]))
-            std::swap(data[1], data[max_idx]);
+        if (compare(max_idx, 1))
+            swap(1, max_idx);
         trickle_down<false>(max_idx);
         return max;
     }
-
     }
 }
 
