@@ -264,8 +264,15 @@ TYPED_TEST(UtilsTests, MinMaxHeap) {
     size_t n = 100;
     size_t prime = 31; // prime number with gcd(n, prime) = 1
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    vecsim_stl::min_max_heap<size_t> *mmh_;
 
-    vecsim_stl::min_max_heap<size_t> mmh(allocator);
+    // Test both constructors. float - default constructor, double - constructor with capacity
+    if (std::is_same<TypeParam, float>::value) {
+        mmh_ = new (allocator) vecsim_stl::min_max_heap<size_t>(allocator);
+    } else {
+        mmh_ = new (allocator) vecsim_stl::min_max_heap<size_t>(n, allocator);
+    }
+    auto mmh = *mmh_;
 
     // Initial state checks
     ASSERT_EQ(mmh.size(), 0);
@@ -333,6 +340,21 @@ TYPED_TEST(UtilsTests, MinMaxHeap) {
 
     ASSERT_EQ(mmh.size(), 0);
     ASSERT_TRUE(mmh.empty());
+
+    // Test edge cases of exchange_min and exchange_max
+    mmh.insert(0);
+    ASSERT_EQ(mmh.size(), 1);
+    ASSERT_EQ(mmh.exchange_max(1), 0);
+    ASSERT_EQ(mmh.exchange_min(0), 1);
+    mmh.insert(1);
+    ASSERT_EQ(mmh.size(), 2);
+    ASSERT_EQ(mmh.exchange_max(2), 1);
+    ASSERT_EQ(mmh.exchange_min(1), 0);
+    ASSERT_EQ(mmh.exchange_max(0), 2);
+    ASSERT_EQ(mmh.size(), 2);
+
+    // Clean up
+    delete mmh_;
 }
 
 TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
