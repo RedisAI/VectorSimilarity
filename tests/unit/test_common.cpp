@@ -335,6 +335,7 @@ TYPED_TEST(UtilsTests, MinMaxHeap) {
     ASSERT_FALSE(mmh.empty());
     // Expect the heap to have 0...n-1 values again
     for (size_t i = 0; i < n; ++i) {
+        ASSERT_EQ(mmh.peek_max(), n - 1);
         ASSERT_EQ(mmh.pop_min(), i);
     }
 

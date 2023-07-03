@@ -311,7 +311,14 @@ const T &min_max_heap<T, Compare>::peek_min() const {
 template <typename T, typename Compare>
 const T &min_max_heap<T, Compare>::peek_max() const {
     assert(size());
-    return (size() < 3 || compare(3, 2)) ? data[2] : data[3];
+    switch (size()) {
+    case 1:
+        return data[1];
+    case 2:
+        return data[2];
+    default:
+        return compare(3, 2) ? data[2] : data[3];
+    }
 }
 
 template <typename T, typename Compare>
