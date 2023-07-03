@@ -26,6 +26,7 @@ float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
 
     __m256 sum = _mm256_setzero_ps();
 
+    // Deal with 1-7 floats with mask loading, if needed
     if (residual % 8) {
         __mmask8 constexpr mask8 = (1 << (residual % 8)) - 1;
         __m256 v1 = my_mm256_maskz_loadu_ps<mask8>(pVect1);
@@ -36,10 +37,12 @@ float FP32_L2SqrSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, size_t q
         sum = _mm256_mul_ps(diff, diff);
     }
 
+    // If the reminder is >=8, have another step of 8 floats
     if (residual >= 8) {
         L2SqrStep(pVect1, pVect2, sum);
     }
 
+    // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
     do {
         L2SqrStep(pVect1, pVect2, sum);

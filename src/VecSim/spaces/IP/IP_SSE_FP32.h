@@ -23,21 +23,22 @@ float FP32_InnerProductSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, s
 
     __m128 sum_prod = _mm_setzero_ps();
 
+    // Deal with %4 remainder first. `dim` is >16, so we have at least one 16-float block,
+    // so loading 4 floats and then masking them is safe.
     if (residual % 4) {
         __m128 v1, v2;
         if (residual % 4 == 3) {
-            // v1 = _mm_load_ss(pVect1);
-            // v2 = _mm_load_ss(pVect2);
-            // v1 = _mm_loadh_pi(v1, (__m64 *)(pVect1 + 1));
-            // v2 = _mm_loadh_pi(v2, (__m64 *)(pVect2 + 1));
-            v1 = _mm_load_ps(pVect1);
+            // Load 3 floats and set the last one to 0
+            v1 = _mm_load_ps(pVect1); // load 4 floats
             v2 = _mm_load_ps(pVect2);
-            v1 = _mm_blend_ps(_mm_setzero_ps(), v1, 7);
+            v1 = _mm_blend_ps(_mm_setzero_ps(), v1, 7); // set the last one to 0
             v2 = _mm_blend_ps(_mm_setzero_ps(), v2, 7);
         } else if (residual % 4 == 2) {
+            // Load 2 floats and set the last two to 0
             v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
             v2 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect2);
         } else if (residual % 4 == 1) {
+            // Load 1 float and set the last three to 0
             v1 = _mm_load_ss(pVect1);
             v2 = _mm_load_ss(pVect2);
         }
@@ -46,6 +47,7 @@ float FP32_InnerProductSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, s
         sum_prod = _mm_mul_ps(v1, v2);
     }
 
+    // have another 1, 2 or 3 4-float steps according to residual
     if (residual >= 12)
         InnerProductStep(pVect1, pVect2, sum_prod);
     if (residual >= 8)
@@ -53,6 +55,7 @@ float FP32_InnerProductSIMD16Ext_SSE(const void *pVect1v, const void *pVect2v, s
     if (residual >= 4)
         InnerProductStep(pVect1, pVect2, sum_prod);
 
+    // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
     do {
         InnerProductStep(pVect1, pVect2, sum_prod);

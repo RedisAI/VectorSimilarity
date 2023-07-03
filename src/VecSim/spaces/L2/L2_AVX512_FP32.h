@@ -25,6 +25,8 @@ float FP32_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
 
     __m512 sum = _mm512_setzero_ps();
 
+    // Deal with remainder first. `dim` is more than 16, so we have at least one 16-float block,
+    // so mask loading is guaranteed to be safe
     if (residual) {
         __mmask16 constexpr mask = (1 << residual) - 1;
         __m512 v1 = _mm512_maskz_loadu_ps(mask, pVect1);
@@ -35,7 +37,7 @@ float FP32_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, size_
         sum = _mm512_mul_ps(diff, diff);
     }
 
-    // In each iteration we calculate 16 floats = 512 bits.
+    // We dealt with the residual part. We are left with some multiple of 16 floats.
     do {
         L2SqrStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);

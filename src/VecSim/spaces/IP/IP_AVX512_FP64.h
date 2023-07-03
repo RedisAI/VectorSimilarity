@@ -23,6 +23,8 @@ double FP64_InnerProductSIMD8Ext_AVX512(const void *pVect1v, const void *pVect2v
 
     __m512d sum512 = _mm512_setzero_pd();
 
+    // Deal with remainder first. `dim` is more than 8, so we have at least one 8-double block,
+    // so mask loading is guaranteed to be safe
     if (residual) {
         __mmask8 constexpr mask = (1 << residual) - 1;
         __m512d v1 = _mm512_maskz_loadu_pd(mask, pVect1);
@@ -32,6 +34,7 @@ double FP64_InnerProductSIMD8Ext_AVX512(const void *pVect1v, const void *pVect2v
         sum512 = _mm512_mul_pd(v1, v2);
     }
 
+    // We dealt with the residual part. We are left with some multiple of 8 doubles.
     do {
         InnerProductStep(pVect1, pVect2, sum512);
     } while (pVect1 < pEnd1);

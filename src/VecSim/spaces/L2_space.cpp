@@ -10,14 +10,16 @@
 #include "VecSim/spaces/L2/L2_AVX.h"
 #include "VecSim/spaces/L2/L2_SSE.h"
 
-#include "VecSim/spaces/space_chooser.h"
+#include "VecSim/spaces/implementation_chooser.h"
 
 namespace spaces {
 
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
+    constexpr size_t simd_width = 16;
     dist_func_t<float> ret_dist_func = FP32_L2Sqr;
-    if (dim < 16) {
+    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
+    if (dim < simd_width) {
         return ret_dist_func;
     }
 #if defined(M1)
@@ -27,17 +29,17 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16Ext_AVX512);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, simd_width, FP32_L2SqrSIMD16Ext_AVX512);
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16Ext_AVX);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, simd_width, FP32_L2SqrSIMD16Ext_AVX);
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16Ext_SSE);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, simd_width, FP32_L2SqrSIMD16Ext_SSE);
         break;
 #endif
     case ARCH_OPT_NONE:
@@ -50,8 +52,10 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
 
 dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
 
+    constexpr size_t simd_width = 8;
     dist_func_t<double> ret_dist_func = FP64_L2Sqr;
-    if (dim < 8) {
+    // Optimizations assume at least 8 doubles. If we have less, we use the naive implementation.
+    if (dim < simd_width) {
         return ret_dist_func;
     }
 #if defined(M1)
@@ -61,17 +65,17 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     case ARCH_OPT_AVX512_DQ:
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8Ext_AVX512);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, simd_width, FP64_L2SqrSIMD8Ext_AVX512);
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8Ext_AVX);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, simd_width, FP64_L2SqrSIMD8Ext_AVX);
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
-        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8Ext_SSE);
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, simd_width, FP64_L2SqrSIMD8Ext_SSE);
         break;
 #endif
     case ARCH_OPT_NONE:
@@ -84,4 +88,4 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
 
 } // namespace spaces
 
-#include "VecSim/spaces/space_chooser_cleanup.h"
+#include "VecSim/spaces/implementation_chooser_cleanup.h"

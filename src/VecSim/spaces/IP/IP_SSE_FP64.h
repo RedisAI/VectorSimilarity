@@ -24,8 +24,8 @@ double FP64_InnerProductSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, s
 
     __m128d sum_prod = _mm_setzero_pd();
 
+    // If residual is odd, we load 1 double and set the last one to 0
     if (residual % 2 == 1) {
-        // TODO: simple multiplication is faster than load+mul?
         __m128d v1 = _mm_load_sd(pVect1);
         pVect1++;
         __m128d v2 = _mm_load_sd(pVect2);
@@ -33,6 +33,7 @@ double FP64_InnerProductSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, s
         sum_prod = _mm_mul_pd(v1, v2);
     }
 
+    // have another 1, 2 or 3 2-double steps according to residual
     if (residual >= 6)
         InnerProductStep(pVect1, pVect2, sum_prod);
     if (residual >= 4)
@@ -40,6 +41,7 @@ double FP64_InnerProductSIMD8Ext_SSE(const void *pVect1v, const void *pVect2v, s
     if (residual >= 2)
         InnerProductStep(pVect1, pVect2, sum_prod);
 
+    // We dealt with the residual part. We are left with some multiple of 8 doubles.
     // In each iteration we calculate 8 doubles = 512 bits in total.
     do {
         InnerProductStep(pVect1, pVect2, sum_prod);

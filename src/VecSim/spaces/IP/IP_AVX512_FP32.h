@@ -23,6 +23,8 @@ float FP32_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v
 
     __m512 sum512 = _mm512_setzero_ps();
 
+    // Deal with remainder first. `dim` is more than 16, so we have at least one 16-float block,
+    // so mask loading is guaranteed to be safe
     if (residual) {
         __mmask16 constexpr mask = (1 << residual) - 1;
         __m512 v1 = _mm512_maskz_loadu_ps(mask, pVect1);
@@ -32,6 +34,7 @@ float FP32_InnerProductSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v
         sum512 = _mm512_mul_ps(v1, v2);
     }
 
+    // We dealt with the residual part. We are left with some multiple of 16 floats.
     do {
         InnerProductStep(pVect1, pVect2, sum512);
     } while (pVect1 < pEnd1);

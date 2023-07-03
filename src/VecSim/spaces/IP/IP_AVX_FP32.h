@@ -24,6 +24,8 @@ float FP32_InnerProductSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, s
 
     __m256 sum256 = _mm256_setzero_ps();
 
+    // Deal with 1-7 floats with mask loading, if needed. `dim` is >16, so we have at least one
+    // 16-float block, so mask loading is guaranteed to be safe.
     if (residual % 8) {
         __mmask8 constexpr mask = (1 << (residual % 8)) - 1;
         __m256 v1 = my_mm256_maskz_loadu_ps<mask>(pVect1);
@@ -33,10 +35,12 @@ float FP32_InnerProductSIMD16Ext_AVX(const void *pVect1v, const void *pVect2v, s
         sum256 = _mm256_mul_ps(v1, v2);
     }
 
+    // If the reminder is >=8, have another step of 8 floats
     if (residual >= 8) {
         InnerProductStep(pVect1, pVect2, sum256);
     }
 
+    // We dealt with the residual part. We are left with some multiple of 16 floats.
     // In each iteration we calculate 16 floats = 512 bits.
     do {
         InnerProductStep(pVect1, pVect2, sum256);

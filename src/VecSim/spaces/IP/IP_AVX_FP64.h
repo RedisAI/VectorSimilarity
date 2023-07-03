@@ -24,6 +24,8 @@ double FP64_InnerProductSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, s
 
     __m256d sum256 = _mm256_setzero_pd();
 
+    // Deal with 1-3 doubles with mask loading, if needed. `dim` is >8, so we have at least one
+    // 8-double block, so mask loading is guaranteed to be safe.
     if (residual % 4) {
         // _mm256_maskz_loadu_pd is not available in AVX
         __mmask8 constexpr mask = (1 << (residual % 4)) - 1;
@@ -34,10 +36,13 @@ double FP64_InnerProductSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, s
         sum256 = _mm256_mul_pd(v1, v2);
     }
 
+    // If the reminder is >=4, have another step of 4 doubles
     if (residual >= 4) {
         InnerProductStep(pVect1, pVect2, sum256);
     }
 
+    // We dealt with the residual part. We are left with some multiple of 8 doubles.
+    // In each iteration we calculate 8 doubles = 512 bits.
     do {
         InnerProductStep(pVect1, pVect2, sum256);
         InnerProductStep(pVect1, pVect2, sum256);

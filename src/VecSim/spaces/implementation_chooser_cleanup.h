@@ -6,6 +6,10 @@
 
 #pragma once
 
+/*
+ * Include this file after done using the implementation chooser.
+ */
+
 #undef X
 #undef C4
 #undef CASES8

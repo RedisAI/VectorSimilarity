@@ -7,7 +7,7 @@
 #pragma once
 #include "space_includes.h"
 
-template <__mmask8 mask>
+template <__mmask8 mask> // 1..7
 static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
     __m256 data = _mm256_loadu_ps(p);
     // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
@@ -16,7 +16,7 @@ static inline __m256 my_mm256_maskz_loadu_ps(const float *p) {
     return masked_data;
 }
 
-template <__mmask8 mask>
+template <__mmask8 mask> // 1..3
 static inline __m256d my_mm256_maskz_loadu_pd(const double *p) {
     __m256d data = _mm256_loadu_pd(p);
     // Set the mask for loading 8 float values (1 if mask is true, 0 if mask is false
