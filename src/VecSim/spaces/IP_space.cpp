@@ -15,9 +15,15 @@
 #include "VecSim/spaces/implementation_chooser.h"
 
 namespace spaces {
-dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
+dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                       unsigned char *alignment) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
 
     dist_func_t<float> ret_dist_func = FP32_InnerProduct;
+    *alignment = 4; // Default alignment for float
     // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
     if (dim < 16) {
         return ret_dist_func;
@@ -29,16 +35,19 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX512);
+        *alignment *= 16; // handles 16 floats
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
+        *alignment *= 8; // handles 8 floats
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_SSE);
+        *alignment *= 4; // handles 4 floats
         break;
 #endif
     case ARCH_OPT_NONE:
@@ -49,9 +58,15 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     return ret_dist_func;
 }
 
-dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt) {
+dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch_opt,
+                                        unsigned char *alignment) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
 
     dist_func_t<double> ret_dist_func = FP64_InnerProduct;
+    *alignment = 8; // Default alignment for double
     // Optimizations assume at least 8 doubles. If we have less, we use the naive implementation.
     if (dim < 8) {
         return ret_dist_func;
@@ -63,16 +78,19 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_AVX512);
+        *alignment *= 8; // handles 8 doubles
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_AVX);
+        *alignment *= 4; // handles 4 doubles
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_SSE);
+        *alignment *= 2; // handles 2 doubles
         break;
 #endif
     case ARCH_OPT_NONE:

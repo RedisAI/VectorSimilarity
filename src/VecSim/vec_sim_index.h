@@ -53,7 +53,8 @@ protected:
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     dist_func_t<DistType>
-        distFunc; // Index's distance function. Chosen by the type, metric and dimension.
+        distFunc;            // Index's distance function. Chosen by the type, metric and dimension.
+    unsigned char alignment; // Alignment hint to allocate vectors with.
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     void *logCallbackCtx;           // Context for the log callback.
@@ -86,7 +87,7 @@ public:
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
           isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, &distFunc);
+        spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
         normalize_func =
             vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }
