@@ -24,19 +24,19 @@ private:
     inline size_t right_child(size_t index) const;
     inline void swap(size_t index1, size_t index2);
 
-    inline void bubble_up(size_t index);
-    template <bool min>
-    void bubble_up_kind(size_t index);
-
-    template <bool min>
-    void trickle_down(size_t index);
-
     inline bool compare(size_t index1, size_t index2) const {
         assert(index1 < data.size() && index2 < data.size());
         assert(index1 > 0 && index2 > 0);
         assert(index1 != index2);
         return Compare()(data[index1], data[index2]);
     }
+
+    inline void bubble_up_new();
+    template <bool min>
+    void bubble_up(size_t index);
+
+    template <bool min>
+    void trickle_down(size_t index);
 
     // trickle down (min and max) helpers
     inline char highest_descendant_in_range(size_t index) const;
@@ -108,9 +108,9 @@ min_max_heap<T, Compare>::min_max_heap(size_t size, const std::shared_ptr<VecSim
  * check the LSB of the number of leading zeros (N is the number of bits in the number, which is
  * even):
  *
- * n is a min node                      <=>
- * log2(n) % 2 == 0                     <=>
- * (N - 1 - countl_zero(n)) % 2 == 0    <=>
+ * n is a min node                      if and only if
+ * log2(n) % 2 == 0                     if and only if
+ * (N - 1 - countl_zero(n)) % 2 == 0    if and only if
  * countl_zero(n) % 2 == 1
  *
  * So we can simply check for `(countl_zero(n) & 1)`.
@@ -145,7 +145,8 @@ void min_max_heap<T, Compare>::swap(size_t index1, size_t index2) {
 }
 
 template <typename T, typename Compare>
-void min_max_heap<T, Compare>::bubble_up(size_t idx) {
+void min_max_heap<T, Compare>::bubble_up_new() {
+    size_t idx = size();
     size_t p_idx = parent(idx);
     if (!p_idx)
         return;
@@ -153,30 +154,30 @@ void min_max_heap<T, Compare>::bubble_up(size_t idx) {
     if (is_min(idx)) {
         if (compare(p_idx, idx)) {
             swap(idx, p_idx);
-            bubble_up_kind<false>(p_idx); // bubble up max
+            bubble_up<false>(p_idx); // bubble up max
         } else {
-            bubble_up_kind<true>(idx); // bubble up min
+            bubble_up<true>(idx); // bubble up min
         }
     } else {
         if (compare(idx, p_idx)) {
             swap(idx, p_idx);
-            bubble_up_kind<true>(p_idx); // bubble up min
+            bubble_up<true>(p_idx); // bubble up min
         } else {
-            bubble_up_kind<false>(idx); // bubble up max
+            bubble_up<false>(idx); // bubble up max
         }
     }
 }
 
 template <typename T, typename Compare>
 template <bool min>
-void min_max_heap<T, Compare>::bubble_up_kind(size_t idx) {
+void min_max_heap<T, Compare>::bubble_up(size_t idx) {
     size_t gp_idx = parent(parent(idx));
     if (!gp_idx)
         return;
 
     if (min ? compare(idx, gp_idx) : compare(gp_idx, idx)) {
         swap(idx, gp_idx);
-        bubble_up_kind<min>(gp_idx);
+        bubble_up<min>(gp_idx);
     }
 }
 
@@ -263,7 +264,7 @@ void min_max_heap<T, Compare>::trickle_down(size_t idx) {
 template <typename T, typename Compare>
 void min_max_heap<T, Compare>::insert(const T &value) {
     data.push_back(value);
-    bubble_up(size());
+    bubble_up_new();
 }
 
 template <typename T, typename Compare>
