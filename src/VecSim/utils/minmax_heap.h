@@ -12,7 +12,7 @@
 
 namespace vecsim_stl {
 
-template <typename T, typename compare = std::less<T>>
+template <typename T, typename Compare = std::less<T>>
 class min_max_heap : public VecsimBaseObject {
 private:
     vecsim_stl::vector<T> data;
@@ -31,20 +31,27 @@ private:
     template <bool min>
     void trickle_down(size_t index);
 
+    inline bool compare(size_t index1, size_t index2) const {
+        assert(index1 < data.size() && index2 < data.size());
+        assert(index1 > 0 && index2 > 0);
+        assert(index1 != index2);
+        return Compare()(data[index1], data[index2]);
+    }
+
     // trickle down (min and max) helpers
     inline char highest_descendant_in_range(size_t index) const;
     template <bool min>
     inline size_t choose_from_2(size_t a, size_t b) const {
-        return (min ? compare()(a, b) : compare()(b, a)) ? a : b;
+        return (min ? compare(a, b) : compare(b, a)) ? a : b;
     }
     template <bool min>
     inline size_t choose_from_3(size_t a, size_t b, size_t c) const {
-        return (min ? compare()(a, b) : compare()(b, a)) ? choose_from_2<min>(a, c)
+        return (min ? compare(a, b) : compare(b, a)) ? choose_from_2<min>(a, c)
                                                          : choose_from_2<min>(b, c);
     }
     template <bool min>
     inline size_t choose_from_4(size_t a, size_t b, size_t c, size_t d) const {
-        return (min ? compare()(a, b) : compare()(b, a)) ? choose_from_3<min>(a, c, d)
+        return (min ? compare(a, b) : compare(b, a)) ? choose_from_3<min>(a, c, d)
                                                          : choose_from_3<min>(b, c, d);
     }
     template <bool min>
@@ -56,6 +63,7 @@ public:
     ~min_max_heap() = default;
 
     inline size_t size() const { return data.size() - 1; }
+    inline bool empty() const { return size() == 0; }
     inline void clear() {
         data.clear();
         data.push_back(T()); // dummy element
@@ -72,15 +80,15 @@ public:
 
 /********************************** Ctor / Dtor **********************************/
 
-template <typename T, typename compare>
-min_max_heap<T, compare>::min_max_heap(const std::shared_ptr<VecSimAllocator> &alloc)
-    : VecsimBaseObject(alloc) {
+template <typename T, typename Compare>
+min_max_heap<T, Compare>::min_max_heap(const std::shared_ptr<VecSimAllocator> &alloc)
+    : VecsimBaseObject(alloc), data(alloc) {
     data.push_back(T()); // dummy element
 }
 
-template <typename T, typename compare>
-min_max_heap<T, compare>::min_max_heap(size_t size, const std::shared_ptr<VecSimAllocator> &alloc)
-    : VecsimBaseObject(alloc) {
+template <typename T, typename Compare>
+min_max_heap<T, Compare>::min_max_heap(size_t size, const std::shared_ptr<VecSimAllocator> &alloc)
+    : VecsimBaseObject(alloc), data(alloc) {
     data.reserve(size + 1);
     data.push_back(T()); // dummy element
 }
@@ -111,46 +119,46 @@ min_max_heap<T, compare>::min_max_heap(size_t size, const std::shared_ptr<VecSim
  *    Correctness: https://godbolt.org/z/W7n9e39qj
  *    Optimality:  https://quick-bench.com/q/Rl3sUfldpGlhQWjXopnTtxh95kI
  */
-template <typename T, typename compare = std::less<T>>
-bool min_max_heap<T, compare>::is_min(size_t index) const {
+template <typename T, typename Compare>
+bool min_max_heap<T, Compare>::is_min(size_t index) const {
     return std::countl_zero(index) & 1;
 }
 
-template <typename T, typename compare = std::less<T>>
-size_t min_max_heap<T, compare>::parent(size_t index) const {
+template <typename T, typename Compare>
+size_t min_max_heap<T, Compare>::parent(size_t index) const {
     return index >> 1;
 }
 
-template <typename T, typename compare = std::less<T>>
-size_t min_max_heap<T, compare>::left_child(size_t index) const {
+template <typename T, typename Compare>
+size_t min_max_heap<T, Compare>::left_child(size_t index) const {
     return index << 1;
 }
 
-template <typename T, typename compare = std::less<T>>
-size_t min_max_heap<T, compare>::right_child(size_t index) const {
+template <typename T, typename Compare>
+size_t min_max_heap<T, Compare>::right_child(size_t index) const {
     return (index << 1) + 1;
 }
 
-template <typename T, typename compare = std::less<T>>
-void min_max_heap<T, compare>::swap(size_t index1, size_t index2) {
+template <typename T, typename Compare>
+void min_max_heap<T, Compare>::swap(size_t index1, size_t index2) {
     std::swap(data[index1], data[index2]);
 }
 
-template <typename T, typename compare = std::less<T>>
-void min_max_heap<T, compare>::bubble_up(size_t idx) {
+template <typename T, typename Compare>
+void min_max_heap<T, Compare>::bubble_up(size_t idx) {
     size_t p_idx = parent(idx);
     if (!p_idx)
         return;
 
     if (is_min(idx)) {
-        if (compare()(p_idx, idx)) {
+        if (compare(p_idx, idx)) {
             swap(idx, p_idx);
             bubble_up_kind<false>(p_idx); // bubble up max
         } else {
             bubble_up_kind<true>(idx); // bubble up min
         }
     } else {
-        if (compare()(idx, p_idx)) {
+        if (compare(idx, p_idx)) {
             swap(idx, p_idx);
             bubble_up_kind<true>(p_idx); // bubble up min
         } else {
@@ -159,27 +167,27 @@ void min_max_heap<T, compare>::bubble_up(size_t idx) {
     }
 }
 
-template <typename T, typename compare = std::less<T>>
+template <typename T, typename Compare>
 template <bool min>
-void min_max_heap<T, compare>::bubble_up_kind(size_t idx) {
+void min_max_heap<T, Compare>::bubble_up_kind(size_t idx) {
     size_t gp_idx = parent(parent(idx));
     if (!gp_idx)
         return;
 
-    if (min ? compare()(idx, gp_idx) : compare()(gp_idx, idx)) {
+    if (min ? compare(idx, gp_idx) : compare(gp_idx, idx)) {
         swap(idx, gp_idx);
         bubble_up_kind<min>(gp_idx);
     }
 }
 
-template <typename T, typename compare = std::less<T>>
-char min_max_heap<T, compare>::highest_descendant_in_range(size_t idx) const {
-    size_t a = first_child(idx);
-    size_t b = second_child(idx);
-    size_t c = first_child(a);
-    size_t d = second_child(a);
-    size_t e = first_child(b);
-    size_t f = second_child(b);
+template <typename T, typename Compare>
+char min_max_heap<T, Compare>::highest_descendant_in_range(size_t idx) const {
+    size_t a = left_child(idx);
+    size_t b = right_child(idx);
+    size_t c = left_child(a);
+    size_t d = right_child(a);
+    size_t e = left_child(b);
+    size_t f = right_child(b);
 
     if (f < data.size())
         return 0xf;
@@ -198,16 +206,16 @@ char min_max_heap<T, compare>::highest_descendant_in_range(size_t idx) const {
 }
 
 // basing on the min/max heap property, we can determine the best child/grandchild out of the
-// existing ones without having to compare all of them
-template <typename T, typename compare = std::less<T>>
+// existing ones without having to Compare all of them
+template <typename T, typename Compare>
 template <bool min>
-size_t min_max_heap<T, compare>::index_best_child_grandchild(size_t idx) const {
-    size_t a = first_child(idx);
-    size_t b = second_child(idx);
-    size_t c = first_child(a);
-    size_t d = second_child(a);
-    size_t e = first_child(b);
-    size_t f = second_child(b);
+size_t min_max_heap<T, Compare>::index_best_child_grandchild(size_t idx) const {
+    size_t a = left_child(idx);
+    size_t b = right_child(idx);
+    size_t c = left_child(a);
+    size_t d = right_child(a);
+    size_t e = left_child(b);
+    size_t f = right_child(b);
 
     switch (highest_descendant_in_range(idx)) {
     case 0xf:
@@ -227,15 +235,15 @@ size_t min_max_heap<T, compare>::index_best_child_grandchild(size_t idx) const {
     }
 }
 
-template <typename T, typename compare = std::less<T>>
+template <typename T, typename Compare>
 template <bool min>
-void min_max_heap<T, compare>::trickle_down(size_t idx) {
+void min_max_heap<T, Compare>::trickle_down(size_t idx) {
     size_t best = index_best_child_grandchild<min>(idx);
     if (best == -1)
         return;
-    auto cmp = compare();
+    auto cmp = compare;
 
-    if (best > second_child(idx)) {
+    if (best > right_child(idx)) {
         // best is a grandchild
         if (min ? cmp(idx, best) : cmp(best, idx)) {
             swap(idx, best);
@@ -253,14 +261,14 @@ void min_max_heap<T, compare>::trickle_down(size_t idx) {
 
 /***************************** Public Implementation *****************************/
 
-template <typename T, typename compare = std::less<T>>
-void min_max_heap<T, compare>::insert(const T &value) {
+template <typename T, typename Compare>
+void min_max_heap<T, Compare>::insert(const T &value) {
     data.push_back(value);
     bubble_up(size());
 }
 
-template <typename T, typename compare = std::less<T>>
-T min_max_heap<T, compare>::pop_min() {
+template <typename T, typename Compare>
+T min_max_heap<T, Compare>::pop_min() {
     assert(size());
 
     T min = data[1];
@@ -273,8 +281,8 @@ T min_max_heap<T, compare>::pop_min() {
     return min;
 }
 
-template <typename T, typename compare = std::less<T>>
-T min_max_heap<T, compare>::pop_max() {
+template <typename T, typename Compare>
+T min_max_heap<T, Compare>::pop_max() {
     assert(size());
 
     if (size() < 3) {
@@ -283,7 +291,7 @@ T min_max_heap<T, compare>::pop_max() {
         return max;
     }
 
-    size_t max_idx = compare()(data[3], data[2]) ? 2 : 3;
+    size_t max_idx = compare(data[3], data[2]) ? 2 : 3;
 
     T max = data[max_idx];
     data[max_idx] = data.back();
@@ -294,20 +302,20 @@ T min_max_heap<T, compare>::pop_max() {
     return max;
 }
 
-template <typename T, typename compare = std::less<T>>
-const T &min_max_heap<T, compare>::peek_min() const {
+template <typename T, typename Compare>
+const T &min_max_heap<T, Compare>::peek_min() const {
     assert(size());
     return data[1];
 }
 
-template <typename T, typename compare = std::less<T>>
-const T &min_max_heap<T, compare>::peek_max() const {
+template <typename T, typename Compare>
+const T &min_max_heap<T, Compare>::peek_max() const {
     assert(size());
-    return (size() < 3 || compare()(data[3], data[2])) ? data[2] : data[3];
+    return (size() < 3 || compare(3, 2)) ? data[2] : data[3];
 }
 
-template <typename T, typename compare = std::less<T>>
-T min_max_heap<T, compare>::exchange_min(const T &value) {
+template <typename T, typename Compare>
+T min_max_heap<T, Compare>::exchange_min(const T &value) {
     assert(size());
     T min = data[1];
     data[1] = value;
@@ -315,33 +323,37 @@ T min_max_heap<T, compare>::exchange_min(const T &value) {
     return min;
 }
 
-template <typename T, typename compare = std::less<T>>
-T min_max_heap<T, compare>::exchange_max(const T &value) {
+template <typename T, typename Compare>
+T min_max_heap<T, Compare>::exchange_max(const T &value) {
     assert(size());
 
     switch (size()) {
-    case 1:
+    case 1: {
         T max = data[1];
         data[1] = value;
         return max;
+    }
 
-    case 2:
+    case 2: {
         T max = data[2];
         data[2] = value;
         // if the new value is smaller than the parent (root), perform a single-step bubble up
-        if (compare()(data[2], data[1]))
+        if (compare(data[2], data[1]))
             std::swap(data[1], data[2]);
         return max;
+    }
 
-    default:
-        size_t max_idx = compare()(data[3], data[2]) ? 2 : 3;
+    default: {
+        size_t max_idx = compare(data[3], data[2]) ? 2 : 3;
         T max = data[max_idx];
         data[max_idx] = value;
         // if the new value is smaller than the parent (root), perform a single-step bubble up
-        if (compare()(data[max_idx], data[1]))
+        if (compare(data[max_idx], data[1]))
             std::swap(data[1], data[max_idx]);
         trickle_down<false>(max_idx);
         return max;
+    }
+
     }
 }
 
