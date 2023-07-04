@@ -39,23 +39,22 @@ private:
     void trickle_down(size_t index);
 
     // trickle down (min and max) helpers
-    inline char highest_descendant_in_range(size_t index) const;
-    template <bool min>
-    inline size_t choose_from_2(size_t a, size_t b) const {
-        return (min ? compare(a, b) : compare(b, a)) ? a : b;
-    }
-    template <bool min>
-    inline size_t choose_from_3(size_t a, size_t b, size_t c) const {
-        return (min ? compare(a, b) : compare(b, a)) ? choose_from_2<min>(a, c)
-                                                     : choose_from_2<min>(b, c);
-    }
-    template <bool min>
-    inline size_t choose_from_4(size_t a, size_t b, size_t c, size_t d) const {
-        return (min ? compare(a, b) : compare(b, a)) ? choose_from_3<min>(a, c, d)
-                                                     : choose_from_3<min>(b, c, d);
-    }
     template <bool min>
     inline size_t index_best_child_grandchild(size_t index) const;
+    inline char highest_descendant_in_range(size_t index) const;
+
+    // choose best index from a list of indices of any size.
+    // min = true:  choose the index of the minimal value.
+    // min = false: choose the index of the maximal value.
+    template <bool min>
+    inline size_t choose_from(size_t i) const {
+        return i;
+    }
+    template <bool min, typename... Args>
+    inline size_t choose_from(size_t i, Args... args) const {
+        size_t j = choose_from<min>(args...);
+        return (min ? compare(i, j) : compare(j, i)) ? i : j;
+    }
 
 public:
     min_max_heap(const std::shared_ptr<VecSimAllocator> &alloc);
@@ -69,8 +68,8 @@ public:
         data.push_back(T()); // dummy element
     }
 
-    template<typename... Args>
-	inline void emplace(Args&&... args);
+    template <typename... Args>
+    inline void emplace(Args &&...args);
     inline void insert(const T &value);
     inline T pop_min();
     inline T pop_max();
@@ -222,19 +221,19 @@ size_t min_max_heap<T, Compare>::index_best_child_grandchild(size_t idx) const {
 
     switch (highest_descendant_in_range(idx)) {
     case 0xf:
-        return choose_from_4<min>(c, d, e, f);
+        return choose_from<min>(c, d, e, f);
     case 0xe:
-        return choose_from_3<min>(c, d, e);
+        return choose_from<min>(c, d, e);
     case 0xd:
-        return choose_from_3<min>(b, c, d);
+        return choose_from<min>(b, c, d);
     case 0xc:
-        return choose_from_2<min>(b, c);
+        return choose_from<min>(b, c);
     case 0xb:
-        return choose_from_2<min>(a, b);
+        return choose_from<min>(a, b);
     case 0xa:
         return a;
     default:
-        return -1;
+        return SIZE_MAX;
     }
 }
 
@@ -242,7 +241,7 @@ template <typename T, typename Compare>
 template <bool min>
 void min_max_heap<T, Compare>::trickle_down(size_t idx) {
     size_t best = index_best_child_grandchild<min>(idx);
-    if (best == -1)
+    if (best == SIZE_MAX)
         return;
 
     if (best > right_child(idx)) {
@@ -270,8 +269,8 @@ void min_max_heap<T, Compare>::insert(const T &value) {
 }
 
 template <typename T, typename Compare>
-template<typename... Args>
-void min_max_heap<T, Compare>::emplace(Args&&... args) {
+template <typename... Args>
+void min_max_heap<T, Compare>::emplace(Args &&...args) {
     data.emplace_back(std::forward<Args>(args)...);
     bubble_up_new();
 }
@@ -300,7 +299,7 @@ T min_max_heap<T, Compare>::pop_max() {
         return max;
     }
 
-    size_t max_idx = choose_from_2<false>(2, 3); // choose max of children
+    size_t max_idx = choose_from<false>(2, 3);
 
     T max = data[max_idx];
     data[max_idx] = data.back();
@@ -360,7 +359,7 @@ T min_max_heap<T, Compare>::exchange_max(const T &value) {
     }
 
     default: {
-        size_t max_idx = choose_from_2<false>(2, 3); // choose max of children
+        size_t max_idx = choose_from<false>(2, 3);
         T max = data[max_idx];
         data[max_idx] = value;
         // if the new value is smaller than the parent (root), perform a single-step bubble up
