@@ -23,13 +23,7 @@ private:
     inline size_t left_child(size_t index) const;
     inline size_t right_child(size_t index) const;
     inline void swap(size_t index1, size_t index2);
-
-    inline bool compare(size_t index1, size_t index2) const {
-        assert(index1 < data.size() && index2 < data.size());
-        assert(index1 > 0 && index2 > 0);
-        assert(index1 != index2);
-        return Compare()(data[index1], data[index2]);
-    }
+    inline bool compare(size_t index1, size_t index2) const;
 
     inline void bubble_up_new();
     template <bool min>
@@ -143,6 +137,11 @@ size_t min_max_heap<T, Compare>::right_child(size_t index) const {
 template <typename T, typename Compare>
 void min_max_heap<T, Compare>::swap(size_t index1, size_t index2) {
     std::swap(data[index1], data[index2]);
+}
+
+template <typename T, typename Compare>
+bool min_max_heap<T, Compare>::compare(size_t index1, size_t index2) const {
+    return Compare()(data[index1], data[index2]);
 }
 
 template <typename T, typename Compare>
@@ -283,8 +282,7 @@ T min_max_heap<T, Compare>::pop_min() {
     data[1] = data.back();
     data.pop_back();
 
-    if (size())
-        trickle_down<true>(1);
+    trickle_down<true>(1);
 
     return min;
 }
@@ -319,14 +317,9 @@ const T &min_max_heap<T, Compare>::peek_min() const {
 template <typename T, typename Compare>
 const T &min_max_heap<T, Compare>::peek_max() const {
     assert(size());
-    switch (size()) {
-    case 1:
-        return data[1];
-    case 2:
-        return data[2];
-    default:
-        return compare(3, 2) ? data[2] : data[3];
-    }
+    if (size() < 3)
+        return data[size()];
+    return compare(3, 2) ? data[2] : data[3];
 }
 
 template <typename T, typename Compare>
