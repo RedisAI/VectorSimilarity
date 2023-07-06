@@ -27,7 +27,7 @@ All of the algorithms in this library is designed to work inside RediSearch and 
 |-----------|--------|---------|-----------------|
 | FP32 Internal product |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
 | FP32 L2 distance |SSE, AVX, AVX512| No SIMD support | No SIMD support |
-| FP64 Internal product |SSE, AVX, AVX512, AVX512DQ | No SIMD support | No SIMD support |
+| FP64 Internal product |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
 | FP64 L2 distance |SSE, AVX, AVX512 | No SIMD support | No SIMD support |
 
 ### Flat (Brute Force)
@@ -92,5 +92,5 @@ tox -e flowenv
 
 # Benchmark
 
-To benchmark the capabilities of this library, follow the instructions in the [benchmarks user guide](docs/benchmarks.md).  
-If you'd like to create your own benchmarks, you can find more information in the [developer guide](docs/benchmarks_developer.md). 
+To benchmark the capabilities of this library, follow the instructions in the [benchmarks user guide](docs/benchmarks.md).
+If you'd like to create your own benchmarks, you can find more information in the [developer guide](docs/benchmarks_developer.md).
