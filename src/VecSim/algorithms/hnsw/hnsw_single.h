@@ -8,6 +8,7 @@
 
 #include "hnsw.h"
 #include "hnsw_single_batch_iterator.h"
+#include "VecSim/utils/minmax_heap.h"
 
 template <typename DataType, typename DistType>
 class HNSWIndex_Single : public HNSWIndex<DataType, DistType> {
@@ -27,6 +28,28 @@ private:
 
     template <bool Safe>
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
+
+    template <bool has_marked_deleted>
+    inline void updateHeapsInternal(idType candidate_id, DistType cur_dist,
+                                    candidatesLabelsMinMaxHeap<DistType> &top_candidates,
+                                    candidatesMinMaxHeap<DistType> &candidate_set, const size_t ef,
+                                    DistType &lowerBound) const;
+
+    inline void updateHeaps_WithMarkedDeleted(idType candidate_id, DistType cur_dist,
+                                              candidatesLabelsMinMaxHeap<DistType> &top_candidates,
+                                              candidatesMinMaxHeap<DistType> &candidate_set,
+                                              const size_t ef,
+                                              DistType &lowerBound) const override {
+        updateHeapsInternal<true>(candidate_id, cur_dist, top_candidates, candidate_set, ef,
+                                  lowerBound);
+    }
+    inline void updateHeaps_NoMarkedDeleted(idType candidate_id, DistType cur_dist,
+                                            candidatesLabelsMinMaxHeap<DistType> &top_candidates,
+                                            candidatesMinMaxHeap<DistType> &candidate_set,
+                                            const size_t ef, DistType &lowerBound) const override {
+        updateHeapsInternal<false>(candidate_id, cur_dist, top_candidates, candidate_set, ef,
+                                   lowerBound);
+    }
 
 public:
     HNSWIndex_Single(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
@@ -53,9 +76,9 @@ public:
 #endif
     ~HNSWIndex_Single() {}
 
-    inline candidatesLabelsMaxHeap<DistType> *getNewMaxPriorityQueue() const override {
+    inline candidatesLabelsMinMaxHeap<DistType> *getNewMinMaxHeap(size_t cap) const override {
         return new (this->allocator)
-            vecsim_stl::max_priority_queue<DistType, labelType>(this->allocator);
+            vecsim_stl::min_max_heap<pair<DistType, labelType>>(cap, this->allocator);
     }
     inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
@@ -215,4 +238,30 @@ inline bool HNSWIndex_Single<DataType, DistType>::safeCheckIfLabelExistsInIndex(
         return !this->isInProcess(it->second);
     }
     return exists;
+}
+
+// Should have the same implementation as the one in HNSWIndex for `top_candidates` of type
+// `candidatesMinMaxHeap<DistType>`, except the `getExternalLabel` calls when inserting to the
+// top_candidates heap.
+template <typename DataType, typename DistType>
+template <bool has_marked_deleted>
+void HNSWIndex_Single<DataType, DistType>::updateHeapsInternal(
+    idType cand_id, DistType cand_dist, candidatesLabelsMinMaxHeap<DistType> &top_candidates,
+    candidatesMinMaxHeap<DistType> &candidate_set, size_t ef, DistType &lowerBound) const {
+    if (top_candidates.size() < ef) {
+        candidate_set.emplace(cand_dist, cand_id);
+        // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+        if (!has_marked_deleted || !this->isMarkedDeleted(cand_id)) {
+            top_candidates.emplace(cand_dist, this->getExternalLabel(cand_id));
+            lowerBound = top_candidates.peek_max().first;
+        }
+    } else if (lowerBound > cand_dist) {
+        candidate_set.emplace(cand_dist, cand_id);
+        // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+        if (!has_marked_deleted || !this->isMarkedDeleted(cand_id)) {
+            // Remove the maximum element from the top candidates heap.
+            top_candidates.exchange_max(cand_dist, this->getExternalLabel(cand_id));
+            lowerBound = top_candidates.peek_max().first;
+        }
+    }
 }

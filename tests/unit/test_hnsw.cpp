@@ -1664,18 +1664,24 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 //     // In this test we add identical vectors.
 //     // Expected results:
 //     // in level 0: Each node has room for 2 * M neighbour. As we insert identical vectors, due to
-//     // the secondary sorting by id in the top candidates heap, the M top candidates nodes for each
-//     // new node will be the nodes whose ids are the maximal. These nodes will be mutually connected
+//     // the secondary sorting by id in the top candidates heap, the M top candidates nodes for
+//     each
+//     // new node will be the nodes whose ids are the maximal. These nodes will be mutually
+//     connected
 //     // to the new node, in addition to their existing neighbors (there will be no unidirectional
 //     // edges). For higher levels (if the max level of the new node is higher then 0): For each
-//     // level, if there are already M + 1 nodes on this level, the new node will be connected to the
+//     // level, if there are already M + 1 nodes on this level, the new node will be connected to
+//     the
 //     // last M existing nodes. As the capacity of the existing node is full,
 //     // these M last nodes will have to remove one of their neighbour, so one
 //     // unidirectional for each node (total of M) will be added. Eventually, we expected that each
 //     // vector at this level will have M incoming edges, except the first M vectors and the last M
-//     // vectors. The M vectors whose ids are minimal at some level should end up with 0, 1, ..., M-1
-//     // incoming edges respectively. The last M vectors will behave in a similar way (the vector with
-//     // maximum id at a level should have 0 incoming edges, the one whose is the second last should
+//     // vectors. The M vectors whose ids are minimal at some level should end up with 0, 1, ...,
+//     M-1
+//     // incoming edges respectively. The last M vectors will behave in a similar way (the vector
+//     with
+//     // maximum id at a level should have 0 incoming edges, the one whose is the second last
+//     should
 //     // have 1, etc...)
 
 //     for (size_t M : {2, 4, 16, 32}) {
@@ -1725,7 +1731,8 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 //             size_t curr_visited_at_level_hist = 0;
 //             for (size_t id = 0; id < n; id++) {
 //                 if (hnsw_index->getGraphDataByInternalId(id)->toplevel >= level) {
-//                     // we expect to generate a new incoming edges vector for each new node at each
+//                     // we expect to generate a new incoming edges vector for each new node at
+//                     each
 //                     // level.
 //                     incoming_edges_memory_overhead +=
 //                         sizeof(vecsim_stl::vector<idType>) + allocations_overhead;
@@ -1738,7 +1745,8 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 //                     incomingEdges->shrink_to_fit();
 //                     size_t incoming_edges_count = incomingEdges->size();
 
-//                     // if it is level 0 or there are less than M nodes at this level, none of them
+//                     // if it is level 0 or there are less than M nodes at this level, none of
+//                     them
 //                     // should have incoming edges.
 //                     if (level == 0 || nodes_per_level_hist[level] <= M + 1 ||
 //                         curr_idx_at_level == 0 || curr_reverse_idx_at_level == 0) {
@@ -1747,19 +1755,21 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 //                     }
 //                     if (curr_idx_at_level < M) { // this is one of the first M nodes
 //                         ASSERT_EQ(incoming_edges_count, curr_idx_at_level);
-//                     } else if (curr_reverse_idx_at_level < M) { // this is one of the last M nodes
+//                     } else if (curr_reverse_idx_at_level < M) { // this is one of the last M
+//                     nodes
 //                         ASSERT_EQ(incoming_edges_count, curr_reverse_idx_at_level);
 //                     } else {
 //                         ASSERT_EQ(incoming_edges_count, M);
 //                     }
 //                     incoming_edges_total_count += incoming_edges_count;
 //                     incoming_per_level_hist[level] += incoming_edges_count;
-//                     // The first insertion to the incoming edges vector causes another allocation.
-//                     incoming_edges_memory_overhead +=
+//                     // The first insertion to the incoming edges vector causes another
+//                     allocation. incoming_edges_memory_overhead +=
 //                         incoming_edges_count * sizeof(idType) + allocations_overhead;
 //                 }
 //             }
-//             // each node (except the first M and the last M) should have the same number of incoming
+//             // each node (except the first M and the last M) should have the same number of
+//             incoming
 //             // edges.
 //             if (level == 0 || nodes_per_level_hist[level] <= 2 * M) {
 //                 continue;

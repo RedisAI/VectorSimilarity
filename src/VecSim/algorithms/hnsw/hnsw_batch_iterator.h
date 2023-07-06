@@ -37,10 +37,10 @@ protected:
     candidatesMinHeap<idType> candidates;
 
     template <bool has_marked_deleted>
-    VecSimQueryResult_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
-    candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryResult_Code *rc);
+    VecSimQueryResult_Code scanGraphInternal(candidatesLabelsMinMaxHeap<DistType> *top_candidates);
+    candidatesLabelsMinMaxHeap<DistType> *scanGraph(VecSimQueryResult_Code *rc);
     virtual inline VecSimQueryResult_List
-    prepareResults(candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) = 0;
+    prepareResults(candidatesLabelsMinMaxHeap<DistType> *top_candidates, size_t n_res) = 0;
     inline void visitNode(idType node_id) {
         this->visited_list->tagNode(node_id, this->visited_tag);
     }
@@ -48,8 +48,8 @@ protected:
         return this->visited_list->getNodeTag(node_id) == this->visited_tag;
     }
 
-    virtual inline void fillFromExtras(candidatesLabelsMaxHeap<DistType> *top_candidates) = 0;
-    virtual inline void updateHeaps(candidatesLabelsMaxHeap<DistType> *top_candidates,
+    virtual inline void fillFromExtras(candidatesLabelsMinMaxHeap<DistType> *top_candidates) = 0;
+    virtual inline void updateHeaps(candidatesLabelsMinMaxHeap<DistType> *top_candidates,
                                     DistType dist, idType id) = 0;
 
 public:
@@ -95,7 +95,7 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
 VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
-    candidatesLabelsMaxHeap<DistType> *top_candidates) {
+    candidatesLabelsMinMaxHeap<DistType> *top_candidates) {
     while (!candidates.empty()) {
         DistType curr_node_dist = candidates.top().first;
         idType curr_node_id = candidates.top().second;
@@ -165,10 +165,10 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 }
 
 template <typename DataType, typename DistType>
-candidatesLabelsMaxHeap<DistType> *
+candidatesLabelsMinMaxHeap<DistType> *
 HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
 
-    candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
+    candidatesLabelsMinMaxHeap<DistType> *top_candidates = this->index->getNewMinMaxHeap(this->ef);
     if (this->entry_point == INVALID_ID) {
         this->depleted = true;
         return top_candidates;
