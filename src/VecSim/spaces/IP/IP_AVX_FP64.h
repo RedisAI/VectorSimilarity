@@ -16,11 +16,11 @@ static inline void InnerProductStep(double *&pVect1, double *&pVect2, __m256d &s
 }
 
 template <unsigned char residual> // 0..7
-double FP64_InnerProductSIMD8Ext_AVX(const void *pVect1v, const void *pVect2v, size_t qty) {
+double FP64_InnerProductSIMD8_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
-    const double *pEnd1 = pVect1 + qty;
+    const double *pEnd1 = pVect1 + dimension;
 
     __m256d sum256 = _mm256_setzero_pd();
 

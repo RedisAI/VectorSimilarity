@@ -17,11 +17,11 @@ static inline void L2SqrStep(float *&pVect1, float *&pVect2, __m512 &sum) {
 }
 
 template <unsigned char residual> // 0..15
-float FP32_L2SqrSIMD16Ext_AVX512(const void *pVect1v, const void *pVect2v, size_t qty) {
+float FP32_L2SqrSIMD16_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
-    const float *pEnd1 = pVect1 + qty;
+    const float *pEnd1 = pVect1 + dimension;
 
     __m512 sum = _mm512_setzero_ps();
 
