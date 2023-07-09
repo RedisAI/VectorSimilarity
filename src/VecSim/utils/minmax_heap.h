@@ -305,6 +305,10 @@ public:
     inline T exchange_max(Args &&...args) {
         return exchange_max(static_cast<const T &>(T(args...)));
     }
+
+    // random order iteration
+    auto begin() { return data.begin() + 1; }
+    auto end() { return data.end(); }
 }; // min_max_heap
 
 } // namespace vecsim_stl

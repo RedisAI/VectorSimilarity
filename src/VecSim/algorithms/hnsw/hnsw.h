@@ -197,7 +197,9 @@ protected:
                                                           double epsilon, DistType radius,
                                                           void *timeoutCtx,
                                                           VecSimQueryResult_Code *rc) const;
-    void getNeighborsByHeuristic2(candidatesMinMaxHeap<DistType> &top_candidates, size_t M);
+    template <bool return_removed>
+    void getNeighborsByHeuristic2(candidatesMinMaxHeap<DistType> &top_candidates, size_t M,
+                                  vecsim_stl::vector<idType> *removed = nullptr) const;
     // Helper function for re-selecting node's neighbors which was selected as a neighbor for
     // a newly inserted node. Also, responsible for mutually connect the new node and the neighbor
     // (unidirectional or bidirectional connection).
@@ -556,32 +558,27 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
     const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
     size_t *removed_links_num) {
 
-    auto orig_candidates = candidates;
+    vecsim_stl::vector<idType> removed(this->allocator);
     // candidates will store the newly selected neighbours (for the relevant node).
-    getNeighborsByHeuristic2(candidates, Mcurmax);
+    getNeighborsByHeuristic2<true>(candidates, Mcurmax, &removed);
 
     // check the diff in the link list, save the neighbours
     // that were chosen to be removed, and update the new neighbours
-    size_t removed_idx = 0;
-    size_t link_idx = 0;
 
-    while (candidates.size() > 0) {
-        idType cur_id = orig_candidates.pop_min().second;
-        if (cur_id != candidates.peek_min().second) {
-            if (neighbors_bitmap[cur_id]) {
-                removed_links[removed_idx++] = cur_id;
-            }
-        } else {
-            node_level.links[link_idx++] = candidates.pop_min().second;
+    // record the removed links
+    size_t removed_idx = 0;
+    for (auto removed_id : removed) {
+        if (neighbors_bitmap[removed_id]) {
+            removed_links[removed_idx++] = removed_id;
         }
     }
-    while (orig_candidates.size() > 0) {
-        idType cur_id = orig_candidates.pop_min().second;
-        if (neighbors_bitmap[cur_id]) {
-            removed_links[removed_idx++] = cur_id;
-        }
+
+    // update the new neighbours
+    node_level.numLinks = 0;
+    for (auto &candidate : candidates) {
+        node_level.links[node_level.numLinks++] = candidate.second;
     }
-    node_level.numLinks = link_idx;
+
     *removed_links_num = removed_idx;
 }
 
@@ -775,8 +772,10 @@ HNSWIndex<DataType, DistType>::searchLayer(idType ep_id, const void *data_point,
 }
 
 template <typename DataType, typename DistType>
+template <bool return_removed>
 void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
-    candidatesMinMaxHeap<DistType> &top_candidates, const size_t M) {
+    candidatesMinMaxHeap<DistType> &top_candidates, const size_t M,
+    vecsim_stl::vector<idType> *removed) const {
     if (top_candidates.size() < M) {
         return;
     }
@@ -785,6 +784,9 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
     vecsim_stl::vector<const void *> cached_vectors(this->allocator);
     return_list.reserve(M);
     cached_vectors.reserve(M);
+    if (return_removed) {
+        removed->reserve(top_candidates.size());
+    }
 
     while (top_candidates.size() && return_list.size() < M) {
         pair<DistType, idType> current_pair = top_candidates.pop_min();
@@ -799,6 +801,9 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
                 this->distFunc(cached_vectors[i], curr_vector, this->dim);
             if (candidate_to_selected_dist < current_pair.first) {
                 good = false;
+                if (return_removed) {
+                    removed->push_back(current_pair.second);
+                }
                 break;
             }
         }
@@ -808,7 +813,14 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
         }
     }
 
+    if (return_removed) {
+        for (auto &leftover : top_candidates) {
+            removed->push_back(leftover.second);
+        }
+    }
+
     // Refill the top_candidates heap with the new neighbors.
+    // TODO: we actually don't care for the order of the neighbors, so we can use a vector instead
     top_candidates.clear(); // make sure it's empty
     for (auto current_pair : return_list) {
         top_candidates.insert(current_pair);
@@ -835,32 +847,19 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     }
 
     std::vector<idType> nodes_to_update;
-    auto orig_candidates = candidates;
 
     // Candidates will store the newly selected neighbours (for the neighbor).
     size_t max_M_cur = level ? M : M0;
-    getNeighborsByHeuristic2(candidates, max_M_cur);
+    vecsim_stl::vector<idType> removed(this->allocator);
+    getNeighborsByHeuristic2<true>(candidates, max_M_cur, &removed);
 
     // Go over the original candidates set, and save the ones chosen to be removed to update
     // later on.
-    bool cur_node_chosen = false;
-    while (orig_candidates.size() > 0) {
-        idType orig_candidate = orig_candidates.pop_min().second;
-        // If the current original candidate was not selected as neighbor by the heuristics, it
-        // should be updated and removed from the neighbor's neighbors.
-        if (candidates.empty() || orig_candidate != candidates.peek_min().second) {
-            // Don't add the new_node_id to nodes_to_update, it will be inserted either way
-            // later.
-            if (orig_candidate != new_node_id) {
-                nodes_to_update.push_back(orig_candidate);
-            }
-            // Otherwise, the original candidate was selected to remain a neighbor - no need to
-            // update.
-        } else {
-            candidates.pop_min();
-            if (orig_candidate == new_node_id) {
-                cur_node_chosen = true;
-            }
+    for (auto &removed_id : removed) {
+        // Don't add the new_node_id to nodes_to_update, it will be inserted either way
+        // later.
+        if (removed_id != new_node_id) {
+            nodes_to_update.push_back(removed_id);
         }
     }
 
@@ -915,6 +914,10 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
         !isMarkedDeleted(new_node_id) && !isMarkedDeleted(selected_neighbor)) {
         // update the connection between the new node and the neighbor.
         new_node_level.links[new_node_level.numLinks++] = selected_neighbor;
+        bool cur_node_chosen = std::find_if(candidates.begin(), candidates.end(),
+                                            [new_node_id](const std::pair<DistType, idType> &p) {
+                                                return p.second == new_node_id;
+                                            }) != candidates.end();
         if (cur_node_chosen && neighbour_neighbours_idx < max_M_cur) {
             // connection is mutual - both new node and the selected neighbor in each other's
             // list.
@@ -939,7 +942,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     size_t max_M_cur = level ? M : M0;
 
     // Filter the top candidates to the selected neighbors by the algorithm heuristics.
-    getNeighborsByHeuristic2(top_candidates, M);
+    getNeighborsByHeuristic2<false>(top_candidates, M);
     assert(top_candidates.size() <= M &&
            "Should be not be more than M candidates returned by the heuristic");
 
@@ -951,8 +954,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(new_node_level_data.numLinks == 0 &&
            "The newly inserted element should have blank link list");
 
-    while (!top_candidates.empty()) {
-        auto neighbor_data = top_candidates.pop_max();
+    for (auto neighbor_data : top_candidates) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
         auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
         if (new_node_id < selected_neighbor) {
@@ -1555,26 +1557,26 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         unlockNodeLinks(neighbor);
     }
 
-    // Copy the original candidates, and run the heuristics. Afterwards, neighbors_candidates
-    // will store the newly selected neighbours (for the node), while candidates which were
-    // originally neighbors and are not going to be selected, are going to be removed.
-    auto orig_candidates = neighbors_candidates;
     size_t max_M_cur = level ? M : M0;
-    getNeighborsByHeuristic2(neighbors_candidates, max_M_cur);
+    // After calling `getNeighborsByHeuristic2`, neighbors_candidates will store the newly selected
+    // neighbours (for the node), while candidates which were originally neighbors and are not going
+    // to be selected, are going to be removed and recorded in `not_chosen`.
+    vecsim_stl::vector<idType> not_chosen(this->allocator);
+    getNeighborsByHeuristic2<true>(neighbors_candidates, max_M_cur, &not_chosen);
 
-    while (!orig_candidates.empty()) {
-        idType orig_candidate = orig_candidates.pop_min().second;
-        if (neighbors_candidates.empty() ||
-            orig_candidate != neighbors_candidates.peek_min().second) {
-            if (node_orig_neighbours_set[orig_candidate]) {
-                neighbors_to_remove.push_back(orig_candidate);
-                nodes_to_update.push_back(orig_candidate);
-            }
-        } else {
-            chosen_neighbors.push_back(orig_candidate);
-            nodes_to_update.push_back(orig_candidate);
-            neighbors_candidates.pop_min();
+    // Go over the neighbors that were not chosen and add them to the nodes_to_update and
+    // neighbors_to_remove sets, if needed.
+    for (idType not_chosen_id : not_chosen) {
+        if (node_orig_neighbours_set[not_chosen_id]) {
+            neighbors_to_remove.push_back(not_chosen_id);
+            nodes_to_update.push_back(not_chosen_id);
         }
+    }
+
+    // Go over the chosen neighbors and add them to the nodes_to_update and chosen_neighbors
+    for (pair<DistType, idType> chosen_cand : neighbors_candidates) {
+        chosen_neighbors.push_back(chosen_cand.second);
+        nodes_to_update.push_back(chosen_cand.second);
     }
 
     // Perform the actual updates for the node and the impacted neighbors while holding the
