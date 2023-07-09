@@ -84,8 +84,8 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
-          isMulti(params.multi), logCallbackCtx(params.logCtx) {
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(1),
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
         normalize_func =
