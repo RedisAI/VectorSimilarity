@@ -83,7 +83,7 @@ public:
         explicit IndexExtCtx(tieredIndexMock *mock_tp) : mock_thread_pool(mock_tp) {}
     } IndexExtCtx;
 
-    size_t THREAD_POOL_SIZE;
+    size_t thread_pool_size;
     std::vector<std::thread> thread_pool;
     std::mutex queue_guard;
     std::condition_variable queue_cond;

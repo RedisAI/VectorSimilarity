@@ -373,6 +373,16 @@ protected:
             ->getFlatBufferIndex();
     }
 
+    TieredIndexParams getTieredIndexParams(size_t buffer_limit) {
+        // Create TieredIndexParams using the mock thread pool.
+        return TieredIndexParams{
+            .jobQueue = &(this->mock_thread_pool.jobQ),
+            .jobQueueCtx = this->mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = buffer_limit,
+        };
+    }
+
 public:
     explicit PyTieredIndex() { mock_thread_pool.init_threads(); }
 
@@ -382,7 +392,7 @@ public:
 
     size_t getFlatIndexSize() { return getFlatBuffer()->indexLabelCount(); }
 
-    size_t getThreadsNum() { return mock_thread_pool.THREAD_POOL_SIZE; }
+    size_t getThreadsNum() { return mock_thread_pool.thread_pool_size; }
 
     size_t getBufferLimit() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
@@ -399,15 +409,7 @@ public:
         VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB,
                                              .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
 
-        // Create TieredIndexParams. Assume that tieredIndexMock::ctx was allocated in the base
-        // class constructor, and that the thread pool was created.
-        TieredIndexParams tiered_params = {
-            .jobQueue = &(this->mock_thread_pool.jobQ),
-            .jobQueueCtx = this->mock_thread_pool.ctx,
-            .submitCb = tieredIndexMock::submit_callback,
-            .flatBufferLimit = buffer_limit,
-        };
-
+        auto tiered_params = this->getTieredIndexParams(buffer_limit);
         tiered_params.primaryIndexParams = &primary_index_params;
         tiered_params.specificParams.tieredHnswParams = tiered_hnsw_params;
 

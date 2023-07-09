@@ -778,7 +778,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     // Save the number fo tasks done by thread i in the i-th entry.
-    std::vector<size_t> completed_tasks(mock_thread_pool.THREAD_POOL_SIZE, 0);
+    std::vector<size_t> completed_tasks(mock_thread_pool.thread_pool_size, 0);
     mock_thread_pool.init_threads();
     std::atomic_int successful_searches(0);
 
@@ -1577,7 +1577,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
 
-        for (size_t i = 0; i < mock_thread_pool.THREAD_POOL_SIZE; i++) {
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
             mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
                                                       std::ref(mock_thread_pool));
         }
@@ -1595,7 +1595,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         // (hence it will be counted twice in the index size calculation).
         size_t index_size = tiered_index->indexSize();
         EXPECT_GE(index_size, n);
-        EXPECT_LE(index_size, n + mock_thread_pool.THREAD_POOL_SIZE);
+        EXPECT_LE(index_size, n + mock_thread_pool.thread_pool_size);
         EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
         for (size_t i = 0; i < n_labels; i++) {
             // Every vector associated with the label may appear in flat/HNSW index or in both if
@@ -1603,7 +1603,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
             int num_deleted = tiered_index->deleteVector(i);
             EXPECT_GE(num_deleted, per_label);
             EXPECT_LE(num_deleted,
-                      MIN(2 * per_label, per_label + mock_thread_pool.THREAD_POOL_SIZE));
+                      MIN(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
             EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), 0);
@@ -1649,7 +1649,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
 
             // Launch the BG threads loop that takes jobs from the queue and executes them.
 
-            for (size_t i = 0; i < mock_thread_pool.THREAD_POOL_SIZE; i++) {
+            for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
                 mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
                                                           std::ref(mock_thread_pool));
             }
@@ -2611,7 +2611,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
 
-        for (size_t i = 0; i < mock_thread_pool.THREAD_POOL_SIZE; i++) {
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
             mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
                                                       std::ref(mock_thread_pool));
         }

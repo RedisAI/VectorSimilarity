@@ -112,7 +112,7 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     size_t memory_delta = (INDICES[st.range(0)])->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = (double)memory_delta / (double)added_vec_count;
     st.counters["vectors_per_label"] = vec_per_label;
-    st.counters["num_threads"] = BM_VecSimGeneral::mock_thread_pool.THREAD_POOL_SIZE;
+    st.counters["num_threads"] = BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
 
     size_t index_size_after = VecSimIndex_IndexSize(INDICES[st.range(0)]);
     assert(index_size_after == N_VECTORS + added_vec_count);
@@ -208,7 +208,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
     // of deleted vectors.
     int memory_delta = tiered_index->getAllocationSize() - memory_before;
     st.counters["memory_per_vector"] = memory_delta / (double)removed_vectors_count;
-    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.THREAD_POOL_SIZE;
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool.thread_pool_size;
     st.counters["num_zombies"] = tiered_index->idToSwapJob.size();
 
     // Remove the rest of the vectors that hadn't been swapped yet.

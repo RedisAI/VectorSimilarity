@@ -6,7 +6,7 @@
  */
 
 tieredIndexMock::tieredIndexMock() : run_thread(true) {
-    THREAD_POOL_SIZE = MIN(8, std::thread::hardware_concurrency());
+    thread_pool_size = MIN(8, std::thread::hardware_concurrency());
     ctx = new IndexExtCtx(this);
 }
 
@@ -55,7 +55,7 @@ int tieredIndexMock::submit_callback(void *job_queue, void *index_ctx, AsyncJob 
 
 void tieredIndexMock::init_threads() {
     run_thread = true;
-    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+    for (size_t i = 0; i < thread_pool_size; i++) {
         thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i, std::ref(*this));
     }
 }
@@ -99,7 +99,7 @@ void tieredIndexMock::thread_pool_join() {
             break;
         }
     }
-    for (size_t i = 0; i < THREAD_POOL_SIZE; i++) {
+    for (size_t i = 0; i < thread_pool_size; i++) {
         thread_pool[i].join();
     }
     thread_pool.clear();
