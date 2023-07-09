@@ -99,35 +99,31 @@ public:
 
 private:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        // Will be used only if a processing stage is needed
-        char PORTABLE_ALIGN processed_blob[this->backendIndex->getDataSize()];
-        this->backendIndex->processBlob(blob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(blob, aligned_mem);
         return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const override {
-        // Will be used only if a processing stage is needed
-        char PORTABLE_ALIGN processed_blob[this->backendIndex->getDataSize()];
-        this->backendIndex->processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
         return this->topKQuery(processed_blob, k, queryParams);
     }
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryResult_Order order) const override {
-        // Will be used only if a processing stage is needed
-        char PORTABLE_ALIGN processed_blob[this->backendIndex->getDataSize()];
-        this->backendIndex->processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
         return this->rangeQuery(processed_blob, radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        // Will be used only if a processing stage is needed
-        char PORTABLE_ALIGN processed_blob[this->backendIndex->getDataSize()];
-        this->backendIndex->processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
         return this->newBatchIterator(processed_blob, queryParams);
     }

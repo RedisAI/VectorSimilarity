@@ -169,15 +169,23 @@ public:
             .fieldType = INFOFIELD_STRING,
             .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.lastMode)}}});
     }
-    void processBlob(const void *original_blob, void *processed_blob) const {
-        // copy original blob to the output blob
-        memcpy(processed_blob, original_blob, this->dataSize);
+    const void *processBlob(const void *original_blob, void *aligned_mem) const {
+        void *processed_blob;
+        // if the blob is not aligned, or we need to normalize, we copy it
+        if ((uintptr_t)original_blob % this->alignment || this->metric == VecSimMetric_Cosine) {
+            memcpy(aligned_mem, original_blob, this->dataSize);
+            processed_blob = aligned_mem;
+        } else {
+            processed_blob = (void *)original_blob;
+        }
 
         // if the metric is cosine, we need to normalize
         if (this->metric == VecSimMetric_Cosine) {
             // normalize the copy in place
             normalize_func(processed_blob, this->dim);
         }
+
+        return processed_blob;
     }
 
     /**
@@ -196,16 +204,16 @@ public:
 
 protected:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        char PORTABLE_ALIGN processed_blob[this->dataSize];
-        processBlob(blob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(blob, aligned_mem);
 
         return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const override {
-        char PORTABLE_ALIGN processed_blob[this->dataSize];
-        processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
         return this->topKQuery(processed_blob, k, queryParams);
     }
@@ -213,16 +221,16 @@ protected:
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryResult_Order order) const override {
-        char PORTABLE_ALIGN processed_blob[this->dataSize];
-        processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
         return this->rangeQuery(processed_blob, radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        char PORTABLE_ALIGN processed_blob[this->dataSize];
-        processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
         return this->newBatchIterator(processed_blob, queryParams);
     }

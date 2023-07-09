@@ -38,14 +38,14 @@ void *VecSimAllocator::allocate(size_t size) {
 
 void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
     size += alignment; // Add enough space for alignment.
-    unsigned char *ptr = (unsigned char *)vecsim_malloc(size + allocation_header_size);
+    auto ptr = (size_t *)vecsim_malloc(size + allocation_header_size);
     if (ptr) {
         this->allocated += size + allocation_header_size;
-        size_t remainder = (((size_t)ptr) + allocation_header_size) % alignment;
+        size_t remainder = (((uintptr_t)ptr) + allocation_header_size) % alignment;
         unsigned char offset = alignment - remainder;
-        unsigned char *ret = (unsigned char *)(ptr + allocation_header_size) + offset;
-        *(ret - 1) = offset;
-        *(size_t *)(ret - 1 - allocation_header_size) = size;
+        unsigned char *ret = ((unsigned char *)ptr) + allocation_header_size + offset;
+        ret[-1] = offset; // Store the offset in the byte before the returned pointer.
+        ptr[0] = size;    // Store the size of the allocation in the first 8 bytes.
         return ret;
     }
     return NULL;
@@ -57,10 +57,8 @@ void VecSimAllocator::free_allocation_aligned(void *p) {
 
     auto ptr = (unsigned char *)p;
     unsigned char offset = ptr[-1];
-    size_t allocated = *(size_t *)(ptr - 1 - allocation_header_size);
-
-    this->allocated -= (allocated + allocation_header_size);
-    vecsim_free(ptr - offset - allocation_header_size);
+    // Free the allocation at the non-aligned address normally.
+    free_allocation(ptr - offset);
 }
 
 void VecSimAllocator::deallocate(void *p, size_t size) { free_allocation(p); }

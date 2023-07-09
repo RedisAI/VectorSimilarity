@@ -35,19 +35,22 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX512);
-        *alignment *= 16; // handles 16 floats
+        if (dim % 16 == 0)    // no point in aligning if we have an offsetting residual
+            *alignment *= 16; // handles 16 floats
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
-        *alignment *= 8; // handles 8 floats
+        if (dim % 8 == 0)    // no point in aligning if we have an offsetting residual
+            *alignment *= 8; // handles 8 floats
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_SSE);
-        *alignment *= 4; // handles 4 floats
+        if (dim % 4 == 0)    // no point in aligning if we have an offsetting residual
+            *alignment *= 4; // handles 4 floats
         break;
 #endif
     case ARCH_OPT_NONE:
@@ -78,19 +81,22 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, const Arch_Optimization arch
     case ARCH_OPT_AVX512_F:
 #ifdef __AVX512F__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_AVX512);
-        *alignment *= 8; // handles 8 doubles
+        if (dim % 8 == 0)    // no point in aligning if we have an offsetting residual
+            *alignment *= 8; // handles 8 doubles
         break;
 #endif
     case ARCH_OPT_AVX:
 #ifdef __AVX__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_AVX);
-        *alignment *= 4; // handles 4 doubles
+        if (dim % 4 == 0)    // no point in aligning if we have an offsetting residual
+            *alignment *= 4; // handles 4 doubles
         break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_SSE);
-        *alignment *= 2; // handles 2 doubles
+        if (dim % 2 == 0)    // no point in aligning if we have an offsetting residual
+            *alignment *= 2; // handles 2 doubles
         break;
 #endif
     case ARCH_OPT_NONE:
