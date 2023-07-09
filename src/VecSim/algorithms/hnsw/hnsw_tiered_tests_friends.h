@@ -50,3 +50,4 @@ INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTestBasic_preferAdHocOptimization_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTestBasic_runGCAPI_Test)
 
 INDEX_TEST_FRIEND_CLASS(BM_VecSimBasics)
+INDEX_TEST_FRIEND_CLASS(BM_VecSimCommon)
