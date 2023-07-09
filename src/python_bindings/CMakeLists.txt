@@ -21,9 +21,9 @@ endif()
 
 add_subdirectory(${root}/src/VecSim VectorSimilarity)
 
-include_directories(${root}/src)
+include_directories(${root}/src ${root}/tests/utils)
 
-pybind11_add_module(VecSim bindings.cpp)
+pybind11_add_module(VecSim ../../tests/utils/mock_thread_pool.cpp bindings.cpp)
 
 target_link_libraries(VecSim VectorSimilarity)
 
