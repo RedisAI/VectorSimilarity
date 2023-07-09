@@ -10,6 +10,7 @@ size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 65;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::n_vectors = 500000;
+tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/DBpedia-n500K-cosine-d768-M65-EFC512.hnsw";

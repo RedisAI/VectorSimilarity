@@ -9,6 +9,7 @@ size_t BM_VecSimGeneral::dim = 512;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
 size_t BM_VecSimGeneral::block_size = 1024;
+tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
     "tests/benchmark/data/fashion_images_multi_value-M=64-ef=512.hnsw_v2";

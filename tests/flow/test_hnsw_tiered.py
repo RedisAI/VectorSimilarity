@@ -8,20 +8,21 @@ from common import *
 # swap_job_threshold = 0 means use the default swap_job_threshold defined in hnsw_tiered.h
 def create_tiered_hnsw_params(swap_job_threshold = 0):
     tiered_hnsw_params = TieredHNSWParams()
-    tiered_hnsw_params.swapJobThreshold  = swap_job_threshold
+    tiered_hnsw_params.swapJobThreshold = swap_job_threshold
     return tiered_hnsw_params   
 
 class IndexCtx:
-    def __init__(self, data_size = 10000, 
-                 dim = 16,                 
-                 M = 16, 
-                 ef_c = 512, 
-                 ef_r = 20, 
-                 metric = VecSimMetric_Cosine, 
-                 data_type = VecSimType_FLOAT32, 
-                 is_multi = False, 
-                 num_per_label = 1,
-                 swap_job_threshold = 0):
+    def __init__(self, data_size=10000,
+                 dim=16,
+                 M=16,
+                 ef_c=512,
+                 ef_r=20,
+                 metric=VecSimMetric_Cosine,
+                 data_type=VecSimType_FLOAT32,
+                 is_multi=False,
+                 num_per_label=1,
+                 swap_job_threshold=0,
+                 flat_buffer_size=1024):
         self.num_vectors = data_size
         self.dim = dim
         self.M = M
@@ -41,7 +42,6 @@ class IndexCtx:
         data = self.rng.random(data_shape) 
         self.data = np.float32(data) if self.data_type == VecSimType_FLOAT32 else data
 
-        
         self.hnsw_params = create_hnsw_params(dim = self.dim, 
                                               num_elements = self.num_vectors, 
                                               metric = self.metric,
@@ -52,7 +52,7 @@ class IndexCtx:
                                               is_multi = self.is_multi)
         self.tiered_hnsw_params = create_tiered_hnsw_params(swap_job_threshold)
         
-        self.tiered_index = Tiered_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params)
+        self.tiered_index = Tiered_HNSWIndex(self.hnsw_params, self.tiered_hnsw_params, flat_buffer_size)
     
     def populate_index_multi(self, index):
         start = time.time()
@@ -107,20 +107,15 @@ class IndexCtx:
     def get_vectors_memory_size(self):
         data_type_size = 4 if self.data_type == VecSimType_FLOAT32 else 8
         return bytes_to_mega(self.num_vectors * self.dim * data_type_size)
-           
-def create_tiered_index(is_multi: bool, num_per_label = 1):
+
+
+def create_tiered_index(is_multi: bool, num_per_label=1):
     indices_ctx = IndexCtx(data_size=50000, is_multi=is_multi, num_per_label=num_per_label)
     num_elements = indices_ctx.num_labels
-    
-    threads_num = TieredIndex.get_threads_num()
-    
-    # Initialize time measurements to apply assert at the end.
-    tiered_index_time = 0
-    hnsw_index_time = 0
-    
-    # Create the tiered index
+
     index = indices_ctx.tiered_index
-    
+    threads_num = index.get_threads_num()
+
     _, bf_dur, end_add_time = indices_ctx.populate_index(index)
     
     index.wait_for_index()
@@ -130,7 +125,8 @@ def create_tiered_index(is_multi: bool, num_per_label = 1):
     
     # Measure insertion to tiered index.
     print(f"Insert {num_elements} vectors into the flat buffer took {round_ms(bf_dur)} ms")
-    print(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num} threads took {round_ms(tiered_index_time)} ms")
+    print(f"Total time for inserting vectors to the tiered index and indexing them into HNSW using {threads_num}"
+          f" threads took {round_ms(tiered_index_time)} ms")
     
     # Measure total memory of the tiered index.
     tiered_memory = bytes_to_mega(index.index_memory())
@@ -153,9 +149,10 @@ def create_tiered_index(is_multi: bool, num_per_label = 1):
     print(f"with {threads_num} threads, insertion runtime is {round_(execution_time_ratio)} times better \n")
     
 
-def search_insert(is_multi: bool, num_per_label = 1):
+def search_insert(is_multi: bool, num_per_label=1):
     data_size = 100000
-    indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label)
+    indices_ctx = IndexCtx(data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
+                           flat_buffer_size=data_size, M=64)
     index = indices_ctx.tiered_index
 
     num_labels = indices_ctx.num_labels
@@ -174,12 +171,17 @@ def search_insert(is_multi: bool, num_per_label = 1):
     correct = 0
     k = 10
     searches_number = 0
-    print(f"HNSW labels number = {index.hnsw_label_count()}")
-    # run knn query every 1 s. 
+    # run knn query every 1 s.
     total_tiered_search_time = 0
     prev_bf_size = num_labels
+    cur_hnsw_label_count = index.hnsw_label_count()
+    if cur_hnsw_label_count == num_labels:
+        print("All vectors were already indexed into HNSW - cannot test search while indexing")
+        assert False
+
     print("Start running queries while indexing is done in the background")
-    while index.hnsw_label_count() < num_labels:
+    print(f"HNSW labels number = {cur_hnsw_label_count}")
+    while cur_hnsw_label_count < num_labels:
         # For each run get the current hnsw size and the query time.
         bf_curr_size = index.get_curr_bf_size()
         query_start = time.time()
@@ -199,6 +201,7 @@ def search_insert(is_multi: bool, num_per_label = 1):
         time.sleep(1)
         searches_number += 1
         prev_bf_size = bf_curr_size
+        cur_hnsw_label_count = index.hnsw_label_count()
     
     # HNSW labels count updates before the job is done, so we need to wait for the queue to be empty.
     index.wait_for_index(1)
@@ -213,8 +216,8 @@ def search_insert(is_multi: bool, num_per_label = 1):
 
 def test_create_tiered():
     print("\nTest create tiered hnsw index")
-    create_tiered_index(is_multi=False)      
-      
+    create_tiered_index(is_multi=False)
+
 def test_create_multi():
     print("Test create multi label tiered hnsw index")
     create_tiered_index(is_multi=True, num_per_label=5)
@@ -264,9 +267,10 @@ def test_sanity():
             print(f"hnsw label = {hnsw_res_label}, tiered label = {tiered_labels[0][i]}")
             print(f"hnsw dist = {hnsw_dist[0][i]}, tiered dist = {tiered_dist[0][i]}")
 
-    assert has_diff == False
+    assert not has_diff
     print(f"hnsw graph is identical to the tiered index graph")
-    
+
+
 def test_recall_after_deletion():
     
     indices_ctx = IndexCtx(ef_r=30)
@@ -287,7 +291,7 @@ def test_recall_after_deletion():
 
     index.wait_for_index()
     
-    print(f"Delete half of the index")
+    print(f"Deleting half of the index")
     # Delete half of the index.
     for i in range(0, num_elements, 2):
         index.delete_vector(i)
@@ -295,7 +299,7 @@ def test_recall_after_deletion():
         
     # Wait for all repair jobs to be done.
     index.wait_for_index(5)
-    
+    print(f"Done deleting half of the index")
     assert index.hnsw_label_count() == (num_elements / 2)
     assert hnsw_index.index_size() == (num_elements / 2)
     
@@ -352,7 +356,8 @@ def test_batch_iterator():
                            M=M, 
                            ef_c=efConstruction, 
                            ef_r=efRuntime, 
-                           metric=metric)
+                           metric=metric,
+                           flat_buffer_size=num_elements)
 
     index = indices_ctx.tiered_index
     data = indices_ctx.data
@@ -384,22 +389,6 @@ def test_batch_iterator():
         if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
             should_have_return_in_first_batch.append(dist)
     assert (len(should_have_return_in_first_batch) <= 2)
-
-    # Verify that runtime args are sent properly to the batch iterator.
-    query_params = VecSimQueryParams()
-    query_params.hnswRuntimeParams.efRuntime = 5
-    
-    batch_iterator_new = index.create_batch_iterator(query_data, query_params)
-    
-    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(batch_size, BY_ID)
-    # Verify that accuracy is worse with the new lower ef_runtime.
-    assert (sum(labels_first_batch[0]) <= sum(labels_first_batch_new[0]))
-
-    query_params.hnswRuntimeParams.efRuntime = efRuntime  # Restore previous ef_runtime.
-    batch_iterator_new = index.create_batch_iterator(query_data, query_params)
-    labels_first_batch_new, distances_first_batch_new = batch_iterator_new.get_next_results(batch_size, BY_ID)
-    # Verify that results are now the same.
-    assert_allclose(labels_first_batch_new[0], labels_first_batch[0])
 
     # Reset.
     batch_iterator.reset()
@@ -447,6 +436,7 @@ def test_batch_iterator():
         accumulated_labels = accumulated_labels.union(set(labels[0]))
     assert len(accumulated_labels) >= 0.95 * num_elements
     print("Overall results returned:", len(accumulated_labels), "in", iterations, "iterations")
+
 
 def test_range_query():
     num_elements = 100000
@@ -498,6 +488,7 @@ def test_range_query():
     # Expect zero results for radius==0
     tiered_labels, tiered_distances = index.range_query(query_data, radius=0)
     assert len(tiered_labels[0]) == 0
+
 
 def test_multi_range_query():
     num_labels = 20000

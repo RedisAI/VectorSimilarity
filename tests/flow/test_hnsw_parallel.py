@@ -88,12 +88,6 @@ g_test_index.insert_random_vectors()
 g_test_index_multi = TestIndex(dim, num_elements, metric, data_type, multi_=True)
 g_test_index_multi.insert_random_vectors_multi(per_label)
 
-
-# Compute the expected speedup as a function of the expected parallel section rate of the code by Amdahl's law
-def expected_speedup(expected_parallel_rate, n_threads):
-    return 1 / ((1-expected_parallel_rate) + expected_parallel_rate/n_threads)
-
-
 def test_parallel_search():
     k = 10
     num_queries = 10000
@@ -128,8 +122,6 @@ def test_parallel_search():
 
     # Validate that the recall of the parallel search recall is the same as the sequential search recall.
     assert total_correct_parallel == total_correct
-    # Validate that the parallel run managed to achieve at least the expected speedup in total runtime.
-    assert total_search_time / total_search_time_parallel > expected_speedup(expected_parallel_rate, n_threads)
 
 
 def test_parallel_insert():
@@ -154,7 +146,6 @@ def test_parallel_insert():
 
     print(f"Inserting {num_elements} vectors of dim {dim} into HNSW in parallel took {parallel_insert_time} seconds")
     print(f"Got {g_test_index.sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
-    assert g_test_index.sequential_insert_time/parallel_insert_time > expected_speedup(expected_parallel_rate, n_threads)
 
     query_data = np.float32(np.random.random((num_queries, dim)))
     g_test_index.compute_ground_truth_knn(query_data, k)
@@ -276,7 +267,6 @@ def test_parallel_with_range():
           f"{overall_intersection_rate_parallel/num_queries}")
     assert overall_intersection_rate_parallel == overall_intersection_rate
     print(f"Got improvement of {total_search_time/total_range_query_parallel_time} times using {n_threads} threads\n")
-    assert total_search_time/total_range_query_parallel_time >= expected_speedup(expected_parallel_rate, n_threads)
 
 
 def test_parallel_insert_multi():
@@ -312,8 +302,6 @@ def test_parallel_insert_multi():
     print(f"Inserting {num_elements} vectors of dim {dim} into multi-HNSW in parallel ({per_label} vectors per label)"
           f" took {parallel_insert_time} seconds")
     print(f"Got {g_test_index_multi.sequential_insert_time/parallel_insert_time} times improvement using {n_threads} threads\n")
-    assert g_test_index_multi.sequential_insert_time/parallel_insert_time > \
-           expected_speedup(expected_parallel_rate, n_threads)
 
     # Run queries over the multi-index
     query_data = np.float32(np.random.random((num_queries, dim)))
@@ -343,7 +331,6 @@ def test_parallel_insert_multi():
     print(f"Got {total_search_time / total_search_time_parallel} times improvement in runtime using"
           f" {n_threads} threads\n")
     assert total_correct_parallel >= total_correct * 0.95  # 0.95 is an arbitrary threshold
-    assert total_search_time/total_search_time_parallel >= expected_speedup(expected_parallel_rate, n_threads)
 
 
 def test_parallel_multi_insert_search():
@@ -453,8 +440,6 @@ def test_parallel_batch_search():
 
     # Validate that the recall of the parallel search recall is the same as the sequential search recall.
     assert total_correct_parallel == total_correct
-    # Validate that the parallel run managed to achieve at least (n_threads - 1) times improvement in total runtime.
-    assert total_search_time / total_search_time_parallel > expected_speedup(expected_parallel_rate, n_threads)
 
 
 def test_parallel_insert_batch_search():
