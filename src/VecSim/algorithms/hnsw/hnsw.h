@@ -1974,9 +1974,6 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
                                              *top_candidates, candidate_set, lowerBound);
     }
     returnVisitedList(visited_nodes_handler);
-    while (top_candidates->size() > k) {
-        top_candidates->pop_max();
-    }
     *rc = VecSim_QueryResult_OK;
     return top_candidates;
 }
@@ -2030,7 +2027,7 @@ HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
     }
 
     if (VecSim_OK == rl.code) {
-        size_t results_size = results->size();
+        size_t results_size = std::min(results->size(), k);
         rl.results = array_new_len<VecSimQueryResult>(results_size, results_size);
         for (size_t i = 0; i < results_size; i++) {
             auto cur_result = results->pop_min();
