@@ -171,8 +171,7 @@ protected:
     void revisitNeighborConnections(size_t level, idType new_node_id,
                                     const std::pair<DistType, idType> &neighbor_data,
                                     idType *new_node_neighbors_list,
-                                    idType *neighbor_neighbors_list,
-                                    elem_write_mutex_t &node_lock,
+                                    idType *neighbor_neighbors_list, elem_write_mutex_t &node_lock,
                                     elem_write_mutex_t &neighbor_lock);
     inline idType mutuallyConnectNewElement(idType new_node_id,
                                             candidatesMaxHeap<DistType> &top_candidates,
@@ -769,8 +768,8 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t level, idType new_node_id, const std::pair<DistType, idType> &neighbor_data,
-    idType *new_node_neighbors_list, idType *neighbor_neighbors_list,
-    elem_write_mutex_t &node_lock, elem_write_mutex_t &neighbor_lock) {
+    idType *new_node_neighbors_list, idType *neighbor_neighbors_list, elem_write_mutex_t &node_lock,
+    elem_write_mutex_t &neighbor_lock) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
@@ -923,11 +922,9 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         idType lower_id = (new_node_id < selected_neighbor) ? new_node_id : selected_neighbor;
         if (lower_id == new_node_id) {
             node_lock = elem_write_mutex_t(element_neighbors_locks_[new_node_id]);
-            neighbor_lock =
-                elem_write_mutex_t(element_neighbors_locks_[selected_neighbor]);
+            neighbor_lock = elem_write_mutex_t(element_neighbors_locks_[selected_neighbor]);
         } else {
-            neighbor_lock =
-                elem_write_mutex_t(element_neighbors_locks_[selected_neighbor]);
+            neighbor_lock = elem_write_mutex_t(element_neighbors_locks_[selected_neighbor]);
             node_lock = elem_write_mutex_t(element_neighbors_locks_[new_node_id]);
         }
 
@@ -1071,7 +1068,8 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         volatile idType candidate_in_process = INVALID_ID;
         {
             // Go over the entry point's neighbors at the top level.
-            // Assuming the lock only protects the entrypoint's neighbours and not the entrypoint itself, we can use a shred lock here,
+            // Assuming the lock only protects the entrypoint's neighbours and not the entrypoint
+            // itself, we can use a shred lock here,
             elem_read_mutex_t lock(this->element_neighbors_locks_[entrypoint_node_]);
             idType *top_level_list = getNodeNeighborsAtLevel(old_entry, max_level_);
             auto neighbors_count = getNodeNeighborsCount(top_level_list);
@@ -1481,8 +1479,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         nodes_to_update.push_back(deleted_neighbor_id);
         neighbors_to_remove.push_back(deleted_neighbor_id);
 
-        elem_write_mutex_t neighbor_lock(
-            this->element_neighbors_locks_[deleted_neighbor_id]);
+        elem_write_mutex_t neighbor_lock(this->element_neighbors_locks_[deleted_neighbor_id]);
         idType *neighbor_neighbours = getNodeNeighborsAtLevel(deleted_neighbor_id, level);
         linkListSize neighbor_neighbours_count = getNodeNeighborsCount(neighbor_neighbours);
 
