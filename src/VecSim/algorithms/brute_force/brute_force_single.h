@@ -209,6 +209,7 @@ BruteForceIndex_Single<DataType, DistType>::getTopKCandidates(const void *queryB
     for (auto &vectorBlock : this->vectorBlocks) {
         auto scores = this->computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &cur_block_code);
         if (VecSim_OK != cur_block_code) {
+            delete topCandidates;
             return nullptr;
         }
         for (size_t i = 0; i < scores.size(); i++) {

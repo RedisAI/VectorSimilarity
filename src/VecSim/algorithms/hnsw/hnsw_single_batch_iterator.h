@@ -31,14 +31,12 @@ public:
 
 template <typename DataType, typename DistType>
 VecSimQueryResult_List HNSWSingle_BatchIterator<DataType, DistType>::prepareResults(
-    candidatesLabelsMinMaxHeap<DistType> *top_candidates, size_t n_res) {
+    candidatesLabelsMinMaxHeap<DistType> *top_candidates_, size_t n_res) {
     VecSimQueryResult_List rl = {0};
 
-    // Put the "spare" results (if exist) in the extra candidates heap.
-    while (top_candidates->size() > n_res) {
-        this->top_candidates_extras.emplace(top_candidates->pop_max()); // (distance, label)
-    }
-    size_t size = top_candidates->size();
+    auto top_candidates =
+        static_cast<vecsim_stl::min_max_heap<std::pair<DistType, labelType>> *>(top_candidates_);
+    size_t size = std::min(top_candidates->size(), n_res);
     rl.results = array_new_len<VecSimQueryResult>(size, size);
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
@@ -46,6 +44,10 @@ VecSimQueryResult_List HNSWSingle_BatchIterator<DataType, DistType>::prepareResu
         auto top = top_candidates->pop_min();
         VecSimQueryResult_SetId(rl.results[i], top.second);
         VecSimQueryResult_SetScore(rl.results[i], top.first);
+    }
+    // Put the "spare" results (if exist) in the extra candidates heap.
+    for (auto &spare : *top_candidates) {
+        this->top_candidates_extras.emplace(spare); // (distance, label)
     }
     return rl;
 }

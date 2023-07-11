@@ -94,6 +94,10 @@ public:
         }
     }
 
+    // Random order iteration (actually sorted by priority but not secondarily sorted by value).
+    inline auto begin() const { return priorityToValue.begin(); }
+    inline auto end() const { return priorityToValue.end(); }
+
 private:
     inline auto min_ptr() const {
         // The `.rbegin()` of "priorityToValue" is the min priority element.

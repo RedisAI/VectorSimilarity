@@ -307,8 +307,8 @@ public:
     }
 
     // random order iteration
-    auto begin() { return data.begin() + 1; }
-    auto end() { return data.end(); }
+    inline auto begin() { return data.begin() + 1; }
+    inline auto end() { return data.end(); }
 }; // min_max_heap
 
 } // namespace vecsim_stl
