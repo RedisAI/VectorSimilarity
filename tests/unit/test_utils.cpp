@@ -14,7 +14,7 @@
 VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
                                               QUERY_TYPE_RANGE};
 
-static bool allUniqueResults(VecSimQueryResult_List res) {
+static bool allUniqueResults(VecSimQueryResult_List *res) {
     size_t len = VecSimQueryResult_Len(res);
     auto it1 = VecSimQueryResult_List_GetIterator(res);
     for (size_t i = 0; i < len; i++) {
@@ -52,7 +52,7 @@ static bool is_async_index(VecSimIndex *index) {
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_num_res,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
                        VecSimQueryResult_Order order) {
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, params, order);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, params, order);
     if (is_async_index(index)) {
         // Async index may return more or less than the expected number of results,
         // depending on the number of results that were available at the time of the query.
@@ -93,7 +93,7 @@ void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_re
                                 VecSimQueryResult_Order order, size_t expected_n_res) {
     if (expected_n_res == SIZE_MAX)
         expected_n_res = n_res;
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
+    VecSimQueryResult_List *res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
     ASSERT_EQ(VecSimQueryResult_Len(res), expected_n_res);
     ASSERT_TRUE(allUniqueResults(res));
     VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
@@ -140,7 +140,7 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryResult_Order order,
                        VecSimQueryParams *params) {
-    VecSimQueryResult_List res =
+    VecSimQueryResult_List *res =
         VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
     EXPECT_EQ(VecSimQueryResult_Len(res), expected_res_num);
     EXPECT_TRUE(allUniqueResults(res));

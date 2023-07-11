@@ -93,7 +93,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
+    size_t n_threads = std::min(8U, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
@@ -159,7 +159,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKNNMulti) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n_labels);
 
-    size_t n_threads = MIN(8, std::thread::hardware_concurrency());
+    size_t n_threads = std::min(8U, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
@@ -213,7 +213,7 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-    size_t n_threads = MIN(15, std::thread::hardware_concurrency());
+    size_t n_threads = std::min(15U, std::thread::hardware_concurrency());
     std::atomic_int successful_searches(0);
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
@@ -435,7 +435,7 @@ TYPED_TEST(HNSWTestParallel, parallelInsertSearch) {
 
     for (bool is_multi : {true, false}) {
         VecSimIndex *parallel_index = this->CreateNewIndex(params, is_multi);
-        size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
+        size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
         // Save the number fo tasks done by thread i in the i-th entry.
         std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -517,7 +517,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairs) {
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(10, std::thread::hardware_concurrency());
+    size_t n_threads = std::min(10U, std::thread::hardware_concurrency());
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -585,7 +585,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairSearch) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(10, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    size_t n_threads = std::min(10U, FLOOR_EVEN(std::thread::hardware_concurrency()));
     // Save the number of tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 
@@ -680,7 +680,7 @@ TYPED_TEST(HNSWTestParallel, parallelRepairInsert) {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .efRuntime = n};
 
     auto *hnsw_index = this->CastToHNSW(this->CreateNewIndex(params));
-    size_t n_threads = MIN(8, FLOOR_EVEN(std::thread::hardware_concurrency()));
+    size_t n_threads = std::min(8U, FLOOR_EVEN(std::thread::hardware_concurrency()));
     // Save the number fo tasks done by thread i in the i-th entry.
     std::vector<size_t> completed_tasks(n_threads, 0);
 

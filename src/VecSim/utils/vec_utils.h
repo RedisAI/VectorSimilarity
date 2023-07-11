@@ -92,13 +92,13 @@ inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
                : cmpVecSimQueryResultById(res1, res2);
 }
 
-void sort_results_by_id(VecSimQueryResult_List results);
+void sort_results_by_id(VecSimQueryResult_List *results);
 
-void sort_results_by_score(VecSimQueryResult_List results);
+void sort_results_by_score(VecSimQueryResult_List *results);
 
-void sort_results_by_score_then_id(VecSimQueryResult_List results);
+void sort_results_by_score_then_id(VecSimQueryResult_List *results);
 
-void sort_results(VecSimQueryResult_List results, VecSimQueryResult_Order order);
+void sort_results(VecSimQueryResult_List *results, VecSimQueryResult_Order order);
 
 VecSimResolveCode validate_positive_integer_param(VecSimRawParam rawParam, long long *val);
 

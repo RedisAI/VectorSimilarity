@@ -16,7 +16,6 @@
 #include "VecSim/vec_sim_interface.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "VecSim/query_results.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
@@ -51,8 +50,8 @@ protected:
 
     // Updates @correct according to the number of search results in @hnsw_results
     // that appear also in the flat algorithm results list.
-    static void MeasureRecall(VecSimQueryResult_List hnsw_results,
-                              VecSimQueryResult_List bf_results, std::atomic_int &correct);
+    static void MeasureRecall(VecSimQueryResult_List *hnsw_results,
+                              VecSimQueryResult_List *bf_results, std::atomic_int &correct);
 
 protected:
     static inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {

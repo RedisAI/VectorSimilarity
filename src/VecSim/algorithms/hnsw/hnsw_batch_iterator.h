@@ -39,8 +39,9 @@ protected:
     template <bool has_marked_deleted>
     VecSimQueryResult_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
     candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryResult_Code *rc);
-    virtual inline VecSimQueryResult_List
-    prepareResults(candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) = 0;
+    virtual inline void prepareResults(VecSimQueryResult_List *rl,
+                                       candidatesLabelsMaxHeap<DistType> *top_candidates,
+                                       size_t n_res) = 0;
     inline void visitNode(idType node_id) {
         this->visited_list->tagNode(node_id, this->visited_tag);
     }
@@ -56,7 +57,7 @@ public:
     HNSW_BatchIterator(void *query_vector, const HNSWIndex<DataType, DistType> *index,
                        VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
 
-    VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
+    VecSimQueryResult_List *getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
 
     bool isDepleted() override;
 
@@ -211,11 +212,11 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryResult_List *
 HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
                                                        VecSimQueryResult_Order order) {
 
-    VecSimQueryResult_List batch = {0};
+    auto batch = new VecSimQueryResult_List(this->allocator);
     // If ef_runtime lower than the number of results to return, increase it. Therefore, we assume
     // that the number of results that return from the graph scan is at least n_res (if exist).
     size_t orig_ef = this->ef;
@@ -227,21 +228,21 @@ HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
     // and then we scan the graph to get results (layer 0).
     if (this->getResultsCount() == 0) {
         idType bottom_layer_ep = this->index->searchBottomLayerEP(
-            this->getQueryBlob(), this->getTimeoutCtx(), &batch.code);
-        if (VecSim_OK != batch.code) {
+            this->getQueryBlob(), this->getTimeoutCtx(), &batch->code);
+        if (VecSim_OK != batch->code) {
             return batch;
         }
         this->entry_point = bottom_layer_ep;
     }
     // We ask for at least n_res candidate from the scan. In fact, at most ef results will return,
     // and it could be that ef > n_res.
-    auto *top_candidates = this->scanGraph(&batch.code);
-    if (VecSim_OK != batch.code) {
+    auto *top_candidates = this->scanGraph(&batch->code);
+    if (VecSim_OK != batch->code) {
         delete top_candidates;
         return batch;
     }
     // Move the spare results to the "extras" queue if needed, and create the batch results array.
-    batch = this->prepareResults(top_candidates, n_res);
+    this->prepareResults(batch, top_candidates, n_res);
     delete top_candidates;
 
     this->updateResultsCount(VecSimQueryResult_Len(batch));

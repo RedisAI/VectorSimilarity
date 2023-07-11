@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include <cmath>
 #include <map>
@@ -153,7 +152,7 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 0);
 
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
     auto it = VecSimQueryResult_List_GetIterator(res);
     for (size_t i = 0; i < n_labels; i++) {
@@ -648,7 +647,7 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 50);
     // We do not expect any results.
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
@@ -1431,7 +1430,7 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));

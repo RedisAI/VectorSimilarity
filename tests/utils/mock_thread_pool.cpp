@@ -6,7 +6,7 @@
  */
 
 tieredIndexMock::tieredIndexMock() : run_thread(true) {
-    thread_pool_size = MIN(8, std::thread::hardware_concurrency());
+    thread_pool_size = std::min(8U, std::thread::hardware_concurrency());
     ctx = new IndexExtCtx(this);
 }
 

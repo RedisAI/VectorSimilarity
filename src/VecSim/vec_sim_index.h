@@ -107,11 +107,11 @@ public:
     inline size_t getDataSize() const { return dataSize; }
     inline size_t getBlockSize() const { return blockSize; }
 
-    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                              VecSimQueryParams *queryParams) const = 0;
-    VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
-                                      VecSimQueryParams *queryParams,
-                                      VecSimQueryResult_Order order) const override {
+    virtual VecSimQueryResult_List *rangeQuery(const void *queryBlob, double radius,
+                                               VecSimQueryParams *queryParams) const = 0;
+    VecSimQueryResult_List *rangeQuery(const void *queryBlob, double radius,
+                                       VecSimQueryParams *queryParams,
+                                       VecSimQueryResult_Order order) const override {
         auto results = rangeQuery(queryBlob, radius, queryParams);
         sort_results(results, order);
         return results;
@@ -211,17 +211,18 @@ protected:
         return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
-    virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) const override {
+    virtual VecSimQueryResult_List *
+    topKQueryWrapper(const void *queryBlob, size_t k,
+                     VecSimQueryParams *queryParams) const override {
         char PORTABLE_ALIGN aligned_mem[this->dataSize];
         const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
         return this->topKQuery(processed_blob, k, queryParams);
     }
 
-    virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams,
-                                                     VecSimQueryResult_Order order) const override {
+    virtual VecSimQueryResult_List *
+    rangeQueryWrapper(const void *queryBlob, double radius, VecSimQueryParams *queryParams,
+                      VecSimQueryResult_Order order) const override {
         char PORTABLE_ALIGN aligned_mem[this->dataSize];
         const void *processed_blob = processBlob(queryBlob, aligned_mem);
 

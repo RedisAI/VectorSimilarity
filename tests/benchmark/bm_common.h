@@ -118,7 +118,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     auto *tiered_index =
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(INDICES[VecSimAlgo_TIERED]);
     size_t total_iters = 50;
-    VecSimQueryResult_List all_results[total_iters];
+    VecSimQueryResult_List *all_results[total_iters];
 
     auto parallel_knn_search = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);

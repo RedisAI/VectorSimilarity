@@ -43,10 +43,10 @@ public:
     inline DataType *getDataByInternalId(idType id) const {
         return (DataType *)vectorBlocks.at(id / this->blockSize).getElement(id % this->blockSize);
     }
-    virtual VecSimQueryResult_List topKQuery(const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams) const override;
-    virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
+    virtual VecSimQueryResult_List *topKQuery(const void *queryBlob, size_t k,
                                               VecSimQueryParams *queryParams) const override;
+    virtual VecSimQueryResult_List *rangeQuery(const void *queryBlob, double radius,
+                                               VecSimQueryParams *queryParams) const override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     VecSimIndexBasicInfo basicInfo() const override;
@@ -258,16 +258,15 @@ BruteForceIndex<DataType, DistType>::computeBlockScores(const DataBlock &block,
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryResult_List *
 BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const {
 
-    VecSimQueryResult_List rl = {0};
+    auto rl = new VecSimQueryResult_List(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
     this->lastMode = STANDARD_KNN;
 
     if (0 == k) {
-        rl.results = array_new<VecSimQueryResult>(0);
         return rl;
     }
 
@@ -277,8 +276,8 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType curr_id = 0;
     for (auto &vectorBlock : this->vectorBlocks) {
-        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
-        if (VecSim_OK != rl.code) {
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl->code);
+        if (VecSim_OK != rl->code) {
             delete TopCandidates;
             return rl;
         }
@@ -297,22 +296,21 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     }
     assert(curr_id == this->count);
 
-    rl.results = array_new_len<VecSimQueryResult>(TopCandidates->size(), TopCandidates->size());
+    rl->results.resize(TopCandidates->size());
     for (int i = (int)TopCandidates->size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], TopCandidates->top().second);
-        VecSimQueryResult_SetScore(rl.results[i], TopCandidates->top().first);
+        VecSimQueryResult_SetId(rl->results[i], TopCandidates->top().second);
+        VecSimQueryResult_SetScore(rl->results[i], TopCandidates->top().first);
         TopCandidates->pop();
     }
     delete TopCandidates;
-    rl.code = VecSim_QueryResult_OK;
     return rl;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryResult_List *
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) const {
-    auto rl = (VecSimQueryResult_List){0};
+    auto rl = new VecSimQueryResult_List(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->lastMode = RANGE_QUERY;
 
@@ -322,10 +320,9 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 
     DistType radius_ = DistType(radius);
     idType curr_id = 0;
-    rl.code = VecSim_QueryResult_OK;
     for (auto &vectorBlock : this->vectorBlocks) {
-        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
-        if (VecSim_OK != rl.code) {
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl->code);
+        if (VecSim_OK != rl->code) {
             break;
         }
         for (size_t i = 0; i < scores.size(); i++) {
@@ -335,9 +332,9 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
             ++curr_id;
         }
     }
-    // assert only if the loop finished iterating all the ids (we didn't get rl.code != VecSim_OK).
-    assert((rl.code != VecSim_OK || curr_id == this->count));
-    rl.results = res_container->get_results();
+    // assert only if the loop finished iterating all the ids (we didn't get rl->code != VecSim_OK).
+    assert((rl->code != VecSim_OK || curr_id == this->count));
+    rl->results = res_container->get_results();
     return rl;
 }
 
@@ -365,7 +362,7 @@ VecSimInfoIterator *BruteForceIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 10;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,

@@ -39,10 +39,7 @@ double VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 /**
  * @brief An opaque object from which results can be obtained via iterator.
  */
-typedef struct {
-    VecSimQueryResult *results;
-    VecSimQueryResult_Code code;
-} VecSimQueryResult_List;
+typedef struct VecSimQueryResult_List VecSimQueryResult_List;
 
 /**
  * @brief Iterator for going over the list of results that had returned form a query
@@ -52,23 +49,18 @@ typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
 /**
  * @brief Get the length of the result list that returned from a query.
  */
-size_t VecSimQueryResult_Len(VecSimQueryResult_List results);
+size_t VecSimQueryResult_Len(VecSimQueryResult_List *results);
 
 /**
- * @brief Get the underline array of result from the opaque list object.
+ * @brief Get the length of the result list that returned from a query.
  */
-VecSimQueryResult *VecSimQueryResult_GetArray(VecSimQueryResult_List rl);
-
-/**
- * @brief Get the length of the result list from the underline array.
- */
-size_t VecSimQueryResult_ArrayLen(VecSimQueryResult *rl);
+VecSimQueryResult_Code VecSimQueryResult_GetCode(VecSimQueryResult_List *results);
 
 /**
  * @brief Create an iterator for going over the list of results. The iterator needs to be free
  * with VecSimQueryResult_IteratorFree.
  */
-VecSimQueryResult_Iterator *VecSimQueryResult_List_GetIterator(VecSimQueryResult_List results);
+VecSimQueryResult_Iterator *VecSimQueryResult_List_GetIterator(VecSimQueryResult_List *results);
 
 /**
  * @brief Advance the iterator, so it will point to the next item, and return the value.
@@ -94,12 +86,7 @@ void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
 /**
  * @brief Release the entire query results list.
  */
-void VecSimQueryResult_Free(VecSimQueryResult_List results);
-
-/**
- * @brief Release the query results array.
- */
-void VecSimQueryResult_FreeArray(VecSimQueryResult *rl);
+void VecSimQueryResult_Free(VecSimQueryResult_List *results);
 
 /**
  * @brief Iterator for running the same query over an index, getting the in each iteration
@@ -116,8 +103,8 @@ typedef struct VecSimBatchIterator VecSimBatchIterator;
  * @return List of (at most) new n_results vectors which are the "nearest neighbours" to the
  * underline query vector in the iterator.
  */
-VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                                VecSimQueryResult_Order order);
+VecSimQueryResult_List *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
+                                                 VecSimQueryResult_Order order);
 
 /**
  * @brief Return true while the iterator has new results to return, false if it is depleted

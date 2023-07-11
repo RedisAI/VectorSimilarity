@@ -813,7 +813,7 @@ TYPED_TEST(HNSWTest, hnsw_search_empty_index) {
     TEST_DATA_T query[] = {50, 50, 50, 50};
 
     // We do not expect any results.
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
@@ -1149,7 +1149,7 @@ TYPED_TEST(HNSWTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
@@ -1229,61 +1229,61 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
 
-    auto *rparams = array_new<VecSimRawParam>(3);
+    std::vector<VecSimRawParam> rparams;
 
     // Test with empty runtime params.
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
             VecSim_OK);
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    array_append(rparams, (VecSimRawParam){
-                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    rparams.emplace_back("ef_runtime", strlen("ef_runtime"), "100", strlen("100"));
+
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSim_OK);
     ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 100);
 
     rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_NONE),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     rparams[0] = (VecSimRawParam){.name = "ef_run", .nameLen = 6, .value = "100", .valLen = 3};
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_NONE),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_UnknownParam);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "1.618", .valLen = 5};
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
-    array_append(rparams, (VecSimRawParam){
-                              .name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
+    rparams.push_back(
+        (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_KNN),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
         VecSimParamResolverErr_AlreadySet);
 
     /** Testing with hybrid query params - cases which are only relevant for HNSW index. **/
@@ -1292,27 +1292,26 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "ADHOC_BF",
                                   .valLen = strlen("ADHOC_BF")};
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_HYBRID),
-        VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "BATCHES",
                                   .valLen = strlen("BATCHES")};
-    array_append(rparams, (VecSimRawParam){.name = "batch_size",
-                                           .nameLen = strlen("batch_size"),
-                                           .value = "50",
-                                           .valLen = strlen("50")});
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_HYBRID),
-        VecSim_OK);
+    rparams.push_back((VecSimRawParam){.name = "batch_size",
+                                       .nameLen = strlen("batch_size"),
+                                       .value = "50",
+                                       .valLen = strlen("50")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 50);
     ASSERT_EQ(qparams.hnswRuntimeParams.efRuntime, 100);
 
     VecSimIndex_Free(index);
-    array_free(rparams);
 }
 
 TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
@@ -1332,65 +1331,64 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
 
-    auto *rparams = array_new<VecSimRawParam>(2);
+    std::vector<VecSimRawParam> rparams;
 
-    array_append(rparams, (VecSimRawParam){.name = "epsilon",
-                                           .nameLen = strlen("epsilon"),
-                                           .value = "0.001",
-                                           .valLen = strlen("0.001")});
+    rparams.push_back((VecSimRawParam){.name = "epsilon",
+                                       .nameLen = strlen("epsilon"),
+                                       .value = "0.001",
+                                       .valLen = strlen("0.001")});
 
     for (VecsimQueryType query_type : {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID}) {
         ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
             VecSimParamResolverErr_InvalidPolicy_NRange);
     }
 
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
-        VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSim_OK);
     ASSERT_EQ(qparams.hnswRuntimeParams.epsilon, 0.001);
 
     rparams[0] = (VecSimRawParam){.name = "wrong_name",
                                   .nameLen = strlen("wrong_name"),
                                   .value = "0.001",
                                   .valLen = strlen("0.001")};
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     rparams[0] = (VecSimRawParam){
         .name = "epsi", .nameLen = strlen("epsi"), .value = "0.001", .valLen = strlen("0.001")};
     ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_NONE),
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
         VecSimParamResolverErr_UnknownParam);
 
     rparams[0] = (VecSimRawParam){
         .name = "epsilon", .nameLen = strlen("epsilon"), .value = "wrong_val", .valLen = 9};
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){
         .name = "epsilon", .nameLen = strlen("epsilon"), .value = "-30", .valLen = 3};
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){.name = "epsilon",
                                   .nameLen = strlen("epsilon"),
                                   .value = "0.001",
                                   .valLen = strlen("0.001")};
-    array_append(rparams, (VecSimRawParam){.name = "epsilon",
-                                           .nameLen = strlen("epsilon"),
-                                           .value = "0.001",
-                                           .valLen = strlen("0.001")});
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, QUERY_TYPE_RANGE),
-        VecSimParamResolverErr_AlreadySet);
+    rparams.push_back((VecSimRawParam){.name = "epsilon",
+                                       .nameLen = strlen("epsilon"),
+                                       .value = "0.001",
+                                       .valLen = strlen("0.001")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_AlreadySet);
 
     VecSimIndex_Free(index);
-    array_free(rparams);
 }
 
 TYPED_TEST(HNSWTest, hnsw_get_distance) {
@@ -1657,7 +1655,7 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 
 TYPED_TEST(HNSWTest, testTimeoutReturn) {
     size_t dim = 4;
-    VecSimQueryResult_List rl;
+    VecSimQueryResult_List *rl;
 
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
@@ -1672,7 +1670,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     // Checks return code on timeout.
     rl = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
@@ -1683,7 +1681,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     // hence, expect a single result to be returned (instead of 2 that would have return without
     // timeout).
     rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 1);
     VecSimQueryResult_Free(rl);
 
@@ -1697,13 +1695,13 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
 
     rl = VecSimIndex_TopKQuery(index, query, 2, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     // Timeout on searching bottom layer entry point - range query.
     rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
@@ -1714,7 +1712,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
     size_t n = 2;
-    VecSimQueryResult_List rl;
+    VecSimQueryResult_List *rl;
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
@@ -1732,13 +1730,13 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_OK);
     ASSERT_NE(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
@@ -1758,7 +1756,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
@@ -1774,7 +1772,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 

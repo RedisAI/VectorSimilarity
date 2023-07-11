@@ -22,7 +22,7 @@ namespace py = pybind11;
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
-py::object wrap_results(VecSimQueryResult_List *res, size_t num_res, size_t num_queries = 1) {
+py::object wrap_results(VecSimQueryResult_List **res, size_t num_res, size_t num_queries = 1) {
     auto *data_numpy_l = new long[num_res * num_queries];
     auto *data_numpy_d = new double[num_res * num_queries];
     // Default "padding" for the entries that will stay empty (in case of less than k results return
@@ -73,7 +73,7 @@ public:
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
     py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
-        VecSimQueryResult_List results;
+        VecSimQueryResult_List *results;
         {
             // We create this object inside the scope to enable parallel execution of the batch
             // iterator from different Python threads.
@@ -124,8 +124,8 @@ private:
 protected:
     std::shared_ptr<VecSimIndex> index;
 
-    inline VecSimQueryResult_List searchKnnInternal(const char *query, size_t k,
-                                                    VecSimQueryParams *query_params) {
+    inline VecSimQueryResult_List *searchKnnInternal(const char *query, size_t k,
+                                                     VecSimQueryParams *query_params) {
         return VecSimIndex_TopKQuery(index.get(), query, k, query_params, BY_SCORE);
     }
 
@@ -155,7 +155,7 @@ public:
 
     py::object knn(const py::object &input, size_t k, VecSimQueryParams *query_params) {
         py::array query(input);
-        VecSimQueryResult_List res;
+        VecSimQueryResult_List *res;
         {
             py::gil_scoped_release py_gil;
             res = searchKnnInternal((const char *)query.data(0), k, query_params);

@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <limits>
+#include "VecSim/utils/vecsim_stl.h"
 
 // Use the "not a number" value to represent invalid score. This is for distinguishing the invalid
 // score from "inf" score (which is valid).
@@ -20,6 +21,17 @@
 struct VecSimQueryResult {
     size_t id;
     double score;
+};
+
+struct VecSimQueryResult_List {
+    vecsim_stl::vector<VecSimQueryResult> results;
+    VecSimQueryResult_Code code;
+
+    VecSimQueryResult_List() = delete;
+    VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator)
+        : results(allocator), code(VecSim_QueryResult_OK) {}
+    VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator, VecSimQueryResult_Code code)
+        : results(allocator), code(code) {}
 };
 
 /**

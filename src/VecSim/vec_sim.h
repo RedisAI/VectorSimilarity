@@ -126,9 +126,9 @@ VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
-VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams,
-                                             VecSimQueryResult_Order);
+VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+                                              VecSimQueryParams *queryParams,
+                                              VecSimQueryResult_Order);
 
 /**
  * @brief Search for the vectors that are in a given range in the index with respect to a given
@@ -143,9 +143,9 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryResult_Iterator.
  */
-VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                              double radius, VecSimQueryParams *queryParams,
-                                              VecSimQueryResult_Order);
+VecSimQueryResult_List *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+                                               double radius, VecSimQueryParams *queryParams,
+                                               VecSimQueryResult_Order);
 /**
  * @brief Return index information.
  * @param index the index to return its info.

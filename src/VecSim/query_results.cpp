@@ -5,59 +5,47 @@
  */
 
 #include "VecSim/query_result_struct.h"
-#include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/batch_iterator.h"
 #include <assert.h>
 
 struct VecSimQueryResult_Iterator {
-    VecSimQueryResult *results_arr;
-    size_t index;
-    size_t results_len;
+    using iterator = vecsim_stl::vector<VecSimQueryResult>::iterator;
+    const iterator begin, end;
+    iterator current;
 
-    explicit VecSimQueryResult_Iterator(VecSimQueryResult_List results_array)
-        : results_arr(results_array.results), index(0),
-          results_len(array_len(results_array.results)) {}
+    explicit VecSimQueryResult_Iterator(VecSimQueryResult_List *result_list)
+        : begin(result_list->results.begin()), end(result_list->results.end()), current(begin) {}
 };
 
-extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List rl) { return array_len(rl.results); }
+extern "C" size_t VecSimQueryResult_Len(VecSimQueryResult_List *rl) { return rl->results.size(); }
 
-extern "C" VecSimQueryResult *VecSimQueryResult_GetArray(VecSimQueryResult_List rl) {
-    return rl.results;
+extern "C" VecSimQueryResult_Code VecSimQueryResult_GetCode(VecSimQueryResult_List *rl) {
+    return rl->code;
 }
 
-extern "C" size_t VecSimQueryResult_ArrayLen(VecSimQueryResult *rl) { return array_len(rl); }
-
-extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List rl) {
-    if (rl.results) {
-        array_free(rl.results);
-        rl.results = nullptr;
-    }
-}
-
-extern "C" void VecSimQueryResult_FreeArray(VecSimQueryResult *rl) {
+extern "C" void VecSimQueryResult_Free(VecSimQueryResult_List *rl) {
     if (rl) {
-        array_free(rl);
+        delete rl;
     }
 }
 
 extern "C" VecSimQueryResult_Iterator *
-VecSimQueryResult_List_GetIterator(VecSimQueryResult_List results) {
+VecSimQueryResult_List_GetIterator(VecSimQueryResult_List *results) {
     return new VecSimQueryResult_Iterator(results);
 }
 
 extern "C" bool VecSimQueryResult_IteratorHasNext(VecSimQueryResult_Iterator *iterator) {
-    return iterator->index != iterator->results_len;
+    return iterator->current != iterator->end;
 }
 
 extern "C" VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_Iterator *iterator) {
-    if (iterator->index == iterator->results_len) {
+    if (iterator->current == iterator->end) {
         return nullptr;
     }
-    VecSimQueryResult *item = iterator->results_arr + iterator->index;
-    iterator->index++;
 
-    return item;
+    return std::to_address(iterator->current++);
 }
 
 extern "C" int64_t VecSimQueryResult_GetId(const VecSimQueryResult *res) {
@@ -79,12 +67,12 @@ extern "C" void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *itera
 }
 
 extern "C" void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator) {
-    iterator->index = 0;
+    iterator->current = iterator->begin;
 }
 
 /********************** batch iterator API ***************************/
-VecSimQueryResult_List VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                                VecSimQueryResult_Order order) {
+VecSimQueryResult_List *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
+                                                 VecSimQueryResult_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     return iterator->getNextResults(n_results, order);

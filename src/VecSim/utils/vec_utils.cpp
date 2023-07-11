@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <climits>
 #include <float.h>
+#include <algorithm>
 
 #ifndef __COMPAR_FN_T
 #define __COMPAR_FN_T
@@ -65,22 +66,28 @@ const char *VecSimCommonStrings::LOG_VERBOSE_STRING = "verbose";
 const char *VecSimCommonStrings::LOG_NOTICE_STRING = "notice";
 const char *VecSimCommonStrings::LOG_WARNING_STRING = "warning";
 
-void sort_results_by_id(VecSimQueryResult_List rl) {
-    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResultById);
+void sort_results_by_id(VecSimQueryResult_List *rl) {
+    std::sort(rl->results.begin(), rl->results.end(),
+              [](const VecSimQueryResult &a, const VecSimQueryResult &b) { return a.id < b.id; });
 }
 
-void sort_results_by_score(VecSimQueryResult_List rl) {
-    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResultByScore);
+void sort_results_by_score(VecSimQueryResult_List *rl) {
+    std::sort(
+        rl->results.begin(), rl->results.end(),
+        [](const VecSimQueryResult &a, const VecSimQueryResult &b) { return a.score < b.score; });
 }
 
-void sort_results_by_score_then_id(VecSimQueryResult_List rl) {
-    qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
-          (__compar_fn_t)cmpVecSimQueryResultByScoreThenId);
+void sort_results_by_score_then_id(VecSimQueryResult_List *rl) {
+    std::sort(rl->results.begin(), rl->results.end(),
+              [](const VecSimQueryResult &a, const VecSimQueryResult &b) {
+                  if (a.score == b.score) {
+                      return a.id < b.id;
+                  }
+                  return a.score < b.score;
+              });
 }
 
-void sort_results(VecSimQueryResult_List rl, VecSimQueryResult_Order order) {
+void sort_results(VecSimQueryResult_List *rl, VecSimQueryResult_Order order) {
     switch (order) {
     case BY_ID:
         return sort_results_by_id(rl);

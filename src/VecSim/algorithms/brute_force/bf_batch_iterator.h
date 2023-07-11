@@ -29,9 +29,9 @@ protected:
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.
 
-    VecSimQueryResult_List searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
-    VecSimQueryResult_List selectBasedSearch(size_t n_res);
-    VecSimQueryResult_List heapBasedSearch(size_t n_res);
+    VecSimQueryResult_List *searchByHeuristics(size_t n_res, VecSimQueryResult_Order order);
+    VecSimQueryResult_List *selectBasedSearch(size_t n_res);
+    VecSimQueryResult_List *heapBasedSearch(size_t n_res);
     void swapScores(const vecsim_stl::unordered_map<labelType, size_t> &TopCandidatesIndices,
                     size_t res_num);
 
@@ -41,7 +41,7 @@ public:
     BF_BatchIterator(void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
                      VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
 
-    VecSimQueryResult_List getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
+    VecSimQueryResult_List *getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
 
     bool isDepleted() override;
 
@@ -55,14 +55,14 @@ public:
 // heuristics: decide if using heap or select search, based on the ratio between the
 // number of remaining results and the index size.
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryResult_List *
 BF_BatchIterator<DataType, DistType>::searchByHeuristics(size_t n_res,
                                                          VecSimQueryResult_Order order) {
     if ((this->index_label_count - this->getResultsCount()) / 1000 > n_res) {
         // Heap based search always returns the results ordered by score
         return this->heapBasedSearch(n_res);
     }
-    VecSimQueryResult_List rl = this->selectBasedSearch(n_res);
+    VecSimQueryResult_List *rl = this->selectBasedSearch(n_res);
     if (order == BY_SCORE) {
         sort_results_by_score(rl);
     } else if (order == BY_SCORE_THEN_ID) {
@@ -103,8 +103,8 @@ void BF_BatchIterator<DataType, DistType>::swapScores(
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n_res) {
-    VecSimQueryResult_List rl = {0};
+VecSimQueryResult_List *BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n_res) {
+    auto rl = new VecSimQueryResult_List(this->allocator);
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::max_priority_queue<DistType, labelType> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
@@ -128,19 +128,19 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::heapBasedSearch(siz
     }
 
     // Save the top results to return.
-    rl.results = array_new_len<VecSimQueryResult>(TopCandidates.size(), TopCandidates.size());
+    rl->results.resize(TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl.results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(rl.results[i], TopCandidates.top().first);
+        VecSimQueryResult_SetId(rl->results[i], TopCandidates.top().second);
+        VecSimQueryResult_SetScore(rl->results[i], TopCandidates.top().first);
         TopCandidates.pop();
     }
-    swapScores(TopCandidatesIndices, array_len(rl.results));
+    swapScores(TopCandidatesIndices, rl->results.size());
     return rl;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::selectBasedSearch(size_t n_res) {
-    VecSimQueryResult_List rl = {0};
+VecSimQueryResult_List *BF_BatchIterator<DataType, DistType>::selectBasedSearch(size_t n_res) {
+    auto rl = new VecSimQueryResult_List(this->allocator);
     size_t remaining_vectors_count = this->scores.size() - this->scores_valid_start_pos;
     // Get an iterator to the effective first element in the scores array, which is the first
     // element that hasn't been returned in previous iterations.
@@ -155,14 +155,14 @@ VecSimQueryResult_List BF_BatchIterator<DataType, DistType>::selectBasedSearch(s
     // will be placed before it, and all the rest will be placed after.
     std::nth_element(valid_begin_it, n_th_element_pos, this->scores.end());
 
-    rl.results = array_new<VecSimQueryResult>(n_res);
+    rl->results.reserve(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores_valid_start_pos + n_res; i++) {
-        rl.results = array_append(rl.results, VecSimQueryResult{});
-        VecSimQueryResult_SetId(rl.results[array_len(rl.results) - 1], this->scores[i].second);
-        VecSimQueryResult_SetScore(rl.results[array_len(rl.results) - 1], this->scores[i].first);
+        rl->results.push_back(VecSimQueryResult{});
+        VecSimQueryResult_SetId(rl->results.back(), this->scores[i].second);
+        VecSimQueryResult_SetScore(rl->results.back(), this->scores[i].first);
     }
     // Update the valid results start position after returning the results.
-    this->scores_valid_start_pos += array_len(rl.results);
+    this->scores_valid_start_pos += rl->results.size();
     return rl;
 }
 
@@ -175,7 +175,7 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
       scores_valid_start_pos(0) {}
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
+VecSimQueryResult_List *
 BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryResult_Order order) {
     // Only in the first iteration we need to compute all the scores
     if (this->scores.empty()) {
@@ -185,15 +185,15 @@ BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryRe
         auto rc = calculateScores();
 
         if (VecSim_OK != rc) {
-            return {NULL, rc};
+            return new VecSimQueryResult_List(this->allocator, rc);
         }
     }
     if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
-        return {NULL, VecSim_QueryResult_TimedOut};
+        return new VecSimQueryResult_List(this->allocator, VecSim_QueryResult_TimedOut);
     }
-    VecSimQueryResult_List rl = searchByHeuristics(n_res, order);
+    VecSimQueryResult_List *rl = searchByHeuristics(n_res, order);
 
-    this->updateResultsCount(array_len(rl.results));
+    this->updateResultsCount(VecSimQueryResult_Len(rl));
     if (order == BY_ID) {
         sort_results_by_id(rl);
     }

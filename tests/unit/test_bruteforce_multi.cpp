@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force_multi.h"
 #include <cmath>
 
@@ -201,7 +200,7 @@ TYPED_TEST(BruteForceMultiTest, search_more_than_there_is) {
     ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, n_labels);
 
     TEST_DATA_T query[] = {0, 0, 0, 0};
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
     auto it = VecSimQueryResult_List_GetIterator(res);
     for (size_t i = 0; i < n_labels; i++) {
@@ -677,7 +676,7 @@ TYPED_TEST(BruteForceMultiTest, search_empty_index) {
     GenerateVector<TEST_DATA_T>(query, dim, 50);
 
     // We do not expect any results.
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
     ASSERT_EQ(VecSimQueryResult_Len(res), 0);
     VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
     ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
@@ -1153,7 +1152,7 @@ TYPED_TEST(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
 
 TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     size_t dim = 4;
-    VecSimQueryResult_List rl;
+    VecSimQueryResult_List *rl;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
 
@@ -1167,13 +1166,13 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     // Checks return code on timeout - knn
     rl = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     // Check timeout again - range query
     rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
@@ -1184,7 +1183,7 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
 TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
     size_t n = 10;
-    VecSimQueryResult_List rl;
+    VecSimQueryResult_List *rl;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
 
@@ -1202,13 +1201,13 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_OK);
     ASSERT_NE(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
@@ -1219,7 +1218,7 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
     ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
     VecSimQueryResult_Free(rl);
 
