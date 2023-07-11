@@ -47,9 +47,9 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
-using elem_mutex_t = std::shared_mutex;
+using elem_mutex_t = vecsim_stl::one_byte_mutex;
 using elem_write_mutex_t = std::unique_lock<elem_mutex_t>;
-using elem_read_mutex_t = std::shared_lock<elem_mutex_t>;
+using elem_read_mutex_t = elem_write_mutex_t;
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
@@ -236,8 +236,8 @@ public:
     inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
-    inline void lockForReadNodeLinks(idType node_id) const;
-    inline void unlockForReadNodeLinks(idType node_id) const;
+    inline void lockNodeLinks(idType node_id) const;
+    inline void unlockNodeLinks(idType node_id) const;
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
@@ -517,13 +517,13 @@ void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::lockForReadNodeLinks(idType node_id) const {
-    element_neighbors_locks_[node_id].lock_shared();
+void HNSWIndex<DataType, DistType>::lockNodeLinks(idType node_id) const {
+    element_neighbors_locks_[node_id].lock();
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unlockForReadNodeLinks(idType node_id) const {
-    element_neighbors_locks_[node_id].unlock_shared();
+void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
+    element_neighbors_locks_[node_id].unlock();
 }
 
 template <typename DataType, typename DistType>
