@@ -954,7 +954,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(new_node_level_data.numLinks == 0 &&
            "The newly inserted element should have blank link list");
 
-    for (auto neighbor_data : top_candidates) {
+    for (auto &neighbor_data : top_candidates) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
         auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
         if (new_node_id < selected_neighbor) {
