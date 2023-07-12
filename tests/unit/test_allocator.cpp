@@ -412,8 +412,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
         block_size;
     expected_mem_delta +=
         (hnswIndex->labelLookup.bucket_count() - prev_bucket_count) * sizeof(size_t);
-    // New blocks allocated
-    expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead + hnswIndex->alignment);
+    // New blocks allocated - 1 aligned block for vectors and 1 unaligned block for graph data.
+    expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->alignment;
     expected_mem_delta +=
         (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
     expected_mem_delta +=
