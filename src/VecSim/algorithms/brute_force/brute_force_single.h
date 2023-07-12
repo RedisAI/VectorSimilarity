@@ -56,11 +56,11 @@ protected:
     inline void updateVector(idType id, const void *vector_data) {
 
         // Get the vector block
-        VectorBlock *vectorBlock = this->getVectorVectorBlock(id);
+        DataBlock &vectorBlock = this->getVectorVectorBlock(id);
         size_t index = BruteForceIndex<DataType, DistType>::getVectorRelativeIndex(id);
 
         // Update vector data in the block.
-        vectorBlock->updateVector(index, vector_data);
+        vectorBlock.updateElement(index, vector_data);
     }
 
     inline void setVectorId(labelType label, idType id) override {
@@ -69,6 +69,10 @@ protected:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override {
         labelToIdLookup.at(label) = new_id;
+    }
+
+    inline void resizeLabelLookup(size_t new_max_elements) override {
+        labelToIdLookup.reserve(new_max_elements);
     }
 
     inline bool isLabelExists(labelType label) override {
@@ -189,5 +193,5 @@ double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType lab
     }
     idType id = optionalId->second;
 
-    return this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+    return this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
 }
