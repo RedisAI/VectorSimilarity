@@ -6,11 +6,12 @@
 
 #pragma once
 
-enum Arch_Optimization {
-    ARCH_OPT_NONE,
-    ARCH_OPT_SSE,
-    ARCH_OPT_AVX,
-    ARCH_OPT_AVX512_F,
-};
+/*
+ * Include this file after done using the implementation chooser.
+ */
 
-Arch_Optimization getArchitectureOptimization();
+#undef X
+#undef C4
+#undef CASES8
+#undef CASES16
+#undef CHOOSE_IMPLEMENTATION
