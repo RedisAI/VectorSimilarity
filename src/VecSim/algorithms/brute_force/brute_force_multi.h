@@ -246,18 +246,16 @@ template <typename DataType, typename DistType>
 std::unique_ptr<vecsim_stl::abstract_min_max_heap<pair<DistType, labelType>>>
 BruteForceIndex_Multi<DataType, DistType>::getTopKCandidates(const void *queryBlob, size_t k,
                                                              void *timeoutCtx) const {
+    using mmh = vecsim_stl::updatable_min_max_heap<DistType, labelType>;
+    auto topCandidates = std::unique_ptr<mmh>(new (this->allocator) mmh(this->allocator));
 
-    auto topCandidates = new (this->allocator)
-        vecsim_stl::updatable_min_max_heap<DistType, labelType>(this->allocator);
     VecSimQueryResult_Code cur_block_code = VecSim_QueryResult_OK;
-
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     // For every block, compute its vectors scores and update the Top candidates max heap
     idType cur_id = 0;
     for (auto &vectorBlock : this->vectorBlocks) {
         auto scores = this->computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &cur_block_code);
         if (VecSim_OK != cur_block_code) {
-            delete topCandidates;
             return nullptr;
         }
         for (size_t i = 0; i < scores.size(); i++) {
@@ -274,6 +272,5 @@ BruteForceIndex_Multi<DataType, DistType>::getTopKCandidates(const void *queryBl
         }
     }
     assert(cur_id == this->indexSize());
-    return std::unique_ptr<vecsim_stl::abstract_min_max_heap<pair<DistType, labelType>>>(
-        topCandidates);
+    return topCandidates;
 }
