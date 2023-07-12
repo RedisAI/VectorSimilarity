@@ -15,7 +15,7 @@ struct DataBlock : public VecsimBaseObject {
 
 public:
     DataBlock(size_t blockSize, size_t elementBytesCount,
-              std::shared_ptr<VecSimAllocator> allocator);
+              std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment = 0);
     // Move constructor
     // We need to implement this because we want to have a vector of DataBlocks, and we want it to
     // use the move constructor upon resizing (instead of the copy constructor). We also need to

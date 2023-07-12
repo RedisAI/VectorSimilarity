@@ -94,7 +94,8 @@ protected:
 
     inline void growByBlock() {
         assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
-        vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
+        vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
+                                  this->alignment);
         idToLabelMapping.resize(idToLabelMapping.size() + this->blockSize);
         idToLabelMapping.shrink_to_fit();
         resizeLabelLookup(idToLabelMapping.size());
@@ -170,7 +171,8 @@ void BruteForceIndex<DataType, DistType>::appendVector(const void *vector_data, 
     } else if (id % this->blockSize == 0) {
         // If we we didn't reach the initial capacity but the last block is full, add a new block
         // only.
-        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
+        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
+                                        this->alignment);
     }
 
     // Get the last vectors block to store the vector in.

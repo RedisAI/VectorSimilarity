@@ -1366,7 +1366,7 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
     assert(vectorBlocks.size() == graphDataBlocks.size());
     assert(vectorBlocks.size() == 0 || vectorBlocks.back().getLength() == this->blockSize);
 
-    vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
+    vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator, this->alignment);
     graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
 
     resizeIndexCommon(new_max_elements);
@@ -1812,7 +1812,8 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     } else if (state.newElementId % this->blockSize == 0) {
         // If we had an initial capacity, we might have to allocate new blocks for the data and
         // meta-data.
-        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator);
+        this->vectorBlocks.emplace_back(this->blockSize, this->dataSize, this->allocator,
+                                        this->alignment);
         this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
                                            this->allocator);
     }

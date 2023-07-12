@@ -97,6 +97,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
                        .blockSize = 1};
     auto *bfIndex = dynamic_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
         BruteForceFactory::NewIndex(&params));
+    bfIndex->alignment = 0; // Disable alignment for testing purposes.
     auto allocator = bfIndex->getAllocator();
     TEST_DATA_T vec[128] = {};
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
@@ -412,8 +413,8 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
         block_size;
     expected_mem_delta +=
         (hnswIndex->labelLookup.bucket_count() - prev_bucket_count) * sizeof(size_t);
-    // New blocks allocated
-    expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead);
+    // New blocks allocated - 1 aligned block for vectors and 1 unaligned block for graph data.
+    expected_mem_delta += 2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->alignment;
     expected_mem_delta +=
         (hnswIndex->vectorBlocks.capacity() - hnswIndex->vectorBlocks.size()) * sizeof(DataBlock);
     expected_mem_delta +=
