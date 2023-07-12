@@ -8,5 +8,5 @@
 
 #include <cstdlib>
 
-float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t qty);
-double FP64_L2Sqr(const void *pVect1v, const void *pVect2v, size_t qty);
+float FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
+double FP64_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);

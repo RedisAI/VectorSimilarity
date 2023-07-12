@@ -5,18 +5,18 @@
 /*
  * Defines a simple tombstone API for indexes.
  * Every index that has to implement "marking as deleted" mechanism should inherit this API and
- * implement the required functions. The implementation should also update the `num_marked_deleted`
+ * implement the required functions. The implementation should also update the `numMarkedDeleted`
  * property to hold the number of vectors marked as deleted.
  */
 struct VecSimIndexTombstone {
 protected:
-    size_t num_marked_deleted;
+    size_t numMarkedDeleted;
 
 public:
-    VecSimIndexTombstone() : num_marked_deleted(0) {}
+    VecSimIndexTombstone() : numMarkedDeleted(0) {}
     ~VecSimIndexTombstone() = default;
 
-    inline size_t getNumMarkedDeleted() const { return num_marked_deleted; }
+    inline size_t getNumMarkedDeleted() const { return numMarkedDeleted; }
 
     /**
      * @param label vector to mark as deleted

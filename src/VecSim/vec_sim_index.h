@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/utils/vec_utils.h"
+#include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/spaces.h"
 #include "info_iterator_struct.h"
 #include <cassert>
@@ -47,15 +48,16 @@ struct VecSimIndexAbstract : public VecSimIndexInterface {
 protected:
     size_t dim;          // Vector's dimension.
     VecSimType vecType;  // Datatype to index.
-    size_t data_size;    // Vector size in bytes
+    size_t dataSize;     // Vector size in bytes
     VecSimMetric metric; // Distance metric to use in the index.
     size_t blockSize;    // Index's vector block size (determines by how many vectors to resize when
                          // resizing)
     dist_func_t<DistType>
-        dist_func; // Index's distance function. Chosen by the type, metric and dimension.
-    mutable VecSearchMode last_mode; // The last search mode in RediSearch (used for debug/testing).
-    bool isMulti;                    // Determines if the index should multi-index or not.
-    void *logCallbackCtx;            // Context for the log callback.
+        distFunc;            // Index's distance function. Chosen by the type, metric and dimension.
+    unsigned char alignment; // Alignment hint to allocate vectors with.
+    mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
+    bool isMulti;                   // Determines if the index should multi-index or not.
+    void *logCallbackCtx;           // Context for the log callback.
 
     /**
      * @brief Get the common info object
@@ -65,7 +67,7 @@ protected:
     CommonInfo getCommonInfo() const {
         CommonInfo info;
         info.basicInfo = this->getBasicInfo();
-        info.last_mode = this->last_mode;
+        info.lastMode = this->lastMode;
         info.memory = this->getAllocationSize();
         info.indexSize = this->indexSize();
         info.indexLabelCount = this->indexLabelCount();
@@ -81,11 +83,11 @@ public:
      */
     VecSimIndexAbstract(const AbstractIndexInitParams &params)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
-          data_size(dim * VecSimType_sizeof(vecType)), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE),
-          last_mode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
+          dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
+          lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
-        spaces::SetDistFunc(metric, dim, &dist_func);
+        spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
         normalize_func =
             vecType == VecSimType_FLOAT32 ? normalizeVectorFloat : normalizeVectorDouble;
     }
@@ -96,13 +98,14 @@ public:
      */
     virtual ~VecSimIndexAbstract() {}
 
-    inline dist_func_t<DistType> getDistFunc() const { return dist_func; }
+    inline dist_func_t<DistType> getDistFunc() const { return distFunc; }
     inline size_t getDim() const { return dim; }
-    inline void setLastSearchMode(VecSearchMode mode) override { this->last_mode = mode; }
+    inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
     inline bool isMultiValue() const { return isMulti; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
-    inline size_t getDataSize() const { return data_size; }
+    inline size_t getDataSize() const { return dataSize; }
+    inline size_t getBlockSize() const { return blockSize; }
 
     virtual VecSimQueryResult_List rangeQuery(const void *queryBlob, double radius,
                                               VecSimQueryParams *queryParams) const = 0;
@@ -164,21 +167,26 @@ public:
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::SEARCH_MODE_STRING,
             .fieldType = INFOFIELD_STRING,
-            .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.last_mode)}}});
+            .fieldValue = {FieldValue{.stringValue = VecSimSearchMode_ToString(info.lastMode)}}});
     }
-    const void *processBlob(const void *original_blob, void *processed_blob) const {
-        // if the metric is cosine, we need to normalize
-        if (this->metric == VecSimMetric_Cosine) {
-            // copy original blob to the output blob
-            memcpy(processed_blob, original_blob, this->data_size);
-            // normalize the copy in place
-            normalize_func(processed_blob, this->dim);
-
-            return processed_blob;
+    const void *processBlob(const void *original_blob, void *aligned_mem) const {
+        void *processed_blob;
+        // if the blob is not aligned, or we need to normalize, we copy it
+        if ((this->alignment && (uintptr_t)original_blob % this->alignment) ||
+            this->metric == VecSimMetric_Cosine) {
+            memcpy(aligned_mem, original_blob, this->dataSize);
+            processed_blob = aligned_mem;
+        } else {
+            processed_blob = (void *)original_blob;
         }
 
-        // Else no process is needed, return the original blob
-        return original_blob;
+        // if the metric is cosine, we need to normalize
+        if (this->metric == VecSimMetric_Cosine) {
+            // normalize the copy in place
+            normalize_func(processed_blob, this->dim);
+        }
+
+        return processed_blob;
     }
 
     /**
@@ -197,35 +205,35 @@ public:
 
 protected:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        char processed_blob[this->data_size];
-        const void *vector_to_add = processBlob(blob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(blob, aligned_mem);
 
-        return this->addVector(vector_to_add, label, auxiliaryCtx);
+        return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const override {
-        char processed_blob[this->data_size];
-        const void *query_to_send = processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
-        return this->topKQuery(query_to_send, k, queryParams);
+        return this->topKQuery(processed_blob, k, queryParams);
     }
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryResult_Order order) const override {
-        char processed_blob[this->data_size];
-        const void *query_to_send = processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
-        return this->rangeQuery(query_to_send, radius, queryParams, order);
+        return this->rangeQuery(processed_blob, radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        char processed_blob[this->data_size];
-        const void *query_to_send = processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->dataSize];
+        const void *processed_blob = processBlob(queryBlob, aligned_mem);
 
-        return this->newBatchIterator(query_to_send, queryParams);
+        return this->newBatchIterator(processed_blob, queryParams);
     }
 
     void runGC() override {} // Do nothing, relevant for tiered index only.

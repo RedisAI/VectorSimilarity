@@ -6,8 +6,8 @@
 // Persist index into a file in the specified location.
 void Serializer::saveIndex(const std::string &location) {
 
-    // Serializing with V2.
-    EncodingVersion version = EncodingVersion_V2;
+    // Serializing with V3.
+    EncodingVersion version = EncodingVersion_V3;
 
     std::ofstream output(location, std::ios::binary);
     writeBinaryPOD(output, version);
@@ -22,10 +22,14 @@ Serializer::EncodingVersion Serializer::ReadVersion(std::ifstream &input) {
     // The version number is the first field that is serialized.
     EncodingVersion version = EncodingVersion_INVALID;
     readBinaryPOD(input, version);
-    // Only V1 and V2 are supported
-    if (version <= 0 || version >= EncodingVersion_INVALID) {
+    if (version <= EncodingVersion_DEPRECATED) {
         input.close();
-        throw std::runtime_error("Cannot load index: bad encoding version");
+        throw std::runtime_error("Cannot load index: deprecated encoding version: " +
+                                 std::to_string(version));
+    } else if (version >= EncodingVersion_INVALID) {
+        input.close();
+        throw std::runtime_error("Cannot load index: bad encoding version: " +
+                                 std::to_string(version));
     }
 
     return version;
