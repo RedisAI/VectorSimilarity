@@ -94,7 +94,8 @@ public:
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 
 #ifdef BUILD_TESTS
-    inline VecSimIndexAbstract<DistType> *getFlatbufferIndex() { return this->frontendIndex; }
+    inline VecSimIndexAbstract<DistType> *getFlatBufferIndex() { return this->frontendIndex; }
+    inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 #endif
 
 private:

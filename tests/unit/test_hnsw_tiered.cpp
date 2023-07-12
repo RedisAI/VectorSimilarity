@@ -24,13 +24,12 @@ protected:
         return tiered_index->getHNSWIndex();
     }
     TieredHNSWIndex<data_t, dist_t> *CreateTieredHNSWIndex(VecSimParams &hnsw_params,
-                                                           tieredIndexMock::IndexExtCtx *ctx,
+                                                           tieredIndexMock &mock_thread_pool,
                                                            size_t swap_job_threshold = 0,
                                                            size_t flat_buffer_limit = SIZE_MAX) {
-        EXPECT_TRUE(tieredIndexMock::jobQ.empty());
         TieredIndexParams tiered_params = {
-            .jobQueue = &tieredIndexMock::jobQ,
-            .jobQueueCtx = ctx,
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
             .submitCb = tieredIndexMock::submit_callback,
             .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &hnsw_params,
@@ -40,7 +39,7 @@ protected:
 
         // Set the created tiered index in the index external context (it will take ownership over
         // the index, and we'll need to release the ctx at the end of the test.
-        ctx->index_strong_ref.reset(tiered_index);
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
         return tiered_index;
     }
 };
@@ -61,8 +60,8 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
@@ -105,18 +104,14 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // TODO: in the future this should be part of the tiered index "add_vector" flow, and
     //  we can replace this to avoid the breaking of the abstraction.
     tiered_index->submitSingleJob((AsyncJob *)job);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
 
     // Execute the job from the queue and validate that the index was updated properly.
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(1, vector), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
-
-    // This will delete the index. The allocator is "fix to the point" in the body of the test,
-    // so it is safe to delete the index with `delete` and not with VecSimIndex_Free.
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
@@ -134,15 +129,15 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
                               .M = M};
     VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
 
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
-    TieredIndexParams tiered_params = {.jobQueue = &tieredIndexMock::jobQ,
-                                       .jobQueueCtx = tieredIndexMock::ctx,
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
                                        .submitCb = tieredIndexMock::submit_callback,
                                        .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &vecsim_hnsw_params};
     VecSimParams params = CreateParams(tiered_params);
     auto *index = VecSimIndex_New(&params);
-    tieredIndexMock::ctx->index_strong_ref.reset(index);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
     auto allocator = index->getAllocator();
 
     size_t initial_size_estimation = VecSimIndex_EstimateInitialSize(&params);
@@ -164,7 +159,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     // Add vectors up to initial capacity (initial capacity == block size).
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
-        tieredIndexMock::thread_iteration();
+        mock_thread_pool.thread_iteration();
     }
 
     // Estimate memory delta for filling up the first block and adding another block.
@@ -172,7 +167,7 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
 
     size_t before = index->getAllocationSize();
     GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + n, bs + n);
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     size_t actual = index->getAllocationSize() - before;
 
     // Flat index should be empty, hence the index size includes only hnsw size.
@@ -186,8 +181,6 @@ TYPED_TEST(HNSWTieredIndexTest, testSizeEstimation) {
     // We check that the actual size is within 1% of the estimation.
     ASSERT_GE(estimation, actual * 0.99);
     ASSERT_LE(estimation, actual * 1.01);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, addVector) {
@@ -200,9 +193,9 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                          .multi = isMulti};
     VecSimParams hnsw_params = CreateParams(params);
 
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
-    TieredIndexParams tiered_params = {.jobQueue = &tieredIndexMock::jobQ,
-                                       .jobQueueCtx = tieredIndexMock::ctx,
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
                                        .submitCb = tieredIndexMock::submit_callback,
                                        .flatBufferLimit = SIZE_MAX,
                                        .primaryIndexParams = &hnsw_params};
@@ -211,7 +204,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
     // Set the created tiered index in the index external context.
-    tieredIndexMock::ctx->index_strong_ref.reset(tiered_index);
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
 
     BFParams bf_params = {.type = TypeParam::get_index_type(),
                           .dim = dim,
@@ -271,8 +264,6 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
         ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->label, vec_label);
         ASSERT_EQ(tiered_index->labelToInsertJobs.at(vec_label)[1]->id, 1);
     }
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
@@ -284,14 +275,14 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
 
     // Get the allocator from the tiered index.
     auto allocator = tiered_index->getAllocator();
 
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
     size_t initial_mem = allocator->getAllocationSize();
 
     // Create a dummy job callback that insert one vector to the underline HNSW index.
@@ -313,36 +304,36 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnership) {
     // Wrap this job with an array and submit the jobs to the queue.
     tiered_index->submitSingleJob(job1);
     tiered_index->submitSingleJob(job2);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 2);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
 
     // Execute the job from the queue asynchronously, delete the index in the meantime.
-    auto run_fn = [&successful_executions]() {
+    auto run_fn = [&successful_executions, &mock_thread_pool]() {
         // Create a temporary strong reference of the index from the weak reference that the
         // job holds, to ensure that the index is not deleted while the job is running.
-        if (auto temp_ref = tieredIndexMock::jobQ.front().index_weak_ref.lock()) {
+        if (auto temp_ref = mock_thread_pool.jobQ.front().index_weak_ref.lock()) {
             // At this point we wish to validate that we have both the index strong ref (stored
             // in index_ctx) and the weak ref owned by the job (that we currently promoted).
-            EXPECT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 2);
+            EXPECT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 2);
 
-            tieredIndexMock::jobQ.front().job->Execute(tieredIndexMock::jobQ.front().job);
+            mock_thread_pool.jobQ.front().job->Execute(mock_thread_pool.jobQ.front().job);
             successful_executions++;
         }
-        tieredIndexMock::jobQ.kick();
+        mock_thread_pool.jobQ.kick();
     };
     std::thread t1(run_fn);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     // Delete the index while the job is still running, to ensure that the weak ref protects
     // the index.
-    delete tieredIndexMock::ctx;
-    EXPECT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 1);
+    mock_thread_pool.reset_ctx();
+    EXPECT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 1);
     t1.join();
     // Expect that the first job will succeed.
     ASSERT_EQ(successful_executions, 1);
 
     // The second job should not run, since the weak reference is not supposed to become a
     // strong references now.
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 1);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 0);
     std::thread t2(run_fn);
     t2.join();
     // Expect that the second job is ot successful.
@@ -357,9 +348,9 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Create a vector and add it to the tiered index.
@@ -371,13 +362,13 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
 
     // Execute the insert job manually (in a synchronous manner).
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 1);
-    auto *insertion_job = reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    auto *insertion_job = reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job);
     ASSERT_EQ(insertion_job->label, vec_label);
     ASSERT_EQ(insertion_job->id, 0);
     ASSERT_EQ(insertion_job->jobType, HNSW_INSERT_VECTOR_JOB);
 
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
@@ -389,7 +380,6 @@ TYPED_TEST(HNSWTieredIndexTest, insertJob) {
     ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(vec_label, vector), 0);
     // After the execution, the job should be removed from the labelToInsertJobs mapping.
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
@@ -399,36 +389,30 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
-
+    mock_thread_pool.init_threads();
     // Insert vectors
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
 
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     // Verify that the vectors were inserted to HNSW as expected
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T expected_vector[dim];
         GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
         ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(i, expected_vector), 0);
     }
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
@@ -439,16 +423,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
     VecSimParams hnsw_params = CreateParams(params);
     size_t per_label = 5;
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
+    mock_thread_pool.init_threads();
 
     // Create and insert vectors, store them in this continuous array.
     TEST_DATA_T vectors[n * dim];
@@ -460,12 +441,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
         }
     }
 
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n / per_label);
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
     // Verify that the vectors were inserted to HNSW as expected
     for (size_t i = 0; i < n / per_label; i++) {
         for (size_t j = 0; j < per_label; j++) {
@@ -475,8 +456,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
                       0);
         }
     }
-    // Cleanup.
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
@@ -492,13 +471,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
         .metric = VecSimMetric_L2,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
     size_t cur_memory_usage;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     auto hnsw_index = tiered_index->backendIndex;
     auto flat_index = tiered_index->frontendIndex;
@@ -683,7 +662,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
@@ -701,11 +679,11 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         .efRuntime = n,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     std::atomic_int successful_searches(0);
     auto parallel_knn_search = [](AsyncJob *job) {
@@ -720,7 +698,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
             ASSERT_EQ(score, dim * (id - element) * (id - element));
         };
         runTopKSearchTest(job->index, query, k, verify_res);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -737,7 +715,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - (2 * k))) + k);
         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-            allocator, parallel_knn_search, tiered_index, query, k, n, dim, successful_searches);
+            allocator, parallel_knn_search, tiered_index, k, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -753,22 +731,15 @@ TYPED_TEST(HNSWTieredIndexTest, parallelSearch) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     // All the vectors are already in the tiered index, so we expect to find the expected
     // results from the get-go.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
-
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
     EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(successful_searches, n);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
-
-    // Cleanup.
-    delete tieredIndexMock::ctx;
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
@@ -790,19 +761,16 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         .blockSize = block_size,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     // Save the number fo tasks done by thread i in the i-th entry.
-    std::vector<size_t> completed_tasks(tieredIndexMock::THREAD_POOL_SIZE, 0);
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
+    std::vector<size_t> completed_tasks(mock_thread_pool.thread_pool_size, 0);
+    mock_thread_pool.init_threads();
     std::atomic_int successful_searches(0);
 
     auto parallel_knn_search = [](AsyncJob *job) {
@@ -813,7 +781,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         // and returns the correct number of valid results.
         auto verify_res = [&](size_t id, double score, size_t res_index) {};
         runTopKSearchTest(job->index, query, k, verify_res);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -823,20 +791,18 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertSearch) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)n / 4 + (i % 1000) * M_PI);
         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-            allocator, parallel_knn_search, tiered_index, query, k, n, dim, successful_searches);
+            allocator, parallel_knn_search, tiered_index, k, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(successful_searches, n);
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
     EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
-    // Cleanup.
-    delete tieredIndexMock::ctx;
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, MergeMulti) {
@@ -850,9 +816,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, MergeMulti) {
         .multi = true,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     auto hnsw_index = tiered_index->backendIndex;
@@ -877,8 +843,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, MergeMulti) {
     // indexes should result in a list of unique vectors, even if the scores of the duplicates are
     // different.
     runTopKSearchTest(tiered_index, query, 5, 3, [](size_t _, double __, size_t ___) {});
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
@@ -892,25 +856,25 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
                          .multi = isMulti};
     VecSimParams hnsw_params = CreateParams(params);
 
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Delete a non existing label.
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 0);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Insert one vector to HNSW and then delete it (it should have no neighbors to repair).
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0);
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(0), 1);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Add another vector and remove it. Since the other vector in the index has marked deleted,
     // this vector should have no neighbors, and again, no neighbors to repair.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 1);
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 1);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Add two vectors and delete one, expect that at backendIndex one repair job will be created.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
@@ -919,10 +883,10 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
 
     // The first job should be a repair job of the first inserted non-deleted node id (2)
     // in level 0.
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 1);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id, 2);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 2);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
     ASSERT_GE(tiered_index->idToRepairJobs.at(2).size(), 1);
     ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs.size(), 1);
@@ -931,8 +895,6 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
     ASSERT_EQ(tiered_index->indexSize(), 4);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
@@ -943,9 +905,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
     VecSimParams hnsw_params = CreateParams(params);
 
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Add two vectors and delete one, expect that at least one repair job will be created.
@@ -956,9 +918,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(1).size(), 1);
     ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs.size(), 1);
     ASSERT_EQ(tiered_index->idToRepairJobs.at(1)[0]->associatedSwapJobs[0]->deleted_id, 0);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 0);
-    tieredIndexMock::jobQ.pop();
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 1);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
+    mock_thread_pool.jobQ.pop();
 
     // Insert another vector under the label (1) that has not been deleted.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 2);
@@ -969,13 +931,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     // repair job created for 1, since the previous repair job is expected to have both 0 and 2 in
     // its associated swap jobs. Also, there is an edge 0->1 whose going to be repaired as well.
     ASSERT_EQ(tiered_index->deleteLabelFromHNSW(1), 2);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 2);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id, 0);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 0);
-    tieredIndexMock::jobQ.pop();
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id, 2);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 0);
-    tieredIndexMock::jobQ.pop();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 0);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
+    mock_thread_pool.jobQ.pop();
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, 2);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
+    mock_thread_pool.jobQ.pop();
     // No new job for deleting 1->2 edge, just another associated swap job for the existing repair
     // job of 1 (in addition to 0, we have 2).
     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 3);
@@ -992,8 +954,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMulti) {
     ASSERT_EQ(tiered_index->idToRepairJobs.at(2)[0]->associatedSwapJobs[0]->deleted_id, 1);
 
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
@@ -1003,9 +963,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Test that repair jobs are created for multiple levels.
@@ -1026,20 +986,18 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteFromHNSWMultiLevels) {
     auto &level_one = tiered_index->getHNSWIndex()->getLevelData(vec_id, 1);
     ASSERT_EQ(level_one.numLinks, 1);
 
-    size_t num_repair_jobs = tieredIndexMock::jobQ.size();
+    size_t num_repair_jobs = mock_thread_pool.jobQ.size();
     // There should be at least two nodes to repair, the neighbors of next_id in levels 0 and 1
     ASSERT_GE(num_repair_jobs, 2);
-    while (tieredIndexMock::jobQ.size() > 1) {
+    while (mock_thread_pool.jobQ.size() > 1) {
         // First we should have jobs for repairing nodes in level 0.
-        ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 0);
-        tieredIndexMock::jobQ.pop();
+        ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 0);
+        mock_thread_pool.jobQ.pop();
     }
 
     // The last job should be repairing the single neighbor in level 1.
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level, 1);
-    ASSERT_EQ(((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id, level_one.links[0]);
-
-    delete tieredIndexMock::ctx;
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level, 1);
+    ASSERT_EQ(((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id, level_one.links[0]);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
@@ -1054,9 +1012,9 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
                          .multi = isMulti,
                          .M = 4};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     for (size_t i = 0; i < n; i++) {
@@ -1070,15 +1028,15 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
         auto incoming_neighbors =
             tiered_index->getHNSWIndex()->safeCollectAllNodeIncomingNeighbors(ep);
         ASSERT_EQ(tiered_index->deleteLabelFromHNSW(ep), 1);
-        ASSERT_EQ(tieredIndexMock::jobQ.size(), incoming_neighbors.size());
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), incoming_neighbors.size());
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair,
-                  tieredIndexMock::jobQ.size());
+                  mock_thread_pool.jobQ.size());
         ASSERT_NE(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, ep);
 
         // Execute synchronously all the repair jobs for the current deletion.
-        while (!tieredIndexMock::jobQ.empty()) {
-            idType repair_node_id = ((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->node_id;
-            auto repair_node_level = ((HNSWRepairJob *)(tieredIndexMock::jobQ.front().job))->level;
+        while (!mock_thread_pool.jobQ.empty()) {
+            idType repair_node_id = ((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->node_id;
+            auto repair_node_level = ((HNSWRepairJob *)(mock_thread_pool.jobQ.front().job))->level;
 
             tiered_index->getHNSWIndex()->repairNodeConnections(repair_node_id, repair_node_level);
             LevelData &node_level =
@@ -1091,11 +1049,10 @@ TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWWithRepairJobExec) {
             // still pending and avoid creating new jobs for nodes that already been repaired
             // as they were pointing to deleted elements.
             tiered_index->idToRepairJobs.erase(repair_node_id);
-            tieredIndexMock::jobQ.kick();
+            mock_thread_pool.jobQ.kick();
         }
         ASSERT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
     }
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
@@ -1108,29 +1065,30 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
                          .metric = VecSimMetric_L2,
                          .multi = isMulti};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     // Add a vector and create a pending insert job.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
 
     // Delete the index before the job was executed (this would delete the pending job as well).
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 1);
-    delete tieredIndexMock::ctx;
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 0);
-    tieredIndexMock::jobQ.pop();
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 1);
+    mock_thread_pool.reset_ctx();
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 0);
+    mock_thread_pool.jobQ.pop();
 
     // Recreate the index with a new ctx.
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
-    tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *ctx = new tieredIndexMock::IndexExtCtx(&mock_thread_pool);
+    mock_thread_pool.reset_ctx(ctx);
+    tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     // Add two vectors directly to HNSW, and remove one vector to create a repair job.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 0, 0);
@@ -1139,11 +1097,11 @@ TYPED_TEST(HNSWTieredIndexTest, manageIndexOwnershipWithPendingJobs) {
     ASSERT_EQ(tiered_index->idToRepairJobs.size(), 1);
 
     // Delete the index before the job was executed (this would delete the pending job as well).
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 1);
-    delete tieredIndexMock::ctx;
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.front().index_weak_ref.use_count(), 0);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 1);
+    mock_thread_pool.reset_ctx();
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.front().index_weak_ref.use_count(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
@@ -1156,9 +1114,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
         .metric = VecSimMetric_L2,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     auto hnsw_index = tiered_index->backendIndex;
@@ -1193,7 +1151,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocSingle) {
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 4, vec4)));
 
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
@@ -1207,9 +1164,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
         .multi = true,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
 
     auto hnsw_index = tiered_index->backendIndex;
     auto flat_index = tiered_index->frontendIndex;
@@ -1293,7 +1250,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, AdHocMulti) {
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom(tiered_index, 5, vec5)));
 
     ASSERT_EQ(cur_memory_usage, allocator->getAllocationSize());
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
@@ -1313,17 +1269,14 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         .blockSize = block_size,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
+    mock_thread_pool.init_threads();
     std::atomic_int successful_searches(0);
 
     auto parallel_adhoc_search = [](AsyncJob *job) {
@@ -1337,7 +1290,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
 
         ASSERT_EQ(0, VecSimIndex_GetDistanceFrom(search_job->index, label, query));
 
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -1347,21 +1300,19 @@ TYPED_TEST(HNSWTieredIndexTest, parallelInsertAdHoc) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, i);
         auto search_job = new (allocator)
-            tieredIndexMock::SearchJobMock(allocator, parallel_adhoc_search, tiered_index, query, 1,
-                                           n_labels, dim, successful_searches);
+            tieredIndexMock::SearchJobMock(allocator, parallel_adhoc_search, tiered_index, 1, query,
+                                           n_labels, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(successful_searches, n);
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
     EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
-
-    delete tieredIndexMock::ctx;
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
@@ -1372,9 +1323,9 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     labelType vec_label = 0;
@@ -1400,7 +1351,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     // The insert job should become invalid, and executing it should do nothing.
     ASSERT_EQ(job->isValid, false);
     ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(job)->id, 0);
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
 
     // Create a vector and add it to HNSW in the tiered index.
@@ -1422,7 +1373,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
 
     // Move the vector to HNSW by executing the insert job.
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2);
     // Check that the distance from the deleted vector (of zeros) to the label is the distance
@@ -1431,8 +1382,6 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     GenerateVector<TEST_DATA_T>(deleted_vector, dim, 0);
     ASSERT_EQ(tiered_index->backendIndex->getDistanceFrom(vec_label, deleted_vector),
               dim * pow(new_vec_val, 2));
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
@@ -1441,9 +1390,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Test some more scenarios that are relevant only for multi value index.
@@ -1465,11 +1414,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->id,
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id,
               invalidJobsCounter++);
-    tieredIndexMock::thread_iteration();
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in the flat index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
@@ -1480,21 +1429,21 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexSize(), 3);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->id,
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id,
               invalidJobsCounter++);
-    tieredIndexMock::thread_iteration();
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->id,
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id,
               invalidJobsCounter++);
-    tieredIndexMock::thread_iteration();
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in HNSW index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, other_vec_val);
-    tieredIndexMock::thread_iteration();
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 3);
@@ -1504,15 +1453,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
 
     // Expect to see two repair jobs - one for each deleted vector internal id.
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 2);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)->node_id, 2);
-    tieredIndexMock::thread_iteration();
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)->node_id, 1);
-    tieredIndexMock::thread_iteration();
-
-    delete tieredIndexMock::ctx;
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 2);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
+    mock_thread_pool.thread_iteration();
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
@@ -1522,9 +1469,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Insert vectors to flat buffer under two distinct labels, so that ids 0, 2 will be associated
@@ -1588,10 +1535,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
     tiered_index->labelToInsertJobs.clear();
 
     // Clean jobs from queue
-    while (!tieredIndexMock::jobQ.empty()) {
-        tieredIndexMock::jobQ.kick();
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.jobQ.kick();
     }
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
@@ -1605,19 +1551,20 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
                              .multi = TypeParam::isMulti(),
                              .blockSize = 100};
         VecSimParams hnsw_params = CreateParams(params);
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index =
-            this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, maxSwapJobs);
+            this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, maxSwapJobs);
         auto allocator = tiered_index->getAllocator();
 
         size_t per_label = TypeParam::isMulti() ? 50 : 1;
         size_t n_labels = n / per_label;
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
-        tieredIndexMock::run_thread = true;
-        for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-            tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
+
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                      std::ref(mock_thread_pool));
         }
 
         // Create and insert vectors one by one, then delete them one by one.
@@ -1633,7 +1580,7 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         // (hence it will be counted twice in the index size calculation).
         size_t index_size = tiered_index->indexSize();
         EXPECT_GE(index_size, n);
-        EXPECT_LE(index_size, n + tieredIndexMock::THREAD_POOL_SIZE);
+        EXPECT_LE(index_size, n + mock_thread_pool.thread_pool_size);
         EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
         for (size_t i = 0; i < n_labels; i++) {
             // Every vector associated with the label may appear in flat/HNSW index or in both if
@@ -1641,12 +1588,12 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
             int num_deleted = tiered_index->deleteVector(i);
             EXPECT_GE(num_deleted, per_label);
             EXPECT_LE(num_deleted,
-                      MIN(2 * per_label, per_label + tieredIndexMock::THREAD_POOL_SIZE));
+                      MIN(2 * per_label, per_label + mock_thread_pool.thread_pool_size));
             EXPECT_EQ(tiered_index->deleteVector(i), 0); // delete already deleted label
         }
         EXPECT_EQ(tiered_index->indexLabelCount(), 0);
 
-        tieredIndexMock::thread_pool_join();
+        mock_thread_pool.thread_pool_join();
 
         EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
         EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
@@ -1660,8 +1607,6 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVectorAndRepairAsync) {
         tiered_index->executeReadySwapJobs();
         ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
         EXPECT_EQ(tiered_index->indexSize(), 0);
-
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -1678,19 +1623,20 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
                                  .blockSize = 100,
                                  .M = M};
             VecSimParams hnsw_params = CreateParams(params);
-            tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+            auto mock_thread_pool = tieredIndexMock();
 
             auto *tiered_index =
-                this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, maxSwapJobs);
+                this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, maxSwapJobs);
             auto allocator = tiered_index->getAllocator();
 
             size_t per_label = TypeParam::isMulti() ? 5 : 1;
             size_t n_labels = n / per_label;
 
             // Launch the BG threads loop that takes jobs from the queue and executes them.
-            tieredIndexMock::run_thread = true;
-            for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-                tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
+
+            for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+                mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                          std::ref(mock_thread_pool));
             }
 
             // Create and insert 10 vectors, then delete them right after.
@@ -1717,7 +1663,7 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             EXPECT_GE(tiered_index->frontendIndex->indexSize(), 0);
             EXPECT_EQ(tiered_index->indexLabelCount(), 0);
 
-            tieredIndexMock::thread_pool_join();
+            mock_thread_pool.thread_pool_join();
 
             EXPECT_EQ(tiered_index->getHNSWIndex()->checkIntegrity().connections_to_repair, 0);
             EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
@@ -1731,8 +1677,6 @@ TYPED_TEST(HNSWTieredIndexTest, alternateInsertDeleteAsync) {
             tiered_index->executeReadySwapJobs();
             ASSERT_LE(tiered_index->idToSwapJob.size(), 0);
             ASSERT_EQ(tiered_index->indexSize(), 0);
-
-            delete tieredIndexMock::ctx;
         }
     }
 }
@@ -1745,22 +1689,22 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Test initialization of the pendingSwapJobsThreshold value.
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
-    tieredIndexMock::ctx->index_strong_ref.reset();
+    mock_thread_pool.ctx->index_strong_ref.reset();
 
-    tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx,
+    tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool,
                                                MAX_PENDING_SWAP_JOBS_THRESHOLD + 1);
     allocator = tiered_index->getAllocator();
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, MAX_PENDING_SWAP_JOBS_THRESHOLD);
-    tieredIndexMock::ctx->index_strong_ref.reset();
+    mock_thread_pool.ctx->index_strong_ref.reset();
 
-    tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, 1);
+    tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
 
     allocator = tiered_index->getAllocator();
@@ -1792,11 +1736,11 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
     // Expect to have pending repair jobs, so that swap job cannot be executed yet - for each
     // deleted vector there should be a single repair job.
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 2);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 1);
-    tieredIndexMock::thread_iteration();
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
+    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
     // Insert another vector and remove it. expect it to have no neighbors.
     // Threshold for is set to be 1, so now we expect that a single deleted vector (which has no
@@ -1806,7 +1750,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 2);
     EXPECT_EQ(tiered_index->indexSize(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Now swap the rest of the jobs.
     tiered_index->executeReadySwapJobs();
@@ -1825,8 +1769,8 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(tiered_index->backendIndex->getAllocationSize(), initial_mem_backend);
     EXPECT_EQ(tiered_index->frontendIndex->getAllocationSize(), initial_mem_frontend);
     EXPECT_EQ(tiered_index->getAllocationSize(), initial_mem);
+    mock_thread_pool.reset_ctx();
 
-    delete tieredIndexMock::ctx;
     // VecSimAllocator::allocation_header_size = size_t, this should be the only memory that we
     // account for at this point.
     EXPECT_EQ(allocator->getAllocationSize(), sizeof(size_t));
@@ -1840,9 +1784,9 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
     ASSERT_EQ(tiered_index->pendingSwapJobsThreshold, 1);
     auto allocator = tiered_index->getAllocator();
 
@@ -1853,12 +1797,12 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 2);
     // Delete 0, expect to have two repair jobs pending for 1 and 2 and execute it.
     EXPECT_EQ(tiered_index->deleteVector(0), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 2);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    tieredIndexMock::thread_iteration();
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    tieredIndexMock::thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
     // Delete 2, expect to create two repair job pending from 0 and 1. Also, expect that swap
     // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
@@ -1869,44 +1813,44 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
 
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 2);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
     // The first repair job should remove 1->0 (originally was 1->2).
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)->node_id, 1);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
                   ->associatedSwapJobs[0]
                   ->deleted_id,
               0);
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
     // The second repair job is invalid due to the removal of (the original) 0.
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)->node_id,
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
               invalid_jobs_counter++);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
                   ->associatedSwapJobs[0]
                   ->deleted_id,
               0);
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
     // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
     // get id 0, and then the new 0 should have no pending repair jobs.
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
     // The repair job is invalid due to the removal of (the previous) 0.
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)->node_id,
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
               invalid_jobs_counter);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(tieredIndexMock::jobQ.front().job)
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
                   ->associatedSwapJobs[0]
                   ->deleted_id,
               0);
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->safeGetEntryPointState().first, INVALID_ID);
@@ -1916,8 +1860,6 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->deleteVector(1), 0);
     EXPECT_EQ(tiered_index->indexSize(), 0);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
-
-    delete tieredIndexMock::ctx;
 }
 
 // A set of lambdas that determine whether a vector should be inserted to the
@@ -1963,9 +1905,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
-        auto *tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
         auto *hnsw = tiered_index->backendIndex;
@@ -2002,9 +1944,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIterator) {
         }
         ASSERT_EQ(iteration_num, n_labels / n_res) << decider_name;
         VecSimBatchIterator_Free(batchIterator);
-
-        // Free the index.
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -2035,9 +1974,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
-        auto *tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
         auto *hnsw = tiered_index->backendIndex;
@@ -2097,9 +2036,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorReset) {
             VecSimBatchIterator_Reset(batchIterator);
         }
         VecSimBatchIterator_Free(batchIterator);
-
-        // Free the index.
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -2130,9 +2066,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
-        auto *tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
         auto *hnsw = tiered_index->backendIndex;
@@ -2165,9 +2101,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorSize1) {
 
         ASSERT_EQ(iteration_num, n_labels) << decider_name;
         VecSimBatchIterator_Free(batchIterator);
-
-        // Free the index.
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -2199,9 +2132,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
-        auto *tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
         auto *hnsw = tiered_index->backendIndex;
@@ -2281,9 +2214,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorAdvanced) {
         VecSimQueryResult_Free(res);
 
         VecSimBatchIterator_Free(batchIterator);
-
-        // Free the index.
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -2314,9 +2244,9 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         auto &decider_name = lambda.first;
         auto &decider = lambda.second;
 
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
-        auto *tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+        auto *tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
         auto allocator = tiered_index->getAllocator();
 
         auto *hnsw = tiered_index->backendIndex;
@@ -2380,9 +2310,6 @@ TYPED_TEST(HNSWTieredIndexTest, BatchIteratorWithOverlaps) {
         ASSERT_EQ(iteration_num - excessive_iterations, n_labels / n_res)
             << decider_name << "\nHad excessive iterations: " << (excessive_iterations != 0);
         VecSimBatchIterator_Free(batchIterator);
-
-        // Free the index.
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -2404,13 +2331,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
         .multi = true,
     };
     VecSimParams params = CreateParams(hnsw_params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
     auto L2 = [&](size_t element) { return element * element * d; };
 
     // TEST 1:
     // first batch contains duplicates with different scores.
-    tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+    tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
     allocator = tiered_index->getAllocator();
     hnsw = tiered_index->backendIndex;
     flat = tiered_index->frontendIndex;
@@ -2452,12 +2379,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     VecSimQueryResult_Free(batch);
     // TEST 1 clean up.
     VecSimBatchIterator_Free(iterator);
-    delete tieredIndexMock::ctx;
 
     // TEST 2:
     // second batch contains duplicates (different scores) from the first batch.
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
-    tiered_index = this->CreateTieredHNSWIndex(params, tieredIndexMock::ctx);
+    auto *ctx = new tieredIndexMock::IndexExtCtx(&mock_thread_pool);
+    mock_thread_pool.reset_ctx(ctx);
+    tiered_index = this->CreateTieredHNSWIndex(params, mock_thread_pool);
     allocator = tiered_index->getAllocator();
     hnsw = tiered_index->backendIndex;
     flat = tiered_index->frontendIndex;
@@ -2502,8 +2429,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorWithOverlaps_SpacialMultiCases
     VecSimQueryResult_Free(batch);
     // TEST 2 clean up.
     VecSimBatchIterator_Free(iterator);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
@@ -2526,9 +2451,9 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
         .efRuntime = ef,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     std::atomic_int successful_searches(0);
@@ -2553,7 +2478,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
         } while (++iteration < 10 && VecSimBatchIterator_HasNext(tiered_iterator));
 
         VecSimBatchIterator_Free(tiered_iterator);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -2570,8 +2495,8 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
         // make sure there are `n_res / 2` vectors in the index in each "side" of the query vector.
         GenerateVector<TEST_DATA_T>(query, dim, (i % (n_labels - n_res)) + (n_res / 2));
         auto search_job = new (allocator)
-            tieredIndexMock::SearchJobMock(allocator, parallel_10_batches, tiered_index, query,
-                                           cur_res_per_batch, n, dim, successful_searches);
+            tieredIndexMock::SearchJobMock(allocator, parallel_10_batches, tiered_index,
+                                           cur_res_per_batch, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -2587,22 +2512,15 @@ TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearch) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     // All the vectors are already in the tiered index, so we expect to find the expected
     // results from the get-go.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
-
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
     EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(successful_searches, n);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
-
-    // Cleanup.
-    delete tieredIndexMock::ctx;
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
@@ -2612,9 +2530,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
     auto allocator = tiered_index->getAllocator();
 
     TEST_DATA_T val = 1.0;
@@ -2632,21 +2550,21 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     // the second should be a pending insert job.
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(0).size(), 1);
     auto *pending_insert_job = tiered_index->labelToInsertJobs.at(0)[0];
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 2);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->label, 0);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->id, 0);
-    tieredIndexMock::thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->label, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
+    mock_thread_pool.thread_iteration();
 
-    ASSERT_EQ(tieredIndexMock::jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->label, 0);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->id, 0);
-    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job),
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_INSERT_VECTOR_JOB);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->label, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
+    ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job),
               pending_insert_job);
 
     // Ingest vector into HNSW, and then overwrite it.
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     val = 3.0;
@@ -2660,13 +2578,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
 
     // Ingest the updated vector to HNSW.
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom(0, overwritten_vec), 0);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
@@ -2677,16 +2593,17 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
     VecSimParams hnsw_params = CreateParams(params);
     for (size_t maxSwapJobs : {(int)n + 1, 1}) {
-        tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+        auto mock_thread_pool = tieredIndexMock();
 
         auto *tiered_index =
-            this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, maxSwapJobs);
+            this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, maxSwapJobs);
         auto allocator = tiered_index->getAllocator();
 
         // Launch the BG threads loop that takes jobs from the queue and executes them.
-        tieredIndexMock::run_thread = true;
-        for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-            tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
+
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                      std::ref(mock_thread_pool));
         }
 
         // Insert vectors and overwrite them multiple times while thread run in the background.
@@ -2710,7 +2627,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
             EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
         }
 
-        tieredIndexMock::thread_pool_join();
+        mock_thread_pool.thread_pool_join();
 
         EXPECT_EQ(tiered_index->indexSize() - tiered_index->getHNSWIndex()->getNumMarkedDeleted(),
                   n);
@@ -2719,8 +2636,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
         auto report = tiered_index->getHNSWIndex()->checkIntegrity();
         EXPECT_EQ(report.connections_to_repair, 0);
         EXPECT_EQ(report.valid_state, true);
-
-        delete tieredIndexMock::ctx;
     }
 }
 
@@ -2733,9 +2648,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, 1, 1000);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1, 1000);
     auto allocator = tiered_index->getAllocator();
 
     VecSimIndexInfo info = tiered_index->info();
@@ -2787,7 +2702,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
 
-    tieredIndexMock::thread_iteration();
+    mock_thread_pool.thread_iteration();
     info = tiered_index->info();
 
     EXPECT_EQ(info.commonInfo.indexSize, 1);
@@ -2830,8 +2745,6 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
@@ -2844,9 +2757,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
                          .multi = TypeParam::isMulti()};
 
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx, 1);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
     auto allocator = tiered_index->getAllocator();
 
     GenerateAndAddVector(tiered_index, dim, 1, 1);
@@ -2927,7 +2840,6 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
         }
     }
     VecSimInfoIterator_Free(infoIterator);
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
@@ -2939,9 +2851,9 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     VecSim_SetWriteMode(VecSim_WriteInPlace);
@@ -2966,8 +2878,6 @@ TYPED_TEST(HNSWTieredIndexTest, writeInPlaceMode) {
     tiered_index->deleteVector(vec_label);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
@@ -2981,17 +2891,14 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
                          .M = 32,
                          .efRuntime = 2 * n};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
     VecSim_SetWriteMode(VecSim_WriteAsync);
 
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
+    mock_thread_pool.init_threads();
 
     // Create and insert vectors one by one async.
     size_t per_label = TypeParam::isMulti() ? 5 : 1;
@@ -3015,15 +2922,12 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
         }
         VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
     }
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
 
     // Now delete the last n inserted vectors of the index using async jobs.
     VecSim_SetWriteMode(VecSim_WriteAsync);
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
+    mock_thread_pool.init_threads();
     for (size_t i = 0; i < n_labels; i++) {
         VecSimIndex_DeleteVector(tiered_index, n_labels + i);
     }
@@ -3057,11 +2961,9 @@ TYPED_TEST(HNSWTieredIndexTest, switchWriteModes) {
         }
     }
 
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 2 * n_labels);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
@@ -3072,10 +2974,10 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
                          .metric = VecSimMetric_L2,
                          .multi = TypeParam::isMulti()};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
     // Create tiered index with buffer limit set to 0.
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx,
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool,
                                                      DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, 0);
     auto allocator = tiered_index->getAllocator();
 
@@ -3102,9 +3004,9 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 1);
         ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
         // The first job in Q should be the invalid overwritten insert vector job.
-        ASSERT_EQ(tieredIndexMock::jobQ.front().job->isValid, false);
-        ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(tieredIndexMock::jobQ.front().job)->id, 0);
-        tieredIndexMock::jobQ.pop();
+        ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
+        ASSERT_EQ(reinterpret_cast<HNSWInsertJob *>(mock_thread_pool.jobQ.front().job)->id, 0);
+        mock_thread_pool.jobQ.pop();
     }
 
     // Insert another vector, this one should go directly to HNSW index since the buffer limit has
@@ -3128,7 +3030,6 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimit) {
         ASSERT_EQ(tiered_index->indexLabelCount(), 3);
         ASSERT_EQ(tiered_index->getDistanceFrom(vec_label, overwritten_vec), 0);
     }
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
@@ -3142,19 +3043,15 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
                          .M = 64};
 
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
     // Create tiered index with buffer limit set to 100.
     size_t flat_buffer_limit = 100;
     auto *tiered_index = this->CreateTieredHNSWIndex(
-        hnsw_params, tieredIndexMock::ctx, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
+        hnsw_params, mock_thread_pool, DEFAULT_PENDING_SWAP_JOBS_THRESHOLD, flat_buffer_limit);
     auto allocator = tiered_index->getAllocator();
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
-
+    mock_thread_pool.init_threads();
     // Create and insert vectors one by one async. At some point, buffer limit gets full and vectors
     // are inserted directly to HNSW.
     size_t per_label = TypeParam::isMulti() ? 5 : 1;
@@ -3174,11 +3071,9 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
         }
     }
 
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.thread_pool_join();
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
-
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
@@ -3205,13 +3100,13 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
         .epsilon = 3.0 * per_label,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
     size_t cur_memory_usage;
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    ASSERT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    ASSERT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     auto hnsw_index = tiered_index->backendIndex;
     auto flat_index = tiered_index->frontendIndex;
@@ -3401,7 +3296,6 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
 
     // Clean up.
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; });
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
@@ -3422,11 +3316,11 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         .epsilon = double(dim * k * k),
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
-    EXPECT_EQ(tieredIndexMock::ctx->index_strong_ref.use_count(), 1);
+    EXPECT_EQ(mock_thread_pool.ctx->index_strong_ref.use_count(), 1);
 
     std::atomic_int successful_searches(0);
     auto parallel_range_search = [](AsyncJob *job) {
@@ -3443,7 +3337,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
             ASSERT_EQ(score, dim * (id - element) * (id - element));
         };
         runRangeQueryTest(job->index, query, range, verify_res, k, BY_SCORE);
-        search_job->successful_searches++;
+        (*search_job->successful_searches)++;
         delete job;
     };
 
@@ -3457,7 +3351,7 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
         auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
         GenerateVector<TEST_DATA_T>(query, dim, ((n - i) % (n_labels - (2 * k))) + k);
         auto search_job = new (allocator) tieredIndexMock::SearchJobMock(
-            allocator, parallel_range_search, tiered_index, query, k, n, dim, successful_searches);
+            allocator, parallel_range_search, tiered_index, k, query, n, dim, &successful_searches);
         tiered_index->submitSingleJob(search_job);
     }
 
@@ -3473,22 +3367,15 @@ TYPED_TEST(HNSWTieredIndexTest, parallelRangeSearch) {
     // Launch the BG threads loop that takes jobs from the queue and executes them.
     // All the vectors are already in the tiered index, so we expect to find the expected
     // results from the get-go.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
-
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(tiered_index->backendIndex->indexSize(), n);
     EXPECT_EQ(tiered_index->backendIndex->indexLabelCount(), n_labels);
     EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     EXPECT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     EXPECT_EQ(successful_searches, n);
-    EXPECT_EQ(tieredIndexMock::jobQ.size(), 0);
-
-    // Cleanup.
-    delete tieredIndexMock::ctx;
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
@@ -3500,10 +3387,10 @@ TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
         .metric = VecSimMetric_L2,
     };
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
     // Create tiered index with buffer limit set to 0.
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     auto hnsw = tiered_index->backendIndex;
@@ -3526,9 +3413,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, preferAdHocOptimization) {
     // Check for preference of tiered with subset (10) smaller than the tiered index size (11),
     // but larger than any of the underlying indexes.
     ASSERT_NO_THROW(tiered_index->preferAdHocSearch(10, 5, false));
-
-    // Cleanup.
-    delete tieredIndexMock::ctx;
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
@@ -3537,9 +3421,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
     HNSWParams params = {
         .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
     VecSimParams hnsw_params = CreateParams(params);
-    tieredIndexMock::ctx = new tieredIndexMock::IndexExtCtx();
+    auto mock_thread_pool = tieredIndexMock();
 
-    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, tieredIndexMock::ctx);
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
     auto allocator = tiered_index->getAllocator();
 
     // Test initialization of the pendingSwapJobsThreshold value.
@@ -3561,16 +3445,13 @@ TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
         tiered_index->deleteVector(i);
     }
     // Launch the BG threads loop that takes jobs from the queue and executes them.
-    tieredIndexMock::run_thread = true;
-    for (size_t i = 0; i < tieredIndexMock::THREAD_POOL_SIZE; i++) {
-        tieredIndexMock::thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i);
-    }
-    tieredIndexMock::thread_pool_join();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
 
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
     ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), n);
-    ASSERT_EQ(tieredIndexMock::jobQ.size(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Run the GC API call, expect that we will clean the defined threshold number of vectors
     // each time we call the GC.
@@ -3579,6 +3460,4 @@ TYPED_TEST(HNSWTieredIndexTestBasic, runGCAPI) {
         VecSimTieredIndex_GC(tiered_index);
         ASSERT_EQ(tiered_index->indexSize(), cur_size - DEFAULT_PENDING_SWAP_JOBS_THRESHOLD);
     }
-
-    delete tieredIndexMock::ctx;
 }
