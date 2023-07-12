@@ -62,7 +62,7 @@ template <typename DataType, typename DistType>
 void HNSWMulti_BatchIterator<DataType, DistType>::fillFromExtras(
     candidatesLabelsMinMaxHeap<DistType> *top_candidates) {
     while (top_candidates->size() < this->ef && !this->top_candidates_extras.empty()) {
-        auto top = this->top_candidates_extras.top();
+        const auto &top = this->top_candidates_extras.top();
         if (returned.find(top.second) == returned.end()) {
             top_candidates->insert(top);
         }
