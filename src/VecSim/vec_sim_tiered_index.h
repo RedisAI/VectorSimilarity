@@ -4,6 +4,7 @@
 #include "algorithms/brute_force/brute_force.h"
 #include "VecSim/batch_iterator.h"
 #include "VecSim/utils/query_result_utils.h"
+#include "VecSim/utils/alignment.h"
 
 #include <shared_mutex>
 
@@ -99,37 +100,33 @@ public:
 
 private:
     virtual int addVectorWrapper(const void *blob, labelType label, void *auxiliaryCtx) override {
-        // Will be used only if a processing stage is needed
-        char processed_blob[this->backendIndex->getDataSize()];
-        const void *vector_to_add = this->backendIndex->processBlob(blob, processed_blob);
-        return this->addVector(vector_to_add, label, auxiliaryCtx);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(blob, aligned_mem);
+        return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
     virtual VecSimQueryResult_List topKQueryWrapper(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const override {
-        // Will be used only if a processing stage is needed
-        char processed_blob[this->backendIndex->getDataSize()];
-        const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
-        return this->topKQuery(query_to_send, k, queryParams);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
+        return this->topKQuery(processed_blob, k, queryParams);
     }
 
     virtual VecSimQueryResult_List rangeQueryWrapper(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryResult_Order order) const override {
-        // Will be used only if a processing stage is needed
-        char processed_blob[this->backendIndex->getDataSize()];
-        const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
-        return this->rangeQuery(query_to_send, radius, queryParams, order);
+        return this->rangeQuery(processed_blob, radius, queryParams, order);
     }
 
     virtual VecSimBatchIterator *
     newBatchIteratorWrapper(const void *queryBlob, VecSimQueryParams *queryParams) const override {
-        // Will be used only if a processing stage is needed
-        char processed_blob[this->backendIndex->getDataSize()];
-        const void *query_to_send = this->backendIndex->processBlob(queryBlob, processed_blob);
+        char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
+        const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
-        return this->newBatchIterator(query_to_send, queryParams);
+        return this->newBatchIterator(processed_blob, queryParams);
     }
 };
 
@@ -270,7 +267,7 @@ VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     info.commonInfo.indexSize =
         frontendInfo.commonInfo.indexSize + backendInfo.commonInfo.indexSize;
     info.commonInfo.memory = this->getAllocationSize();
-    info.commonInfo.last_mode = backendInfo.commonInfo.last_mode;
+    info.commonInfo.lastMode = backendInfo.commonInfo.lastMode;
 
     VecSimIndexBasicInfo basic_info{.algo = backendInfo.commonInfo.basicInfo.algo,
                                     .blockSize = backendInfo.commonInfo.basicInfo.blockSize,

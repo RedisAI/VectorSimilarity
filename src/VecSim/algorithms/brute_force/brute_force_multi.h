@@ -56,6 +56,10 @@ private:
 
     inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) override;
 
+    inline void resizeLabelLookup(size_t new_max_elements) override {
+        labelToIdsLookup.reserve(new_max_elements);
+    }
+
     inline bool isLabelExists(labelType label) override {
         return labelToIdsLookup.find(label) != labelToIdsLookup.end();
     }
@@ -198,7 +202,7 @@ double BruteForceIndex_Multi<DataType, DistType>::getDistanceFrom(labelType labe
 
     DistType dist = std::numeric_limits<DistType>::infinity();
     for (auto id : IDs->second) {
-        DistType d = this->dist_func(this->getDataByInternalId(id), vector_data, this->dim);
+        DistType d = this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
         dist = (dist < d) ? dist : d;
     }
 

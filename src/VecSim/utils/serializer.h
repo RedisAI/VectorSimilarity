@@ -7,14 +7,14 @@
 class Serializer {
 public:
     typedef enum EncodingVersion {
-        EncodingVersion_V1 = 1,
-        EncodingVersion_V2 = 2,
+        EncodingVersion_DEPRECATED = 2, // Last deprecated version
+        EncodingVersion_V3,
         EncodingVersion_INVALID, // This should always be last.
     } EncodingVersion;
 
-    Serializer(EncodingVersion version = EncodingVersion_V2) : m_version(version) {}
+    Serializer(EncodingVersion version = EncodingVersion_V3) : m_version(version) {}
 
-    // Persist index into a file in the specified location with V2 encoding routine.
+    // Persist index into a file in the specified location with V3 encoding routine.
     void saveIndex(const std::string &location);
 
     static EncodingVersion ReadVersion(std::ifstream &input);

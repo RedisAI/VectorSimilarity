@@ -69,25 +69,17 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
 
     // Initially, load all the vectors to the updated bf index (before we override it).
     for (size_t i = 0; i < N_VECTORS; ++i) {
-        char *blob = BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i);
+        const char *blob = BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i);
         size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(INDICES[VecSimAlgo_HNSWLIB])
                            ->getExternalLabel(i);
         VecSimIndex_AddVector(INDICES[VecSimAlgo_BF + updated_index_offset], blob, label);
     }
 
-    // Generate the updated index from file.
-    // HNSWParams is required to load v1 index
-    HNSWParams params = {.type = type,
-                         .dim = DIM,
-                         .metric = VecSimMetric_Cosine,
-                         .multi = IS_MULTI,
-                         .blockSize = BM_VecSimGeneral::block_size};
-
     // Generate index from file.
     // This index will be inserted after the basic indices at indices[VecSimAlgo_HNSWLIB +
     // update_offset]
     INDICES.push_back(HNSWFactory::NewIndex(
-        BM_VecSimIndex<index_type_t>::AttachRootPath(updated_hnsw_index_file), &params));
+        BM_VecSimIndex<index_type_t>::AttachRootPath(updated_hnsw_index_file)));
 
     if (!BM_VecSimIndex<index_type_t>::CastToHNSW(
              INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
@@ -97,7 +89,8 @@ void BM_VecSimUpdatedIndex<index_type_t>::Initialize() {
     }
     // Add the same vectors to the *updated* FLAT index (override the previous vectors).
     for (size_t i = 0; i < N_VECTORS; ++i) {
-        char *blob = BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i, updated_index_offset);
+        const char *blob =
+            BM_VecSimIndex<index_type_t>::GetHNSWDataByInternalId(i, updated_index_offset);
         size_t label = BM_VecSimIndex<index_type_t>::CastToHNSW(
                            INDICES[VecSimAlgo_HNSWLIB + updated_index_offset])
                            ->getExternalLabel(i);
