@@ -53,7 +53,7 @@ void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
         unsigned char offset = alignment - remainder;
         // Store the allocation header in the 8 bytes before the returned pointer.
         new (ptr + offset) VecSimAllocationHeader{size, true};
-        // Store the offset in the byte before the header.
+        // Store the offset in the byte right before the header.
         ptr[offset - 1] = offset;
         // Return the aligned pointer.
         return ptr + allocation_header_size + offset;
