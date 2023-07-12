@@ -35,7 +35,6 @@ public:
     void deallocate(void *p, size_t size);
     void *reallocate(void *p, size_t size);
     void free_allocation(void *p);
-    void free_allocation_aligned(void *p);
 
     void *operator new(size_t size);
     void *operator new[](size_t size);
