@@ -44,6 +44,7 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, const Arch_Optimization arch_
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16_AVX);
         if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 8 * sizeof(float); // handles 8 floats
+        break;
 #endif
     case ARCH_OPT_SSE:
 #ifdef __SSE__
