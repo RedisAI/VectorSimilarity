@@ -84,7 +84,7 @@ public:
     VecSimIndexAbstract(const AbstractIndexInitParams &params)
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           dataSize(dim * VecSimType_sizeof(vecType)), metric(params.metric),
-          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(1),
+          blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), alignment(0),
           lastMode(EMPTY_MODE), isMulti(params.multi), logCallbackCtx(params.logCtx) {
         assert(VecSimType_sizeof(vecType));
         spaces::SetDistFunc(metric, dim, &distFunc, &alignment);
@@ -172,7 +172,8 @@ public:
     const void *processBlob(const void *original_blob, void *aligned_mem) const {
         void *processed_blob;
         // if the blob is not aligned, or we need to normalize, we copy it
-        if ((uintptr_t)original_blob % this->alignment || this->metric == VecSimMetric_Cosine) {
+        if ((this->alignment && (uintptr_t)original_blob % this->alignment) ||
+            this->metric == VecSimMetric_Cosine) {
             memcpy(aligned_mem, original_blob, this->dataSize);
             processed_blob = aligned_mem;
         } else {
