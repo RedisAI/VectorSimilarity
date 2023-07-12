@@ -97,6 +97,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
                        .blockSize = 1};
     auto *bfIndex = dynamic_cast<BruteForceIndex_Single<TEST_DATA_T, TEST_DIST_T> *>(
         BruteForceFactory::NewIndex(&params));
+    bfIndex->alignment = 0; // Disable alignment for testing purposes.
     auto allocator = bfIndex->getAllocator();
     TEST_DATA_T vec[128] = {};
     uint64_t expectedAllocationSize = sizeof(VecSimAllocator);
