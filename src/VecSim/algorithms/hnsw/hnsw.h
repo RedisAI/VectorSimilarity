@@ -1479,7 +1479,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         nodes_to_update.push_back(deleted_neighbor_id);
         neighbors_to_remove.push_back(deleted_neighbor_id);
 
-        elem_write_mutex_t neighbor_lock(this->element_neighbors_locks_[deleted_neighbor_id]);
+        elem_read_mutex_t neighbor_lock(this->element_neighbors_locks_[deleted_neighbor_id]);
         idType *neighbor_neighbours = getNodeNeighborsAtLevel(deleted_neighbor_id, level);
         linkListSize neighbor_neighbours_count = getNodeNeighborsCount(neighbor_neighbours);
 
