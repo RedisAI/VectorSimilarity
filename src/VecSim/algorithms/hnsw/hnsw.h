@@ -51,8 +51,6 @@ using graphNodeType = pair<idType, ushort>; // represented as: (element_id, leve
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 
 using elem_mutex_t = std::shared_mutex;
-using elem_write_mutex_t = std::unique_lock<elem_mutex_t>;
-using elem_read_mutex_t = std::shared_lock<elem_mutex_t>;
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
@@ -97,7 +95,7 @@ struct LevelData {
 
 struct ElementGraphData {
     size_t toplevel;
-    std::mutex neighborsGuard;
+    elem_mutex_t neighborsGuard;
     LevelData *others;
     LevelData level0;
 
@@ -296,10 +294,14 @@ public:
     inline auto safeGetEntryPointState() const;
     inline void lockIndexDataGuard() const;
     inline void unlockIndexDataGuard() const;
-    inline void lockNodeLinks(idType node_id) const;
-    inline void unlockNodeLinks(idType node_id) const;
-    inline void lockNodeLinks(ElementGraphData *node_data) const;
-    inline void unlockNodeLinks(ElementGraphData *node_data) const;
+    inline void writeLockNodeLinks(idType node_id) const;
+    inline void writeUnlockNodeLinks(idType node_id) const;
+    inline void writeLockNodeLinks(ElementGraphData *node_data) const;
+    inline void writeUnlockNodeLinks(ElementGraphData *node_data) const;
+    inline void readLockNodeLinks(idType node_id) const;
+    inline void readUnlockNodeLinks(idType node_id) const;
+    inline void readLockNodeLinks(ElementGraphData *node_data) const;
+    inline void readUnlockNodeLinks(ElementGraphData *node_data) const;
     inline VisitedNodesHandler *getVisitedList() const;
     inline void returnVisitedList(VisitedNodesHandler *visited_nodes_handler) const;
     VecSimIndexInfo info() const override;
@@ -505,24 +507,46 @@ void HNSWIndex<DataType, DistType>::unlockIndexDataGuard() const {
     indexDataGuard.unlock();
 }
 
+/////////////// WRITE LOCKS /////////////////
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::lockNodeLinks(ElementGraphData *node_data) const {
+void HNSWIndex<DataType, DistType>::writeLockNodeLinks(ElementGraphData *node_data) const {
     node_data->neighborsGuard.lock();
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unlockNodeLinks(ElementGraphData *node_data) const {
+void HNSWIndex<DataType, DistType>::writeUnlockNodeLinks(ElementGraphData *node_data) const {
     node_data->neighborsGuard.unlock();
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::lockNodeLinks(idType node_id) const {
-    lockNodeLinks(getGraphDataByInternalId(node_id));
+void HNSWIndex<DataType, DistType>::writeLockNodeLinks(idType node_id) const {
+    writeLockNodeLinks(getGraphDataByInternalId(node_id));
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
-    unlockNodeLinks(getGraphDataByInternalId(node_id));
+void HNSWIndex<DataType, DistType>::writeUnlockNodeLinks(idType node_id) const {
+    writeUnlockNodeLinks(getGraphDataByInternalId(node_id));
+}
+
+/////////////// READ LOCKS /////////////////
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::readLockNodeLinks(ElementGraphData *node_data) const {
+    node_data->neighborsGuard.lock_shared();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::readUnlockNodeLinks(ElementGraphData *node_data) const {
+    node_data->neighborsGuard.unlock_shared();
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::readLockNodeLinks(idType node_id) const {
+    readLockNodeLinks(getGraphDataByInternalId(node_id));
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::readUnlockNodeLinks(idType node_id) const {
+    readUnlockNodeLinks(getGraphDataByInternalId(node_id));
 }
 
 /**
@@ -582,7 +606,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
 
     ElementGraphData *cur_element = getGraphDataByInternalId(curNodeId);
-    lockNodeLinks(cur_element);
+    readLockNodeLinks(cur_element);
     LevelData &node_level = getLevelData(cur_element, layer);
 
     if (node_level.numLinks > 0) {
@@ -656,7 +680,7 @@ void HNSWIndex<DataType, DistType>::processCandidate(
             }
         }
     }
-    unlockNodeLinks(cur_element);
+    readUnlockNodeLinks(cur_element);
 }
 
 template <typename DataType, typename DistType>
@@ -667,7 +691,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
 
     auto *cur_element = getGraphDataByInternalId(curNodeId);
-    lockNodeLinks(cur_element);
+    readLockNodeLinks(cur_element);
     LevelData &node_level = getLevelData(cur_element, layer);
     if (node_level.numLinks > 0) {
 
@@ -722,7 +746,7 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
             }
         }
     }
-    unlockNodeLinks(cur_element);
+    readUnlockNodeLinks(cur_element);
 }
 
 template <typename DataType, typename DistType>
@@ -868,8 +892,8 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     // Acquire all relevant locks for making the updates for the selected neighbor - all its removed
     // neighbors, along with the neighbors itself and the cur node.
     // but first, we release the node and neighbors lock to avoid deadlocks.
-    unlockNodeLinks(new_node_id);
-    unlockNodeLinks(selected_neighbor);
+    writeUnlockNodeLinks(new_node_id);
+    writeUnlockNodeLinks(selected_neighbor);
 
     nodes_to_update.push_back(selected_neighbor);
     nodes_to_update.push_back(new_node_id);
@@ -877,7 +901,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
     for (size_t i = 0; i < nodes_to_update_count; i++) {
-        lockNodeLinks(nodes_to_update[i]);
+        writeLockNodeLinks(nodes_to_update[i]);
     }
     size_t neighbour_neighbours_idx = 0;
     bool update_cur_node_required = true;
@@ -926,7 +950,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     // Done updating the neighbor's neighbors.
     neighbor_level.numLinks = neighbour_neighbours_idx;
     for (size_t i = 0; i < nodes_to_update_count; i++) {
-        unlockNodeLinks(nodes_to_update[i]);
+        writeUnlockNodeLinks(nodes_to_update[i]);
     }
 }
 
@@ -962,11 +986,11 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         idType selected_neighbor = neighbor_data.second; // neighbor's id
         auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
         if (new_node_id < selected_neighbor) {
-            lockNodeLinks(new_node_level);
-            lockNodeLinks(neighbor_graph_data);
+            writeLockNodeLinks(new_node_level);
+            writeLockNodeLinks(neighbor_graph_data);
         } else {
-            lockNodeLinks(neighbor_graph_data);
-            lockNodeLinks(new_node_level);
+            writeLockNodeLinks(neighbor_graph_data);
+            writeLockNodeLinks(new_node_level);
         }
 
         // validations...
@@ -978,15 +1002,15 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         if (new_node_level_data.numLinks == max_M_cur) {
             // The new node cannot add more neighbors
             this->log("Couldn't add all chosen neighbors upon inserting a new node");
-            unlockNodeLinks(new_node_level);
-            unlockNodeLinks(neighbor_graph_data);
+            writeUnlockNodeLinks(new_node_level);
+            writeUnlockNodeLinks(neighbor_graph_data);
             break;
         }
 
         // If one of the two nodes has already deleted - skip the operation.
         if (isMarkedDeleted(new_node_id) || isMarkedDeleted(selected_neighbor)) {
-            unlockNodeLinks(new_node_level);
-            unlockNodeLinks(neighbor_graph_data);
+            writeUnlockNodeLinks(new_node_level);
+            writeUnlockNodeLinks(neighbor_graph_data);
             continue;
         }
 
@@ -997,8 +1021,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         if (neighbor_level_data.numLinks < max_M_cur) {
             new_node_level_data.links[new_node_level_data.numLinks++] = selected_neighbor;
             neighbor_level_data.links[neighbor_level_data.numLinks++] = new_node_id;
-            unlockNodeLinks(new_node_level);
-            unlockNodeLinks(neighbor_graph_data);
+            writeUnlockNodeLinks(new_node_level);
+            writeUnlockNodeLinks(neighbor_graph_data);
             continue;
         }
 
@@ -1108,7 +1132,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         volatile idType candidate_in_process = INVALID_ID;
 
         // Go over the entry point's neighbors at the top level.
-        lockNodeLinks(old_entry_point);
+        readLockNodeLinks(old_entry_point);
         LevelData &old_ep_level = getLevelData(old_entry_point, maxLevel);
         // Tries to set the (arbitrary) first neighbor as the entry point which is not deleted,
         // if exists.
@@ -1116,7 +1140,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
             if (!isMarkedDeleted(old_ep_level.links[i])) {
                 if (!isInProcess(old_ep_level.links[i])) {
                     entrypointNode = old_ep_level.links[i];
-                    unlockNodeLinks(old_entry_point);
+                    readUnlockNodeLinks(old_entry_point);
                     return;
                 } else {
                     // Store this candidate which is currently being inserted into the graph in
@@ -1125,7 +1149,7 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
                 }
             }
         }
-        unlockNodeLinks(old_entry_point);
+        readUnlockNodeLinks(old_entry_point);
 
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
@@ -1276,7 +1300,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
 
         changed = false;
         auto *element = getGraphDataByInternalId(bestCand);
-        lockNodeLinks(element);
+        readLockNodeLinks(element);
         LevelData &node_level_data = getLevelData(element, level);
 
         for (int i = 0; i < node_level_data.numLinks; i++) {
@@ -1298,7 +1322,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
                 }
             }
         }
-        unlockNodeLinks(element);
+        readUnlockNodeLinks(element);
     } while (changed);
     if (!running_query) {
         bestCand = bestNonDeletedCand;
@@ -1314,18 +1338,18 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
     for (size_t level = 0; level <= element->toplevel; level++) {
         // Save the node neighbor's in the current level while holding its neighbors lock.
         std::vector<idType> neighbors_copy;
-        lockNodeLinks(element);
+        readLockNodeLinks(element);
         auto &node_level_data = getLevelData(element, level);
         // Store the deleted element's neighbours.
         neighbors_copy.assign(node_level_data.links,
                               node_level_data.links + node_level_data.numLinks);
-        unlockNodeLinks(element);
+        readUnlockNodeLinks(element);
 
         // Go over the neighbours and collect tho ones that also points back to the removed node.
         for (auto neighbour_id : neighbors_copy) {
             // Hold the neighbor's lock while we are going over its neighbors.
             auto *neighbor = getGraphDataByInternalId(neighbour_id);
-            lockNodeLinks(neighbor);
+            readLockNodeLinks(neighbor);
             LevelData &neighbour_level_data = getLevelData(neighbor, level);
 
             for (size_t j = 0; j < neighbour_level_data.numLinks; j++) {
@@ -1335,16 +1359,16 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
                     break;
                 }
             }
-            unlockNodeLinks(neighbor);
+            readUnlockNodeLinks(neighbor);
         }
 
         // Next, collect the rest of incoming edges (the ones that are not bidirectional) in the
         // current level to repair them.
-        lockNodeLinks(element);
+        readLockNodeLinks(element);
         for (auto incoming_edge : *node_level_data.incomingEdges) {
             incoming_neighbors.emplace_back(incoming_edge, (ushort)level);
         }
-        unlockNodeLinks(element);
+        readUnlockNodeLinks(element);
     }
     return incoming_neighbors;
 }
@@ -1405,7 +1429,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
     for (size_t i = 0; i < nodes_to_update_count; i++) {
-        lockNodeLinks(nodes_to_update[i]);
+        writeLockNodeLinks(nodes_to_update[i]);
     }
 
     LevelData &node_level = getLevelData(node_id, level);
@@ -1480,7 +1504,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     // Done updating the node's neighbors.
     node_level.numLinks = node_neighbors_idx;
     for (size_t i = 0; i < nodes_to_update_count; i++) {
-        unlockNodeLinks(nodes_to_update[i]);
+        writeUnlockNodeLinks(nodes_to_update[i]);
     }
 }
 
@@ -1502,7 +1526,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // after the repair as well.
     const void *node_data = getDataByInternalId(node_id);
     auto *element = getGraphDataByInternalId(node_id);
-    lockNodeLinks(element);
+    readLockNodeLinks(element);
     LevelData &node_level_data = getLevelData(element, level);
     for (size_t j = 0; j < node_level_data.numLinks; j++) {
         node_orig_neighbours_set[node_level_data.links[j]] = true;
@@ -1516,7 +1540,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             this->distFunc(node_data, getDataByInternalId(node_level_data.links[j]), this->dim),
             node_level_data.links[j]);
     }
-    unlockNodeLinks(element);
+    readUnlockNodeLinks(element);
 
     // If there are not deleted neighbors at that point the repair job has already been made by
     // another parallel job, and there is no need to repair the node anymore.
@@ -1537,7 +1561,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         neighbors_to_remove.push_back(deleted_neighbor_id);
 
         auto *neighbor = getGraphDataByInternalId(deleted_neighbor_id);
-        lockNodeLinks(neighbor);
+        readLockNodeLinks(neighbor);
         LevelData &neighbor_level_data = getLevelData(neighbor, level);
 
         for (size_t j = 0; j < neighbor_level_data.numLinks; j++) {
@@ -1554,7 +1578,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                                this->dim),
                 neighbor_level_data.links[j]);
         }
-        unlockNodeLinks(neighbor);
+        readUnlockNodeLinks(neighbor);
     }
 
     // Copy the original candidates, and run the heuristics. Afterwards, neighbors_candidates will
