@@ -245,9 +245,9 @@ public:
     }
 
     // @params is required only in V1.
-    explicit PyHNSWLibIndex(const std::string &location, const HNSWParams *hnsw_params = nullptr) {
-        this->index = std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location, hnsw_params),
-                                                   VecSimIndex_Free);
+    explicit PyHNSWLibIndex(const std::string &location) {
+        this->index =
+            std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
     }
 
     void setDefaultEf(size_t ef) {
@@ -524,10 +524,8 @@ PYBIND11_MODULE(VecSim, m) {
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
         .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
              py::arg("params"))
-        .def(py::init([](const std::string &location, const HNSWParams *params) {
-                 return new PyHNSWLibIndex(location, params);
-             }),
-             py::arg("location"), py::arg("params") = nullptr)
+        .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
+             py::arg("location"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
         .def("save_index", &PyHNSWLibIndex::saveIndex)
         .def("knn_parallel", &PyHNSWLibIndex::searchKnnParallel, py::arg("queries"), py::arg("k"),

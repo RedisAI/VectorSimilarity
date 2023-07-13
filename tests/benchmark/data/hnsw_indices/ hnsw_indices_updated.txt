@@ -1,2 +1,0 @@
-https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/DBpedia-n500K-cosine-d768-M65-EFC512.hnsw
-https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/DBpedia-n500K-cosine-d768-M65-EFC512-updated.hnsw

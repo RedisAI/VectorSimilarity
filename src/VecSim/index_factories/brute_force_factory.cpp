@@ -84,13 +84,16 @@ size_t EstimateInitialSize(const BFParams *params) {
     // Parameters related part.
 
     if (params->initialCapacity) {
-        est += params->initialCapacity * sizeof(labelType) + allocations_overhead;
-    }
+        size_t aligned_cap = RoundUpInitialCapacity(params->initialCapacity, params->blockSize);
+        est += aligned_cap * sizeof(labelType) + allocations_overhead;
 
+        est += sizeof(DataBlock) * aligned_cap / params->blockSize + allocations_overhead;
+    }
     return est;
 }
 
 size_t EstimateElementSize(const BFParams *params) {
-    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType);
+    // counting the vector size + idToLabel entry + LabelToIds entry (map reservation)
+    return params->dim * VecSimType_sizeof(params->type) + sizeof(labelType) + sizeof(void *);
 }
 }; // namespace BruteForceFactory

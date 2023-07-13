@@ -45,22 +45,17 @@ protected:
             if (!hnsw_index->isMarkedDeleted(element_id)) {
                 continue;
             }
-            size_t element_top_level = hnsw_index->element_levels_[element_id];
-
-            for (size_t level = 0; level <= element_top_level; level++) {
-                idType *node_neighbours = hnsw_index->getNodeNeighborsAtLevel(element_id, level);
-                auto neighbours_count = hnsw_index->getNodeNeighborsCount(node_neighbours);
+            ElementGraphData *element_data = hnsw_index->getGraphDataByInternalId(element_id);
+            for (size_t level = 0; level <= element_data->toplevel; level++) {
+                LevelData &cur_level_data = hnsw_index->getLevelData(element_data, level);
 
                 // Go over the neighbours of the element in a specific level.
-                for (size_t i = 0; i < neighbours_count; i++) {
-                    idType cur_neighbor = node_neighbours[i];
-                    auto *neighbour_neighbours =
-                        hnsw_index->getNodeNeighborsAtLevel(cur_neighbor, level);
-                    auto neighbor_neighbours_count =
-                        hnsw_index->getNodeNeighborsCount(neighbour_neighbours);
-                    for (size_t j = 0; j < neighbor_neighbours_count; j++) {
+                for (size_t i = 0; i < cur_level_data.numLinks; i++) {
+                    idType cur_neighbor = cur_level_data.links[i];
+                    LevelData &neighbor_level_data = hnsw_index->getLevelData(cur_neighbor, level);
+                    for (size_t j = 0; j < neighbor_level_data.numLinks; j++) {
                         // If the edge is bidirectional, do repair for this neighbor
-                        if (neighbour_neighbours[j] == element_id) {
+                        if (neighbor_level_data.links[j] == element_id) {
                             jobQ.emplace_back(cur_neighbor, level);
                             break;
                         }
@@ -68,8 +63,7 @@ protected:
                 }
                 // Next, go over the rest of incoming edges (the ones that are not bidirectional)
                 // and make repairs.
-                auto *incoming_edges = hnsw_index->getIncomingEdgesPtr(element_id, level);
-                for (auto incoming_edge : *incoming_edges) {
+                for (auto incoming_edge : *cur_level_data.incomingEdges) {
                     jobQ.emplace_back(incoming_edge, level);
                 }
             }
@@ -139,9 +133,11 @@ TYPED_TEST(HNSWTestParallel, parallelSearchKnn) {
     ASSERT_EQ(*std::max_element(completed_tasks.begin(), completed_tasks.end()), 1);
     // Make sure that we properly update the allocator atomically during the searches. The expected
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
-                                                 (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
-                                                  2 * sizeof(size_t) + sizeof(void *));
+    size_t max_elements = this->CastToHNSW(index)->maxElements;
+    size_t expected_memory =
+        memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+                            (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
+                             2 * sizeof(size_t) + sizeof(void *));
     ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
 
     VecSimIndex_Free(index);
@@ -314,9 +310,11 @@ TYPED_TEST(HNSWTestParallel, parallelSearchCombined) {
 
     // Make sure that we properly update the allocator atomically during the searches.
     // Memory delta should only be the visited nodes handler added to the pool.
-    size_t expected_memory = memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
-                                                 (sizeof(VisitedNodesHandler) + sizeof(tag_t) * n +
-                                                  2 * sizeof(size_t) + sizeof(void *));
+    size_t max_elements = this->CastToHNSW(index)->maxElements;
+    size_t expected_memory =
+        memory_before + (index->info().hnswInfo.visitedNodesPoolSize - 1) *
+                            (sizeof(VisitedNodesHandler) + sizeof(tag_t) * max_elements +
+                             2 * sizeof(size_t) + sizeof(void *));
     ASSERT_EQ(expected_memory, index->info().commonInfo.memory);
     VecSimIndex_Free(index);
 }

@@ -34,7 +34,12 @@ VecSimIndex *VecSimIndex_New(const VecSimParams *params);
 size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
 
 /**
- * @brief Estimates the size of a single vector and its metadata according to the parameters.
+ * @brief Estimates the size of a single vector and its metadata according to the parameters, WHEN
+ * THE INDEX IS RESIZING BY A BLOCK. That is, this function estimates the allocation size of a new
+ * block upon resizing all the internal data structures, and returns the size of a single vector in
+ * that block. This value can be used later to decide what is the best block size for the block
+ * size, when the memory limit is known.
+ * ("memory limit for a block" / "size of a single vector in a block" = "block size")
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
  * @return The estimated single vector memory consumption, considering the parameters.
