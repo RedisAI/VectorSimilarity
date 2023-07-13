@@ -16,9 +16,9 @@ size_t BM_VecSimGeneral::EF_C = 512;
 tieredIndexMock BM_VecSimGeneral::mock_thread_pool{};
 
 const char *BM_VecSimGeneral::hnsw_index_file =
-    "tests/benchmark/data/fashion_images_multi_value-M=64-ef=512.hnsw_v2";
+    "tests/benchmark/data/fashion_images_multi_value-cosine-dim512-M64-efc512.hnsw_v3";
 const char *BM_VecSimGeneral::test_queries_file =
-    "tests/benchmark/data/fashion_images_multi_test_vecs_fp32.raw";
+    "tests/benchmark/data/fashion_images_multi_value-cosine-dim512-test_vectors.raw";
 
 #define BM_FUNC_NAME(bm_func, algo) bm_func##_##algo##_Multi
 #define BM_ADD_LABEL                AddLabel_Multi

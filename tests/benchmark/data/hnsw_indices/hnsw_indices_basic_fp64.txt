@@ -1,5 +1,5 @@
-http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/DBpedia-n1M-cosine-d768-M64-EFC512_fp64.hnsw_v2
-http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/DBpedia-test_vectors-n10k_fp64.raw
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-M64-efc512-fp64.hnsw_v3
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-fp64-test_vectors.raw
 
-http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/fp64_fashion_images_multi_value-M64-efc512.hnsw_v2
-http://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/fashion_images_multi_test_vecs_fp64.raw
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/fashion_images_multi_value-cosine-dim512-M64-efc512-fp64.hnsw_v3
+https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/fashion_images_multi_value-cosine-dim512-fp64-test_vectors.raw

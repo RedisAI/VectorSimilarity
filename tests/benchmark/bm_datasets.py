@@ -34,6 +34,10 @@ def get_data_set(dataset_name):
 
 # Create an HNSW index from dataset based on specific params.
 def load_or_create_hnsw_index(dataset, index_file_name, is_multi, data_type, ef_construction, M):
+    # If we are using existing index, we load the index from the existing file.
+    if os.path.exists(index_file_name):
+        print(index_file_name, "already exist. Remove index file first to override it")
+        return HNSWIndex(index_file_name)
 
     X_train = np.array(dataset['train'])
     distance = dataset.attrs['distance']
@@ -50,12 +54,6 @@ def load_or_create_hnsw_index(dataset, index_file_name, is_multi, data_type, ef_
     hnswparams.type = data_type
     hnswparams.metric = get_vecsim_metric(distance)
     hnswparams.multi = is_multi
-
-     # If we are using existing index, we load the index from the existing file.
-    if os.path.exists(index_file_name):
-        print(index_file_name, "already exist. Remove index file first to override it")
-        # We need @params to load V1 files.
-        return HNSWIndex(index_file_name, hnswparams)
 
     hnsw_index = HNSWIndex(hnswparams)
     populate_save_index(hnsw_index, index_file_name, X_train)
@@ -99,10 +97,10 @@ def measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_quer
     hnsw_total_time = 0
     for target_vector in X_test[:num_queries]:
         start = time.time()
-        hnsw_labels, hnsw_distances = hnsw_index.knn_query(target_vector, k)
+        hnsw_labels, _ = hnsw_index.knn_query(target_vector, k)
         hnsw_total_time += (time.time() - start)
         start = time.time()
-        bf_labels, bf_distances = bf_index.knn_query(target_vector, k)
+        bf_labels, _ = bf_index.knn_query(target_vector, k)
         bf_total_time += (time.time() - start)
         correct += len(np.intersect1d(hnsw_labels[0], bf_labels[0]))
     # Measure recall
@@ -118,9 +116,11 @@ def run_benchmark(dataset_name, is_multi, data_type, ef_construction, M, ef_valu
 
     print("\nRunning benchmark for:", dataset_name)
     dataset = get_data_set(dataset_name)
-    index_file_name = os.path.join('data', '%s-M=%s-ef=%s.hnsw' % (dataset_name, M, ef_construction))
+    nickname, dim, metric = dataset_name.split('-')
+    metric = 'cosine' if metric == 'angular' else metric
+    index_file_name = os.path.join('data', '%s-%s-dim%s-M%s-efc%s.hnsw_v3' % (nickname, metric, dim, M, ef_construction))
     hnsw_index = load_or_create_hnsw_index(dataset, index_file_name, is_multi, data_type, ef_construction, M)
-   
+
     for ef_runtime in ef_values:
         measure_recall_per_second(hnsw_index, dataset, is_multi, data_type, num_queries=1000, k=k, ef_runtime=ef_runtime)
 
