@@ -48,7 +48,6 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
-
 using elem_mutex_t = vecsim_stl::one_byte_mutex;
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 // Vectors flags (for marking a specific vector)
