@@ -50,8 +50,6 @@ using graphNodeType = pair<idType, ushort>; // represented as: (element_id, leve
 
 
 using elem_mutex_t = vecsim_stl::one_byte_mutex;
-using elem_write_mutex_t = std::unique_lock<elem_mutex_t>;
-using elem_read_mutex_t = elem_write_mutex_t;
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 // Vectors flags (for marking a specific vector)
 typedef enum {
@@ -97,7 +95,7 @@ struct LevelData {
 
 struct ElementGraphData {
     size_t toplevel;
-    std::mutex neighborsGuard;
+    elem_mutex_t neighborsGuard;
     LevelData *others;
     LevelData level0;
 
