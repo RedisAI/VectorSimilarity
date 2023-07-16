@@ -125,9 +125,8 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
         auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
         size_t cur_iter = search_job->iter;
-        auto hnsw_results =
-            VecSimIndex_TopKQuery(INDICES[VecSimAlgo_TIERED], QUERIES[cur_iter % N_QUERIES].data(),
-                                  search_job->k, &query_params, BY_SCORE);
+        auto hnsw_results = VecSimIndex_TopKQuery(INDICES[VecSimAlgo_TIERED], QUERIES[0].data(),
+                                                  search_job->k, &query_params, BY_SCORE);
         search_job->all_results[cur_iter] = hnsw_results;
         delete job;
     };
