@@ -805,7 +805,7 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
         not_chosen->reserve(top_candidates.size());
     }
 
-    std::sort(top_candidates.rbegin(), top_candidates.rend());
+    std::sort(top_candidates.begin(), top_candidates.end());
 
     auto current_pair = top_candidates.begin();
     best = current_pair->second;
