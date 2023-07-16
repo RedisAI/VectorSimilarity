@@ -75,7 +75,6 @@ struct ElementMetaData {
 
     ElementMetaData(labelType label = SIZE_MAX) noexcept : label(label), flags(IN_PROCESS) {}
 };
-#pragma pack() // restore default packing
 
 struct LevelData {
     vecsim_stl::vector<idType> *incomingEdges;
@@ -115,6 +114,7 @@ struct ElementGraphData {
     ~ElementGraphData() = delete; // Should be destroyed using `destroyGraphData`
 };
 
+#pragma pack() // restore default packing
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
 template <typename DataType, typename DistType>
