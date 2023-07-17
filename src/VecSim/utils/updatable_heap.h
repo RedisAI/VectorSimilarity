@@ -43,6 +43,19 @@ public:
     inline const std::pair<Priority, Value> top() const override;
     inline size_t size() const override;
 
+    inline auto begin() { return priorityToValue.begin(); }
+    inline auto end() { return priorityToValue.end(); }
+
+    // If the value is not in the heap, this function perform a pop and then an emplace.
+    // If the value is already in the heap, this function performs an emplace logic (maybe update)
+    // In both cases, the heap size remains the same.
+    inline void exchange_top(Priority p, Value v) override {
+        if (valueToPriority.count(v) == 0) {
+            pop();
+        }
+        emplace(p, v);
+    }
+
 private:
     inline auto top_ptr() const;
 };

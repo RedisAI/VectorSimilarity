@@ -38,6 +38,7 @@ public:
     ~abstract_priority_queue() {}
 
     virtual inline void emplace(Priority p, Value v) = 0;
+    virtual inline void exchange_top(Priority p, Value v) = 0;
     virtual inline bool empty() const = 0;
     virtual inline void pop() = 0;
     virtual inline const std::pair<Priority, Value> top() const = 0;
@@ -64,6 +65,13 @@ public:
     // Random order iteration
     inline auto begin() { return this->c.begin(); }
     inline auto end() { return this->c.end(); }
+
+    inline void exchange_top(Priority p, Value v) override {
+        this->c.emplace_back(p, v);
+        // pop the top, and fix the heap (after we added the new element to the end without keeping
+        // the heap property)
+        pop();
+    }
 };
 
 // min-heap
