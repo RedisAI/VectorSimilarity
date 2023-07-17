@@ -258,6 +258,10 @@ protected:
                               DistType dist, idType id) const;
     inline void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
                               DistType dist, idType id) const;
+    inline void exchangeTopOfHeap(vecsim_stl::abstract_priority_queue<DistType, idType> &heap,
+                                  DistType dist, idType id) const;
+    inline void exchangeTopOfHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
+                                  DistType dist, idType id) const;
     // Helper method that swaps the last element in the ids list with the given one (equivalent to
     // removing the given element id from the list).
     inline bool removeIdFromList(vecsim_stl::vector<idType> &element_ids_list, idType element_id);
@@ -579,26 +583,42 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 }
 
 template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::exchangeTopOfHeap(
+    vecsim_stl::abstract_priority_queue<DistType, idType> &heap, DistType dist, idType id) const {
+    heap.exchange_top(dist, id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::exchangeTopOfHeap(
+    vecsim_stl::abstract_priority_queue<DistType, labelType> &heap, DistType dist,
+    idType id) const {
+    heap.exchange_top(dist, getExternalLabel(id));
+}
+
+template <typename DataType, typename DistType>
 template <bool has_marked_deleted, typename Identifier>
 void HNSWIndex<DataType, DistType>::updateHeaps(
     candidatesMaxHeap<DistType> &candidate_set,
     vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates, idType candidate_id,
     DistType cur_dist, size_t ef, DistType &lowerBound) const {
-    if (lowerBound > cur_dist || top_candidates.size() < ef) {
 
+    if (top_candidates.size() < ef) {
         candidate_set.emplace(-cur_dist, candidate_id);
 
         // Insert the candidate to the top candidates heap only if it is not marked as deleted.
-        if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+        if (!has_marked_deleted || !isMarkedDeleted(candidate_id)) {
             emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-        if (top_candidates.size() > ef)
-            top_candidates.pop();
-
-        // If we have marked deleted elements, we need to verify that `top_candidates` is not empty
-        // (since we might have not added any non-deleted element yet).
-        if (!has_marked_deleted || !top_candidates.empty())
             lowerBound = top_candidates.top().first;
+        }
+    } else if (lowerBound > cur_dist) {
+        candidate_set.emplace(-cur_dist, candidate_id);
+
+        // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+        // Note that `exchange_top` guarantees that the heap will maintain its size.
+        if (!has_marked_deleted || !isMarkedDeleted(candidate_id)) {
+            exchangeTopOfHeap(top_candidates, cur_dist, candidate_id);
+            lowerBound = top_candidates.top().first;
+        }
     }
 }
 
