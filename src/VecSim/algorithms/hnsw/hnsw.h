@@ -181,6 +181,12 @@ protected:
                      tag_t *elements_tags, tag_t visited_tag,
                      vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
                      candidatesMaxHeap<DistType> &candidates_set, DistType &lowerBound) const;
+    // internal `processCandidate` iteration step
+    template <bool has_marked_deleted, typename Identifier>
+    inline void
+    updateHeaps(candidatesMaxHeap<DistType> &candidate_set,
+                vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
+                idType candidate_id, DistType cur_dist, size_t ef, DistType &lowerBound) const;
     template <bool has_marked_deleted>
     inline void processCandidate_RangeSearch(
         idType curNodeId, const void *data_point, size_t layer, double epsilon,
@@ -572,6 +578,30 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
     heap.emplace(dist, getExternalLabel(id));
 }
 
+template <typename DataType, typename DistType>
+template <bool has_marked_deleted, typename Identifier>
+void HNSWIndex<DataType, DistType>::updateHeaps(
+    candidatesMaxHeap<DistType> &candidate_set,
+    vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates, idType candidate_id,
+    DistType cur_dist, size_t ef, DistType &lowerBound) const {
+    if (lowerBound > cur_dist || top_candidates.size() < ef) {
+
+        candidate_set.emplace(-cur_dist, candidate_id);
+
+        // Insert the candidate to the top candidates heap only if it is not marked as deleted.
+        if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
+            emplaceToHeap(top_candidates, cur_dist, candidate_id);
+
+        if (top_candidates.size() > ef)
+            top_candidates.pop();
+
+        // If we have marked deleted elements, we need to verify that `top_candidates` is not empty
+        // (since we might have not added any non-deleted element yet).
+        if (!has_marked_deleted || !top_candidates.empty())
+            lowerBound = top_candidates.top().first;
+    }
+}
+
 // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
 // overloading to emplace correctly for both cases.
 template <typename DataType, typename DistType>
@@ -610,23 +640,8 @@ void HNSWIndex<DataType, DistType>::processCandidate(
             elements_tags[candidate_id] = visited_tag;
 
             DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
-            if (lowerBound > cur_dist || top_candidates.size() < ef) {
-
-                candidate_set.emplace(-cur_dist, candidate_id);
-
-                // Insert the candidate to the top candidates heap only if it is not marked as
-                // deleted.
-                if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-                    emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-                if (top_candidates.size() > ef)
-                    top_candidates.pop();
-
-                // If we have marked deleted elements, we need to verify that `top_candidates` is
-                // not empty (since we might have not added any non-deleted element yet).
-                if (!has_marked_deleted || !top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
+            updateHeaps<has_marked_deleted>(candidate_set, top_candidates, candidate_id, cur_dist,
+                                            ef, lowerBound);
         }
 
         // Running the last neighbor outside the loop to avoid prefetching invalid neighbor
@@ -638,22 +653,8 @@ void HNSWIndex<DataType, DistType>::processCandidate(
             elements_tags[candidate_id] = visited_tag;
 
             DistType cur_dist = this->distFunc(query_data, cur_data, this->dim);
-            if (lowerBound > cur_dist || top_candidates.size() < ef) {
-                candidate_set.emplace(-cur_dist, candidate_id);
-
-                // Insert the candidate to the top candidates heap only if it is not marked as
-                // deleted.
-                if (!has_marked_deleted || !isMarkedDeleted(candidate_id))
-                    emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-                if (top_candidates.size() > ef)
-                    top_candidates.pop();
-
-                // If we have marked deleted elements, we need to verify that `top_candidates` is
-                // not empty (since we might have not added any non-deleted element yet).
-                if (!has_marked_deleted || !top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
+            updateHeaps<has_marked_deleted>(candidate_set, top_candidates, candidate_id, cur_dist,
+                                            ef, lowerBound);
         }
     }
     unlockNodeLinks(cur_element);
