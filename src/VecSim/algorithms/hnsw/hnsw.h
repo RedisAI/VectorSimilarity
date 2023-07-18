@@ -48,8 +48,13 @@ template <typename DistType>
 using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, labelType>;
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
-using elem_mutex_t = vecsim_stl::one_byte_mutex;
+#if ONE_BYTE_MUTEX_AVAILABLE == 1
+    using elem_mutex_t = vecsim_stl::one_byte_mutex;
+#else
+    using elem_mutex_t = std::mutex;
+#endif
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
+
 // Vectors flags (for marking a specific vector)
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
