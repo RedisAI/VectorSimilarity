@@ -49,9 +49,9 @@ using candidatesLabelsMaxHeap = vecsim_stl::abstract_priority_queue<DistType, la
 using graphNodeType = pair<idType, ushort>; // represented as: (element_id, level)
 
 #if ONE_BYTE_MUTEX_AVAILABLE == 1
-    using elem_mutex_t = vecsim_stl::one_byte_mutex;
+using elem_mutex_t = vecsim_stl::one_byte_mutex;
 #else
-    using elem_mutex_t = std::mutex;
+using elem_mutex_t = std::mutex;
 #endif
 ////////////////////////////////////// Auxiliary HNSW structs //////////////////////////////////////
 
