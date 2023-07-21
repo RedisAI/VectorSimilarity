@@ -1,6 +1,6 @@
 if(USE_CUDA)
 	# Set which version of RAPIDS to use
-	set(RAPIDS_VERSION 23.08)
+	set(RAPIDS_VERSION 23.06)
 	# Set which version of RAFT to use (defined separately for testing
 	# minimal dependency changes if necessary)
 	set(RAFT_VERSION "${RAPIDS_VERSION}")
@@ -9,11 +9,11 @@ if(USE_CUDA)
 
 	# Download CMake file for bootstrapping RAPIDS-CMake, a utility that
 	# simplifies handling of complex RAPIDS dependencies
-	if (NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/<PROJ>_RAPIDS.cmake)
-		file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-${RAPIDS_VERSION}/<PROJ>_RAPIDS.cmake
-			${CMAKE_CURRENT_BINARY_DIR}/<PROJ>_RAPIDS.cmake)
+	if (NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
+		file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-${RAPIDS_VERSION}/RAPIDS.cmake
+			${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
 	endif()
-	include(${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
+    include(${CMAKE_CURRENT_BINARY_DIR}/RAPIDS.cmake)
 
 	# General tool for orchestrating RAPIDS dependencies
 	include(rapids-cmake)
