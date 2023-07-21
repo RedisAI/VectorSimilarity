@@ -1,4 +1,9 @@
-cmake_minimum_required(VERSION 3.10)
+option(USE_CUDA "Build Cuda code" On)
+if(USE_CUDA)
+  cmake_minimum_required(VERSION 3.23.1 FATAL_ERROR)
+else()
+  cmake_minimum_required(VERSION 3.10)
+endif()
 cmake_policy(SET CMP0077 NEW)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -23,6 +28,18 @@ include(cmake/san.cmake)
 
 # ----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
+
+if (USE_CUDA)
+    # Enable CUDA compilation for this project
+    enable_language(CUDA)
+ 	# Add definition for conditional compilation of CUDA components
+	add_definitions(-DUSE_CUDA)
+    # Perform all RAFT-specific CMake setup
+	include(cmake/raft.cmake)
+    # Required flags for compiling RAFT
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 -std=c++17")
+endif()
 
 # Only do these if this is the main project, and not if it is included through add_subdirectory
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
