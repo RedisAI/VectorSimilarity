@@ -53,6 +53,10 @@ protected:
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 jobs.size());
     }
+    template <typename... Args>
+    void log(const char *level, const char *msg, Args... args) const {
+        this->backendIndex->log(level, msg, args...);
+    }
 
 public:
     VecSimTieredIndex(VecSimIndexAbstract<DistType> *backendIndex_,

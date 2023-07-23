@@ -1350,6 +1350,8 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     assert(new_max_elements % this->blockSize == 0 &&
            "new_max_elements must be a multiple of blockSize");
+    this->log("verbose", "Updating HNSW index capacity from %zu to %zu", this->maxElements,
+              new_max_elements);
     resizeLabelLookup(new_max_elements);
     visitedNodesHandlerPool.resize(new_max_elements);
     idToMetaData.resize(new_max_elements);

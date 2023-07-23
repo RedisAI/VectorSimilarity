@@ -206,6 +206,7 @@ public:
     }
     void runGC() override {
         // Run no more than pendingSwapJobsThreshold value jobs.
+        this->log("verbose", "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
     }
 #ifdef BUILD_TESTS
@@ -286,6 +287,9 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
 
     // Execute swap jobs - acquire hnsw write lock.
     this->mainIndexGuard.lock();
+    this->log("verbose",
+              "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
+              readySwapJobs, MIN(readySwapJobs, maxJobsToRun));
 
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());
@@ -304,6 +308,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
         idToSwapJob.erase(id);
     }
     readySwapJobs -= idsToRemove.size();
+    this->log("verbose", "Tiered HNSW index GC: done executing %zu swap jobs", idsToRemove.size());
     this->mainIndexGuard.unlock();
 }
 
