@@ -446,9 +446,9 @@ public:
     std::string prefix;
 };
 
-void test_log_impl(void *ctx, const char *message) {
+void test_log_impl(void *ctx, const char *level, const char *message) {
     logCtx *log = (logCtx *)ctx;
-    std::string msg = log->prefix + message;
+    std::string msg = std::string(level) + ": " + log->prefix + message;
     log->logBuffer.push_back(msg);
 }
 
@@ -464,12 +464,12 @@ TEST(CommonAPITest, testlog) {
         dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
     VecSim_SetLogCallbackFunction(test_log_impl);
 
-    index->log("test log message no fmt");
-    index->log("test log message %s %s", "with", "args");
+    index->log("notice", "test log message no fmt");
+    index->log("warning", "test log message %s %s", "with", "args");
 
     ASSERT_EQ(log.logBuffer.size(), 2);
-    ASSERT_EQ(log.logBuffer[0], "test log prefix: test log message no fmt");
-    ASSERT_EQ(log.logBuffer[1], "test log prefix: test log message with args");
+    ASSERT_EQ(log.logBuffer[0], "notice: test log prefix: test log message no fmt");
+    ASSERT_EQ(log.logBuffer[1], "warning: test log prefix: test log message with args");
 
     VecSimIndex_Free(index);
 }

@@ -974,7 +974,7 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // lock.
         if (new_node_level_data.numLinks == max_M_cur) {
             // The new node cannot add more neighbors
-            this->log("Couldn't add all chosen neighbors upon inserting a new node");
+            this->log("verbose", "Couldn't add all chosen neighbors upon inserting a new node");
             unlockNodeLinks(new_node_level);
             unlockNodeLinks(neighbor_graph_data);
             break;
@@ -1445,7 +1445,8 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     for (auto chosen_id : chosen_neighbors) {
         if (node_neighbors_idx == max_M_cur) {
             // Cannot add more new neighbors, we reached the capacity.
-            this->log("Couldn't add all the chosen new nodes upon updating %u, as we reached the"
+            this->log("verbose",
+                      "Couldn't add all the chosen new nodes upon updating %u, as we reached the"
                       " maximum number of neighbors per node",
                       node_id);
             break;
@@ -1803,7 +1804,7 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     try {
         new (cur_egd) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
     } catch (std::runtime_error &e) {
-        this->log("Error - allocating memory for new element failed due to low memory");
+        this->log("warning", "Error - allocating memory for new element failed due to low memory");
         throw e;
     }
 

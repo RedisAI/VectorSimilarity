@@ -184,7 +184,8 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             try {
                 new (tmpData) ElementGraphData(toplevel, this->levelDataSize, this->allocator);
             } catch (std::runtime_error &e) {
-                this->log("Error - allocating memory for new element failed due to low memory");
+                this->log("warning",
+                          "Error - allocating memory for new element failed due to low memory");
                 throw e;
             }
             // Add the current element to the current block, and update cur_egt to point to it.
