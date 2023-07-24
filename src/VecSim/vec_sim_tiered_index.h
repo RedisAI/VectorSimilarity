@@ -8,6 +8,8 @@
 
 #include <shared_mutex>
 
+#define TIERED_LOG this->backendIndex->log
+
 /**
  * Definition of generic job structure for asynchronous tiered index.
  */
@@ -52,10 +54,6 @@ protected:
         }
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 jobs.size());
-    }
-    template <typename... Args>
-    void log(const char *level, const char *msg, Args... args) const {
-        this->backendIndex->log(level, msg, args...);
     }
 
 public:
