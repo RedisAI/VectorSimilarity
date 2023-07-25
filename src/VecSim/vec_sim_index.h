@@ -117,7 +117,7 @@ public:
         return results;
     }
 
-    void log(const char *fmt, ...) const {
+    void log(const char *level, const char *fmt, ...) const {
         if (VecSimIndexInterface::logCallback) {
             // Format the message and call the callback
             va_list args;
@@ -128,7 +128,7 @@ public:
             va_start(args, fmt);
             vsnprintf(buf, len + 1, fmt, args);
             va_end(args);
-            logCallback(this->logCallbackCtx, buf);
+            logCallback(this->logCallbackCtx, level, buf);
             delete[] buf;
         }
     }

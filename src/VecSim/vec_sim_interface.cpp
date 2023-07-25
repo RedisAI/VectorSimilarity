@@ -9,7 +9,9 @@
 #include <iostream>
 
 // Print log messages to stdout
-void Vecsim_Log(void *ctx, const char *message) { std::cout << message << std::endl; }
+void Vecsim_Log(void *ctx, const char *level, const char *message) {
+    std::cout << level << ": " << message << std::endl;
+}
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;

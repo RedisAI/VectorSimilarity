@@ -33,7 +33,7 @@ add_executable(test_hnsw_parallel test_hnsw_parallel.cpp test_utils.cpp)
 add_executable(test_bruteforce test_bruteforce.cpp test_bruteforce_multi.cpp test_utils.cpp)
 add_executable(test_allocator test_allocator.cpp test_utils.cpp)
 add_executable(test_spaces test_spaces.cpp)
-add_executable(test_common test_common.cpp test_utils.cpp)
+add_executable(test_common ../utils/mock_thread_pool.cpp test_utils.cpp test_common.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest_main VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest_main VectorSimilarity)
