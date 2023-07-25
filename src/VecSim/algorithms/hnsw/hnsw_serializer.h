@@ -184,7 +184,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input) {
             try {
                 new (tmpData) ElementGraphData(toplevel, this->levelDataSize, this->allocator);
             } catch (std::runtime_error &e) {
-                this->log("warning",
+                this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                           "Error - allocating memory for new element failed due to low memory");
                 throw e;
             }

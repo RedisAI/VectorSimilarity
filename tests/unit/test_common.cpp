@@ -466,8 +466,8 @@ TEST(CommonAPITest, testlogBasic) {
         dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
     VecSim_SetLogCallbackFunction(test_log_impl);
 
-    index->log("notice", "test log message no fmt");
-    index->log("warning", "test log message %s %s", "with", "args");
+    index->log(VecSimCommonStrings::LOG_NOTICE_STRING, "test log message no fmt");
+    index->log(VecSimCommonStrings::LOG_WARNING_STRING, "test log message %s %s", "with", "args");
 
     ASSERT_EQ(log.logBuffer.size(), 2);
     ASSERT_EQ(log.logBuffer[0], "notice: test log prefix: test log message no fmt");
