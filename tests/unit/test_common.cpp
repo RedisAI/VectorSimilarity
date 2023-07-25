@@ -14,6 +14,8 @@
 #include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#include "mock_thread_pool.h"
+#include "VecSim/index_factories/tiered_factory.h"
 
 #include <cstdlib>
 #include <limits>
@@ -446,13 +448,13 @@ public:
     std::string prefix;
 };
 
-void test_log_impl(void *ctx, const char *message) {
+void test_log_impl(void *ctx, const char *level, const char *message) {
     logCtx *log = (logCtx *)ctx;
-    std::string msg = log->prefix + message;
+    std::string msg = std::string(level) + ": " + log->prefix + message;
     log->logBuffer.push_back(msg);
 }
 
-TEST(CommonAPITest, testlog) {
+TEST(CommonAPITest, testlogBasic) {
 
     logCtx log;
     log.prefix = "test log prefix: ";
@@ -464,12 +466,48 @@ TEST(CommonAPITest, testlog) {
         dynamic_cast<BruteForceIndex<float, float> *>(BruteForceFactory::NewIndex(&params));
     VecSim_SetLogCallbackFunction(test_log_impl);
 
-    index->log("test log message no fmt");
-    index->log("test log message %s %s", "with", "args");
+    index->log(VecSimCommonStrings::LOG_NOTICE_STRING, "test log message no fmt");
+    index->log(VecSimCommonStrings::LOG_WARNING_STRING, "test log message %s %s", "with", "args");
 
     ASSERT_EQ(log.logBuffer.size(), 2);
-    ASSERT_EQ(log.logBuffer[0], "test log prefix: test log message no fmt");
-    ASSERT_EQ(log.logBuffer[1], "test log prefix: test log message with args");
+    ASSERT_EQ(log.logBuffer[0], "notice: test log prefix: test log message no fmt");
+    ASSERT_EQ(log.logBuffer[1], "warning: test log prefix: test log message with args");
 
     VecSimIndex_Free(index);
+}
+
+TEST(CommonAPITest, testlogTieredIndex) {
+    logCtx log;
+    log.prefix = "tiered prefix: ";
+    VecSim_SetLogCallbackFunction(test_log_impl);
+
+    HNSWParams params_raw = {.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2};
+    VecSimParams hnsw_params = {.algo = VecSimAlgo_HNSWLIB,
+                                .algoParams = {.hnswParams = HNSWParams{params_raw}},
+                                .logCtx = &log};
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = DEFAULT_BLOCK_SIZE,
+                                       .primaryIndexParams = &hnsw_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 1}}};
+
+    auto *tiered_index =
+        reinterpret_cast<TieredHNSWIndex<float, float> *>(TieredFactory::NewIndex(&tiered_params));
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+    GenerateAndAddVector<float>(tiered_index, 4, 1);
+    mock_thread_pool.thread_iteration();
+    tiered_index->deleteVector(1);
+    ASSERT_EQ(log.logBuffer.size(), 4);
+    ASSERT_EQ(log.logBuffer[0],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 0 to 1024");
+    ASSERT_EQ(log.logBuffer[1],
+              "verbose: " + log.prefix +
+                  "Tiered HNSW index GC: there are 1 ready swap jobs. Start executing 1 swap jobs");
+    ASSERT_EQ(log.logBuffer[2],
+              "verbose: " + log.prefix + "Updating HNSW index capacity from 1024 to 0");
+    ASSERT_EQ(log.logBuffer[3],
+              "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs");
 }

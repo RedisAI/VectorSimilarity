@@ -65,6 +65,12 @@ public:
     static const char *FRONTEND_INDEX_STRING;
     static const char *BACKEND_INDEX_STRING;
     static const char *TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING;
+
+    // Log levels
+    static const char *LOG_DEBUG_STRING;
+    static const char *LOG_VERBOSE_STRING;
+    static const char *LOG_NOTICE_STRING;
+    static const char *LOG_WARNING_STRING;
 };
 
 inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
