@@ -8,6 +8,8 @@
 
 #include <shared_mutex>
 
+#define TIERED_LOG this->backendIndex->log
+
 /**
  * Definition of generic job structure for asynchronous tiered index.
  */
@@ -255,9 +257,9 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
 template <typename DataType, typename DistType>
 VecSimIndexInfo VecSimTieredIndex<DataType, DistType>::info() const {
     VecSimIndexInfo info;
-    this->flatIndexGuard.lock();
+    this->flatIndexGuard.lock_shared();
     VecSimIndexInfo frontendInfo = this->frontendIndex->info();
-    this->flatIndexGuard.unlock();
+    this->flatIndexGuard.unlock_shared();
 
     this->mainIndexGuard.lock();
     VecSimIndexInfo backendInfo = this->backendIndex->info();

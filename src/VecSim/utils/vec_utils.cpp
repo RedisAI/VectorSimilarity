@@ -59,6 +59,12 @@ const char *VecSimCommonStrings::BACKEND_INDEX_STRING = "BACKEND_INDEX";
 const char *VecSimCommonStrings::TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING =
     "TIERED_HNSW_SWAP_JOBS_THRESHOLD";
 
+// Log levels
+const char *VecSimCommonStrings::LOG_DEBUG_STRING = "debug";
+const char *VecSimCommonStrings::LOG_VERBOSE_STRING = "verbose";
+const char *VecSimCommonStrings::LOG_NOTICE_STRING = "notice";
+const char *VecSimCommonStrings::LOG_WARNING_STRING = "warning";
+
 void sort_results_by_id(VecSimQueryResult_List rl) {
     qsort(rl.results, VecSimQueryResult_Len(rl), sizeof(VecSimQueryResult),
           (__compar_fn_t)cmpVecSimQueryResultById);
