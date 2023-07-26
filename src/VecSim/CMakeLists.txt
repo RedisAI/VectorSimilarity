@@ -32,9 +32,15 @@ add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     ${HEADER_LIST}
 )
 
-target_link_libraries(VectorSimilarity VectorSimilaritySpaces)
 
 if(VECSIM_BUILD_TESTS)
     add_library(VectorSimilaritySerializer utils/serializer.cpp)
-    target_link_libraries(VectorSimilarity VectorSimilaritySerializer)
 endif()
+
+target_link_libraries(VectorSimilarity
+PUBLIC
+	VectorSimilaritySpaces
+	$<$<BOOL:${VECSIM_BUILD_TESTS}>:VectorSimilaritySerializer>
+PRIVATE
+	$<$<BOOL:${USE_CUDA}>:raft::raft>
+)
