@@ -42,6 +42,13 @@ typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED } VecSimAlgo
 // Distance metric
 typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
 
+// Codebook kind for IVFPQ indexes
+typedef enum { IVFPQCodebookKind_PerCluster, IVFPQCodebookKind_PerSubspace } IVFPQCodebookKind;
+
+// CUDA types supported by GPU-accelerated indexes
+typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } CudaType;
+
+
 typedef size_t labelType;
 typedef unsigned int idType;
 
@@ -130,9 +137,42 @@ typedef struct {
     } specificParams;
 } TieredIndexParams;
 
+typedef struct {
+    VecSimType type;     // Datatype to index.
+    size_t dim;          // Vector's dimension.
+    VecSimMetric metric; // Distance metric to use in the index.
+    bool multi;          // Determines if the index should multi-index or not.
+    size_t nLists;       // Number of inverted lists
+    bool adaptiveCenters; // If index should be updated for new vectors
+    bool conservativeMemoryAllocation;  // Use as little GPU memory as possible
+    size_t kmeans_nIters; // Iterations for kmeans calculation
+    float kmeans_trainsetFraction; // Fraction of dataset used for kmeans training
+    unsigned nProbes; // The number of clusters to search
+    size_t pqDim; // The dimensionality of an encoded vector after PQ
+                  // compression. If set to 0, IVF flat will be used
+                  // instead of IVFPQ.
+                  //
+    // ******************* IVFPQ-only parameters *******************
+    // The following parameters will be ignored if pqDim is set to 0
+
+    size_t pqBits; // Bit length of vector element after PQ compression
+    IVFPQCodebookKind codebookKind;
+    CudaType lutType;
+    CudaType internalDistanceType;
+    double preferredShmemCarvout; // Fraction of GPU's unified memory / L1
+                                  // cache to be used as shared memory
+
+} IVFParams;
+
+typedef struct {
+  IVFParams ivfParams;
+  TieredIndexParams tieredParams;
+} TieredIVFParams;
+
 typedef union {
     HNSWParams hnswParams;
     BFParams bfParams;
+    IVFParams ivfParams;
     TieredIndexParams tieredParams;
 } AlgoParams;
 
@@ -231,6 +271,12 @@ typedef struct {
 typedef struct {
     char dummy; // For not having this as an empty struct, can be removed after we extend this.
 } bfInfoStruct;
+
+typedef struct {
+    size_t nLists; // Number of inverted lists.
+    size_t pqDim; // Dimensionality of encoded vector after PQ
+    size_t pqBits; // Bits per encoded vector element after PQ
+} ivfInfoStruct;
 
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
