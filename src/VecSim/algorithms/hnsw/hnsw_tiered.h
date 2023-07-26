@@ -629,15 +629,19 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexLabelCount() const {
     // Compute the union of both labels set in both tiers of the index.
-    this->flatIndexGuard.lock();
-    this->mainIndexGuard.lock();
+    this->flatIndexGuard.lock_shared();
     auto flat_labels = this->frontendIndex->getLabelsSet();
+    this->flatIndexGuard.unlock_shared();
+
+    this->mainIndexGuard.lock_shared();
+    this->getHNSWIndex()->lockIndexDataGuard();
     auto hnsw_labels = this->getHNSWIndex()->getLabelsSet();
+    this->getHNSWIndex()->unlockIndexDataGuard();
+    this->mainIndexGuard.unlock_shared();
+
     std::vector<labelType> output;
     std::set_union(flat_labels.begin(), flat_labels.end(), hnsw_labels.begin(), hnsw_labels.end(),
                    std::back_inserter(output));
-    this->flatIndexGuard.unlock();
-    this->mainIndexGuard.unlock();
     return output.size();
 }
 
