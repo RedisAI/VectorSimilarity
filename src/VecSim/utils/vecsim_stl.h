@@ -44,18 +44,8 @@ public:
     virtual inline T pop_max() = 0;
     virtual inline const T &peek_min() const = 0;
     virtual inline const T &peek_max() const = 0;
-    virtual inline T exchange_min(const T &value) = 0; // combines pop-and-then-insert logic
-    virtual inline T exchange_max(const T &value) = 0; // combines pop-and-then-insert logic
 
     // convenience methods
-    template <typename... Args>
-    inline T exchange_max(Args &&...args) {
-        return exchange_max(static_cast<const T &>(T(args...)));
-    }
-    template <typename... Args>
-    inline T exchange_min(Args &&...args) {
-        return exchange_min(static_cast<const T &>(T(args...)));
-    }
     template <typename... Args>
     inline void emplace(Args &&...args) {
         insert(T(std::forward<Args>(args)...));

@@ -246,64 +246,12 @@ public:
         return compare(3, 2) ? data[2] : data[3];
     }
 
-    // combines pop-and-then-insert logic
-    inline T exchange_min(const T &value) {
-        assert(size());
-        T min = data[1];
-        data[1] = value;
-        trickle_down<true>(1);
-        return min;
-    }
-
-    // combines pop-and-then-insert logic
-    inline T exchange_max(const T &value) {
-        assert(size());
-
-        switch (size()) {
-        case 1: {
-            T max = data[1];
-            data[1] = value;
-            return max;
-        }
-
-        case 2: {
-            T max = data[2];
-            data[2] = value;
-            // if the new value is smaller than the parent (root), perform a single-step bubble up
-            if (compare(2, 1))
-                swap(1, 2);
-            return max;
-        }
-
-        default: {
-            size_t max_idx = choose_from<false>(2, 3);
-            T max = data[max_idx];
-            data[max_idx] = value;
-            // if the new value is smaller than the parent (root), perform a single-step bubble up
-            if (compare(max_idx, 1))
-                swap(1, max_idx);
-            trickle_down<false>(max_idx);
-            return max;
-        }
-        }
-    }
-
     // Convenience functions for emplacing elements
 
     template <typename... Args>
     inline void emplace(Args &&...args) {
         data.emplace_back(std::forward<Args>(args)...);
         bubble_up_new();
-    }
-
-    template <typename... Args>
-    inline T exchange_min(Args &&...args) {
-        return exchange_min(static_cast<const T &>(T(args...)));
-    }
-
-    template <typename... Args>
-    inline T exchange_max(Args &&...args) {
-        return exchange_max(static_cast<const T &>(T(args...)));
     }
 
     // random order iteration

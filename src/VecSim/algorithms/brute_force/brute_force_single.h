@@ -90,7 +90,10 @@ protected:
     };
 
     inline std::unique_ptr<vecsim_stl::abstract_min_max_heap<pair<DistType, labelType>>>
-    getTopKCandidates(const void *queryBlob, size_t k, void *timeoutCtx) const override;
+    getNewMinMaxPriorityQueue() const override {
+        return std::unique_ptr<vecsim_stl::abstract_min_max_heap<pair<DistType, labelType>>>(new (
+            this->allocator) vecsim_stl::min_max_heap<pair<DistType, labelType>>(this->allocator));
+    }
 
     inline BF_BatchIterator<DataType, DistType> *
     newBatchIterator_Instance(void *queryBlob, VecSimQueryParams *queryParams) const override {
@@ -192,37 +195,4 @@ double BruteForceIndex_Single<DataType, DistType>::getDistanceFrom(labelType lab
     idType id = optionalId->second;
 
     return this->distFunc(this->getDataByInternalId(id), vector_data, this->dim);
-}
-
-template <typename DataType, typename DistType>
-std::unique_ptr<vecsim_stl::abstract_min_max_heap<pair<DistType, labelType>>>
-BruteForceIndex_Single<DataType, DistType>::getTopKCandidates(const void *queryBlob, size_t k,
-                                                              void *timeoutCtx) const {
-    using mmh = vecsim_stl::min_max_heap<pair<DistType, labelType>>;
-    auto topCandidates = std::unique_ptr<mmh>(new (this->allocator) mmh(k, this->allocator));
-
-    VecSimQueryResult_Code cur_block_code = VecSim_QueryResult_OK;
-    DistType upperBound = std::numeric_limits<DistType>::lowest();
-    // For every block, compute its vectors scores and update the Top candidates max heap
-    idType cur_id = 0;
-    for (auto &vectorBlock : this->vectorBlocks) {
-        auto scores = this->computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &cur_block_code);
-        if (VecSim_OK != cur_block_code) {
-            return nullptr;
-        }
-        for (size_t i = 0; i < scores.size(); i++) {
-            if (topCandidates->size() < k) {
-                // If we have less than k results, insert it.
-                topCandidates->emplace(scores[i], this->getVectorLabel(cur_id));
-                upperBound = topCandidates->peek_max().first;
-            } else if (scores[i] < upperBound) {
-                // If we have result with a better score, insert it.
-                topCandidates->exchange_max(scores[i], this->getVectorLabel(cur_id));
-                upperBound = topCandidates->peek_max().first;
-            }
-            ++cur_id;
-        }
-    }
-    assert(cur_id == this->indexSize());
-    return topCandidates;
 }

@@ -125,7 +125,7 @@ protected:
     // inline priority queue getter that need to be implemented by derived class
     virtual inline std::unique_ptr<
         vecsim_stl::abstract_min_max_heap<std::pair<DistType, labelType>>>
-    getTopKCandidates(const void *queryBlob, size_t k, void *timeoutCtx) const = 0;
+    getNewMinMaxPriorityQueue() const = 0;
 
     // inline label to id setters that need to be implemented by derived class
     virtual inline std::unique_ptr<vecsim_stl::abstract_results_container>
@@ -264,7 +264,6 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const {
 
     VecSimQueryResult_List rl = {0};
-    rl.code = VecSim_QueryResult_OK;
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
     this->lastMode = STANDARD_KNN;
 
@@ -273,21 +272,38 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         return rl;
     }
 
-    // Main loop. Find the top k candidates in the index.
-    auto topCandidates = getTopKCandidates(queryBlob, k, timeoutCtx);
-
-    if (!topCandidates) {
-        rl.code = VecSim_QueryResult_TimedOut;
-        return rl;
+    DistType upperBound = std::numeric_limits<DistType>::lowest();
+    auto topCandidates = getNewMinMaxPriorityQueue();
+    // For every block, compute its vectors scores and update the Top candidates max heap
+    idType curr_id = 0;
+    for (auto &vectorBlock : this->vectorBlocks) {
+        auto scores = computeBlockScores(vectorBlock, queryBlob, timeoutCtx, &rl.code);
+        if (VecSim_OK != rl.code) {
+            return rl;
+        }
+        for (size_t i = 0; i < scores.size(); i++) {
+            // If we have less than k or a better score, insert it.
+            if (scores[i] < upperBound || topCandidates->size() < k) {
+                topCandidates->emplace(scores[i], getVectorLabel(curr_id));
+                if (topCandidates->size() > k) {
+                    // If we now have more than k results, pop the worst one.
+                    topCandidates->pop_max();
+                }
+                upperBound = topCandidates->peek_max().first;
+            }
+            ++curr_id;
+        }
     }
+    assert(curr_id == this->count);
 
-    size_t numCandidates = topCandidates->size();
-    rl.results = array_new_len<VecSimQueryResult>(numCandidates, numCandidates);
-    for (size_t i = 0; i < numCandidates; ++i) {
-        auto cur_candidate = topCandidates->pop_min();
-        VecSimQueryResult_SetId(rl.results[i], cur_candidate.second);
-        VecSimQueryResult_SetScore(rl.results[i], cur_candidate.first);
+    size_t numResults = topCandidates->size();
+    rl.results = array_new_len<VecSimQueryResult>(numResults, numResults);
+    for (size_t i = 0; i < numResults; ++i) {
+        std::pair<DistType, labelType> res = topCandidates->pop_min();
+        VecSimQueryResult_SetId(rl.results[i], res.second);
+        VecSimQueryResult_SetScore(rl.results[i], res.first);
     }
+    rl.code = VecSim_QueryResult_OK;
     return rl;
 }
 

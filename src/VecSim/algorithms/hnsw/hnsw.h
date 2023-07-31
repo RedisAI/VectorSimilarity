@@ -242,24 +242,14 @@ protected:
     // Protected internal function that implements generic single vector deletion.
     void removeVectorInPlace(idType id);
 
-    template <bool has_marked_deleted>
-    inline void updateHeaps(idType candidate_id, DistType cur_dist,
-                            candidatesMinMaxHeap<DistType> &top_candidates,
+    inline void emplaceToHeap(candidatesLabelsMinMaxHeap<DistType> &heap, DistType dist,
+                              idType id) const;
+    inline void emplaceToHeap(candidatesMinMaxHeap<DistType> &heap, DistType dist, idType id) const;
+
+    template <bool has_marked_deleted, typename HeapType>
+    inline void updateHeaps(idType candidate_id, DistType cur_dist, HeapType &top_candidates,
                             candidatesMinMaxHeap<DistType> &candidate_set, const size_t ef,
                             DistType &lowerBound) const;
-    template <bool has_marked_deleted>
-    inline void updateHeaps(idType candidate_id, DistType cur_dist,
-                            candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-                            candidatesMinMaxHeap<DistType> &candidate_set, const size_t ef,
-                            DistType &lowerBound) const {
-        if (has_marked_deleted) {
-            updateHeaps_WithMarkedDeleted(candidate_id, cur_dist, top_candidates, candidate_set, ef,
-                                          lowerBound);
-        } else {
-            updateHeaps_NoMarkedDeleted(candidate_id, cur_dist, top_candidates, candidate_set, ef,
-                                        lowerBound);
-        }
-    }
 
     // Helper method that swaps the last element in the ids list with the given one (equivalent
     // to removing the given element id from the list).
@@ -372,16 +362,6 @@ protected:
     virtual inline void replaceIdOfLabel(labelType label, idType new_id, idType old_id) = 0;
     virtual inline void setVectorId(labelType label, idType id) = 0;
     virtual inline void resizeLabelLookup(size_t new_max_elements) = 0;
-    virtual inline void
-    updateHeaps_WithMarkedDeleted(idType candidate_id, DistType cur_dist,
-                                  candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-                                  candidatesMinMaxHeap<DistType> &candidate_set, const size_t ef,
-                                  DistType &lowerBound) const = 0;
-    virtual inline void
-    updateHeaps_NoMarkedDeleted(idType candidate_id, DistType cur_dist,
-                                candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-                                candidatesMinMaxHeap<DistType> &candidate_set, const size_t ef,
-                                DistType &lowerBound) const = 0;
 };
 
 /**
@@ -583,26 +563,36 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
 }
 
 template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
+void HNSWIndex<DataType, DistType>::emplaceToHeap(candidatesMinMaxHeap<DistType> &heap,
+                                                  DistType dist, idType id) const {
+    heap.emplace(dist, id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::emplaceToHeap(candidatesLabelsMinMaxHeap<DistType> &heap,
+                                                  DistType dist, idType id) const {
+    heap.emplace(dist, getExternalLabel(id));
+}
+
+template <typename DataType, typename DistType>
+template <bool has_marked_deleted, typename HeapType>
 void HNSWIndex<DataType, DistType>::updateHeaps(idType cand_id, DistType cand_dist,
-                                                candidatesMinMaxHeap<DistType> &top_candidates,
+                                                HeapType &top_candidates,
                                                 candidatesMinMaxHeap<DistType> &candidate_set,
                                                 size_t ef, DistType &lowerBound) const {
-    if (top_candidates.size() < ef) {
+    if (lowerBound > cand_dist || top_candidates.size() < ef) {
         candidate_set.emplace(cand_dist, cand_id);
         // Insert the candidate to the top candidates heap only if it is not marked as deleted.
-        if (!has_marked_deleted || !isMarkedDeleted(cand_id)) {
-            top_candidates.emplace(cand_dist, cand_id);
+        if (!has_marked_deleted || !isMarkedDeleted(cand_id))
+            emplaceToHeap(top_candidates, cand_dist, cand_id);
+
+        if (top_candidates.size() > ef)
+            top_candidates.pop_max();
+
+        // If we have marked deleted elements, we need to verify that `top_candidates` is
+        // not empty (since we might have not added any non-deleted element yet).
+        if (!has_marked_deleted || !top_candidates.empty())
             lowerBound = top_candidates.peek_max().first;
-        }
-    } else if (lowerBound > cand_dist) {
-        candidate_set.emplace(cand_dist, cand_id);
-        // Insert the candidate to the top candidates heap only if it is not marked as deleted.
-        if (!has_marked_deleted || !isMarkedDeleted(cand_id)) {
-            // Remove the maximum element from the top candidates heap.
-            top_candidates.exchange_max(cand_dist, cand_id);
-            lowerBound = top_candidates.peek_max().first;
-        }
     }
 }
 

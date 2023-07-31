@@ -46,8 +46,6 @@ public:
 
     inline Pair pop_min() override { return pop<true>(); }
     inline Pair pop_max() override { return pop<false>(); }
-    inline Pair exchange_min(const Pair &value) override { return exchange<true>(value); }
-    inline Pair exchange_max(const Pair &value) override { return exchange<false>(value); }
     inline size_t size() const override { return valueToPriority.size(); }
     inline bool empty() const override { return valueToPriority.empty(); }
     inline const Pair &peek_min() const override {
@@ -129,15 +127,6 @@ private:
         valueToPriority.erase(to_remove->second);
         priorityToValue.erase(to_remove);
         return pair;
-    }
-
-    template <bool isMin>
-    inline Pair exchange(const Pair &value) {
-        // This function cannot be used if the value already exists in the heap.
-        assert(valueToPriority.find(value.second) == valueToPriority.end());
-        auto ret = pop<isMin>();
-        emplace(value.first, value.second);
-        return ret;
     }
 };
 

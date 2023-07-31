@@ -45,28 +45,6 @@ private:
     template <bool Safe>
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
-    template <bool has_marked_deleted>
-    inline void updateHeapsInternal(idType candidate_id, DistType cur_dist,
-                                    candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-                                    candidatesMinMaxHeap<DistType> &candidate_set, const size_t ef,
-                                    DistType &lowerBound) const;
-
-    inline void updateHeaps_WithMarkedDeleted(idType candidate_id, DistType cur_dist,
-                                              candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-                                              candidatesMinMaxHeap<DistType> &candidate_set,
-                                              const size_t ef,
-                                              DistType &lowerBound) const override {
-        updateHeapsInternal<true>(candidate_id, cur_dist, top_candidates, candidate_set, ef,
-                                  lowerBound);
-    }
-    inline void updateHeaps_NoMarkedDeleted(idType candidate_id, DistType cur_dist,
-                                            candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-                                            candidatesMinMaxHeap<DistType> &candidate_set,
-                                            const size_t ef, DistType &lowerBound) const override {
-        updateHeapsInternal<false>(candidate_id, cur_dist, top_candidates, candidate_set, ef,
-                                   lowerBound);
-    }
-
 public:
     HNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                     size_t random_seed = 100, size_t initial_pool_size = 1)
@@ -283,29 +261,4 @@ inline bool HNSWIndex_Multi<DataType, DistType>::safeCheckIfLabelExistsInIndex(
         }
     }
     return exists;
-}
-
-template <typename DataType, typename DistType>
-template <bool has_marked_deleted>
-void HNSWIndex_Multi<DataType, DistType>::updateHeapsInternal(
-    idType cand_id, DistType cand_dist, candidatesLabelsMinMaxHeap<DistType> &top_candidates,
-    candidatesMinMaxHeap<DistType> &candidate_set, size_t ef, DistType &lowerBound) const {
-
-    if (lowerBound > cand_dist || top_candidates.size() < ef) {
-
-        candidate_set.emplace(cand_dist, cand_id);
-
-        // Insert the candidate to the top candidates heap only if it is not marked as
-        // deleted.
-        if (!has_marked_deleted || !this->isMarkedDeleted(cand_id))
-            top_candidates.emplace(cand_dist, this->getExternalLabel(cand_id));
-
-        if (top_candidates.size() > ef)
-            top_candidates.pop_max();
-
-        // If we have marked deleted elements, we need to verify that `top_candidates` is
-        // not empty (since we might have not added any non-deleted element yet).
-        if (!has_marked_deleted || !top_candidates.empty())
-            lowerBound = top_candidates.peek_max().first;
-    }
 }

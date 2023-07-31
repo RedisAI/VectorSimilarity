@@ -68,10 +68,10 @@ void HNSWSingle_BatchIterator<DataType, DistType>::updateHeaps(
         top_candidates->emplace(dist, this->index->getExternalLabel(id));
         this->lower_bound = top_candidates->peek_max().first;
     } else if (this->lower_bound > dist) {
+        top_candidates->emplace(dist, this->index->getExternalLabel(id));
         // If the top candidates queue is full, pass the "worst" results to the "extras",
         // for the next iterations.
-        auto extra = top_candidates->exchange_max(dist, this->index->getExternalLabel(id));
-        this->top_candidates_extras.emplace(extra);
+        this->top_candidates_extras.emplace(top_candidates->pop_max());
         this->lower_bound = top_candidates->peek_max().first;
     }
 }

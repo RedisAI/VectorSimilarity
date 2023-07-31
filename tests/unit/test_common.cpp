@@ -331,20 +331,6 @@ TYPED_TEST(UtilsTests, MinMaxHeap) {
     ASSERT_EQ(mmh.size(), n);
     ASSERT_FALSE(mmh.empty());
 
-    // Exchange min value with a larger value (than the current max)
-    for (size_t i = 0; i < n; ++i) {
-        ASSERT_EQ(mmh.exchange_min(i + n), i);
-    }
-    // Expect the heap to have the same size
-    ASSERT_EQ(mmh.size(), n);
-    ASSERT_FALSE(mmh.empty());
-    // Expect the heap to have n...2n-1 values
-    for (size_t i = 0; i < n; ++i) {
-        ASSERT_EQ(mmh.exchange_max(i), 2 * n - 1 - i);
-    }
-    // Expect the heap to have the same size
-    ASSERT_EQ(mmh.size(), n);
-    ASSERT_FALSE(mmh.empty());
     // Expect the heap to have 0...n-1 values again
     for (size_t i = 0; i < n; ++i) {
         ASSERT_EQ(mmh.peek_max(), n - 1);
@@ -353,18 +339,6 @@ TYPED_TEST(UtilsTests, MinMaxHeap) {
 
     ASSERT_EQ(mmh.size(), 0);
     ASSERT_TRUE(mmh.empty());
-
-    // Test edge cases of exchange_min and exchange_max
-    mmh.insert(0);
-    ASSERT_EQ(mmh.size(), 1);
-    ASSERT_EQ(mmh.exchange_max(1), 0);
-    ASSERT_EQ(mmh.exchange_min(0), 1);
-    mmh.insert(1);
-    ASSERT_EQ(mmh.size(), 2);
-    ASSERT_EQ(mmh.exchange_max(2), 1);
-    ASSERT_EQ(mmh.exchange_min(1), 0);
-    ASSERT_EQ(mmh.exchange_max(0), 2);
-    ASSERT_EQ(mmh.size(), 2);
 
     // Clean up
     delete mmh_;
