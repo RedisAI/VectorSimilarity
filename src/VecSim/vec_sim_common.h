@@ -143,23 +143,27 @@ typedef struct {
     VecSimMetric metric; // Distance metric to use in the index.
     bool multi;          // Determines if the index should multi-index or not.
     size_t nLists;       // Number of inverted lists
-    bool adaptiveCenters; // If index should be updated for new vectors
     bool conservativeMemoryAllocation;  // Use as little GPU memory as possible
     size_t kmeans_nIters; // Iterations for kmeans calculation
-    float kmeans_trainsetFraction; // Fraction of dataset used for kmeans training
+    double kmeans_trainsetFraction; // Fraction of dataset used for kmeans training
     unsigned nProbes; // The number of clusters to search
-    size_t pqDim; // The dimensionality of an encoded vector after PQ
-                  // compression. If set to 0, IVF flat will be used
-                  // instead of IVFPQ.
-                  //
-    // ******************* IVFPQ-only parameters *******************
-    // The following parameters will be ignored if pqDim is set to 0
+    size_t pqBits; // Bit length of vector element after PQ compression. If set
+                   // to 0, IVF flat will be used instead of IVFPQ.
+    // ***************** IVF-Flat-only parameters ******************
+    // The following parameters will be ignored if pqBits is set to a
+    // non-zero value.
+    bool adaptiveCenters; // If index should be updated for new vectors
 
-    size_t pqBits; // Bit length of vector element after PQ compression
+    // ******************* IVFPQ-only parameters *******************
+    // The following parameters will be ignored if pqBits is set to 0
+    size_t pqDim; // The dimensionality of an encoded vector after PQ
+                  // compression. If set to 0, a heuristic will be used to
+                  // select the dimensionality.
+
     IVFPQCodebookKind codebookKind;
     CudaType lutType;
     CudaType internalDistanceType;
-    double preferredShmemCarvout; // Fraction of GPU's unified memory / L1
+    double preferredShmemCarveout; // Fraction of GPU's unified memory / L1
                                   // cache to be used as shared memory
 
 } IVFParams;

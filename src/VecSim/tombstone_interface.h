@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h>
+#include <vector>
 #include "vec_sim_common.h"
 
 /*
