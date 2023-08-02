@@ -899,9 +899,9 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     bool cur_node_chosen;
     auto new_node_iter = std::find(nodes_to_update.begin(), nodes_to_update.end(), new_node_id);
     if (new_node_iter != nodes_to_update.end()) {
-        cur_node_chosen = true;
-    } else {
         cur_node_chosen = false;
+    } else {
+        cur_node_chosen = true;
         nodes_to_update.push_back(new_node_id);
     }
     nodes_to_update.push_back(selected_neighbor);
