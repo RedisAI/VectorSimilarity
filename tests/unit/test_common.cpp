@@ -55,7 +55,7 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     }
 
     /** Testing with common hybrid query params. **/
-    rparams.emplace_back("batch_size", strlen("batch_size"), "100", strlen("100"));
+    rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "100", strlen("100")});
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),
@@ -63,7 +63,7 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     ASSERT_EQ(qparams.batchSize, 100);
 
     // Both params are "batch_size".
-    rparams.emplace_back("batch_size", strlen("batch_size"), "200", strlen("200"));
+    rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "200", strlen("200")});
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_HYBRID),

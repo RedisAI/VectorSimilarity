@@ -1239,7 +1239,7 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
-    rparams.emplace_back("ef_runtime", strlen("ef_runtime"), "100", strlen("100"));
+    rparams.push_back(VecSimRawParam{"ef_runtime", strlen("ef_runtime"), "100", strlen("100")});
 
     ASSERT_EQ(
         VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
