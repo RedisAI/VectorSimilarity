@@ -291,7 +291,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
     this->mainIndexGuard.lock();
     TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
-               readySwapJobs, MIN(readySwapJobs, maxJobsToRun));
+               readySwapJobs, std::min(readySwapJobs, maxJobsToRun));
 
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());

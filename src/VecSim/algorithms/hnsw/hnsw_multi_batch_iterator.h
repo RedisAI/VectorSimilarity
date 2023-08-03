@@ -14,8 +14,9 @@ private:
     vecsim_stl::unordered_set<labelType> returned;
 
     inline void fillFromExtras(candidatesLabelsMaxHeap<DistType> *top_candidates) override;
-    inline void prepareResults(VecSimQueryResult_List *rl, candidatesLabelsMaxHeap<DistType> *top_candidates,
-                                                 size_t n_res) override;
+    inline void prepareResults(VecSimQueryResult_List *rl,
+                               candidatesLabelsMaxHeap<DistType> *top_candidates,
+                               size_t n_res) override;
     inline void updateHeaps(candidatesLabelsMaxHeap<DistType> *top_candidates, DistType dist,
                             idType id) override;
 
@@ -35,8 +36,7 @@ public:
 
 template <typename DataType, typename DistType>
 void HNSWMulti_BatchIterator<DataType, DistType>::prepareResults(
-    VecSimQueryResult_List *rl, candidatesLabelsMaxHeap<DistType> *top_candidates,
-    size_t n_res) {
+    VecSimQueryResult_List *rl, candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) {
 
     // Put the "spare" results (if exist) in the extra candidates heap.
     while (top_candidates->size() > n_res) {
