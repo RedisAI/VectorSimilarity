@@ -133,8 +133,8 @@ protected:
         VecSimIndex_AddVector(index.get(), vector_data, id);
     }
 
-    inline VecSimQueryResult_List searchRangeInternal(const char *query, double radius,
-                                                      VecSimQueryParams *query_params) {
+    inline VecSimQueryResult_List *searchRangeInternal(const char *query, double radius,
+                                                       VecSimQueryParams *query_params) {
         return VecSimIndex_RangeQuery(index.get(), query, radius, query_params, BY_SCORE);
     }
 
@@ -165,7 +165,7 @@ public:
 
     py::object range(const py::object &input, double radius, VecSimQueryParams *query_params) {
         py::array query(input);
-        VecSimQueryResult_List res;
+        VecSimQueryResult_List *res;
         {
             py::gil_scoped_release py_gil;
             res = searchRangeInternal((const char *)query.data(0), radius, query_params);
@@ -202,12 +202,12 @@ class PyHNSWLibIndex : public PyVecSimIndex {
 private:
     template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
-        std::function<VecSimQueryResult_List(const char *, search_param_t, VecSimQueryParams *)>;
+        std::function<VecSimQueryResult_List *(const char *, search_param_t, VecSimQueryParams *)>;
 
     template <typename search_param_t> // size_t/double for KNN / range queries.
     void runParallelQueries(const py::array &queries, size_t n_queries, search_param_t param,
                             VecSimQueryParams *query_params, int n_threads,
-                            QueryFunc<search_param_t> queryFunc, VecSimQueryResult_List *results) {
+                            QueryFunc<search_param_t> queryFunc, VecSimQueryResult_List **results) {
 
         // Use number of hardware cores as default number of threads, unless specified otherwise.
         if (n_threads <= 0) {
@@ -266,12 +266,12 @@ public:
             throw std::runtime_error("Input queries array must be 2D array");
         }
         size_t n_queries = queries.shape(0);
-        std::function<VecSimQueryResult_List(const char *, size_t, VecSimQueryParams *)>
-            searchKnnWrapper([this](const char *query_, size_t k_,
-                                    VecSimQueryParams *query_params_) -> VecSimQueryResult_List {
+        QueryFunc<size_t> searchKnnWrapper(
+            [this](const char *query_, size_t k_,
+                   VecSimQueryParams *query_params_) -> VecSimQueryResult_List * {
                 return this->searchKnnInternal(query_, k_, query_params_);
             });
-        VecSimQueryResult_List results[n_queries];
+        VecSimQueryResult_List *results[n_queries];
         runParallelQueries<size_t>(queries, n_queries, k, query_params, n_threads, searchKnnWrapper,
                                    results);
         return wrap_results(results, k, n_queries);
@@ -283,12 +283,12 @@ public:
             throw std::runtime_error("Input queries array must be 2D array");
         }
         size_t n_queries = queries.shape(0);
-        std::function<VecSimQueryResult_List(const char *, double, VecSimQueryParams *)>
-            searchRangeWrapper([this](const char *query_, double radius_,
-                                      VecSimQueryParams *query_params_) -> VecSimQueryResult_List {
+        QueryFunc<double> searchRangeWrapper(
+            [this](const char *query_, double radius_,
+                   VecSimQueryParams *query_params_) -> VecSimQueryResult_List * {
                 return this->searchRangeInternal(query_, radius_, query_params_);
             });
-        VecSimQueryResult_List results[n_queries];
+        VecSimQueryResult_List *results[n_queries];
         runParallelQueries<double>(queries, n_queries, radius, query_params, n_threads,
                                    searchRangeWrapper, results);
         size_t max_results_num = 1;
