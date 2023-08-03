@@ -6,9 +6,10 @@
 
 #pragma once
 
+#include "VecSim/utils/vecsim_stl.h"
+
 #include <cstdlib>
 #include <limits>
-#include "VecSim/utils/vecsim_stl.h"
 
 // Use the "not a number" value to represent invalid score. This is for distinguishing the invalid
 // score from "inf" score (which is valid).

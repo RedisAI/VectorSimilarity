@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/query_result_struct.h"
+#include "VecSim/utils/vecsim_stl.h"
 
 namespace vecsim_stl {
 
@@ -72,7 +72,7 @@ public:
     }
     ~default_results_container() = default;
 
-    inline void emplace(size_t id, double score) override { _data.push_back({id, score}); }
+    inline void emplace(size_t id, double score) override { _data.emplace_back(id, score); }
     inline size_t size() const override { return _data.size(); }
     inline vecsim_stl::vector<VecSimQueryResult> get_results() override { return std::move(_data); }
 };
