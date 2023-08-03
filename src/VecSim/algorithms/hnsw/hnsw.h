@@ -773,9 +773,9 @@ HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2(candidatesList<DistType>
                                                         const size_t M) const {
     idType best;
     if (top_candidates.size() < M) {
-        best = std::ranges::min_element(top_candidates, std::ranges::less{}, [](const auto &a) {
-                   return a.first;
-               })->second;
+        best = std::min_element(top_candidates.begin(), top_candidates.end(),
+                                [](const auto &a, const auto &b) { return a.first < b.first; })
+                   ->second;
     } else {
         getNeighborsByHeuristic2_internal<false>(top_candidates, M, best, nullptr);
     }
@@ -808,7 +808,8 @@ void HNSWIndex<DataType, DistType>::getNeighborsByHeuristic2_internal(
     }
 
     // Sort the candidates by their distance (we don't mind the secondary order (the internal id))
-    std::ranges::sort(top_candidates, std::ranges::less{}, [](const auto &a) { return a.first; });
+    std::sort(top_candidates.begin(), top_candidates.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
 
     auto current_pair = top_candidates.begin();
     best = current_pair->second;
@@ -880,7 +881,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     // Check if the new node was selected as a neighbor for the current neighbor.
     // Make sure to add the cur node to the list of nodes to update if it was selected.
     bool cur_node_chosen;
-    auto new_node_iter = std::ranges::find(nodes_to_update, new_node_id);
+    auto new_node_iter = std::find(nodes_to_update.begin(), nodes_to_update.end(), new_node_id);
     if (new_node_iter != nodes_to_update.end()) {
         cur_node_chosen = false;
     } else {
@@ -889,7 +890,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     }
     nodes_to_update.push_back(selected_neighbor);
 
-    std::ranges::sort(nodes_to_update);
+    std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         lockNodeLinks(nodes_to_update[i]);
@@ -897,7 +898,8 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t neighbour_neighbours_idx = 0;
     bool update_cur_node_required = true;
     for (size_t i = 0; i < neighbor_level.numLinks; i++) {
-        if (!std::ranges::binary_search(nodes_to_update, neighbor_level.links[i])) {
+        if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(),
+                                neighbor_level.links[i])) {
             // The neighbor is not in the "to_update" nodes list - leave it as is.
             neighbor_level.links[neighbour_neighbours_idx++] = neighbor_level.links[i];
             continue;
@@ -1215,7 +1217,8 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
             // If this edge is uni-directional, we should update the id in the neighbor's
             // incoming edges.
             if (!bidirectional_edge) {
-                auto it = std::ranges::find(*neighbor_level.incomingEdges, curElementCount);
+                auto it = std::find(neighbor_level.incomingEdges->begin(),
+                                    neighbor_level.incomingEdges->end(), curElementCount);
                 // This should always succeed
                 assert(it != neighbor_level.incomingEdges->end());
                 *it = element_internal_id;
@@ -1409,12 +1412,12 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     vecsim_stl::vector<idType> &nodes_to_update, vecsim_stl::vector<idType> &chosen_neighbors,
     size_t max_M_cur) {
     // Sort the nodes to remove set for fast lookup.
-    std::ranges::sort(neighbors_to_remove);
+    std::sort(neighbors_to_remove.begin(), neighbors_to_remove.end());
 
     // Acquire the required locks for the updates, after sorting the nodes to update
     // (to avoid deadlocks)
     nodes_to_update.push_back(node_id);
-    std::ranges::sort(nodes_to_update);
+    std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         lockNodeLinks(nodes_to_update[i]);
@@ -1426,7 +1429,8 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     // that are still exist.
     size_t node_neighbors_idx = 0;
     for (size_t i = 0; i < node_level.numLinks; i++) {
-        if (!std::ranges::binary_search(nodes_to_update, node_level.links[i])) {
+        if (!std::binary_search(nodes_to_update.begin(), nodes_to_update.end(),
+                                node_level.links[i])) {
             // The repaired node added a new neighbor that we didn't account for before in the
             // meantime - leave it as is.
             node_level.links[node_neighbors_idx++] = node_level.links[i];
@@ -1595,7 +1599,7 @@ template <typename DataType, typename DistType>
 inline bool
 HNSWIndex<DataType, DistType>::removeIdFromList(vecsim_stl::vector<idType> &element_ids_list,
                                                 idType element_id) {
-    auto it = std::ranges::find(element_ids_list, element_id);
+    auto it = std::find(element_ids_list.begin(), element_ids_list.end(), element_id);
     if (it != element_ids_list.end()) {
         // Swap the last element with the current one (equivalent to removing the element id from
         // the list).
