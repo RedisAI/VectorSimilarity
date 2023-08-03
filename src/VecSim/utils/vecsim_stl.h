@@ -62,8 +62,8 @@ public:
     inline size_t size() const override { return std_queue::size(); }
 
     // Random order iteration
-    inline auto begin() { return this->c.begin(); }
-    inline auto end() { return this->c.end(); }
+    inline const auto begin() const { return this->c.begin(); }
+    inline const auto end() const { return this->c.end(); }
 };
 
 // min-heap
