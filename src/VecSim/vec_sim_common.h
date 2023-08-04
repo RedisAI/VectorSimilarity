@@ -48,7 +48,6 @@ typedef enum { IVFPQCodebookKind_PerCluster, IVFPQCodebookKind_PerSubspace } IVF
 // CUDA types supported by GPU-accelerated indexes
 typedef enum { CUDAType_R_32F, CUDAType_R_16F, CUDAType_R_8U } CudaType;
 
-
 typedef size_t labelType;
 typedef unsigned int idType;
 
@@ -138,17 +137,17 @@ typedef struct {
 } TieredIndexParams;
 
 typedef struct {
-    VecSimType type;     // Datatype to index.
-    size_t dim;          // Vector's dimension.
-    VecSimMetric metric; // Distance metric to use in the index.
-    bool multi;          // Determines if the index should multi-index or not.
-    size_t nLists;       // Number of inverted lists
-    bool conservativeMemoryAllocation;  // Use as little GPU memory as possible
-    size_t kmeans_nIters; // Iterations for kmeans calculation
-    double kmeans_trainsetFraction; // Fraction of dataset used for kmeans training
-    unsigned nProbes; // The number of clusters to search
-    size_t pqBits; // Bit length of vector element after PQ compression. If set
-                   // to 0, IVF flat will be used instead of IVFPQ.
+    VecSimType type;                   // Datatype to index.
+    size_t dim;                        // Vector's dimension.
+    VecSimMetric metric;               // Distance metric to use in the index.
+    bool multi;                        // Determines if the index should multi-index or not.
+    size_t nLists;                     // Number of inverted lists
+    bool conservativeMemoryAllocation; // Use as little GPU memory as possible
+    size_t kmeans_nIters;              // Iterations for kmeans calculation
+    double kmeans_trainsetFraction;    // Fraction of dataset used for kmeans training
+    unsigned nProbes;                  // The number of clusters to search
+    size_t pqBits;                     // Bit length of vector element after PQ compression. If set
+                                       // to 0, IVF flat will be used instead of IVFPQ.
     // ***************** IVF-Flat-only parameters ******************
     // The following parameters will be ignored if pqBits is set to a
     // non-zero value.
@@ -164,13 +163,13 @@ typedef struct {
     CudaType lutType;
     CudaType internalDistanceType;
     double preferredShmemCarveout; // Fraction of GPU's unified memory / L1
-                                  // cache to be used as shared memory
+                                   // cache to be used as shared memory
 
 } IVFParams;
 
 typedef struct {
-  IVFParams ivfParams;
-  TieredIndexParams tieredParams;
+    IVFParams ivfParams;
+    TieredIndexParams tieredParams;
 } TieredIVFParams;
 
 typedef union {
@@ -279,7 +278,7 @@ typedef struct {
 
 typedef struct {
     size_t nLists; // Number of inverted lists.
-    size_t pqDim; // Dimensionality of encoded vector after PQ
+    size_t pqDim;  // Dimensionality of encoded vector after PQ
     size_t pqBits; // Bits per encoded vector element after PQ
 } ivfInfoStruct;
 

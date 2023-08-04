@@ -36,9 +36,9 @@ public:
     BruteForceIndex(const BFParams *params, const AbstractIndexInitParams &abstractInitParams);
 
     void clear() {
-      idToLabelMapping.clear();
-      vectorBlocks.clear();
-      count = idType{};
+        idToLabelMapping.clear();
+        vectorBlocks.clear();
+        count = idType{};
     }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
