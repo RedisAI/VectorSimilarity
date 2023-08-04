@@ -194,6 +194,7 @@ typedef enum {
     HNSW_REPAIR_NODE_CONNECTIONS_JOB,
     HNSW_SEARCH_JOB,
     HNSW_SWAP_JOB,
+    RAFT_TRANSFER_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 

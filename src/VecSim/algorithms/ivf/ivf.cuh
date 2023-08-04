@@ -87,7 +87,7 @@ private:
 public:
     IVFIndex(const IVFParams *ivfParams, const AbstractIndexInitParams & commonParams)
         : VecSimIndexAbstract<dist_type>{commonParams},
-          res_{}, //TODO(wphicks): Construct smartly
+          res_{raft::resource_manager::get_device_resources()},
           build_params_{[ivfParams](){
             auto result = ivfParams->pqBits > 0 ?
               build_params_t{std::in_place_index<1>} : 
@@ -132,7 +132,7 @@ public:
                   bool overwrite_allowed = true) override {
         return addVectorBatch(vector_data, &label, 1, overwrite_allowed);
     }
-    auto addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
+    auto addVectorBatchAsync(const void *vector_data, labelType *label, size_t batch_size,
                        bool overwrite_allowed = true) {
       // Allocate memory on device to hold vectors to be added
       auto vector_data_gpu =
@@ -189,10 +189,16 @@ public:
         );
       }
 
-      // Ensure that above operations have executed on device before
+      return batch_size;
+    }
+    auto addVectorBatch(const void *vector_data, labelType *label, size_t batch_size,
+                       bool overwrite_allowed = true) {
+      auto result = addVectorBatchAsync(vector_data, label, batch_size,
+          overwrite_allowed);
+      // Ensure that above operation has executed on device before
       // returning from this function on host
       res_.sync_stream();
-      return batch_size;
+      return result;
     }
     auto deleteVector(labelType label) override {
         assert(!"deleteVector not implemented");

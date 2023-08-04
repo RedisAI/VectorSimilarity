@@ -1,11 +1,15 @@
 if(USE_CUDA)
 	# Set which version of RAPIDS to use
-	set(RAPIDS_VERSION 23.06)
+	set(RAPIDS_VERSION 23.10)
 	# Set which version of RAFT to use (defined separately for testing
 	# minimal dependency changes if necessary)
 	set(RAFT_VERSION "${RAPIDS_VERSION}")
-	set(RAFT_FORK "rapidsai")
-	set(RAFT_PINNED_TAG "branch-${RAPIDS_VERSION}")
+    # TODO(wphicks): Reset to main fork and branch after
+    # https://github.com/rapidsai/raft/pull/1716 has been merged
+    # set(RAFT_FORK "rapidsai")
+    set(RAFT_FORK "wphicks")
+    # set(RAFT_PINNED_TAG "branch-${RAPIDS_VERSION}")
+    set(RAFT_PINNED_TAG "fea-resource_manager")
 
 	# Download CMake file for bootstrapping RAPIDS-CMake, a utility that
 	# simplifies handling of complex RAPIDS dependencies
