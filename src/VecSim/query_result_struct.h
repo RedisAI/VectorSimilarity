@@ -29,18 +29,7 @@ struct VecSimQueryResult_List {
     vecsim_stl::vector<VecSimQueryResult> results;
     VecSimQueryResult_Code code;
 
-    VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator)
-        : results(allocator), code(VecSim_QueryResult_OK) {}
-    VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator, VecSimQueryResult_Code code)
+    VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator,
+                           VecSimQueryResult_Code code = VecSim_QueryResult_OK)
         : results(allocator), code(code) {}
 };
-
-/**
- * @brief Sets result's id (to use from index TopKQuery method)
- */
-void VecSimQueryResult_SetId(VecSimQueryResult &result, size_t id);
-
-/**
- * @brief Sets result score (to use from index TopKQuery method)
- */
-void VecSimQueryResult_SetScore(VecSimQueryResult &result, double score);

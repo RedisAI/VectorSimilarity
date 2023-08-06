@@ -2031,9 +2031,9 @@ HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
 
     if (VecSim_OK == rl->code) {
         rl->results.resize(results->size());
-        for (int i = (int)results->size() - 1; i >= 0; --i) {
-            VecSimQueryResult_SetId(rl->results[i], results->top().second);
-            VecSimQueryResult_SetScore(rl->results[i], results->top().first);
+        for (auto result = rl->results.rbegin(); result != rl->results.rend(); result++) {
+            result->id = results->top().second;
+            result->score = results->top().first;
             results->pop();
         }
     }

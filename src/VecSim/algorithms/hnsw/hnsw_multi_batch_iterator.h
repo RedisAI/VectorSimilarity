@@ -47,9 +47,9 @@ void HNSWMulti_BatchIterator<DataType, DistType>::prepareResults(
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
     rl->results.resize(top_candidates->size());
-    for (int i = (int)(top_candidates->size() - 1); i >= 0; i--) {
-        VecSimQueryResult_SetId(rl->results[i], top_candidates->top().second);
-        VecSimQueryResult_SetScore(rl->results[i], top_candidates->top().first);
+    for (auto result = rl->results.rbegin(); result != rl->results.rend(); ++result) {
+        result->id = top_candidates->top().second;
+        result->score = top_candidates->top().first;
         this->returned.insert(top_candidates->top().second);
         top_candidates->pop();
     }

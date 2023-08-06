@@ -297,9 +297,9 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
     assert(curr_id == this->count);
 
     rl->results.resize(TopCandidates->size());
-    for (int i = (int)TopCandidates->size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl->results[i], TopCandidates->top().second);
-        VecSimQueryResult_SetScore(rl->results[i], TopCandidates->top().first);
+    for (auto result = rl->results.rbegin(); result != rl->results.rend(); ++result) {
+        result->id = TopCandidates->top().second;
+        result->score = TopCandidates->top().first;
         TopCandidates->pop();
     }
     delete TopCandidates;

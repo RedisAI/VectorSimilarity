@@ -130,8 +130,8 @@ VecSimQueryResult_List *BF_BatchIterator<DataType, DistType>::heapBasedSearch(si
     // Save the top results to return.
     rl->results.resize(TopCandidates.size());
     for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        VecSimQueryResult_SetId(rl->results[i], TopCandidates.top().second);
-        VecSimQueryResult_SetScore(rl->results[i], TopCandidates.top().first);
+        rl->results[i].id = TopCandidates.top().second;
+        rl->results[i].score = TopCandidates.top().first;
         TopCandidates.pop();
     }
     swapScores(TopCandidatesIndices, rl->results.size());
@@ -157,9 +157,7 @@ VecSimQueryResult_List *BF_BatchIterator<DataType, DistType>::selectBasedSearch(
 
     rl->results.reserve(n_res);
     for (size_t i = this->scores_valid_start_pos; i < this->scores_valid_start_pos + n_res; i++) {
-        rl->results.push_back(VecSimQueryResult{});
-        VecSimQueryResult_SetId(rl->results.back(), this->scores[i].second);
-        VecSimQueryResult_SetScore(rl->results.back(), this->scores[i].first);
+        rl->results.push_back(VecSimQueryResult{this->scores[i].second, this->scores[i].first});
     }
     // Update the valid results start position after returning the results.
     this->scores_valid_start_pos += rl->results.size();
