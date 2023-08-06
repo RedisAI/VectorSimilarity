@@ -7,6 +7,7 @@
 #pragma once
 
 #include "VecSim/utils/vecsim_stl.h"
+#include "VecSim/query_results.h"
 
 #include <cstdlib>
 #include <limits>
@@ -28,7 +29,6 @@ struct VecSimQueryResult_List {
     vecsim_stl::vector<VecSimQueryResult> results;
     VecSimQueryResult_Code code;
 
-    VecSimQueryResult_List() = delete;
     VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator)
         : results(allocator), code(VecSim_QueryResult_OK) {}
     VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator, VecSimQueryResult_Code code)

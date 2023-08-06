@@ -5,7 +5,6 @@
  */
 
 #include "VecSim/query_result_struct.h"
-#include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/batch_iterator.h"
 #include <assert.h>

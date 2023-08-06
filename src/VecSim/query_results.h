@@ -18,6 +18,11 @@ extern "C" {
 // The possible ordering for results that return from a query
 typedef enum { BY_SCORE, BY_ID, BY_SCORE_THEN_ID } VecSimQueryResult_Order;
 
+typedef enum {
+    VecSim_QueryResult_OK = VecSim_OK,
+    VecSim_QueryResult_TimedOut,
+} VecSimQueryResult_Code;
+
 /**
  * @brief A single query result. This is an opaque object from which a user can get the result
  * vector id and score (comparing to the query vector).
@@ -52,7 +57,7 @@ typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
 size_t VecSimQueryResult_Len(VecSimQueryResult_List *results);
 
 /**
- * @brief Get the length of the result list that returned from a query.
+ * @brief Get the return code of a query.
  */
 VecSimQueryResult_Code VecSimQueryResult_GetCode(VecSimQueryResult_List *results);
 
