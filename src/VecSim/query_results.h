@@ -23,6 +23,8 @@ typedef enum {
     VecSim_QueryResult_TimedOut,
 } VecSimQueryResult_Code;
 
+////////////////////////////////////// VecSimQueryResult API //////////////////////////////////////
+
 /**
  * @brief A single query result. This is an opaque object from which a user can get the result
  * vector id and score (comparing to the query vector).
@@ -41,15 +43,12 @@ int64_t VecSimQueryResult_GetId(const VecSimQueryResult *item);
  */
 double VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 
+/////////////////////////////////// VecSimQueryResult_List API ////////////////////////////////////
+
 /**
  * @brief An opaque object from which results can be obtained via iterator.
  */
 typedef struct VecSimQueryResult_List VecSimQueryResult_List;
-
-/**
- * @brief Iterator for going over the list of results that had returned form a query
- */
-typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
 
 /**
  * @brief Get the length of the result list that returned from a query.
@@ -60,6 +59,18 @@ size_t VecSimQueryResult_Len(VecSimQueryResult_List *results);
  * @brief Get the return code of a query.
  */
 VecSimQueryResult_Code VecSimQueryResult_GetCode(VecSimQueryResult_List *results);
+
+/**
+ * @brief Release the entire query results list.
+ */
+void VecSimQueryResult_Free(VecSimQueryResult_List *results);
+
+///////////////////////////////// VecSimQueryResult_Iterator API //////////////////////////////////
+
+/**
+ * @brief Iterator for going over the list of results that had returned form a query
+ */
+typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
 
 /**
  * @brief Create an iterator for going over the list of results. The iterator needs to be free
@@ -88,10 +99,7 @@ void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator);
  */
 void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
 
-/**
- * @brief Release the entire query results list.
- */
-void VecSimQueryResult_Free(VecSimQueryResult_List *results);
+///////////////////////////////////// VecSimBatchIterator API /////////////////////////////////////
 
 /**
  * @brief Iterator for running the same query over an index, getting the in each iteration

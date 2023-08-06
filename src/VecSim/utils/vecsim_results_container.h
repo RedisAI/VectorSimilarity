@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vecsim_stl.h"
 
 namespace vecsim_stl {

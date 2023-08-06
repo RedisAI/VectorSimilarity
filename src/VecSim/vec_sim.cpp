@@ -6,7 +6,7 @@
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/query_results.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/index_factories/index_factory.h"
 #include "VecSim/vec_sim_index.h"

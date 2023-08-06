@@ -13,7 +13,7 @@
 #include "VecSim/utils/vecsim_results_container.h"
 #include "VecSim/index_factories/brute_force_factory.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vec_utils.h"
 
 #include <cstring>

@@ -9,7 +9,7 @@
 #include "VecSim/batch_iterator.h"
 #include "hnsw.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/algorithms/hnsw/visited_nodes_handler.h"
 #include <limits>

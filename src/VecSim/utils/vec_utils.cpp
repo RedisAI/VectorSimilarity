@@ -5,7 +5,7 @@
  */
 
 #include "vec_utils.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include <cmath>
 #include <cerrno>
 #include <climits>

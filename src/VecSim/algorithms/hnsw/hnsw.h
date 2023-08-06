@@ -13,7 +13,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/data_block.h"
 #include "VecSim/utils/vecsim_results_container.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/tombstone_interface.h"

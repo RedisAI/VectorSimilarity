@@ -4,7 +4,7 @@
  *the Server Side Public License v1 (SSPLv1).
  */
 
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/batch_iterator.h"
 #include <assert.h>

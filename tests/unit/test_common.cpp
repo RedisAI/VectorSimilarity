@@ -6,7 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "test_utils.h"

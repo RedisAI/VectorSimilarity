@@ -10,7 +10,7 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "test_utils.h"
 #include "VecSim/utils/serializer.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include <unistd.h>
 #include <random>
 #include <thread>
