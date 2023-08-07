@@ -129,9 +129,9 @@ VecSimQueryResult_List *BF_BatchIterator<DataType, DistType>::heapBasedSearch(si
 
     // Save the top results to return.
     rl->results.resize(TopCandidates.size());
-    for (int i = (int)TopCandidates.size() - 1; i >= 0; --i) {
-        rl->results[i].id = TopCandidates.top().second;
-        rl->results[i].score = TopCandidates.top().first;
+    for (auto result = rl->results.rbegin(); result != rl->results.rend(); result++) {
+        result->id = TopCandidates.top().second;
+        result->score = TopCandidates.top().first;
         TopCandidates.pop();
     }
     swapScores(TopCandidatesIndices, rl->results.size());
