@@ -974,7 +974,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
         // lock.
         if (new_node_level_data.numLinks == max_M_cur) {
             // The new node cannot add more neighbors
-            this->log("Couldn't add all chosen neighbors upon inserting a new node");
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
+                      "Couldn't add all chosen neighbors upon inserting a new node");
             unlockNodeLinks(new_node_level);
             unlockNodeLinks(neighbor_graph_data);
             break;
@@ -1350,6 +1351,8 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     assert(new_max_elements % this->blockSize == 0 &&
            "new_max_elements must be a multiple of blockSize");
+    this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+              "Updating HNSW index capacity from %zu to %zu", this->maxElements, new_max_elements);
     resizeLabelLookup(new_max_elements);
     visitedNodesHandlerPool.resize(new_max_elements);
     idToMetaData.resize(new_max_elements);
@@ -1445,7 +1448,8 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     for (auto chosen_id : chosen_neighbors) {
         if (node_neighbors_idx == max_M_cur) {
             // Cannot add more new neighbors, we reached the capacity.
-            this->log("Couldn't add all the chosen new nodes upon updating %u, as we reached the"
+            this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
+                      "Couldn't add all the chosen new nodes upon updating %u, as we reached the"
                       " maximum number of neighbors per node",
                       node_id);
             break;
@@ -1803,7 +1807,8 @@ AddVectorCtx HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
     try {
         new (cur_egd) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
     } catch (std::runtime_error &e) {
-        this->log("Error - allocating memory for new element failed due to low memory");
+        this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                  "Error - allocating memory for new element failed due to low memory");
         throw e;
     }
 
