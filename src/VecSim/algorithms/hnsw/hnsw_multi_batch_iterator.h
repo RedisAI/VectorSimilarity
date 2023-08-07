@@ -48,9 +48,8 @@ void HNSWMulti_BatchIterator<DataType, DistType>::prepareResults(
     // array.
     rl->results.resize(top_candidates->size());
     for (auto result = rl->results.rbegin(); result != rl->results.rend(); ++result) {
-        result->id = top_candidates->top().second;
-        result->score = top_candidates->top().first;
-        this->returned.insert(top_candidates->top().second);
+        std::tie(result->score, result->id) = top_candidates->top();
+        this->returned.insert(result->id);
         top_candidates->pop();
     }
 }

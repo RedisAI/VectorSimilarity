@@ -130,8 +130,7 @@ VecSimQueryResult_List *BF_BatchIterator<DataType, DistType>::heapBasedSearch(si
     // Save the top results to return.
     rl->results.resize(TopCandidates.size());
     for (auto result = rl->results.rbegin(); result != rl->results.rend(); result++) {
-        result->id = TopCandidates.top().second;
-        result->score = TopCandidates.top().first;
+        std::tie(result->score, result->id) = TopCandidates.top();
         TopCandidates.pop();
     }
     swapScores(TopCandidatesIndices, rl->results.size());

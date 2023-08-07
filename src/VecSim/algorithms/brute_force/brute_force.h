@@ -298,8 +298,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     rl->results.resize(TopCandidates->size());
     for (auto result = rl->results.rbegin(); result != rl->results.rend(); ++result) {
-        result->id = TopCandidates->top().second;
-        result->score = TopCandidates->top().first;
+        std::tie(result->score, result->id) = TopCandidates->top();
         TopCandidates->pop();
     }
     delete TopCandidates;
