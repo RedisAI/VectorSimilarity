@@ -10,7 +10,7 @@
 #include <assert.h>
 
 struct VecSimQueryResult_Iterator {
-    using iterator = vecsim_stl::vector<VecSimQueryResult>::iterator;
+    using iterator = decltype(VecSimQueryResult_List::results)::iterator;
     const iterator begin, end;
     iterator current;
 
