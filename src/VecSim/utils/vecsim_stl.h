@@ -45,23 +45,25 @@ public:
 };
 
 // max-heap
-template <typename Priority, typename Value>
-struct max_priority_queue : public abstract_priority_queue<Priority, Value> {
-private:
-    std::priority_queue<std::pair<Priority, Value>, vecsim_stl::vector<std::pair<Priority, Value>>,
-                        std::less<std::pair<Priority, Value>>>
-        max_pq;
-
+template <typename Priority, typename Value,
+          typename std_queue = std::priority_queue<std::pair<Priority, Value>,
+                                                   vecsim_stl::vector<std::pair<Priority, Value>>,
+                                                   std::less<std::pair<Priority, Value>>>>
+struct max_priority_queue : public abstract_priority_queue<Priority, Value>, public std_queue {
 public:
     max_priority_queue(const std::shared_ptr<VecSimAllocator> &alloc)
-        : abstract_priority_queue<Priority, Value>(alloc), max_pq(alloc) {}
+        : abstract_priority_queue<Priority, Value>(alloc), std_queue(alloc) {}
     ~max_priority_queue() {}
 
-    inline void emplace(Priority p, Value v) override { max_pq.emplace(p, v); }
-    inline bool empty() const override { return max_pq.empty(); }
-    inline void pop() override { max_pq.pop(); }
-    inline const std::pair<Priority, Value> top() const override { return max_pq.top(); }
-    inline size_t size() const override { return max_pq.size(); }
+    inline void emplace(Priority p, Value v) override { std_queue::emplace(p, v); }
+    inline bool empty() const override { return std_queue::empty(); }
+    inline void pop() override { std_queue::pop(); }
+    inline const std::pair<Priority, Value> top() const override { return std_queue::top(); }
+    inline size_t size() const override { return std_queue::size(); }
+
+    // Random order iteration
+    inline const auto begin() const { return this->c.begin(); }
+    inline const auto end() const { return this->c.end(); }
 };
 
 // min-heap
