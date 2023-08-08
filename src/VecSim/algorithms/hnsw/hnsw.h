@@ -2012,9 +2012,8 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
     idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl->code);
     if (VecSim_OK != rl->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
-        // that another thread deleted all the elements or didn't finish inserting the first
-        // element yet. Anyway, we observed that the index is empty, so we return an empty
-        // result list.
+        // that another thread deleted all the elements or didn't finish inserting the first element
+        // yet. Anyway, we observed that the index is empty, so we return an empty result list.
         return rl;
     }
 
