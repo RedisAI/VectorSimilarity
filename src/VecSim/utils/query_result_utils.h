@@ -11,8 +11,8 @@
 #include <unordered_set>
 
 // Compare two results by score, and if the scores are equal, by id.
-// Gets two pointer-like objects to VecSimQueryResult.
-inline int cmpVecSimQueryResultByScoreThenId(const auto &res1, const auto &res2) {
+inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
+                                             const VecSimQueryResultContainer::iterator res2) {
     return (res1->score != res2->score) ? (res1->score > res2->score ? 1 : -1)
                                         : (int)(res1->id - res2->id);
 }
