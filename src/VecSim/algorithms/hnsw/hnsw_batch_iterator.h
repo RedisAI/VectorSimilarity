@@ -39,7 +39,7 @@ protected:
     template <bool has_marked_deleted>
     VecSimQueryReply_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
     candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryReply_Code *rc);
-    virtual inline void prepareResults(VecSimQueryReply *rl,
+    virtual inline void prepareResults(VecSimQueryReply *rep,
                                        candidatesLabelsMaxHeap<DistType> *top_candidates,
                                        size_t n_res) = 0;
     inline void visitNode(idType node_id) {

@@ -1990,11 +1990,11 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
                                                            VecSimQueryParams *queryParams) const {
 
-    auto rl = new VecSimQueryReply(this->allocator);
+    auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = STANDARD_KNN;
 
     if (curElementCount == 0 || k == 0) {
-        return rl;
+        return rep;
     }
 
     void *timeoutCtx = nullptr;
@@ -2009,33 +2009,33 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl->code);
-    if (VecSim_OK != rl->code || bottom_layer_ep == INVALID_ID) {
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
         // that another thread deleted all the elements or didn't finish inserting the first element
         // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-        return rl;
+        return rep;
     }
 
     // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results;
     if (this->numMarkedDeleted) {
         results = searchBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rl->code);
+            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
     } else {
         results = searchBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rl->code);
+            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
     }
 
-    if (VecSim_OK == rl->code) {
-        rl->results.resize(results->size());
-        for (auto result = rl->results.rbegin(); result != rl->results.rend(); result++) {
+    if (VecSim_OK == rep->code) {
+        rep->results.resize(results->size());
+        for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
             std::tie(result->score, result->id) = results->top();
             results->pop();
         }
     }
     delete results;
-    return rl;
+    return rep;
 }
 
 template <typename DataType, typename DistType>
@@ -2109,11 +2109,11 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
                                                             VecSimQueryParams *queryParams) const {
 
-    auto rl = new VecSimQueryReply(this->allocator);
+    auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = RANGE_QUERY;
 
     if (curElementCount == 0) {
-        return rl;
+        return rep;
     }
     void *timeoutCtx = nullptr;
 
@@ -2125,23 +2125,23 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl->code);
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
     // Although we checked that the index is not empty (curElementCount == 0), it might be
     // that another thread deleted all the elements or didn't finish inserting the first element
     // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-    if (VecSim_OK != rl->code || bottom_layer_ep == INVALID_ID) {
-        return rl;
+    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
+        return rep;
     }
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
     if (this->numMarkedDeleted)
-        rl->results = searchRangeBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rl->code);
+        rep->results = searchRangeBottomLayer_WithTimeout<true>(
+            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
     else
-        rl->results = searchRangeBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rl->code);
-    return rl;
+        rep->results = searchRangeBottomLayer_WithTimeout<false>(
+            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
+    return rep;
 }
 
 template <typename DataType, typename DistType>

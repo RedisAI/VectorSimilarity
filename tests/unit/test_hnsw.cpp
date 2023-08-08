@@ -1655,7 +1655,7 @@ TYPED_TEST(HNSWTest, testInitialSizeEstimation_No_InitialCapacity) {
 
 TYPED_TEST(HNSWTest, testTimeoutReturn) {
     size_t dim = 4;
-    VecSimQueryReply *rl;
+    VecSimQueryReply *rep;
 
     HNSWParams params = {
         .dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
@@ -1669,10 +1669,10 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     // Checks return code on timeout.
-    rl = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     // Check timeout again - range query.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1.0);
@@ -1680,10 +1680,10 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     // Here, the entry point is inserted to the results set before we test for timeout.
     // hence, expect a single result to be returned (instead of 2 that would have return without
     // timeout).
-    rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 1);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 1);
+    VecSimQueryReply_Free(rep);
 
     // Fail on searching bottom layer entry point.
     // We need to have at least 1 vector in layer higher than 0 to fail there.
@@ -1694,16 +1694,16 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
     }
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
 
-    rl = VecSimIndex_TopKQuery(index, query, 2, NULL, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimIndex_TopKQuery(index, query, 2, NULL, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     // Timeout on searching bottom layer entry point - range query.
-    rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimIndex_Free(index);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // Cleanup.
@@ -1712,7 +1712,7 @@ TYPED_TEST(HNSWTest, testTimeoutReturn) {
 TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
     size_t n = 2;
-    VecSimQueryReply *rl;
+    VecSimQueryReply *rep;
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n};
 
@@ -1729,16 +1729,16 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_OK);
-    ASSERT_NE(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_OK);
+    ASSERT_NE(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
-    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1755,10 +1755,10 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     VecSim_SetTimeoutCallbackFunction(timeoutcb); // Fails on second call.
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1771,10 +1771,10 @@ TYPED_TEST(HNSWTest, testTimeoutReturn_batch_iterator) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out.
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    rl = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
-    VecSimQueryReply_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 2, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimBatchIterator_Free(batchIterator);
 

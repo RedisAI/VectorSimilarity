@@ -14,19 +14,15 @@ struct VecSimQueryReply_Iterator {
     const iterator begin, end;
     iterator current;
 
-    explicit VecSimQueryReply_Iterator(VecSimQueryReply *result_list)
-        : begin(result_list->results.begin()), end(result_list->results.end()), current(begin) {}
+    explicit VecSimQueryReply_Iterator(VecSimQueryReply *reply)
+        : begin(reply->results.begin()), end(reply->results.end()), current(begin) {}
 };
 
-extern "C" size_t VecSimQueryReply_Len(VecSimQueryReply *rl) { return rl->results.size(); }
+extern "C" size_t VecSimQueryReply_Len(VecSimQueryReply *qr) { return qr->results.size(); }
 
-extern "C" VecSimQueryReply_Code VecSimQueryReply_GetCode(VecSimQueryReply *rl) { return rl->code; }
+extern "C" VecSimQueryReply_Code VecSimQueryReply_GetCode(VecSimQueryReply *qr) { return qr->code; }
 
-extern "C" void VecSimQueryReply_Free(VecSimQueryReply *rl) {
-    if (rl) {
-        delete rl;
-    }
-}
+extern "C" void VecSimQueryReply_Free(VecSimQueryReply *qr) { delete qr; }
 
 extern "C" VecSimQueryReply_Iterator *VecSimQueryReply_GetIterator(VecSimQueryReply *results) {
     return new VecSimQueryReply_Iterator(results);

@@ -12,7 +12,7 @@ template <typename DataType, typename DistType>
 class HNSWSingle_BatchIterator : public HNSW_BatchIterator<DataType, DistType> {
 private:
     inline void fillFromExtras(candidatesLabelsMaxHeap<DistType> *top_candidates) override;
-    inline void prepareResults(VecSimQueryReply *rl,
+    inline void prepareResults(VecSimQueryReply *rep,
                                candidatesLabelsMaxHeap<DistType> *top_candidates,
                                size_t n_res) override;
 
@@ -32,7 +32,7 @@ public:
 
 template <typename DataType, typename DistType>
 void HNSWSingle_BatchIterator<DataType, DistType>::prepareResults(
-    VecSimQueryReply *rl, candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) {
+    VecSimQueryReply *rep, candidatesLabelsMaxHeap<DistType> *top_candidates, size_t n_res) {
 
     // Put the "spare" results (if exist) in the extra candidates heap.
     while (top_candidates->size() > n_res) {
@@ -41,8 +41,8 @@ void HNSWSingle_BatchIterator<DataType, DistType>::prepareResults(
     }
     // Return results from the top candidates heap, put them in reverse order in the batch results
     // array.
-    rl->results.resize(top_candidates->size());
-    for (auto result = rl->results.rbegin(); result != rl->results.rend(); ++result) {
+    rep->results.resize(top_candidates->size());
+    for (auto result = rep->results.rbegin(); result != rep->results.rend(); ++result) {
         std::tie(result->score, result->id) = top_candidates->top();
         top_candidates->pop();
     }

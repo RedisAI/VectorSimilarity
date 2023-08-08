@@ -66,19 +66,19 @@ const char *VecSimCommonStrings::LOG_VERBOSE_STRING = "verbose";
 const char *VecSimCommonStrings::LOG_NOTICE_STRING = "notice";
 const char *VecSimCommonStrings::LOG_WARNING_STRING = "warning";
 
-void sort_results_by_id(VecSimQueryReply *rl) {
-    std::sort(rl->results.begin(), rl->results.end(),
+void sort_results_by_id(VecSimQueryReply *rep) {
+    std::sort(rep->results.begin(), rep->results.end(),
               [](const VecSimQueryResult &a, const VecSimQueryResult &b) { return a.id < b.id; });
 }
 
-void sort_results_by_score(VecSimQueryReply *rl) {
+void sort_results_by_score(VecSimQueryReply *rep) {
     std::sort(
-        rl->results.begin(), rl->results.end(),
+        rep->results.begin(), rep->results.end(),
         [](const VecSimQueryResult &a, const VecSimQueryResult &b) { return a.score < b.score; });
 }
 
-void sort_results_by_score_then_id(VecSimQueryReply *rl) {
-    std::sort(rl->results.begin(), rl->results.end(),
+void sort_results_by_score_then_id(VecSimQueryReply *rep) {
+    std::sort(rep->results.begin(), rep->results.end(),
               [](const VecSimQueryResult &a, const VecSimQueryResult &b) {
                   if (a.score == b.score) {
                       return a.id < b.id;
@@ -87,14 +87,14 @@ void sort_results_by_score_then_id(VecSimQueryReply *rl) {
               });
 }
 
-void sort_results(VecSimQueryReply *rl, VecSimQueryReply_Order order) {
+void sort_results(VecSimQueryReply *rep, VecSimQueryReply_Order order) {
     switch (order) {
     case BY_ID:
-        return sort_results_by_id(rl);
+        return sort_results_by_id(rep);
     case BY_SCORE:
-        return sort_results_by_score(rl);
+        return sort_results_by_score(rep);
     case BY_SCORE_THEN_ID:
-        return sort_results_by_score_then_id(rl);
+        return sort_results_by_score_then_id(rep);
     }
 }
 
