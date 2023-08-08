@@ -10,6 +10,13 @@
 #include <VecSim/utils/vec_utils.h>
 #include <unordered_set>
 
+// Compare two results by score, and if the scores are equal, by id.
+// Gets two pointer-like objects to VecSimQueryResult.
+inline int cmpVecSimQueryResultByScoreThenId(const auto &res1, const auto &res2) {
+    return (res1->score != res2->score) ? (res1->score > res2->score ? 1 : -1)
+                                        : (int)(res1->id - res2->id);
+}
+
 // Append the current result to the merged results, after verifying that it did not added yet (if
 // verification is needed). Also update the set, limit and the current result.
 template <bool withSet>
@@ -43,8 +50,7 @@ std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
     auto cur_second = second.begin();
 
     while (limit && cur_first != first.end() && cur_second != second.end()) {
-        int cmp = cmpVecSimQueryResultByScoreThenId(std::to_address(cur_first),
-                                                    std::to_address(cur_second));
+        int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
         if (cmp > 0) {
             maybe_append<withSet>(results, cur_second, ids, limit);
         } else if (cmp < 0) {

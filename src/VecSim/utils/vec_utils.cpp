@@ -12,11 +12,6 @@
 #include <float.h>
 #include <algorithm>
 
-#ifndef __COMPAR_FN_T
-#define __COMPAR_FN_T
-typedef int (*__compar_fn_t)(const void *, const void *);
-#endif
-
 const char *VecSimCommonStrings::ALGORITHM_STRING = "ALGORITHM";
 const char *VecSimCommonStrings::FLAT_STRING = "FLAT";
 const char *VecSimCommonStrings::HNSW_STRING = "HNSW";

@@ -73,25 +73,6 @@ public:
     static const char *LOG_WARNING_STRING;
 };
 
-inline int cmpVecSimQueryResultById(const VecSimQueryResult *res1, const VecSimQueryResult *res2) {
-    return (int)(VecSimQueryResult_GetId(res1) - VecSimQueryResult_GetId(res2));
-}
-
-inline int cmpVecSimQueryResultByScore(const VecSimQueryResult *res1,
-                                       const VecSimQueryResult *res2) {
-    assert(!std::isnan(VecSimQueryResult_GetScore(res1)) &&
-           !std::isnan(VecSimQueryResult_GetScore(res2)));
-    // Compare doubles
-    return (VecSimQueryResult_GetScore(res1) - VecSimQueryResult_GetScore(res2)) >= 0.0 ? 1 : -1;
-}
-
-inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResult *res1,
-                                             const VecSimQueryResult *res2) {
-    return (VecSimQueryResult_GetScore(res1) != VecSimQueryResult_GetScore(res2))
-               ? cmpVecSimQueryResultByScore(res1, res2)
-               : cmpVecSimQueryResultById(res1, res2);
-}
-
 void sort_results_by_id(VecSimQueryReply *results);
 
 void sort_results_by_score(VecSimQueryReply *results);
