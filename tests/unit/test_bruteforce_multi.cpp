@@ -200,11 +200,11 @@ TYPED_TEST(BruteForceMultiTest, search_more_than_there_is) {
     ASSERT_EQ(VecSimIndex_Info(index).commonInfo.indexLabelCount, n_labels);
 
     TEST_DATA_T query[] = {0, 0, 0, 0};
-    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
-    auto it = VecSimQueryResult_List_GetIterator(res);
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n_labels);
+    auto it = VecSimQueryReply_GetIterator(res);
     for (size_t i = 0; i < n_labels; i++) {
-        auto el = VecSimQueryResult_IteratorNext(it);
+        auto el = VecSimQueryReply_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
         auto ids = this->CastToBF_Multi(index)->labelToIdsLookup.at(element_label);
@@ -214,8 +214,8 @@ TYPED_TEST(BruteForceMultiTest, search_more_than_there_is) {
             ASSERT_EQ(ids[j], i * perLabel + j);
         }
     }
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
     VecSimIndex_Free(index);
 }
 TYPED_TEST(BruteForceMultiTest, indexing_same_vector) {
@@ -237,9 +237,9 @@ TYPED_TEST(BruteForceMultiTest, indexing_same_vector) {
     auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, index); };
     runTopKSearchTest(index, query, k, verify_res);
     auto res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
-    auto it = VecSimQueryResult_List_GetIterator(res);
+    auto it = VecSimQueryReply_GetIterator(res);
     for (size_t i = 0; i < k; i++) {
-        auto el = VecSimQueryResult_IteratorNext(it);
+        auto el = VecSimQueryReply_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
         auto ids = this->CastToBF_Multi(index)->labelToIdsLookup.at(element_label);
@@ -249,8 +249,8 @@ TYPED_TEST(BruteForceMultiTest, indexing_same_vector) {
             ASSERT_EQ(ids[j], i * perLabel + j);
         }
     }
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -575,7 +575,7 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
@@ -583,7 +583,7 @@ TYPED_TEST(BruteForceMultiTest, test_dynamic_bf_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
@@ -676,16 +676,16 @@ TYPED_TEST(BruteForceMultiTest, search_empty_index) {
     GenerateVector<TEST_DATA_T>(query, dim, 50);
 
     // We do not expect any results.
-    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
-    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
 
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
@@ -699,15 +699,15 @@ TYPED_TEST(BruteForceMultiTest, search_empty_index) {
 
     // Again - we do not expect any results.
     res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    it = VecSimQueryResult_List_GetIterator(res);
-    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
 
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     VecSimIndex_Free(index);
 }
@@ -1152,7 +1152,7 @@ TYPED_TEST(BruteForceMultiTest, testInitialSizeEstimationWithInitialCapacity) {
 
 TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     size_t dim = 4;
-    VecSimQueryResult_List *rl;
+    VecSimQueryReply *rl;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
 
@@ -1166,15 +1166,15 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
     GenerateVector<TEST_DATA_T>(query, dim, 1.0);
     // Checks return code on timeout - knn
     rl = VecSimIndex_TopKQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
+    VecSimQueryReply_Free(rl);
 
     // Check timeout again - range query
     rl = VecSimIndex_RangeQuery(index, query, 1, NULL, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
+    VecSimQueryReply_Free(rl);
 
     VecSimIndex_Free(index);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
@@ -1183,7 +1183,7 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn) {
 TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
     size_t n = 10;
-    VecSimQueryResult_List *rl;
+    VecSimQueryReply *rl;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
 
@@ -1201,15 +1201,15 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_OK);
-    ASSERT_NE(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_OK);
+    ASSERT_NE(VecSimQueryReply_Len(rl), 0);
+    VecSimQueryReply_Free(rl);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
+    VecSimQueryReply_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1218,9 +1218,9 @@ TYPED_TEST(BruteForceMultiTest, testTimeoutReturn_batch_iterator) {
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_GetCode(rl), VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rl), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rl), 0);
+    VecSimQueryReply_Free(rl);
 
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1261,7 +1261,7 @@ TYPED_TEST(BruteForceMultiTest, rangeQuery) {
         EXPECT_EQ(err.what(), std::string("radius must be non-negative"));
     }
     try {
-        VecSimIndex_RangeQuery(index, query, 1, nullptr, VecSimQueryResult_Order(2));
+        VecSimIndex_RangeQuery(index, query, 1, nullptr, VecSimQueryReply_Order(2));
         FAIL();
     } catch (std::runtime_error const &err) {
         EXPECT_EQ(err.what(), std::string("Possible order values are only 'BY_ID' or 'BY_SCORE'"));

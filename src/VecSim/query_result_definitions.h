@@ -25,11 +25,13 @@ struct VecSimQueryResult {
     double score;
 };
 
-struct VecSimQueryResult_List {
-    vecsim_stl::vector<VecSimQueryResult> results;
-    VecSimQueryResult_Code code;
+using VecSimQueryResultContainer = vecsim_stl::vector<VecSimQueryResult>;
 
-    VecSimQueryResult_List(std::shared_ptr<VecSimAllocator> allocator,
-                           VecSimQueryResult_Code code = VecSim_QueryResult_OK)
+struct VecSimQueryReply {
+    VecSimQueryResultContainer results;
+    VecSimQueryReply_Code code;
+
+    VecSimQueryReply(std::shared_ptr<VecSimAllocator> allocator,
+                     VecSimQueryReply_Code code = VecSim_QueryResult_OK)
         : results(allocator), code(code) {}
 };

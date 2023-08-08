@@ -70,12 +70,12 @@ public:
         VecSimIndex_Free(frontendIndex);
     }
 
-    VecSimQueryResult_List *topKQuery(const void *queryBlob, size_t k,
-                                      VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                VecSimQueryParams *queryParams) const override;
 
-    VecSimQueryResult_List *rangeQuery(const void *queryBlob, double radius,
-                                       VecSimQueryParams *queryParams,
-                                       VecSimQueryResult_Order order) const override;
+    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                 VecSimQueryParams *queryParams,
+                                 VecSimQueryReply_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
@@ -107,17 +107,16 @@ private:
         return this->addVector(processed_blob, label, auxiliaryCtx);
     }
 
-    virtual VecSimQueryResult_List *
-    topKQueryWrapper(const void *queryBlob, size_t k,
-                     VecSimQueryParams *queryParams) const override {
+    virtual VecSimQueryReply *topKQueryWrapper(const void *queryBlob, size_t k,
+                                               VecSimQueryParams *queryParams) const override {
         char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
         return this->topKQuery(processed_blob, k, queryParams);
     }
 
-    virtual VecSimQueryResult_List *
-    rangeQueryWrapper(const void *queryBlob, double radius, VecSimQueryParams *queryParams,
-                      VecSimQueryResult_Order order) const override {
+    virtual VecSimQueryReply *rangeQueryWrapper(const void *queryBlob, double radius,
+                                                VecSimQueryParams *queryParams,
+                                                VecSimQueryReply_Order order) const override {
         char PORTABLE_ALIGN aligned_mem[this->backendIndex->getDataSize()];
         const void *processed_blob = this->backendIndex->processBlob(queryBlob, aligned_mem);
 
@@ -134,7 +133,7 @@ private:
 };
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List *
+VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
@@ -169,7 +168,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         // If the query failed (currently only on timeout), return the error code.
         if (main_results->code != VecSim_QueryResult_OK) {
             // Free the flat results.
-            VecSimQueryResult_Free(flat_results);
+            VecSimQueryReply_Free(flat_results);
 
             assert(main_results->results.empty());
             return main_results;
@@ -185,10 +184,10 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List *
+VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
-                                                  VecSimQueryResult_Order order) const {
+                                                  VecSimQueryReply_Order order) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -232,7 +231,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
             auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryResult_List *ret;
+            VecSimQueryReply *ret;
             if (this->backendIndex->isMultiValue()) {
                 ret = merge_result_lists<true>(main_results, flat_results, -1);
             } else {

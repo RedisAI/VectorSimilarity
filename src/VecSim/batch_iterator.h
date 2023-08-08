@@ -39,7 +39,7 @@ public:
 
     // Returns the Top n_res results that *hasn't been returned* in the previous calls.
     // The implementation is specific to the underline index algorithm.
-    virtual VecSimQueryResult_List *getNextResults(size_t n_res, VecSimQueryResult_Order order) = 0;
+    virtual VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) = 0;
 
     // Indicates whether there are additional results from the index to return
     virtual bool isDepleted() = 0;

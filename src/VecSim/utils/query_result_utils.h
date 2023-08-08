@@ -13,8 +13,8 @@
 // Append the current result to the merged results, after verifying that it did not added yet (if
 // verification is needed). Also update the set, limit and the current result.
 template <bool withSet>
-inline constexpr void maybe_append(vecsim_stl::vector<VecSimQueryResult> &results,
-                                   vecsim_stl::vector<VecSimQueryResult>::iterator &cur_res,
+inline constexpr void maybe_append(VecSimQueryResultContainer &results,
+                                   VecSimQueryResultContainer::iterator &cur_res,
                                    std::unordered_set<size_t> &ids, size_t &limit) {
     // In a single line, checks (only if a check is needed) if we already inserted the current id to
     // the merged results, add it to the set if not, and returns its conclusion.
@@ -30,10 +30,9 @@ inline constexpr void maybe_append(vecsim_stl::vector<VecSimQueryResult> &result
 // element that was not merged (in each array), or to the end of the array if it was merged
 // completely.
 template <bool withSet>
-std::pair<size_t, size_t> merge_results(vecsim_stl::vector<VecSimQueryResult> &results,
-                                        vecsim_stl::vector<VecSimQueryResult> &first,
-                                        vecsim_stl::vector<VecSimQueryResult> &second,
-                                        size_t limit) {
+std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
+                                        VecSimQueryResultContainer &first,
+                                        VecSimQueryResultContainer &second, size_t limit) {
     // Allocate the merged results array with the minimum size needed.
     // Min of the limit and the sum of the lengths of the two arrays.
     results.reserve(std::min(limit, first.size() + second.size()));
@@ -81,35 +80,35 @@ std::pair<size_t, size_t> merge_results(vecsim_stl::vector<VecSimQueryResult> &r
 
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
 template <bool withSet>
-VecSimQueryResult_List *merge_result_lists(VecSimQueryResult_List *first,
-                                           VecSimQueryResult_List *second, size_t limit) {
+VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *second,
+                                     size_t limit) {
 
-    auto mergedResults = new VecSimQueryResult_List(first->results.getAllocator());
+    auto mergedResults = new VecSimQueryReply(first->results.getAllocator());
     merge_results<withSet>(mergedResults->results, first->results, second->results, limit);
 
-    VecSimQueryResult_Free(first);
-    VecSimQueryResult_Free(second);
+    VecSimQueryReply_Free(first);
+    VecSimQueryReply_Free(second);
     return mergedResults;
 }
 
 // Concatenate the results of two queries into the results of the first query, consuming the second.
-static inline void concat_results(VecSimQueryResult_List *first, VecSimQueryResult_List *second) {
+static inline void concat_results(VecSimQueryReply *first, VecSimQueryReply *second) {
     first->results.insert(first->results.end(), second->results.begin(), second->results.end());
-    VecSimQueryResult_Free(second);
+    VecSimQueryReply_Free(second);
 }
 
 // Sorts the results by id and removes duplicates.
 // Assumes that a result can appear at most twice in the results list.
 // @returns the number of unique results. This should be set to be the new length of the results
 template <bool IsMulti>
-void filter_results_by_id(VecSimQueryResult_List *results) {
-    if (VecSimQueryResult_Len(results) < 2) {
+void filter_results_by_id(VecSimQueryReply *results) {
+    if (VecSimQueryReply_Len(results) < 2) {
         return;
     }
     sort_results_by_id(results);
 
     size_t i, cur_end;
-    for (i = 0, cur_end = 0; i < VecSimQueryResult_Len(results) - 1; i++, cur_end++) {
+    for (i = 0, cur_end = 0; i < VecSimQueryReply_Len(results) - 1; i++, cur_end++) {
         const VecSimQueryResult *cur_res = results->results.data() + i;
         const VecSimQueryResult *next_res = cur_res + 1;
         if (VecSimQueryResult_GetId(cur_res) == VecSimQueryResult_GetId(next_res)) {
@@ -133,7 +132,7 @@ void filter_results_by_id(VecSimQueryResult_List *results) {
         }
     }
     // If the last result is unique, we need to add it to the results.
-    if (i == VecSimQueryResult_Len(results) - 1) {
+    if (i == VecSimQueryReply_Len(results) - 1) {
         results->results[cur_end++] = results->results[i];
         // Logically, we should increment cur_end and i here, but we don't need to because it won't
         // affect the rest of the function.

@@ -291,8 +291,8 @@ TYPED_TEST(UtilsTests, VecSim_Normalize_Vector) {
 TYPED_TEST(UtilsTests, results_containers) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    auto res1 = new VecSimQueryResult_List(allocator);
-    auto res2 = new VecSimQueryResult_List(allocator);
+    auto res1 = new VecSimQueryReply(allocator);
+    auto res2 = new VecSimQueryReply(allocator);
     {
         vecsim_stl::default_results_container drc(allocator);
         vecsim_stl::unique_results_container urc(allocator);
@@ -322,15 +322,15 @@ TYPED_TEST(UtilsTests, results_containers) {
     sort_results_by_id(res1);
     sort_results_by_score(res2);
 
-    for (size_t i = 0; i < VecSimQueryResult_Len(res1); i++) {
+    for (size_t i = 0; i < VecSimQueryReply_Len(res1); i++) {
         ASSERT_EQ(i, VecSimQueryResult_GetId(res1->results.data() + i));
     }
-    for (size_t i = 0; i < VecSimQueryResult_Len(res2); i++) {
+    for (size_t i = 0; i < VecSimQueryReply_Len(res2); i++) {
         ASSERT_EQ(i, VecSimQueryResult_GetId(res2->results.data() + i));
     }
 
-    VecSimQueryResult_Free(res1);
-    VecSimQueryResult_Free(res2);
+    VecSimQueryReply_Free(res1);
+    VecSimQueryReply_Free(res2);
 }
 
 class CommonAPITest : public ::testing::Test {};
@@ -338,30 +338,30 @@ class CommonAPITest : public ::testing::Test {};
 TEST(CommonAPITest, VecSim_QueryResult_Iterator) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    auto res_list = new VecSimQueryResult_List(allocator);
+    auto res_list = new VecSimQueryReply(allocator);
     res_list->results.push_back(VecSimQueryResult{.id = 0, .score = 0.0});
     res_list->results.push_back(VecSimQueryResult{.id = 1, .score = 1.0});
     res_list->results.push_back(VecSimQueryResult{.id = 2, .score = 2.0});
 
-    ASSERT_EQ(3, VecSimQueryResult_Len(res_list));
+    ASSERT_EQ(3, VecSimQueryReply_Len(res_list));
 
     // Go over the list result with the iterator. Reset the iterator and re-iterate several times.
-    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res_list);
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(res_list);
     for (size_t rep = 0; rep < 3; rep++) {
-        for (size_t i = 0; i < VecSimQueryResult_Len(res_list); i++) {
-            ASSERT_TRUE(VecSimQueryResult_IteratorHasNext(it));
-            VecSimQueryResult *res = VecSimQueryResult_IteratorNext(it);
+        for (size_t i = 0; i < VecSimQueryReply_Len(res_list); i++) {
+            ASSERT_TRUE(VecSimQueryReply_IteratorHasNext(it));
+            VecSimQueryResult *res = VecSimQueryReply_IteratorNext(it);
             ASSERT_EQ(i, VecSimQueryResult_GetId(res));
             ASSERT_EQ((double)i, VecSimQueryResult_GetScore(res));
         }
-        ASSERT_FALSE(VecSimQueryResult_IteratorHasNext(it));
-        VecSimQueryResult_IteratorReset(it);
+        ASSERT_FALSE(VecSimQueryReply_IteratorHasNext(it));
+        VecSimQueryReply_IteratorReset(it);
     }
 
     // Destroying the iterator without destroying the list.
-    VecSimQueryResult_IteratorFree(it);
-    ASSERT_EQ(3, VecSimQueryResult_Len(res_list));
-    VecSimQueryResult_Free(res_list);
+    VecSimQueryReply_IteratorFree(it);
+    ASSERT_EQ(3, VecSimQueryReply_Len(res_list));
+    VecSimQueryReply_Free(res_list);
 }
 
 class SerializerTest : public ::testing::Test {

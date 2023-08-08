@@ -188,12 +188,12 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     return res;
 }
 
-extern "C" VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
-                                                         size_t k, VecSimQueryParams *queryParams,
-                                                         VecSimQueryResult_Order order) {
+extern "C" VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
+                                                   size_t k, VecSimQueryParams *queryParams,
+                                                   VecSimQueryReply_Order order) {
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
-    VecSimQueryResult_List *results;
+    VecSimQueryReply *results;
     results = index->topKQueryWrapper(queryBlob, k, queryParams);
 
     if (order == BY_ID) {
@@ -202,10 +202,9 @@ extern "C" VecSimQueryResult_List *VecSimIndex_TopKQuery(VecSimIndex *index, con
     return results;
 }
 
-extern "C" VecSimQueryResult_List *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                                          double radius,
-                                                          VecSimQueryParams *queryParams,
-                                                          VecSimQueryResult_Order order) {
+extern "C" VecSimQueryReply *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
+                                                    double radius, VecSimQueryParams *queryParams,
+                                                    VecSimQueryReply_Order order) {
     if (order != BY_ID && order != BY_SCORE) {
         throw std::runtime_error("Possible order values are only 'BY_ID' or 'BY_SCORE'");
     }

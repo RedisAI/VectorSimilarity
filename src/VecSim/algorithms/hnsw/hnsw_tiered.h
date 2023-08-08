@@ -137,8 +137,8 @@ public:
         const TieredHNSWIndex<DataType, DistType> *index;
         VecSimQueryParams *queryParams;
 
-        vecsim_stl::vector<VecSimQueryResult> flat_results;
-        vecsim_stl::vector<VecSimQueryResult> hnsw_results;
+        VecSimQueryResultContainer flat_results;
+        VecSimQueryResultContainer hnsw_results;
 
         VecSimBatchIterator *flat_iterator;
         VecSimBatchIterator *hnsw_iterator;
@@ -157,8 +157,8 @@ public:
 
     private:
         template <bool isMultiValue>
-        inline VecSimQueryResult_List *compute_current_batch(size_t n_res);
-        inline void filter_irrelevant_results(vecsim_stl::vector<VecSimQueryResult> &);
+        inline VecSimQueryReply *compute_current_batch(size_t n_res);
+        inline void filter_irrelevant_results(VecSimQueryResultContainer &);
 
     public:
         TieredHNSW_BatchIterator(void *query_vector,
@@ -168,8 +168,7 @@ public:
 
         ~TieredHNSW_BatchIterator();
 
-        VecSimQueryResult_List *getNextResults(size_t n_res,
-                                               VecSimQueryResult_Order order) override;
+        VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override;
 
         bool isDepleted() override;
 
@@ -876,9 +875,8 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::~TieredHNSW_Batch
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List *
-TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
-    size_t n_res, VecSimQueryResult_Order order) {
+VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
+    size_t n_res, VecSimQueryReply_Order order) {
 
     const bool isMulti = this->index->backendIndex->isMultiValue();
     auto hnsw_code = VecSim_QueryResult_OK;
@@ -894,7 +892,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
             return cur_flat_results;
         }
         this->flat_results.swap(cur_flat_results->results);
-        VecSimQueryResult_Free(cur_flat_results);
+        VecSimQueryReply_Free(cur_flat_results);
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->index->mainIndexGuard.lock_shared();
@@ -903,7 +901,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         hnsw_code = cur_hnsw_results->code;
         this->hnsw_results.swap(cur_hnsw_results->results);
-        VecSimQueryResult_Free(cur_hnsw_results);
+        VecSimQueryReply_Free(cur_hnsw_results);
         if (this->hnsw_iterator->isDepleted()) {
             delete this->hnsw_iterator;
             this->hnsw_iterator = DEPLETED;
@@ -915,7 +913,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
                                                             BY_SCORE_THEN_ID);
             this->flat_results.insert(this->flat_results.end(), tail->results.begin(),
                                       tail->results.end());
-            VecSimQueryResult_Free(tail);
+            VecSimQueryReply_Free(tail);
 
             if (!isMulti) {
                 // On single-value indexes, duplicates will never appear in the hnsw results before
@@ -938,9 +936,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
             // New batch may contain better results than the previous batch, so we need to merge.
             // We don't expect duplications (hence the <false>), as the iterator guarantees that
             // no result is returned twice.
-            vecsim_stl::vector<VecSimQueryResult> cur_hnsw_results(this->allocator);
+            VecSimQueryResultContainer cur_hnsw_results(this->allocator);
             merge_results<false>(cur_hnsw_results, this->hnsw_results, tail->results, n_res);
-            VecSimQueryResult_Free(tail);
+            VecSimQueryReply_Free(tail);
             this->hnsw_results.swap(cur_hnsw_results);
             filter_irrelevant_results(this->hnsw_results);
             if (this->hnsw_iterator->isDepleted()) {
@@ -952,10 +950,10 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
     }
 
     if (VecSim_OK != hnsw_code) {
-        return new VecSimQueryResult_List(this->allocator, hnsw_code);
+        return new VecSimQueryReply(this->allocator, hnsw_code);
     }
 
-    VecSimQueryResult_List *batch;
+    VecSimQueryReply *batch;
     if (isMulti)
         batch = compute_current_batch<true>(n_res);
     else
@@ -964,7 +962,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
     if (order == BY_ID) {
         sort_results_by_id(batch);
     }
-    size_t batch_len = VecSimQueryResult_Len(batch);
+    size_t batch_len = VecSimQueryReply_Len(batch);
     this->updateResultsCount(batch_len);
 
     return batch;
@@ -1000,11 +998,11 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
 
 template <typename DataType, typename DistType>
 template <bool isMultiValue>
-VecSimQueryResult_List *
+VecSimQueryReply *
 TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::compute_current_batch(size_t n_res) {
     // Merge results
     // This call will update `hnsw_res` and `bf_res` to point to the end of the merged results.
-    auto batch_res = new VecSimQueryResult_List(this->allocator);
+    auto batch_res = new VecSimQueryReply(this->allocator);
     std::pair<size_t, size_t> p;
     if (isMultiValue) {
         p = merge_results<true>(batch_res->results, this->hnsw_results, this->flat_results, n_res);
@@ -1044,7 +1042,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::compute_current_b
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrelevant_results(
-    vecsim_stl::vector<VecSimQueryResult> &results) {
+    VecSimQueryResultContainer &results) {
     // Filter out results that were already returned.
     auto it = results.begin();
     const auto end = results.end();

@@ -37,9 +37,9 @@ protected:
     candidatesMinHeap<idType> candidates;
 
     template <bool has_marked_deleted>
-    VecSimQueryResult_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
-    candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryResult_Code *rc);
-    virtual inline void prepareResults(VecSimQueryResult_List *rl,
+    VecSimQueryReply_Code scanGraphInternal(candidatesLabelsMaxHeap<DistType> *top_candidates);
+    candidatesLabelsMaxHeap<DistType> *scanGraph(VecSimQueryReply_Code *rc);
+    virtual inline void prepareResults(VecSimQueryReply *rl,
                                        candidatesLabelsMaxHeap<DistType> *top_candidates,
                                        size_t n_res) = 0;
     inline void visitNode(idType node_id) {
@@ -57,7 +57,7 @@ public:
     HNSW_BatchIterator(void *query_vector, const HNSWIndex<DataType, DistType> *index,
                        VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator);
 
-    VecSimQueryResult_List *getNextResults(size_t n_res, VecSimQueryResult_Order order) override;
+    VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override;
 
     bool isDepleted() override;
 
@@ -95,7 +95,7 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
-VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
+VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
     candidatesLabelsMaxHeap<DistType> *top_candidates) {
     while (!candidates.empty()) {
         DistType curr_node_dist = candidates.top().first;
@@ -167,7 +167,7 @@ VecSimQueryResult_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal
 
 template <typename DataType, typename DistType>
 candidatesLabelsMaxHeap<DistType> *
-HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
+HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
 
     candidatesLabelsMaxHeap<DistType> *top_candidates = this->index->getNewMaxPriorityQueue();
     if (this->entry_point == INVALID_ID) {
@@ -212,11 +212,10 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryResult_Code *rc) {
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List *
-HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
-                                                       VecSimQueryResult_Order order) {
+VecSimQueryReply *
+HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryReply_Order order) {
 
-    auto batch = new VecSimQueryResult_List(this->allocator);
+    auto batch = new VecSimQueryReply(this->allocator);
     // If ef_runtime lower than the number of results to return, increase it. Therefore, we assume
     // that the number of results that return from the graph scan is at least n_res (if exist).
     size_t orig_ef = this->ef;
@@ -245,7 +244,7 @@ HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res,
     this->prepareResults(batch, top_candidates, n_res);
     delete top_candidates;
 
-    this->updateResultsCount(VecSimQueryResult_Len(batch));
+    this->updateResultsCount(VecSimQueryReply_Len(batch));
     if (this->getResultsCount() == this->index->indexLabelCount()) {
         this->depleted = true;
     }

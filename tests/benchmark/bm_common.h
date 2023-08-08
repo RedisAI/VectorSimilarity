@@ -49,8 +49,8 @@ void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef
 
     BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
 
-    VecSimQueryResult_Free(bf_results);
-    VecSimQueryResult_Free(hnsw_results);
+    VecSimQueryReply_Free(bf_results);
+    VecSimQueryReply_Free(hnsw_results);
     st.ResumeTiming();
 }
 
@@ -118,7 +118,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     auto *tiered_index =
         reinterpret_cast<TieredHNSWIndex<data_t, data_t> *>(INDICES[VecSimAlgo_TIERED]);
     size_t total_iters = 50;
-    VecSimQueryResult_List *all_results[total_iters];
+    VecSimQueryReply *all_results[total_iters];
 
     auto parallel_knn_search = [](AsyncJob *job) {
         auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
@@ -149,8 +149,8 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
                                   QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
 
-        VecSimQueryResult_Free(bf_results);
-        VecSimQueryResult_Free(all_results[iter]);
+        VecSimQueryReply_Free(bf_results);
+        VecSimQueryReply_Free(all_results[iter]);
     }
 
     st.counters["Recall"] = (float)correct / (float)(k * iter);

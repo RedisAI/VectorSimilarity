@@ -50,8 +50,8 @@ protected:
 
     // Updates @correct according to the number of search results in @hnsw_results
     // that appear also in the flat algorithm results list.
-    static void MeasureRecall(VecSimQueryResult_List *hnsw_results,
-                              VecSimQueryResult_List *bf_results, std::atomic_int &correct);
+    static void MeasureRecall(VecSimQueryReply *hnsw_results, VecSimQueryReply *bf_results,
+                              std::atomic_int &correct);
 
 protected:
     static inline VecSimQueryParams CreateQueryParams(const HNSWRuntimeParams &RuntimeParams) {

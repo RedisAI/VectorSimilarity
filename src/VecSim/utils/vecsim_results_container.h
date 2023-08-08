@@ -25,7 +25,7 @@ public:
     virtual inline size_t size() const = 0;
 
     // Returns a vector containing all current data, and passes its ownership
-    virtual inline vecsim_stl::vector<VecSimQueryResult> get_results() = 0;
+    virtual inline VecSimQueryResultContainer get_results() = 0;
 };
 
 struct unique_results_container : public abstract_results_container {
@@ -49,8 +49,8 @@ public:
 
     inline size_t size() const override { return idToScore.size(); }
 
-    inline vecsim_stl::vector<VecSimQueryResult> get_results() override {
-        vecsim_stl::vector<VecSimQueryResult> results(this->allocator);
+    inline VecSimQueryResultContainer get_results() override {
+        VecSimQueryResultContainer results(this->allocator);
         results.reserve(idToScore.size());
         for (auto res : idToScore) {
             results.push_back(VecSimQueryResult{res.first, res.second});
@@ -61,7 +61,7 @@ public:
 
 struct default_results_container : public abstract_results_container {
 private:
-    vecsim_stl::vector<VecSimQueryResult> _data;
+    VecSimQueryResultContainer _data;
 
 public:
     explicit default_results_container(const std::shared_ptr<VecSimAllocator> &alloc)
@@ -76,6 +76,6 @@ public:
         _data.push_back(VecSimQueryResult{id, score});
     }
     inline size_t size() const override { return _data.size(); }
-    inline vecsim_stl::vector<VecSimQueryResult> get_results() override { return std::move(_data); }
+    inline VecSimQueryResultContainer get_results() override { return std::move(_data); }
 };
 } // namespace vecsim_stl

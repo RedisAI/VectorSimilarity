@@ -39,14 +39,14 @@ public:
     size_t indexCapacity() const override;
     vecsim_stl::vector<DistType> computeBlockScores(const DataBlock &block, const void *queryBlob,
                                                     void *timeoutCtx,
-                                                    VecSimQueryResult_Code *rc) const;
+                                                    VecSimQueryReply_Code *rc) const;
     inline DataType *getDataByInternalId(idType id) const {
         return (DataType *)vectorBlocks.at(id / this->blockSize).getElement(id % this->blockSize);
     }
-    virtual VecSimQueryResult_List *topKQuery(const void *queryBlob, size_t k,
-                                              VecSimQueryParams *queryParams) const override;
-    virtual VecSimQueryResult_List *rangeQuery(const void *queryBlob, double radius,
-                                               VecSimQueryParams *queryParams) const override;
+    virtual VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
+                                        VecSimQueryParams *queryParams) const override;
+    virtual VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
+                                         VecSimQueryParams *queryParams) const override;
     virtual VecSimIndexInfo info() const override;
     virtual VecSimInfoIterator *infoIterator() const override;
     VecSimIndexBasicInfo basicInfo() const override;
@@ -243,7 +243,7 @@ template <typename DataType, typename DistType>
 vecsim_stl::vector<DistType>
 BruteForceIndex<DataType, DistType>::computeBlockScores(const DataBlock &block,
                                                         const void *queryBlob, void *timeoutCtx,
-                                                        VecSimQueryResult_Code *rc) const {
+                                                        VecSimQueryReply_Code *rc) const {
     size_t len = block.getLength();
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
@@ -258,11 +258,11 @@ BruteForceIndex<DataType, DistType>::computeBlockScores(const DataBlock &block,
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List *
+VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const {
 
-    auto rl = new VecSimQueryResult_List(this->allocator);
+    auto rl = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : NULL;
     this->lastMode = STANDARD_KNN;
 
@@ -306,10 +306,10 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List *
+VecSimQueryReply *
 BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams) const {
-    auto rl = new VecSimQueryResult_List(this->allocator);
+    auto rl = new VecSimQueryReply(this->allocator);
     void *timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
     this->lastMode = RANGE_QUERY;
 

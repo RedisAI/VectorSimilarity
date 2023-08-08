@@ -16,12 +16,12 @@ extern "C" {
 #endif
 
 // The possible ordering for results that return from a query
-typedef enum { BY_SCORE, BY_ID, BY_SCORE_THEN_ID } VecSimQueryResult_Order;
+typedef enum { BY_SCORE, BY_ID, BY_SCORE_THEN_ID } VecSimQueryReply_Order;
 
 typedef enum {
     VecSim_QueryResult_OK = VecSim_OK,
     VecSim_QueryResult_TimedOut,
-} VecSimQueryResult_Code;
+} VecSimQueryReply_Code;
 
 ////////////////////////////////////// VecSimQueryResult API //////////////////////////////////////
 
@@ -43,61 +43,61 @@ int64_t VecSimQueryResult_GetId(const VecSimQueryResult *item);
  */
 double VecSimQueryResult_GetScore(const VecSimQueryResult *item);
 
-/////////////////////////////////// VecSimQueryResult_List API ////////////////////////////////////
+////////////////////////////////////// VecSimQueryReply API ///////////////////////////////////////
 
 /**
  * @brief An opaque object from which results can be obtained via iterator.
  */
-typedef struct VecSimQueryResult_List VecSimQueryResult_List;
+typedef struct VecSimQueryReply VecSimQueryReply;
 
 /**
  * @brief Get the length of the result list that returned from a query.
  */
-size_t VecSimQueryResult_Len(VecSimQueryResult_List *results);
+size_t VecSimQueryReply_Len(VecSimQueryReply *results);
 
 /**
  * @brief Get the return code of a query.
  */
-VecSimQueryResult_Code VecSimQueryResult_GetCode(VecSimQueryResult_List *results);
+VecSimQueryReply_Code VecSimQueryReply_GetCode(VecSimQueryReply *results);
 
 /**
  * @brief Release the entire query results list.
  */
-void VecSimQueryResult_Free(VecSimQueryResult_List *results);
+void VecSimQueryReply_Free(VecSimQueryReply *results);
 
-///////////////////////////////// VecSimQueryResult_Iterator API //////////////////////////////////
+////////////////////////////////// VecSimQueryReply_Iterator API //////////////////////////////////
 
 /**
  * @brief Iterator for going over the list of results that had returned form a query
  */
-typedef struct VecSimQueryResult_Iterator VecSimQueryResult_Iterator;
+typedef struct VecSimQueryReply_Iterator VecSimQueryReply_Iterator;
 
 /**
  * @brief Create an iterator for going over the list of results. The iterator needs to be free
- * with VecSimQueryResult_IteratorFree.
+ * with VecSimQueryReply_IteratorFree.
  */
-VecSimQueryResult_Iterator *VecSimQueryResult_List_GetIterator(VecSimQueryResult_List *results);
+VecSimQueryReply_Iterator *VecSimQueryReply_GetIterator(VecSimQueryReply *results);
 
 /**
  * @brief Advance the iterator, so it will point to the next item, and return the value.
  * The first call will return the first result. This will return NULL once the iterator is depleted.
  */
-VecSimQueryResult *VecSimQueryResult_IteratorNext(VecSimQueryResult_Iterator *iterator);
+VecSimQueryResult *VecSimQueryReply_IteratorNext(VecSimQueryReply_Iterator *iterator);
 
 /**
  * @brief Return true while the iterator points to some result, false if it is depleted.
  */
-bool VecSimQueryResult_IteratorHasNext(VecSimQueryResult_Iterator *iterator);
+bool VecSimQueryReply_IteratorHasNext(VecSimQueryReply_Iterator *iterator);
 
 /**
  * @brief Rewind the iterator to the beginning of the result list
  */
-void VecSimQueryResult_IteratorReset(VecSimQueryResult_Iterator *iterator);
+void VecSimQueryReply_IteratorReset(VecSimQueryReply_Iterator *iterator);
 
 /**
  * @brief Release the iterator
  */
-void VecSimQueryResult_IteratorFree(VecSimQueryResult_Iterator *iterator);
+void VecSimQueryReply_IteratorFree(VecSimQueryReply_Iterator *iterator);
 
 ///////////////////////////////////// VecSimBatchIterator API /////////////////////////////////////
 
@@ -116,8 +116,8 @@ typedef struct VecSimBatchIterator VecSimBatchIterator;
  * @return List of (at most) new n_results vectors which are the "nearest neighbours" to the
  * underline query vector in the iterator.
  */
-VecSimQueryResult_List *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
-                                                 VecSimQueryResult_Order order);
+VecSimQueryReply *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
+                                           VecSimQueryReply_Order order);
 
 /**
  * @brief Return true while the iterator has new results to return, false if it is depleted

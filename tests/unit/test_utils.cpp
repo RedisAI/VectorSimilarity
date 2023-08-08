@@ -14,23 +14,23 @@
 VecsimQueryType test_utils::query_types[4] = {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID,
                                               QUERY_TYPE_RANGE};
 
-static bool allUniqueResults(VecSimQueryResult_List *res) {
-    size_t len = VecSimQueryResult_Len(res);
-    auto it1 = VecSimQueryResult_List_GetIterator(res);
+static bool allUniqueResults(VecSimQueryReply *res) {
+    size_t len = VecSimQueryReply_Len(res);
+    auto it1 = VecSimQueryReply_GetIterator(res);
     for (size_t i = 0; i < len; i++) {
-        auto ei = VecSimQueryResult_IteratorNext(it1);
-        auto it2 = VecSimQueryResult_List_GetIterator(res);
+        auto ei = VecSimQueryReply_IteratorNext(it1);
+        auto it2 = VecSimQueryReply_GetIterator(res);
         for (size_t j = 0; j < i; j++) {
-            auto ej = VecSimQueryResult_IteratorNext(it2);
+            auto ej = VecSimQueryReply_IteratorNext(it2);
             if (VecSimQueryResult_GetId(ei) == VecSimQueryResult_GetId(ej)) {
-                VecSimQueryResult_IteratorFree(it2);
-                VecSimQueryResult_IteratorFree(it1);
+                VecSimQueryReply_IteratorFree(it2);
+                VecSimQueryReply_IteratorFree(it1);
                 return false;
             }
         }
-        VecSimQueryResult_IteratorFree(it2);
+        VecSimQueryReply_IteratorFree(it2);
     }
-    VecSimQueryResult_IteratorFree(it1);
+    VecSimQueryReply_IteratorFree(it1);
     return true;
 }
 
@@ -51,8 +51,8 @@ static bool is_async_index(VecSimIndex *index) {
 
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t expected_num_res,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
-                       VecSimQueryResult_Order order) {
-    VecSimQueryResult_List *res = VecSimIndex_TopKQuery(index, query, k, params, order);
+                       VecSimQueryReply_Order order) {
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, params, order);
     if (is_async_index(index)) {
         // Async index may return more or less than the expected number of results,
         // depending on the number of results that were available at the time of the query.
@@ -60,26 +60,26 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k, size_t e
         // `expected_num_res` +- number of threads in the pool of the job queue.
 
         // for now, lets only check that the number of results is not greater than k.
-        ASSERT_LE(VecSimQueryResult_Len(res), k);
+        ASSERT_LE(VecSimQueryReply_Len(res), k);
     } else {
-        ASSERT_EQ(VecSimQueryResult_Len(res), expected_num_res);
+        ASSERT_EQ(VecSimQueryReply_Len(res), expected_num_res);
     }
     ASSERT_TRUE(allUniqueResults(res));
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+    VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+    while (VecSimQueryReply_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
         double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(iterator);
+    VecSimQueryReply_Free(res);
 }
 
 void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        std::function<void(size_t, double, size_t)> ResCB, VecSimQueryParams *params,
-                       VecSimQueryResult_Order order) {
+                       VecSimQueryReply_Order order) {
     size_t expected_num_res = std::min(VecSimIndex_IndexSize(index), k);
     runTopKSearchTest(index, query, k, expected_num_res, ResCB, params, order);
 }
@@ -90,23 +90,23 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
  */
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(size_t, double, size_t)> ResCB,
-                                VecSimQueryResult_Order order, size_t expected_n_res) {
+                                VecSimQueryReply_Order order, size_t expected_n_res) {
     if (expected_n_res == SIZE_MAX)
         expected_n_res = n_res;
-    VecSimQueryResult_List *res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
-    ASSERT_EQ(VecSimQueryResult_Len(res), expected_n_res);
+    VecSimQueryReply *res = VecSimBatchIterator_Next(batch_iterator, n_res, order);
+    ASSERT_EQ(VecSimQueryReply_Len(res), expected_n_res);
     ASSERT_TRUE(allUniqueResults(res));
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+    VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+    while (VecSimQueryReply_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
         double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
     ASSERT_EQ(res_ind, expected_n_res);
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(iterator);
+    VecSimQueryReply_Free(res);
 }
 
 void compareCommonInfo(CommonInfo info1, CommonInfo info2) {
@@ -138,23 +138,23 @@ void compareHNSWInfo(hnswInfoStruct info1, hnswInfoStruct info2) {
  */
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
-                       size_t expected_res_num, VecSimQueryResult_Order order,
+                       size_t expected_res_num, VecSimQueryReply_Order order,
                        VecSimQueryParams *params) {
-    VecSimQueryResult_List *res =
+    VecSimQueryReply *res =
         VecSimIndex_RangeQuery(index, (const void *)query, radius, params, order);
-    EXPECT_EQ(VecSimQueryResult_Len(res), expected_res_num);
+    EXPECT_EQ(VecSimQueryReply_Len(res), expected_res_num);
     EXPECT_TRUE(allUniqueResults(res));
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+    VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+    while (VecSimQueryReply_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
         double score = VecSimQueryResult_GetScore(item);
         ResCB(id, score, res_ind++);
     }
     EXPECT_EQ(res_ind, expected_res_num);
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(iterator);
+    VecSimQueryReply_Free(res);
 }
 
 void compareFlatIndexInfoToIterator(VecSimIndexInfo info, VecSimInfoIterator *infoIter) {
