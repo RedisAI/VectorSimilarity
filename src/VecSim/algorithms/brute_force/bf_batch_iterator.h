@@ -186,7 +186,7 @@ BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryRe
         }
     }
     if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
-        return new VecSimQueryReply(this->allocator, VecSim_QueryResult_TimedOut);
+        return new VecSimQueryReply(this->allocator, VecSim_QueryReply_TimedOut);
     }
     VecSimQueryReply *rep = searchByHeuristics(n_res, order);
 

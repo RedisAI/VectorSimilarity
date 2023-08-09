@@ -19,8 +19,8 @@ extern "C" {
 typedef enum { BY_SCORE, BY_ID, BY_SCORE_THEN_ID } VecSimQueryReply_Order;
 
 typedef enum {
-    VecSim_QueryResult_OK = VecSim_OK,
-    VecSim_QueryResult_TimedOut,
+    VecSim_QueryReply_OK = VecSim_OK,
+    VecSim_QueryReply_TimedOut,
 } VecSimQueryReply_Code;
 
 ////////////////////////////////////// VecSimQueryResult API //////////////////////////////////////

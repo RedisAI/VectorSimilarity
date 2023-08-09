@@ -39,6 +39,6 @@ private:
             }
         }
         assert(curr_id == this->index->indexSize());
-        return VecSim_QueryResult_OK;
+        return VecSim_QueryReply_OK;
     }
 };

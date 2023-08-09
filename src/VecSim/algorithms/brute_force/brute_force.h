@@ -248,12 +248,12 @@ BruteForceIndex<DataType, DistType>::computeBlockScores(const DataBlock &block,
     vecsim_stl::vector<DistType> scores(len, this->allocator);
     for (size_t i = 0; i < len; i++) {
         if (VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             return scores;
         }
         scores[i] = this->distFunc(block.getElement(i), queryBlob, this->dim);
     }
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     return scores;
 }
 

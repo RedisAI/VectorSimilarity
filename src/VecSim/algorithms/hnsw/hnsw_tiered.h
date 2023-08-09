@@ -879,7 +879,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
     size_t n_res, VecSimQueryReply_Order order) {
 
     const bool isMulti = this->index->backendIndex->isMultiValue();
-    auto hnsw_code = VecSim_QueryResult_OK;
+    auto hnsw_code = VecSim_QueryReply_OK;
 
     if (this->hnsw_iterator == UNINITIALIZED) {
         // First call to getNextResults. The call to the BF iterator will include calculating all

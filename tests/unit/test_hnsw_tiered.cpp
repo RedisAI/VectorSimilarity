@@ -637,7 +637,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
 
     res = VecSimIndex_TopKQuery(tiered_index, query_0, k, nullptr, BY_SCORE);
     ASSERT_TRUE(res->results.empty());
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
     VecSimQueryReply_Free(res);
 
     // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
@@ -654,12 +654,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, KNNSearch) {
     });
     res = VecSimIndex_TopKQuery(tiered_index, query_0, k, &qparams, BY_SCORE);
     ASSERT_TRUE(res->results.empty());
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
     VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_TopKQuery(flat_index, query_0, k, &qparams, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_OK);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
     VecSimQueryReply_Free(res);
 
     // Clean up.
@@ -3261,7 +3261,7 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
 
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, nullptr, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
     VecSimQueryReply_Free(res);
 
     // Set timeout callback to return 1 after n checks (will fail while querying the HNSW index).
@@ -3277,23 +3277,23 @@ TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
         return 0;
     });
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
     VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_SCORE);
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_OK);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
     VecSimQueryReply_Free(res);
 
     // Check again with BY_ID.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(tiered_index, query_0, range, &qparams, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_TimedOut);
     VecSimQueryReply_Free(res);
     // Make sure we didn't get the timeout in the flat index.
     checks_in_flat = flat_index->indexSize(); // Reset the counter.
     res = VecSimIndex_RangeQuery(flat_index, query_0, range, &qparams, BY_ID);
-    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryResult_OK);
+    ASSERT_EQ(VecSimQueryReply_GetCode(res), VecSim_QueryReply_OK);
     VecSimQueryReply_Free(res);
 
     // Clean up.

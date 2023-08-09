@@ -51,6 +51,6 @@ private:
         for (auto p : tmp_scores) {
             this->scores.emplace_back(p.second, p.first);
         }
-        return VecSim_QueryResult_OK;
+        return VecSim_QueryReply_OK;
     }
 };

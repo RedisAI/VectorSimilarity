@@ -155,7 +155,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         this->flatIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
-        if (flat_results->code != VecSim_QueryResult_OK) {
+        if (flat_results->code != VecSim_QueryReply_OK) {
             assert(flat_results->results.empty());
             return flat_results;
         }
@@ -166,7 +166,7 @@ VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k
         this->mainIndexGuard.unlock_shared();
 
         // If the query failed (currently only on timeout), return the error code.
-        if (main_results->code != VecSim_QueryResult_OK) {
+        if (main_results->code != VecSim_QueryReply_OK) {
             // Free the flat results.
             VecSimQueryReply_Free(flat_results);
 
@@ -211,7 +211,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double 
 
         // If the query failed (currently only on timeout), return the error code and the partial
         // results.
-        if (flat_results->code != VecSim_QueryResult_OK) {
+        if (flat_results->code != VecSim_QueryReply_OK) {
             return flat_results;
         }
 

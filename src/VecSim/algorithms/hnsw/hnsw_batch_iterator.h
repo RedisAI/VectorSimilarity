@@ -109,7 +109,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
             break;
         }
         if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
-            return VecSim_QueryResult_TimedOut;
+            return VecSim_QueryReply_TimedOut;
         }
         // Checks if we need to add the current id to the top_candidates heap,
         // and updates the extras heap accordingly.
@@ -162,7 +162,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
         }
         this->index->unlockNodeLinks(curr_node_id);
     }
-    return VecSim_QueryResult_OK;
+    return VecSim_QueryReply_OK;
 }
 
 template <typename DataType, typename DistType>
@@ -189,7 +189,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     }
     // Checks that we didn't got timeout between iterations.
     if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
-        *rc = VecSim_QueryResult_TimedOut;
+        *rc = VecSim_QueryReply_TimedOut;
         return top_candidates;
     }
 

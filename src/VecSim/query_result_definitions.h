@@ -32,6 +32,6 @@ struct VecSimQueryReply {
     VecSimQueryReply_Code code;
 
     VecSimQueryReply(std::shared_ptr<VecSimAllocator> allocator,
-                     VecSimQueryReply_Code code = VecSim_QueryResult_OK)
+                     VecSimQueryReply_Code code = VecSim_QueryReply_OK)
         : results(allocator), code(code) {}
 };

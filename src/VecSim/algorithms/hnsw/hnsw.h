@@ -1278,7 +1278,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
 
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             bestCand = INVALID_ID;
             return;
         }
@@ -1918,7 +1918,7 @@ auto HNSWIndex<DataType, DistType>::safeGetEntryPointState() const {
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                                           VecSimQueryReply_Code *rc) const {
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
 
     auto [curr_element, max_level] = safeGetEntryPointState();
     if (curr_element == INVALID_ID)
@@ -1969,7 +1969,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             returnVisitedList(visited_nodes_handler);
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             return top_candidates;
         }
         candidate_set.pop();
@@ -1982,7 +1982,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     while (top_candidates->size() > k) {
         top_candidates->pop();
     }
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     return top_candidates;
 }
 
@@ -2044,7 +2044,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
     idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
     VecSimQueryReply_Code *rc) const {
 
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
     auto *visited_nodes_handler = getVisitedList();
@@ -2082,7 +2082,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
             break;
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             break;
         }
         candidate_set.pop();
