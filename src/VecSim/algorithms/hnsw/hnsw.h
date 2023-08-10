@@ -867,6 +867,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t max_M_cur = level ? M : M0;
     vecsim_stl::vector<idType> nodes_to_update(this->allocator);
     getNeighborsByHeuristic2(candidates, max_M_cur, nodes_to_update);
+    // TODO: consult with @alonre24 about refactoring the code to avoid all the binary search below.
 
     // Acquire all relevant locks for making the updates for the selected neighbor - all its removed
     // neighbors, along with the neighbors itself and the cur node.
@@ -1048,7 +1049,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     if (candidate_ids.size() > Mcurmax) {
         // We need to filter the candidates by the heuristic.
         candidatesList<DistType> candidates(this->allocator);
-        candidates.reserve(node_level.numLinks + neighbor_level.numLinks);
+        candidates.reserve(candidate_ids.size());
         auto neighbours_data = getDataByInternalId(neighbour_id);
         for (auto candidate_id : candidate_ids) {
             candidates.emplace_back(
@@ -1429,6 +1430,8 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 
     LevelData &node_level = getLevelData(node_id, level);
 
+    // TODO: consult with @alonre24 about the following binary search
+
     // Perform mutual updates: go over the node's neighbors and overwrite the neighbors to remove
     // that are still exist.
     size_t node_neighbors_idx = 0;
@@ -1507,7 +1510,7 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
-    candidatesList<DistType> neighbors_candidates(this->allocator);
+    vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
     // Use bitmaps for fast accesses:
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
     // selected by the heuristics - only the ones that were originally neighbors should be removed.
@@ -1520,7 +1523,6 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
     // after the repair as well.
-    const void *node_data = getDataByInternalId(node_id);
     auto *element = getGraphDataByInternalId(node_id);
     lockNodeLinks(element);
     LevelData &node_level_data = getLevelData(element, level);
@@ -1532,9 +1534,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             continue;
         }
         neighbors_candidates_set[node_level_data.links[j]] = true;
-        neighbors_candidates.emplace_back(
-            this->distFunc(node_data, getDataByInternalId(node_level_data.links[j]), this->dim),
-            node_level_data.links[j]);
+        neighbors_candidate_ids.push_back(node_level_data.links[j]);
     }
     unlockNodeLinks(element);
 
@@ -1569,28 +1569,43 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
                 continue;
             }
             neighbors_candidates_set[neighbor_level_data.links[j]] = true;
-            neighbors_candidates.emplace_back(
-                this->distFunc(node_data, getDataByInternalId(neighbor_level_data.links[j]),
-                               this->dim),
-                neighbor_level_data.links[j]);
+            neighbors_candidate_ids.push_back(neighbor_level_data.links[j]);
         }
         unlockNodeLinks(neighbor);
     }
 
     size_t max_M_cur = level ? M : M0;
-    vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
-    getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
-
-    for (idType not_chosen_neighbor : not_chosen_neighbors) {
-        if (node_orig_neighbours_set[not_chosen_neighbor]) {
-            neighbors_to_remove.push_back(not_chosen_neighbor);
-            nodes_to_update.push_back(not_chosen_neighbor);
+    if (neighbors_candidate_ids.size() > max_M_cur) {
+        // We have more candidates than the maximum number of neighbors, so we need to select which
+        // ones to keep. We use the heuristic to select the neighbors, and then remove the ones that
+        // were not originally neighbors.
+        candidatesList<DistType> neighbors_candidates(this->allocator);
+        neighbors_candidates.reserve(neighbors_candidate_ids.size());
+        const void *node_data = getDataByInternalId(node_id);
+        for (idType candidate : neighbors_candidate_ids) {
+            neighbors_candidates.emplace_back(
+                this->distFunc(getDataByInternalId(candidate), node_data, this->dim), candidate);
         }
-    }
+        vecsim_stl::vector<idType> not_chosen_neighbors(this->allocator);
+        getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
 
-    for (auto &neighbor : neighbors_candidates) {
-        chosen_neighbors.push_back(neighbor.second);
-        nodes_to_update.push_back(neighbor.second);
+        for (idType not_chosen_neighbor : not_chosen_neighbors) {
+            if (node_orig_neighbours_set[not_chosen_neighbor]) {
+                neighbors_to_remove.push_back(not_chosen_neighbor);
+                nodes_to_update.push_back(not_chosen_neighbor);
+            }
+        }
+
+        for (auto &neighbor : neighbors_candidates) {
+            chosen_neighbors.push_back(neighbor.second);
+            nodes_to_update.push_back(neighbor.second);
+        }
+    } else {
+        // We have less candidates than the maximum number of neighbors, so we choose them all, and
+        // extend the nodes to update with them.
+        chosen_neighbors.swap(neighbors_candidate_ids);
+        nodes_to_update.insert(nodes_to_update.end(), chosen_neighbors.begin(),
+                               chosen_neighbors.end());
     }
 
     // Perform the actual updates for the node and the impacted neighbors while holding the nodes'
