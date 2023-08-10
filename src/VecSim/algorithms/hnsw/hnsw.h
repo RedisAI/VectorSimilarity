@@ -171,9 +171,9 @@ protected:
     HNSWIndex() = delete;                  // default constructor is disabled.
     HNSWIndex(const HNSWIndex &) = delete; // default (shallow) copy constructor is disabled.
     inline size_t getRandomLevel(double reverse_size);
-    inline void removeExtraLinks(candidatesList<DistType> candidates, size_t Mcurmax,
-                                 LevelData &node_level, const vecsim_stl::vector<bool> &bitmap,
-                                 idType *removed_links, size_t *removed_links_num);
+    inline vecsim_stl::vector<idType> removeExtraLinks(candidatesList<DistType> candidates,
+                                                       size_t Mcurmax, LevelData &node_level,
+                                                       const vecsim_stl::vector<bool> &bitmap);
     template <bool has_marked_deleted, typename Identifier> // Either idType or labelType
     inline void
     processCandidate(idType curNodeId, const void *data_point, size_t layer, size_t ef,
@@ -533,10 +533,10 @@ void HNSWIndex<DataType, DistType>::unlockNodeLinks(idType node_id) const {
  * helper functions
  */
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeExtraLinks(
-    candidatesList<DistType> candidates, size_t Mcurmax, LevelData &node_level,
-    const vecsim_stl::vector<bool> &neighbors_bitmap, idType *removed_links,
-    size_t *removed_links_num) {
+vecsim_stl::vector<idType>
+HNSWIndex<DataType, DistType>::removeExtraLinks(candidatesList<DistType> candidates, size_t Mcurmax,
+                                                LevelData &node_level,
+                                                const vecsim_stl::vector<bool> &neighbors_bitmap) {
 
     // candidates will store the newly selected neighbours (for the relevant node).
     vecsim_stl::vector<idType> not_selected_candidates(this->allocator);
@@ -548,14 +548,14 @@ void HNSWIndex<DataType, DistType>::removeExtraLinks(
         node_level.links[node_level.numLinks++] = selected_neighbor.second;
     }
 
-    // save the neighbours that were chosen to be removed.
-    size_t removed_idx = 0;
-    for (auto &not_selected_neighbor : not_selected_candidates) {
-        if (neighbors_bitmap[not_selected_neighbor]) {
-            removed_links[removed_idx++] = not_selected_neighbor;
+    // remove from the not_selected_candidates the candidates that were not neighbours of the node.
+    for (auto it = not_selected_candidates.rbegin(); it != not_selected_candidates.rend(); ++it) {
+        if (!neighbors_bitmap[*it]) {
+            *it = not_selected_candidates.back();
+            not_selected_candidates.pop_back();
         }
     }
-    *removed_links_num = removed_idx;
+    return not_selected_candidates; // return the removed neighbours.
 }
 
 template <typename DataType, typename DistType>
@@ -1056,23 +1056,18 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 candidate_id);
         }
 
-        size_t removed_links_num;
-        idType removed_links[neighbor_level.numLinks];
-        removeExtraLinks(candidates, Mcurmax, neighbor_level, neighbour_orig_neighbours_set,
-                         removed_links, &removed_links_num);
+        auto removed_neighbours =
+            removeExtraLinks(candidates, Mcurmax, neighbor_level, neighbour_orig_neighbours_set);
 
         // remove neighbour id from the incoming list of nodes for his
         // neighbours that were chosen to remove
-        for (size_t i = 0; i < removed_links_num; i++) {
-            idType node_id = removed_links[i];
-            LevelData &node_level = getLevelData(node_id, level);
-
+        for (auto node_id : removed_neighbours) {
             // if the node id (the neighbour's neighbour to be removed)
             // wasn't pointing to the neighbour (edge was one directional),
             // we should remove it from the node's incoming edges.
             // otherwise, edge turned from bidirectional to one directional,
             // and it should be saved in the neighbor's incoming edges.
-            if (!removeIdFromList(*node_level.incomingEdges, neighbour_id)) {
+            if (!removeIdFromList(*getLevelData(node_id, level).incomingEdges, neighbour_id)) {
                 neighbor_level.incomingEdges->push_back(node_id);
             }
         }
