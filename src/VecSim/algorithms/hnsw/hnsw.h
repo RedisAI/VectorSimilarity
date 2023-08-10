@@ -867,7 +867,6 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     size_t max_M_cur = level ? M : M0;
     vecsim_stl::vector<idType> nodes_to_update(this->allocator);
     getNeighborsByHeuristic2(candidates, max_M_cur, nodes_to_update);
-    // TODO: consult with @alonre24 about refactoring the code to avoid all the binary search below.
 
     // Acquire all relevant locks for making the updates for the selected neighbor - all its removed
     // neighbors, along with the neighbors itself and the cur node.
@@ -1429,8 +1428,6 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     }
 
     LevelData &node_level = getLevelData(node_id, level);
-
-    // TODO: consult with @alonre24 about the following binary search
 
     // Perform mutual updates: go over the node's neighbors and overwrite the neighbors to remove
     // that are still exist.
