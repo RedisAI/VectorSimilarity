@@ -124,11 +124,10 @@ VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *
  * @param order the criterion to sort the results list by it. Options are by score, or by id.
  * @return An opaque object the represents a list of results. User can access the id and score
  * (which is the distance according to the index metric) of every result through
- * VecSimQueryResult_Iterator.
+ * VecSimQueryReply_Iterator.
  */
-VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
-                                             VecSimQueryParams *queryParams,
-                                             VecSimQueryResult_Order);
+VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
+                                        VecSimQueryParams *queryParams, VecSimQueryReply_Order);
 
 /**
  * @brief Search for the vectors that are in a given range in the index with respect to a given
@@ -141,11 +140,10 @@ VecSimQueryResult_List VecSimIndex_TopKQuery(VecSimIndex *index, const void *que
  * @param order the criterion to sort the results list by it. Options are by score, or by id.
  * @return An opaque object the represents a list of results. User can access the id and score
  * (which is the distance according to the index metric) of every result through
- * VecSimQueryResult_Iterator.
+ * VecSimQueryReply_Iterator.
  */
-VecSimQueryResult_List VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
-                                              double radius, VecSimQueryParams *queryParams,
-                                              VecSimQueryResult_Order);
+VecSimQueryReply *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob, double radius,
+                                         VecSimQueryParams *queryParams, VecSimQueryReply_Order);
 /**
  * @brief Return index information.
  * @param index the index to return its info.

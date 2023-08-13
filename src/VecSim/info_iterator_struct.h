@@ -7,32 +7,32 @@
 #pragma once
 
 #include "info_iterator.h"
-#include "VecSim/utils/arr_cpp.h"
+#include "VecSim/utils/vecsim_stl.h"
 
 struct VecSimInfoIterator {
 private:
-    VecSim_InfoField *fields;
+    vecsim_stl::vector<VecSim_InfoField> fields;
     size_t currentIndex;
 
 public:
-    VecSimInfoIterator(size_t len) : fields(array_new<VecSim_InfoField>(len)), currentIndex(0) {}
-
-    inline void addInfoField(VecSim_InfoField infoField) {
-        this->fields = array_append(this->fields, infoField);
+    VecSimInfoIterator(size_t len, const std::shared_ptr<VecSimAllocator> &alloc)
+        : fields(alloc), currentIndex(0) {
+        this->fields.reserve(len);
     }
 
-    inline bool hasNext() { return this->currentIndex < array_len(this->fields); }
+    inline void addInfoField(VecSim_InfoField infoField) { this->fields.push_back(infoField); }
 
-    inline VecSim_InfoField *next() { return this->fields + (this->currentIndex++); }
+    inline bool hasNext() { return this->currentIndex < this->fields.size(); }
 
-    inline size_t numberOfFields() { return array_len(this->fields); }
+    inline VecSim_InfoField *next() { return &this->fields[this->currentIndex++]; }
+
+    inline size_t numberOfFields() { return this->fields.size(); }
 
     virtual ~VecSimInfoIterator() {
-        for (size_t i = 0; i < array_len(this->fields); i++) {
+        for (size_t i = 0; i < this->fields.size(); i++) {
             if (this->fields[i].fieldType == INFOFIELD_ITERATOR) {
                 delete this->fields[i].fieldValue.iteratorValue;
             }
         }
-        array_free(this->fields);
     }
 };

@@ -11,6 +11,7 @@ extern "C" {
 #endif
 #include <stddef.h>
 #include <stdint.h>
+#include <limits.h>
 #include <stdbool.h>
 
 // Common definitions
@@ -300,11 +301,6 @@ typedef int (*timeoutCallbackFunction)(void *ctx);
  * @param message the message to log
  */
 typedef void (*logCallbackFunction)(void *ctx, const char *level, const char *message);
-
-typedef enum {
-    VecSim_QueryResult_OK = VecSim_OK,
-    VecSim_QueryResult_TimedOut,
-} VecSimQueryResult_Code;
 
 // Round up to the nearest multiplication of blockSize.
 static inline size_t RoundUpInitialCapacity(size_t initialCapacity, size_t blockSize) {

@@ -8,13 +8,12 @@
 
 #include "visited_nodes_handler.h"
 #include "VecSim/spaces/spaces.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/utils/data_block.h"
 #include "VecSim/utils/vecsim_results_container.h"
-#include "VecSim/query_result_struct.h"
+#include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/tombstone_interface.h"
@@ -193,12 +192,12 @@ protected:
     template <bool has_marked_deleted>
     candidatesLabelsMaxHeap<DistType> *
     searchBottomLayer_WithTimeout(idType ep_id, const void *data_point, size_t ef, size_t k,
-                                  void *timeoutCtx, VecSimQueryResult_Code *rc) const;
+                                  void *timeoutCtx, VecSimQueryReply_Code *rc) const;
     template <bool has_marked_deleted>
-    VecSimQueryResult *searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point,
-                                                          double epsilon, DistType radius,
-                                                          void *timeoutCtx,
-                                                          VecSimQueryResult_Code *rc) const;
+    VecSimQueryResultContainer
+    searchRangeBottomLayer_WithTimeout(idType ep_id, const void *data_point, double epsilon,
+                                       DistType radius, void *timeoutCtx,
+                                       VecSimQueryReply_Code *rc) const;
     idType getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M) const;
     void getNeighborsByHeuristic2(candidatesList<DistType> &top_candidates, size_t M,
                                   vecsim_stl::vector<idType> &not_chosen_candidates) const;
@@ -224,7 +223,7 @@ protected:
 
     template <bool running_query>
     void greedySearchLevel(const void *vector_data, size_t level, idType &curObj, DistType &curDist,
-                           void *timeoutCtx = nullptr, VecSimQueryResult_Code *rc = nullptr) const;
+                           void *timeoutCtx = nullptr, VecSimQueryReply_Code *rc = nullptr) const;
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       LevelData &node_level, LevelData &neighbor_level,
                                       size_t level, vecsim_stl::vector<bool> &neighbours_bitmap);
@@ -316,12 +315,12 @@ public:
     inline LevelData &getLevelData(idType internal_id, size_t level) const;
     inline LevelData &getLevelData(ElementGraphData *element, size_t level) const;
     inline idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                      VecSimQueryResult_Code *rc) const;
+                                      VecSimQueryReply_Code *rc) const;
 
-    VecSimQueryResult_List topKQuery(const void *query_data, size_t k,
-                                     VecSimQueryParams *queryParams) const override;
-    VecSimQueryResult_List rangeQuery(const void *query_data, double radius,
-                                      VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *topKQuery(const void *query_data, size_t k,
+                                VecSimQueryParams *queryParams) const override;
+    VecSimQueryReply *rangeQuery(const void *query_data, double radius,
+                                 VecSimQueryParams *queryParams) const override;
 
     inline void markDeletedInternal(idType internalId);
     inline bool isMarkedDeleted(idType internalId) const;
@@ -1271,7 +1270,7 @@ template <bool running_query>
 void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, size_t level,
                                                       idType &bestCand, DistType &curDist,
                                                       void *timeoutCtx,
-                                                      VecSimQueryResult_Code *rc) const {
+                                                      VecSimQueryReply_Code *rc) const {
     bool changed;
     // Don't allow choosing a deleted node as an entry point upon searching for neighbors
     // candidates (that is, we're NOT running a query, but inserting a new vector).
@@ -1279,7 +1278,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
 
     do {
         if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             bestCand = INVALID_ID;
             return;
         }
@@ -1918,8 +1917,8 @@ auto HNSWIndex<DataType, DistType>::safeGetEntryPointState() const {
 
 template <typename DataType, typename DistType>
 idType HNSWIndex<DataType, DistType>::searchBottomLayerEP(const void *query_data, void *timeoutCtx,
-                                                          VecSimQueryResult_Code *rc) const {
-    *rc = VecSim_QueryResult_OK;
+                                                          VecSimQueryReply_Code *rc) const {
+    *rc = VecSim_QueryReply_OK;
 
     auto [curr_element, max_level] = safeGetEntryPointState();
     if (curr_element == INVALID_ID)
@@ -1937,7 +1936,7 @@ template <bool has_marked_deleted>
 candidatesLabelsMaxHeap<DistType> *
 HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const void *data_point,
                                                              size_t ef, size_t k, void *timeoutCtx,
-                                                             VecSimQueryResult_Code *rc) const {
+                                                             VecSimQueryReply_Code *rc) const {
 
     auto *visited_nodes_handler = getVisitedList();
     tag_t visited_tag = visited_nodes_handler->getFreshTag();
@@ -1970,7 +1969,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
             returnVisitedList(visited_nodes_handler);
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             return top_candidates;
         }
         candidate_set.pop();
@@ -1983,22 +1982,19 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     while (top_candidates->size() > k) {
         top_candidates->pop();
     }
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     return top_candidates;
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
-HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
-                                         VecSimQueryParams *queryParams) const {
+VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
+                                                           VecSimQueryParams *queryParams) const {
 
-    VecSimQueryResult_List rl = {0};
+    auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = STANDARD_KNN;
 
     if (curElementCount == 0 || k == 0) {
-        rl.code = VecSim_QueryResult_OK;
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+        return rep;
     }
 
     void *timeoutCtx = nullptr;
@@ -2013,46 +2009,42 @@ HNSWIndex<DataType, DistType>::topKQuery(const void *query_data, size_t k,
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
-    if (VecSim_OK != rl.code) {
-        return rl;
-    } else if (bottom_layer_ep == INVALID_ID) {
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
+    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
         // Although we checked that the index is not empty (curElementCount == 0), it might be
         // that another thread deleted all the elements or didn't finish inserting the first element
         // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+        return rep;
     }
 
     // We now oun the results heap, we need to free (delete) it when we done
     candidatesLabelsMaxHeap<DistType> *results;
     if (this->numMarkedDeleted) {
         results = searchBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rl.code);
+            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
     } else {
         results = searchBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rl.code);
+            bottom_layer_ep, query_data, std::max(query_ef, k), k, timeoutCtx, &rep->code);
     }
 
-    if (VecSim_OK == rl.code) {
-        rl.results = array_new_len<VecSimQueryResult>(results->size(), results->size());
-        for (int i = (int)results->size() - 1; i >= 0; --i) {
-            VecSimQueryResult_SetId(rl.results[i], results->top().second);
-            VecSimQueryResult_SetScore(rl.results[i], results->top().first);
+    if (VecSim_OK == rep->code) {
+        rep->results.resize(results->size());
+        for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
+            std::tie(result->score, result->id) = results->top();
             results->pop();
         }
     }
     delete results;
-    return rl;
+    return rep;
 }
 
 template <typename DataType, typename DistType>
 template <bool has_marked_deleted>
-VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
+VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTimeout(
     idType ep_id, const void *data_point, double epsilon, DistType radius, void *timeoutCtx,
-    VecSimQueryResult_Code *rc) const {
+    VecSimQueryReply_Code *rc) const {
 
-    *rc = VecSim_QueryResult_OK;
+    *rc = VecSim_QueryReply_OK;
     auto res_container = getNewResultsContainer(10); // arbitrary initial cap.
 
     auto *visited_nodes_handler = getVisitedList();
@@ -2090,7 +2082,7 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
             break;
         }
         if (VECSIM_TIMEOUT(timeoutCtx)) {
-            *rc = VecSim_QueryResult_TimedOut;
+            *rc = VecSim_QueryReply_TimedOut;
             break;
         }
         candidate_set.pop();
@@ -2114,17 +2106,14 @@ VecSimQueryResult *HNSWIndex<DataType, DistType>::searchRangeBottomLayer_WithTim
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryResult_List
-HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
-                                          VecSimQueryParams *queryParams) const {
+VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
+                                                            VecSimQueryParams *queryParams) const {
 
-    VecSimQueryResult_List rl = {0};
+    auto rep = new VecSimQueryReply(this->allocator);
     this->lastMode = RANGE_QUERY;
 
     if (curElementCount == 0) {
-        rl.code = VecSim_QueryResult_OK;
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+        return rep;
     }
     void *timeoutCtx = nullptr;
 
@@ -2136,24 +2125,23 @@ HNSWIndex<DataType, DistType>::rangeQuery(const void *query_data, double radius,
         }
     }
 
-    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rl.code);
+    idType bottom_layer_ep = searchBottomLayerEP(query_data, timeoutCtx, &rep->code);
     // Although we checked that the index is not empty (curElementCount == 0), it might be
     // that another thread deleted all the elements or didn't finish inserting the first element
     // yet. Anyway, we observed that the index is empty, so we return an empty result list.
-    if (VecSim_OK != rl.code || bottom_layer_ep == INVALID_ID) {
-        rl.results = array_new<VecSimQueryResult>(0);
-        return rl;
+    if (VecSim_OK != rep->code || bottom_layer_ep == INVALID_ID) {
+        return rep;
     }
 
     // search bottom layer
     // Here we send the radius as double to match the function arguments type.
     if (this->numMarkedDeleted)
-        rl.results = searchRangeBottomLayer_WithTimeout<true>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rl.code);
+        rep->results = searchRangeBottomLayer_WithTimeout<true>(
+            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
     else
-        rl.results = searchRangeBottomLayer_WithTimeout<false>(
-            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rl.code);
-    return rl;
+        rep->results = searchRangeBottomLayer_WithTimeout<false>(
+            bottom_layer_ep, query_data, query_epsilon, radius, timeoutCtx, &rep->code);
+    return rep;
 }
 
 template <typename DataType, typename DistType>
@@ -2187,7 +2175,7 @@ VecSimInfoIterator *HNSWIndex<DataType, DistType>::infoIterator() const {
     VecSimIndexInfo info = this->info();
     // For readability. Update this number when needed.
     size_t numberOfInfoFields = 17;
-    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields);
+    VecSimInfoIterator *infoIterator = new VecSimInfoIterator(numberOfInfoFields, this->allocator);
 
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::ALGORITHM_STRING,
