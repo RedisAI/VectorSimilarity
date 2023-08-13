@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include <cmath>
@@ -627,7 +626,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
@@ -635,7 +634,7 @@ TYPED_TEST(BruteForceTest, test_dynamic_bf_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
@@ -753,16 +752,16 @@ TYPED_TEST(BruteForceTest, brute_force_search_empty_index) {
     TEST_DATA_T query[] = {50, 50, 50, 50};
 
     // We do not expect any results.
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
-    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
 
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
@@ -776,15 +775,15 @@ TYPED_TEST(BruteForceTest, brute_force_search_empty_index) {
 
     // Again - we do not expect any results.
     res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    it = VecSimQueryResult_List_GetIterator(res);
-    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
 
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     VecSimIndex_Free(index);
 }
@@ -1049,13 +1048,13 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_corner_cases) {
     // Create batch iterator for empty index.
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
     // Try to get more results even though there are no.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
     // Retry to get results.
     res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
     VecSimBatchIterator_Free(batchIterator);
 
     for (size_t i = 0; i < n; i++) {
@@ -1067,8 +1066,8 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
     // Ask for zero results.
     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     // Get all in first iteration, expect to use select search.
     size_t n_res = n;
@@ -1080,17 +1079,17 @@ TYPED_TEST(BruteForceTest, brute_force_batch_iterator_corner_cases) {
 
     // Try to get more results even though there are no.
     res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     // Reset, and run in batches, but the final batch is partial.
     VecSimBatchIterator_Reset(batchIterator);
     res = VecSimBatchIterator_Next(batchIterator, n_res / 2, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), n / 2);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n / 2);
+    VecSimQueryReply_Free(res);
     res = VecSimBatchIterator_Next(batchIterator, n_res / 2 + 1, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), n / 2);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n / 2);
+    VecSimQueryReply_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     VecSimBatchIterator_Free(batchIterator);
@@ -1107,17 +1106,14 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
 
-    auto *rparams = array_new<VecSimRawParam>(2);
+    std::vector<VecSimRawParam> rparams;
 
     // EPSILON is not a valid parameter for BF index.
-    array_append(rparams, (VecSimRawParam){.name = "epsilon",
-                                           .nameLen = strlen("epsilon"),
-                                           .value = "0.1",
-                                           .valLen = strlen("0.1")});
+    rparams.push_back(VecSimRawParam{"epsilon", strlen("epsilon"), "0.1", strlen("0.1")});
 
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
             VecSimParamResolverErr_UnknownParam);
     }
     // EF_RUNTIME is not a valid parameter for BF index.
@@ -1128,27 +1124,23 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
 
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
             VecSimParamResolverErr_UnknownParam);
     }
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
     // Sending only "batch_size" param is valid.
-    array_append(rparams, (VecSimRawParam){.name = "batch_size",
-                                           .nameLen = strlen("batch_size"),
-                                           .value = "100",
-                                           .valLen = strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams + 1, 1, &qparams, QUERY_TYPE_HYBRID),
+    rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "100", strlen("100")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data() + 1, 1, &qparams, QUERY_TYPE_HYBRID),
               VecSim_OK);
     ASSERT_EQ(qparams.batchSize, 100);
 
     // With EF_RUNTIME, its again invalid (for hybrid queries as well).
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams, array_len(rparams), &qparams, query_type),
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
             VecSimParamResolverErr_UnknownParam);
     }
     VecSimIndex_Free(index);
-    array_free(rparams);
 }
 
 TYPED_TEST(BruteForceTest, brute_get_distance) {
@@ -1295,32 +1287,32 @@ TYPED_TEST(BruteForceTest, batchIteratorSwapIndices) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Get first batch - expect to get ids 1,3,4,5.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 4, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 4);
-    VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res);
+    VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 4, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 4);
+    VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res);
     int res_ind = 0;
     size_t expected_res[] = {1, 3, 4, 5};
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+    while (VecSimQueryReply_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
         ASSERT_EQ(expected_res[res_ind++], id);
     }
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(iterator);
+    VecSimQueryReply_Free(res);
 
     // Get another batch - expect to get ids 0,2,6,7. Make sure that ids 0,2 swapped properly.
     res = VecSimBatchIterator_Next(batchIterator, 4, BY_ID);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 4);
-    iterator = VecSimQueryResult_List_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 4);
+    iterator = VecSimQueryReply_GetIterator(res);
     res_ind = 0;
     size_t expected_res_2[] = {0, 2, 6, 7};
-    while (VecSimQueryResult_IteratorHasNext(iterator)) {
-        VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+    while (VecSimQueryReply_IteratorHasNext(iterator)) {
+        VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
         int id = (int)VecSimQueryResult_GetId(item);
         ASSERT_EQ(expected_res_2[res_ind++], id);
     }
-    VecSimQueryResult_IteratorFree(iterator);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(iterator);
+    VecSimQueryReply_Free(res);
 
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
@@ -1428,7 +1420,7 @@ TYPED_TEST(BruteForceTest, testInitialSizeEstimationWithInitialCapacity) {
 
 TYPED_TEST(BruteForceTest, testTimeoutReturn) {
     size_t dim = 4;
-    VecSimQueryResult_List rl;
+    VecSimQueryReply *rep;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = 1, .blockSize = 5};
 
@@ -1441,16 +1433,16 @@ TYPED_TEST(BruteForceTest, testTimeoutReturn) {
 
     VecSimIndex_AddVector(index, vec, 0);
     // Checks return code on timeout - knn
-    rl = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    rep = VecSimIndex_TopKQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     // Check timeout again - range query
-    rl = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    rep = VecSimIndex_RangeQuery(index, vec, 1, NULL, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimIndex_Free(index);
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 0; }); // cleanup
@@ -1459,7 +1451,7 @@ TYPED_TEST(BruteForceTest, testTimeoutReturn) {
 TYPED_TEST(BruteForceTest, testTimeoutReturn_batch_iterator) {
     size_t dim = 4;
     size_t n = 10;
-    VecSimQueryResult_List rl;
+    VecSimQueryReply *rep;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .initialCapacity = n, .blockSize = 5};
 
@@ -1476,16 +1468,16 @@ TYPED_TEST(BruteForceTest, testTimeoutReturn_batch_iterator) {
     // Fail on second batch (after calculation already completed)
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_OK);
-    ASSERT_NE(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_OK);
+    ASSERT_NE(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSim_SetTimeoutCallbackFunction([](void *ctx) { return 1; }); // Always times out
-    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1493,10 +1485,10 @@ TYPED_TEST(BruteForceTest, testTimeoutReturn_batch_iterator) {
     // Timeout callback function already set to always time out
     batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
-    rl = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
-    ASSERT_EQ(rl.code, VecSim_QueryResult_TimedOut);
-    ASSERT_EQ(VecSimQueryResult_Len(rl), 0);
-    VecSimQueryResult_Free(rl);
+    rep = VecSimBatchIterator_Next(batchIterator, 1, BY_ID);
+    ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_TimedOut);
+    ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
+    VecSimQueryReply_Free(rep);
 
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1529,7 +1521,7 @@ TYPED_TEST(BruteForceTest, rangeQuery) {
         EXPECT_EQ(err.what(), std::string("radius must be non-negative"));
     }
     try {
-        VecSimIndex_RangeQuery(index, query, 1, nullptr, VecSimQueryResult_Order(2));
+        VecSimIndex_RangeQuery(index, query, 1, nullptr, VecSimQueryReply_Order(2));
         FAIL();
     } catch (std::runtime_error const &err) {
         EXPECT_EQ(err.what(), std::string("Possible order values are only 'BY_ID' or 'BY_SCORE'"));

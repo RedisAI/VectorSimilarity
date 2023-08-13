@@ -242,7 +242,7 @@ void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
     for (auto _ : st) {
         auto res = VecSimIndex_RangeQuery(INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(),
                                           radius, nullptr, BY_ID);
-        total_res += VecSimQueryResult_Len(res);
+        total_res += VecSimQueryReply_Len(res);
         iter++;
     }
     st.counters["Avg. results number"] = (double)total_res / iter;
@@ -263,15 +263,15 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
             VecSimIndex_RangeQuery(INDICES[VecSimAlgo_HNSWLIB], QUERIES[iter % N_QUERIES].data(),
                                    radius, &query_params, BY_ID);
         st.PauseTiming();
-        total_res += VecSimQueryResult_Len(hnsw_results);
+        total_res += VecSimQueryReply_Len(hnsw_results);
 
         // Measure recall:
         auto bf_results = VecSimIndex_RangeQuery(
             INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
-        total_res_bf += VecSimQueryResult_Len(bf_results);
+        total_res_bf += VecSimQueryReply_Len(bf_results);
 
-        VecSimQueryResult_Free(bf_results);
-        VecSimQueryResult_Free(hnsw_results);
+        VecSimQueryReply_Free(bf_results);
+        VecSimQueryReply_Free(hnsw_results);
         iter++;
         st.ResumeTiming();
     }

@@ -22,7 +22,7 @@ namespace py = pybind11;
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
-py::object wrap_results(VecSimQueryResult_List *res, size_t num_res, size_t num_queries = 1) {
+py::object wrap_results(VecSimQueryReply **res, size_t num_res, size_t num_queries = 1) {
     auto *data_numpy_l = new long[num_res * num_queries];
     auto *data_numpy_d = new double[num_res * num_queries];
     // Default "padding" for the entries that will stay empty (in case of less than k results return
@@ -32,15 +32,15 @@ py::object wrap_results(VecSimQueryResult_List *res, size_t num_res, size_t num_
     std::fill_n(data_numpy_d, num_res * num_queries, -1.0);
 
     for (size_t i = 0; i < num_queries; i++) {
-        VecSimQueryResult_Iterator *iterator = VecSimQueryResult_List_GetIterator(res[i]);
+        VecSimQueryReply_Iterator *iterator = VecSimQueryReply_GetIterator(res[i]);
         size_t res_ind = i * num_res;
-        while (VecSimQueryResult_IteratorHasNext(iterator)) {
-            VecSimQueryResult *item = VecSimQueryResult_IteratorNext(iterator);
+        while (VecSimQueryReply_IteratorHasNext(iterator)) {
+            VecSimQueryResult *item = VecSimQueryReply_IteratorNext(iterator);
             data_numpy_d[res_ind] = VecSimQueryResult_GetScore(item);
             data_numpy_l[res_ind++] = (long)VecSimQueryResult_GetId(item);
         }
-        VecSimQueryResult_IteratorFree(iterator);
-        VecSimQueryResult_Free(res[i]);
+        VecSimQueryReply_IteratorFree(iterator);
+        VecSimQueryReply_Free(res[i]);
     }
 
     py::capsule free_when_done_l(data_numpy_l, [](void *labels) { delete[](long *) labels; });
@@ -72,8 +72,8 @@ public:
 
     bool hasNext() { return VecSimBatchIterator_HasNext(batchIterator.get()); }
 
-    py::object getNextResults(size_t n_res, VecSimQueryResult_Order order) {
-        VecSimQueryResult_List results;
+    py::object getNextResults(size_t n_res, VecSimQueryReply_Order order) {
+        VecSimQueryReply *results;
         {
             // We create this object inside the scope to enable parallel execution of the batch
             // iterator from different Python threads.
@@ -82,7 +82,7 @@ public:
         }
         // The number of results may be lower than n_res, if there are less than n_res remaining
         // vectors in the index that hadn't been returned yet.
-        size_t actual_n_res = VecSimQueryResult_Len(results);
+        size_t actual_n_res = VecSimQueryReply_Len(results);
         return wrap_results(&results, actual_n_res);
     }
     void reset() { VecSimBatchIterator_Reset(batchIterator.get()); }
@@ -124,8 +124,8 @@ private:
 protected:
     std::shared_ptr<VecSimIndex> index;
 
-    inline VecSimQueryResult_List searchKnnInternal(const char *query, size_t k,
-                                                    VecSimQueryParams *query_params) {
+    inline VecSimQueryReply *searchKnnInternal(const char *query, size_t k,
+                                               VecSimQueryParams *query_params) {
         return VecSimIndex_TopKQuery(index.get(), query, k, query_params, BY_SCORE);
     }
 
@@ -133,8 +133,8 @@ protected:
         VecSimIndex_AddVector(index.get(), vector_data, id);
     }
 
-    inline VecSimQueryResult_List searchRangeInternal(const char *query, double radius,
-                                                      VecSimQueryParams *query_params) {
+    inline VecSimQueryReply *searchRangeInternal(const char *query, double radius,
+                                                 VecSimQueryParams *query_params) {
         return VecSimIndex_RangeQuery(index.get(), query, radius, query_params, BY_SCORE);
     }
 
@@ -155,7 +155,7 @@ public:
 
     py::object knn(const py::object &input, size_t k, VecSimQueryParams *query_params) {
         py::array query(input);
-        VecSimQueryResult_List res;
+        VecSimQueryReply *res;
         {
             py::gil_scoped_release py_gil;
             res = searchKnnInternal((const char *)query.data(0), k, query_params);
@@ -165,12 +165,12 @@ public:
 
     py::object range(const py::object &input, double radius, VecSimQueryParams *query_params) {
         py::array query(input);
-        VecSimQueryResult_List res;
+        VecSimQueryReply *res;
         {
             py::gil_scoped_release py_gil;
             res = searchRangeInternal((const char *)query.data(0), radius, query_params);
         }
-        return wrap_results(&res, VecSimQueryResult_Len(res));
+        return wrap_results(&res, VecSimQueryReply_Len(res));
     }
 
     size_t indexSize() { return VecSimIndex_IndexSize(index.get()); }
@@ -202,12 +202,12 @@ class PyHNSWLibIndex : public PyVecSimIndex {
 private:
     template <typename search_param_t> // size_t/double for KNN/range queries.
     using QueryFunc =
-        std::function<VecSimQueryResult_List(const char *, search_param_t, VecSimQueryParams *)>;
+        std::function<VecSimQueryReply *(const char *, search_param_t, VecSimQueryParams *)>;
 
     template <typename search_param_t> // size_t/double for KNN / range queries.
     void runParallelQueries(const py::array &queries, size_t n_queries, search_param_t param,
                             VecSimQueryParams *query_params, int n_threads,
-                            QueryFunc<search_param_t> queryFunc, VecSimQueryResult_List *results) {
+                            QueryFunc<search_param_t> queryFunc, VecSimQueryReply **results) {
 
         // Use number of hardware cores as default number of threads, unless specified otherwise.
         if (n_threads <= 0) {
@@ -266,12 +266,12 @@ public:
             throw std::runtime_error("Input queries array must be 2D array");
         }
         size_t n_queries = queries.shape(0);
-        std::function<VecSimQueryResult_List(const char *, size_t, VecSimQueryParams *)>
-            searchKnnWrapper([this](const char *query_, size_t k_,
-                                    VecSimQueryParams *query_params_) -> VecSimQueryResult_List {
+        QueryFunc<size_t> searchKnnWrapper(
+            [this](const char *query_, size_t k_,
+                   VecSimQueryParams *query_params_) -> VecSimQueryReply * {
                 return this->searchKnnInternal(query_, k_, query_params_);
             });
-        VecSimQueryResult_List results[n_queries];
+        VecSimQueryReply *results[n_queries];
         runParallelQueries<size_t>(queries, n_queries, k, query_params, n_threads, searchKnnWrapper,
                                    results);
         return wrap_results(results, k, n_queries);
@@ -283,18 +283,18 @@ public:
             throw std::runtime_error("Input queries array must be 2D array");
         }
         size_t n_queries = queries.shape(0);
-        std::function<VecSimQueryResult_List(const char *, double, VecSimQueryParams *)>
-            searchRangeWrapper([this](const char *query_, double radius_,
-                                      VecSimQueryParams *query_params_) -> VecSimQueryResult_List {
+        QueryFunc<double> searchRangeWrapper(
+            [this](const char *query_, double radius_,
+                   VecSimQueryParams *query_params_) -> VecSimQueryReply * {
                 return this->searchRangeInternal(query_, radius_, query_params_);
             });
-        VecSimQueryResult_List results[n_queries];
+        VecSimQueryReply *results[n_queries];
         runParallelQueries<double>(queries, n_queries, radius, query_params, n_threads,
                                    searchRangeWrapper, results);
         size_t max_results_num = 1;
         for (size_t i = 0; i < n_queries; i++) {
-            if (VecSimQueryResult_Len(results[i]) > max_results_num) {
-                max_results_num = VecSimQueryResult_Len(results[i]);
+            if (VecSimQueryReply_Len(results[i]) > max_results_num) {
+                max_results_num = VecSimQueryReply_Len(results[i]);
             }
         }
         // We return 2D numpy array of results (labels and distances), use padding of "-1" in the
@@ -456,7 +456,7 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimMetric_Cosine", VecSimMetric_Cosine)
         .export_values();
 
-    py::enum_<VecSimQueryResult_Order>(m, "VecSimQueryResult_Order")
+    py::enum_<VecSimQueryReply_Order>(m, "VecSimQueryReply_Order")
         .value("BY_SCORE", BY_SCORE)
         .value("BY_ID", BY_ID)
         .export_values();

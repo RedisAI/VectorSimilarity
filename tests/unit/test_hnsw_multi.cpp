@@ -7,7 +7,6 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "test_utils.h"
-#include "VecSim/utils/arr_cpp.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include <cmath>
 #include <map>
@@ -153,11 +152,11 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 0);
 
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), n_labels);
-    auto it = VecSimQueryResult_List_GetIterator(res);
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n_labels);
+    auto it = VecSimQueryReply_GetIterator(res);
     for (size_t i = 0; i < n_labels; i++) {
-        auto el = VecSimQueryResult_IteratorNext(it);
+        auto el = VecSimQueryReply_IteratorNext(it);
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * perLabel * i * perLabel * dim);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(element_label, i);
@@ -168,8 +167,8 @@ TYPED_TEST(HNSWMultiTest, search_more_than_there_is) {
             ASSERT_EQ(ids[j], i * perLabel + j);
         }
     }
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -195,9 +194,9 @@ TYPED_TEST(HNSWMultiTest, indexing_same_vector) {
     auto verify_res = [&](size_t id, double score, size_t index) { ASSERT_EQ(id, index); };
     runTopKSearchTest(index, query, k, verify_res);
     auto res = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
-    auto it = VecSimQueryResult_List_GetIterator(res);
+    auto it = VecSimQueryReply_GetIterator(res);
     for (size_t i = 0; i < k; i++) {
-        auto el = VecSimQueryResult_IteratorNext(it);
+        auto el = VecSimQueryReply_IteratorNext(it);
         labelType element_label = VecSimQueryResult_GetId(el);
         ASSERT_EQ(VecSimQueryResult_GetScore(el), i * i * dim);
         ASSERT_EQ(element_label, i);
@@ -208,8 +207,8 @@ TYPED_TEST(HNSWMultiTest, indexing_same_vector) {
             ASSERT_EQ(ids[j], i * perLabel + j);
         }
     }
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
     VecSimIndex_Free(index);
 }
 
@@ -467,7 +466,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     // Perform (or simulate) Search in all modes.
     VecSimIndex_AddVector(index, v, 0);
     auto res = VecSimIndex_TopKQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(STANDARD_KNN, info.commonInfo.lastMode);
@@ -475,7 +474,7 @@ TYPED_TEST(HNSWMultiTest, test_dynamic_hnsw_info_iterator) {
     VecSimInfoIterator_Free(infoIter);
 
     res = VecSimIndex_RangeQuery(index, v, 1, nullptr, BY_SCORE);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply_Free(res);
     info = VecSimIndex_Info(index);
     infoIter = VecSimIndex_InfoIterator(index);
     ASSERT_EQ(RANGE_QUERY, info.commonInfo.lastMode);
@@ -648,16 +647,16 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
     TEST_DATA_T query[dim];
     GenerateVector<TEST_DATA_T>(query, dim, 50);
     // We do not expect any results.
-    VecSimQueryResult_List res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Iterator *it = VecSimQueryResult_List_GetIterator(res);
-    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
 
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     // Add some vectors and remove them all from index, so it will be empty again.
     for (size_t i = 0; i < n; i++) {
@@ -669,15 +668,15 @@ TYPED_TEST(HNSWMultiTest, search_empty_index) {
 
     // Again - we do not expect any results.
     res = VecSimIndex_TopKQuery(index, query, k, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    it = VecSimQueryResult_List_GetIterator(res);
-    ASSERT_EQ(VecSimQueryResult_IteratorNext(it), nullptr);
-    VecSimQueryResult_IteratorFree(it);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    it = VecSimQueryReply_GetIterator(res);
+    ASSERT_EQ(VecSimQueryReply_IteratorNext(it), nullptr);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
 
     res = VecSimIndex_RangeQuery(index, query, 1.0, NULL, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     VecSimIndex_Free(index);
 }
@@ -1431,17 +1430,17 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(index, query, nullptr);
 
     // Try to get results even though there are no vectors in the index.
-    VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
 
     // Insert one vector and query again. The internal id will be 0.
     VecSimIndex_AddVector(index, query, n_labels - 1);
     VecSimBatchIterator_Reset(batchIterator);
     res = VecSimBatchIterator_Next(batchIterator, 10, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 1);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 1);
+    VecSimQueryReply_Free(res);
     ASSERT_FALSE(VecSimBatchIterator_HasNext(batchIterator));
     VecSimBatchIterator_Free(batchIterator);
 
@@ -1455,8 +1454,8 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
 
     // Try to get 0 results.
     res = VecSimBatchIterator_Next(batchIterator, 0, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     // n_res does not divide into ef or vice versa - expect leftovers between the graph scans.
     size_t n_res = 7;
@@ -1488,8 +1487,8 @@ TYPED_TEST(HNSWMultiTest, hnsw_batch_iterator_advanced) {
     ASSERT_EQ(iteration_num, n_labels / n_res + 1);
     // Try to get more results even though there are no.
     res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), 0);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 0);
+    VecSimQueryReply_Free(res);
 
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
@@ -1522,20 +1521,20 @@ TYPED_TEST(HNSWMultiTest, MultiBatchIteratorHeapLogic) {
     // If the heaps update logic is true, we should get k results.
     n_res = 3;
     auto res = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res), n_res);
-    VecSimQueryResult_Free(res);
+    ASSERT_EQ(VecSimQueryReply_Len(res), n_res);
+    VecSimQueryReply_Free(res);
 
     VecSimBatchIterator_Reset(batchIterator);
     n_res = 2;
     // We have 3 labels in the index. We expect to get 2 results in the first iteration and 1 in the
     // second, if the logic of extracting extras from the extras heap is true.
     auto res1 = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res1), n_res);
+    ASSERT_EQ(VecSimQueryReply_Len(res1), n_res);
     auto res2 = VecSimBatchIterator_Next(batchIterator, n_res, BY_SCORE);
-    ASSERT_EQ(VecSimQueryResult_Len(res2), n_labels - n_res);
+    ASSERT_EQ(VecSimQueryReply_Len(res2), n_labels - n_res);
 
-    VecSimQueryResult_Free(res1);
-    VecSimQueryResult_Free(res2);
+    VecSimQueryReply_Free(res1);
+    VecSimQueryReply_Free(res2);
 
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);

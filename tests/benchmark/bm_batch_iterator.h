@@ -37,7 +37,7 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     double &memory_delta) {
     VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(
         INDICES.at(VecSimAlgo_HNSWLIB), QUERIES[iter % N_QUERIES].data(), nullptr);
-    VecSimQueryResult_List accumulated_results[num_batches];
+    VecSimQueryReply *accumulated_results[num_batches];
     size_t batch_num = 0;
     total_res_num = 0;
 
@@ -46,8 +46,8 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
         if (batch_num == num_batches) {
             break;
         }
-        VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
-        total_res_num += VecSimQueryResult_Len(res);
+        VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
+        total_res_num += VecSimQueryReply_Len(res);
         accumulated_results[batch_num++] = res;
         batch_size *= batch_increase_factor;
     }
@@ -63,9 +63,9 @@ void BM_BatchIterator<index_type_t>::RunBatchedSearch_HNSW(
     for (size_t i = 0; i < batch_num; i++) {
         auto hnsw_results = accumulated_results[i];
         BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
-        VecSimQueryResult_Free(hnsw_results);
+        VecSimQueryReply_Free(hnsw_results);
     }
-    VecSimQueryResult_Free(bf_results);
+    VecSimQueryReply_Free(bf_results);
     st.ResumeTiming();
 }
 
@@ -82,8 +82,8 @@ void BM_BatchIterator<index_type_t>::BF_FixedBatchSize(benchmark::State &st) {
             INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), nullptr);
         size_t batches_counter = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
-            VecSimQueryResult_Free(res);
+            VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
+            VecSimQueryReply_Free(res);
             batches_counter++;
             if (batches_counter == num_batches) {
                 break;
@@ -107,8 +107,8 @@ void BM_BatchIterator<index_type_t>::BF_VariableBatchSize(benchmark::State &st) 
             INDICES[VecSimAlgo_BF], QUERIES[iter % N_QUERIES].data(), nullptr);
         size_t batches_counter = 0;
         while (VecSimBatchIterator_HasNext(batchIterator)) {
-            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
-            VecSimQueryResult_Free(res);
+            VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
+            VecSimQueryReply_Free(res);
             batches_counter++;
             batch_size *= 2;
             if (batches_counter == num_batches) {
@@ -134,8 +134,8 @@ void BM_BatchIterator<index_type_t>::BF_BatchesToAdhocBF(benchmark::State &st) {
             if (batches_counter == num_batches) {
                 break;
             }
-            VecSimQueryResult_List res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
-            VecSimQueryResult_Free(res);
+            VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, batch_size, BY_ID);
+            VecSimQueryReply_Free(res);
             batches_counter++;
             batch_size *= 2;
         }
